@@ -2,9 +2,9 @@
 
 ![License](https://img.shields.io/github/license/chodeus/sleezer) ![GitHub release (latest by date)](https://img.shields.io/github/v/release/chodeus/sleezer) ![GitHub last commit](https://img.shields.io/github/last-commit/chodeus/sleezer) ![GitHub stars](https://img.shields.io/github/stars/chodeus/sleezer)
 
-Sleezer is a plugin for **Lidarr** that adds **Deezer**, **Slskd (Soulseek)**, and a handful of other music sources to your library management — all behind a single plugin install. It's a merge of the best parts of [Lidarr.Plugin.Deezer](https://github.com/TrevTV/Lidarr.Plugin.Deezer) (by [TrevTV](https://github.com/TrevTV)) and [Tubifarry](https://github.com/TypNull/Tubifarry) (by [TypNull](https://github.com/TypNull)), with the YouTube, Spotify, Lyrics, and telemetry pieces removed and the corrupt-file / pre-import-tag handling made available to every source. 🛠️
+Sleezer is a Lidarr plugin that adds **Deezer**, **Slskd (Soulseek)**, and a handful of other music sources behind a single install. It also ships shared post-processing — corrupt-file scanning, tag cleanup, and featured-artist stripping — that applies to every download source, not just one. 🛠️
 
-> **Note**: This is a fresh merge. Some details below may drift as the code settles — open an issue if something reads stale.
+Credit where it's due: Sleezer is built on [Lidarr.Plugin.Deezer](https://github.com/TrevTV/Lidarr.Plugin.Deezer) by [TrevTV](https://github.com/TrevTV) and [Tubifarry](https://github.com/TypNull/Tubifarry) by [TypNull](https://github.com/TypNull). See [Credits](#credits-).
 
 ---
 
@@ -27,25 +27,6 @@ Sleezer is a plugin for **Lidarr** that adds **Deezer**, **Slskd (Soulseek)**, a
 ---
 
 ## Installation 🚀
-
-Sleezer requires a Lidarr install running on the `plugins` branch. If you're on Docker, the [hotio](https://hotio.dev) `pr-plugins` image is the easiest way to get there:
-
-```yml
-  lidarr:
-    image: ghcr.io/hotio/lidarr:pr-plugins
-    container_name: lidarr
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=Etc/UTC
-    volumes:
-      - /path/to/config/:/config
-      - /path/to/downloads/:/downloads
-      - /path/to/music:/music
-    ports:
-      - 8686:8686
-    restart: unless-stopped
-```
 
 1. In Lidarr, go to `System -> Plugins`.
 2. Paste `https://github.com/chodeus/sleezer` into the GitHub URL box and click **Install**.
