@@ -17,18 +17,23 @@ namespace NzbDrone.Core.Indexers.Deezer
     {
         private static readonly Regex ParenToDash = new(@"\s*\(([^)]+)\)", RegexOptions.Compiled);
         private static readonly Regex CollapseSpaces = new(@"\s+", RegexOptions.Compiled);
+        // Bounds the blocking wait in ParseResponse. A Deezer search + album enrichment fan-out
+        // that can't finish in this window is almost certainly a hung HTTP call — better to throw
+        // than to wedge the indexer thread forever.
+        private static readonly TimeSpan IndexerParseTimeout = TimeSpan.FromMinutes(2);
 
-        public DeezerIndexerSettings Settings { get; set; }
+        public DeezerIndexerSettings Settings { get; set; } = null!;
 
         public IList<ReleaseInfo> ParseResponse(IndexerResponse response)
         {
             var torrentInfos = new List<ReleaseInfo>();
 
-            DeezerSearchResponse jsonResponse = null;
+            DeezerSearchResponse jsonResponse;
             if (response.HttpRequest.Url.FullUri.Contains("method=page.get", StringComparison.InvariantCulture)) // means we're asking for a channel and need to parse it accordingly
             {
                 var task = GenerateSearchResponseFromChannelData(response.Content);
-                task.Wait();
+                if (!task.Wait(IndexerParseTimeout))
+                    throw new TimeoutException($"Deezer channel parse did not complete within {IndexerParseTimeout.TotalSeconds:F0}s");
                 jsonResponse = task.Result;
             }
             else
@@ -36,7 +41,8 @@ namespace NzbDrone.Core.Indexers.Deezer
 
             var tasks = jsonResponse.Data.Select(result => ProcessResultAsync(result)).ToArray();
 
-            Task.WaitAll(tasks);
+            if (!Task.WaitAll(tasks, IndexerParseTimeout))
+                throw new TimeoutException($"Deezer search enrichment did not complete within {IndexerParseTimeout.TotalSeconds:F0}s");
 
             foreach (var task in tasks)
             {
@@ -49,7 +55,7 @@ namespace NzbDrone.Core.Indexers.Deezer
                 .ToArray();
         }
 
-        private async Task<IList<ReleaseInfo>> ProcessResultAsync(DeezerGwAlbum result)
+        private async Task<IList<ReleaseInfo>?> ProcessResultAsync(DeezerGwAlbum result)
         {
             var torrentInfos = new List<ReleaseInfo>();
 
@@ -94,13 +100,13 @@ namespace NzbDrone.Core.Indexers.Deezer
                 torrentInfos.Add(ToReleaseInfo(result, 1, size128, explicitType));
 
             // MP3 320 — only if user can stream HQ AND all tracks have MP3 320
-            if (!missing320 && DeezerAPI.Instance.Client.GWApi.ActiveUserData["USER"]!["OPTIONS"]!["web_hq"]!.Value<bool>())
+            if (!missing320 && DeezerAPI.Instance.Client.GWApi.ActiveUserData?["USER"]?["OPTIONS"]?["web_hq"]?.Value<bool>() == true)
             {
                 torrentInfos.Add(ToReleaseInfo(result, 3, size320, explicitType));
             }
 
             // FLAC — only if user has lossless AND all tracks have FLAC
-            if (!missingFlac && DeezerAPI.Instance.Client.GWApi.ActiveUserData["USER"]!["OPTIONS"]!["web_lossless"]!.Value<bool>())
+            if (!missingFlac && DeezerAPI.Instance.Client.GWApi.ActiveUserData?["USER"]?["OPTIONS"]?["web_lossless"]?.Value<bool>() == true)
             {
                 torrentInfos.Add(ToReleaseInfo(result, 9, sizeFlac, explicitType));
             }
@@ -239,7 +245,8 @@ namespace NzbDrone.Core.Indexers.Deezer
             baseObj.Add("data", dataArray);
             baseObj.Add("total", albumCount);
 
-            return baseObj.ToObject<DeezerSearchResponse>();
+            return baseObj.ToObject<DeezerSearchResponse>()
+                ?? throw new InvalidOperationException("Deezer channel response failed to deserialize into DeezerSearchResponse");
         }
 
         private async Task<JToken[]> GetChannelNewReleases(string channelName)

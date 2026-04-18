@@ -270,12 +270,23 @@ public class PreImportTagger : IPreImportTagger
                 return;
             }
 
-            File.Move(path, newPath);
+            try
+            {
+                File.Move(path, newPath);
+            }
+            catch (IOException ioEx) when (File.Exists(newPath))
+            {
+                // Lost a TOCTOU race: destination was created between our Exists check and Move.
+                // Safer to leave the original file in place than clobber a sibling — matches the
+                // pre-check's skip-on-collision semantics.
+                _logger.Trace(ioEx, "Pre-import tag: feat-strip rename race hit for {Path} -> {NewPath}; leaving original", path, newPath);
+                return;
+            }
             transient.Path = newPath;
         }
         catch (Exception ex)
         {
-            _logger.Warn(ex, $"Pre-import tag: feat-strip rename failed for {path}");
+            _logger.Warn(ex, "Pre-import tag: feat-strip rename failed for {Path}", path);
         }
     }
 

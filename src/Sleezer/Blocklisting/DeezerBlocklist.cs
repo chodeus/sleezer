@@ -34,7 +34,7 @@ namespace NzbDrone.Core.Blocklisting
                 SourceTitle = message.SourceTitle,
                 Quality = message.Quality,
                 Date = DateTime.UtcNow,
-                PublishedDate = DateTime.Parse(message.Data.GetValueOrDefault("publishedDate")),
+                PublishedDate = DateTime.Parse(message.Data.GetValueOrDefault("publishedDate") ?? string.Empty),
                 Size = long.Parse(message.Data.GetValueOrDefault("size", "0")),
                 Indexer = message.Data.GetValueOrDefault("indexer"),
                 Protocol = message.Data.GetValueOrDefault("protocol"),

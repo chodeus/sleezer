@@ -73,14 +73,14 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.DABMusic
 
                 if (response.StatusCode != HttpStatusCode.OK)
                 {
-                    _logger.Error($"Login failed for {email} with status {response.StatusCode}: {response.Content}");
+                    _logger.Error("Login failed for {Email} with status {StatusCode}: {Content}", email, response.StatusCode, response.Content);
                     return null;
                 }
 
                 string? sessionCookie = ExtractSessionCookie(response);
                 if (string.IsNullOrEmpty(sessionCookie))
                 {
-                    _logger.Error($"No session cookie received from login response for {email}");
+                    _logger.Error("No session cookie received from login response for {Email}", email);
                     return null;
                 }
 

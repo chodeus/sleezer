@@ -2,7 +2,7 @@
 
 ![License](https://img.shields.io/github/license/chodeus/sleezer) ![GitHub release (latest by date)](https://img.shields.io/github/v/release/chodeus/sleezer) ![GitHub last commit](https://img.shields.io/github/last-commit/chodeus/sleezer) ![GitHub stars](https://img.shields.io/github/stars/chodeus/sleezer)
 
-Sleezer is a Lidarr plugin that adds **Deezer**, **Slskd (Soulseek)**, and a handful of other music sources behind a single install. It also ships shared post-processing — corrupt-file scanning, tag cleanup, and featured-artist stripping — that applies to every download source addedin this plugin 🛠️
+Sleezer is a Lidarr plugin that adds **Deezer**, **Slskd (Soulseek)**, and a handful of other music sources behind a single install. It also ships post-processing: corrupt-file scanning and pre-import tagging for Deezer/Slskd downloads, plus an FFmpeg-based format converter that runs on every imported track regardless of source. 🛠️
 
 Credit where it's due: Sleezer is built on [Lidarr.Plugin.Deezer](https://github.com/TrevTV/Lidarr.Plugin.Deezer) by [TrevTV](https://github.com/TrevTV) and [Tubifarry](https://github.com/TypNull/Tubifarry) by [TypNull](https://github.com/TypNull). See [Credits](#credits-).
 
@@ -100,6 +100,8 @@ The Subsonic indexer/client is generic: any service that implements the [Subsoni
 
 **FFmpeg** (the component formerly known as "Codec Tinker" in Tubifarry) converts imported audio files between formats. You can set default rules (e.g. "convert all WAV to FLAC", "convert AAC ≥ 256k to MP3 300k") or per-artist overrides. It also backs the corrupt-file scan and pre-import tagging described in the next section, so even users who never touch conversion still benefit from having it configured.
 
+> ⚠️ **Scope note — FFmpeg conversion applies to every track Lidarr imports, not just Sleezer's downloads.** FFmpeg is registered as a Lidarr *Metadata Consumer*, which Lidarr invokes for every imported track regardless of source. Enable it and your torrent, Usenet, and manual imports will also be converted according to the rules you configure. If you only want Sleezer's Deezer/Slskd downloads affected, leave the provider disabled — the corrupt-scan and pre-import tagger do **not** require it to be enabled for downloads to work.
+
 > Lossy formats (MP3, AAC) can't be converted up into lossless formats (FLAC, WAV). Quality that wasn't there can't be restored.
 
 #### How to Enable FFmpeg
@@ -123,7 +125,7 @@ Sleezer ships with a downloader (`Xabe.FFmpeg.Downloader`) and will fetch FFmpeg
 
 ### Corrupt File Scan & Pre-Import Tagging 🧼
 
-These two features live under FFmpeg's settings because they depend on it. Both are available to **every** download source in Sleezer — Deezer, Slskd, and all of the web clients.
+These two features live under FFmpeg's settings because they depend on the bundled FFmpeg binary. Both are scoped to **Sleezer's own downloaders only** — Deezer and Slskd. The web clients (Lucida, SubSonic, TripleTriple, DABMusic) currently share a lighter download path that doesn't invoke them, and Lidarr's native torrent/Usenet clients are untouched. Only the FFmpeg *conversion* provider (previous section) runs on imports from every source.
 
 All three toggles default **on**.
 

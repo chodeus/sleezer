@@ -108,10 +108,10 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
     {
         private static readonly FFmpegSettingsValidator Validator = new();
 
-        [FieldDefinition(0, Label = "FFmpeg Path", Type = FieldType.Path, Section = MetadataSectionType.Metadata, Placeholder = "/downloads/FFmpeg", HelpText = "Specify the path to the FFmpeg binary.")]
+        [FieldDefinition(0, Label = "FFmpeg Path", Type = FieldType.Path, Section = MetadataSectionType.Metadata, Placeholder = "/downloads/FFmpeg", HelpText = "Specify the path to the FFmpeg binary.", HelpTextWarning = "Conversion rules below run on EVERY track Lidarr imports, not just Sleezer's Deezer/Slskd downloads. Torrent and Usenet imports will also be converted when this provider is enabled. The Corrupt File Scan and Pre-Import Tagging toggles further down only affect Sleezer's own downloaders.")]
         public string FFmpegPath { get; set; } = string.Empty;
 
-        [FieldDefinition(1, Label = "Convert MP3", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Convert MP3 files.")]
+        [FieldDefinition(1, Label = "Convert MP3", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Convert MP3 files. Applies to all imports (torrent/Usenet/plugin) when this provider is enabled.")]
         public bool ConvertMP3 { get; set; }
 
         [FieldDefinition(2, Label = "Convert AAC", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Convert AAC files.")]
@@ -135,13 +135,13 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
         [FieldDefinition(9, Label = "Custom Conversion Rules", Type = FieldType.KeyValueList, Section = MetadataSectionType.Metadata, HelpText = "Custom conversion rules. Examples: 'flac -> mp3:320:cbr' (FLAC to CBR MP3), 'mp3:320 -> mp3:128' (downsample), 'flac:24 -> flac:16' (reduce bit depth). Add ':cbr' for constant bitrate encoding. Upsampling is blocked automatically.")]
         public IEnumerable<KeyValuePair<string, string>> CustomConversion { get; set; } = [];
 
-        [FieldDefinition(10, Label = "Enable Corrupt File Scan", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "After download, scan audio files for corruption (size, TagLib parse, ffmpeg decode). Failed files are quarantined.")]
+        [FieldDefinition(10, Label = "Enable Corrupt File Scan", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "After download, scan audio files for corruption (size, TagLib parse, ffmpeg decode). Failed files are quarantined. Scope: Deezer and Slskd downloads only. Does not run on torrent/Usenet or other web clients.")]
         public bool EnableCorruptFileScan { get; set; } = true;
 
-        [FieldDefinition(11, Label = "Enable Pre-Import Tagging", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Run Lidarr's identification + tag writer on downloaded files before import, so untagged or mistagged releases match cleanly.")]
+        [FieldDefinition(11, Label = "Enable Pre-Import Tagging", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Run Lidarr's identification + tag writer on downloaded files before import, so untagged or mistagged releases match cleanly. Scope: Deezer and Slskd downloads only. Does not run on torrent/Usenet or other web clients.")]
         public bool EnablePreImportTagging { get; set; } = true;
 
-        [FieldDefinition(12, Label = "Strip Featured Artists", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "When pre-import tagging, strip '(feat. X)' / '(featuring Y)' / '(ft Z)' suffixes from track titles and artist tags before writing.")]
+        [FieldDefinition(12, Label = "Strip Featured Artists", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "When pre-import tagging, strip '(feat. X)' / '(featuring Y)' / '(ft Z)' suffixes from track titles and artist tags before writing. Scope: Deezer and Slskd downloads only.")]
         public bool StripFeaturedArtists { get; set; } = true;
 
         public NzbDroneValidationResult Validate() => new(Validator.Validate(this));

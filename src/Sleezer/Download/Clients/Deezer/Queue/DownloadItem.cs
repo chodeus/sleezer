@@ -20,17 +20,17 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
 {
     public class InsufficientLicenseRightsException : Exception
     {
-        public InsufficientLicenseRightsException(string message, Exception inner = null) : base(message, inner) { }
+        public InsufficientLicenseRightsException(string message, Exception? inner = null) : base(message, inner) { }
     }
 
     public class GeoRestrictionException : Exception
     {
-        public GeoRestrictionException(string message, Exception inner = null) : base(message, inner) { }
+        public GeoRestrictionException(string message, Exception? inner = null) : base(message, inner) { }
     }
 
     public class DownloadItem
     {
-        public static async Task<DownloadItem> From(RemoteAlbum remoteAlbum)
+        public static async Task<DownloadItem?> From(RemoteAlbum remoteAlbum)
         {
             string url = remoteAlbum.Release.DownloadUrl.Trim();
             Bitrate bitrate;
@@ -42,7 +42,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
             else
                 bitrate = Bitrate.MP3_128;
 
-            DownloadItem item = null;
+            DownloadItem? item = null;
             if (DeezerURL.TryParse(url, out var deezerUrl))
             {
                 item = new()
@@ -60,15 +60,15 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
             return item;
         }
 
-        public string ID { get; private set; }
+        public string ID { get; private set; } = null!;
 
-        public string Title { get; private set; }
-        public string Artist { get; private set; }
+        public string Title { get; private set; } = null!;
+        public string Artist { get; private set; } = null!;
         public bool Explicit { get; private set; }
 
-        public RemoteAlbum RemoteAlbum {  get; private set; }
+        public RemoteAlbum RemoteAlbum { get; private set; } = null!;
 
-        public string DownloadFolder { get; private set; }
+        public string DownloadFolder { get; private set; } = null!;
 
         public Bitrate Bitrate { get; private set; }
         public DownloadItemStatus Status { get; set; }
@@ -79,9 +79,9 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
 
         public int FailedTracks { get; private set; }
 
-        private (long id, long size)[] _tracks;
-        private DeezerURL _deezerUrl;
-        private JToken _deezerAlbum;
+        private (long id, long size)[] _tracks = null!;
+        private DeezerURL _deezerUrl = null!;
+        private JToken _deezerAlbum = null!;
         private DateTime _lastARLValidityCheck = DateTime.MinValue;
 
         public async Task DoDownload(DeezerSettings settings, Logger logger, CancellationToken cancellation = default)
@@ -98,7 +98,10 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                         await DoTrackDownload(trackId, settings, cancellation);
                         DownloadedSize += trackSize;
                     }
-                    catch (TaskCanceledException) { }
+                    catch (TaskCanceledException)
+                    {
+                        logger.Trace("Track download cancelled: {TrackId}", trackId);
+                    }
                     catch (InsufficientLicenseRightsException ex)
                     {
                         logger.Error("Deezer rejected the download: " + ex.Message);
@@ -184,7 +187,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
             }
 
             var plainLyrics = string.Empty;
-            List<SyncLyrics> syncLyrics = null;
+            List<SyncLyrics>? syncLyrics = null;
 
             var lyrics = await DeezerAPI.Instance.Client.Downloader.FetchLyricsFromDeezer(track, cancellation);
             if (lyrics.HasValue)
@@ -263,7 +266,8 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
 
             _deezerAlbum = albumPage;
 
-            var album = albumPage["DATA"]!.ToObject<DeezerGwAlbum>();
+            var album = albumPage["DATA"]!.ToObject<DeezerGwAlbum>()
+                ?? throw new InvalidOperationException($"Deezer returned null DATA block for album {_deezerUrl.Id}");
 
             Title = album.AlbumTitle;
             Artist = album.ArtistName;

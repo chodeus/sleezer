@@ -5,12 +5,12 @@ namespace NzbDrone.Core.Download.Clients.Deezer
 {
     public class DeezerSearchResponseWrapper
     {
-        public DeezerSearchResponse Results { get; set; }
+        public DeezerSearchResponse Results { get; set; } = null!;
     }
 
     public class DeezerSearchResponse
     {
-        public IList<DeezerGwAlbum> Data { get; set; }
+        public IList<DeezerGwAlbum> Data { get; set; } = null!;
         public int Total { get; set; }
     }
 
@@ -34,35 +34,35 @@ namespace NzbDrone.Core.Download.Clients.Deezer
     public class DeezerGwAlbum
     {
         [JsonProperty("ALB_ID")]
-        public string AlbumId { get; set; }
+        public string AlbumId { get; set; } = null!;
         [JsonProperty("ALB_TITLE")]
-        public string AlbumTitle { get; set; }
+        public string AlbumTitle { get; set; } = null!;
         [JsonProperty("ALB_PICTURE")]
-        public string AlbumPicture { get; set; }
+        public string AlbumPicture { get; set; } = null!;
         public bool Available { get; set; }
         [JsonProperty("ART_ID")]
-        public string ArtistId { get; set; }
+        public string ArtistId { get; set; } = null!;
         [JsonProperty("ART_NAME")]
-        public string ArtistName { get; set; }
+        public string ArtistName { get; set; } = null!;
         [JsonProperty("EXPLICIT_ALBUM_CONTENT")]
-        public ExplicitAlbumContent ExplicitAlbumContent { get; set; }
+        public ExplicitAlbumContent? ExplicitAlbumContent { get; set; }
 
         // These two are string not DateTime since sometimes Deezer provides invalid values (like 0000-00-00)
         [JsonProperty("PHYSICAL_RELEASE_DATE")]
-        public string PhysicalReleaseDate { get; set; }
+        public string PhysicalReleaseDate { get; set; } = null!;
         [JsonProperty("DIGITAL_RELEASE_DATE")]
-        public string DigitalReleaseDate { get; set; }
+        public string DigitalReleaseDate { get; set; } = null!;
 
-        public string Type { get; set; }
+        public string Type { get; set; } = null!;
         [JsonProperty("ARTIST_IS_DUMMY")]
         public bool ArtistIsDummy { get; set; }
         [JsonProperty("NUMBER_TRACK")]
-        public string TrackCount { get; set; }
+        public string TrackCount { get; set; } = null!;
         [JsonProperty("DURATION")]
         public int DurationInSeconds { get; set; }
 
-        public string Version { get; set; }
-        public string Link { get; set; }
+        public string Version { get; set; } = null!;
+        public string Link { get; set; } = null!;
 
         public ExplicitStatus ExplicitType
         {

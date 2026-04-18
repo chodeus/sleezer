@@ -384,7 +384,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.CustomLidarr
                 return null;
             }
 
-            Match match = MusicBrainzRegex().Match(query);
+            Match match = MusicBrainzRegex().Match(query!);
             return match.Success ? match.Groups[1].Value : null;
         }
 

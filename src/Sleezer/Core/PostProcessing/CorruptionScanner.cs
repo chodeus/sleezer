@@ -1,6 +1,5 @@
 using NLog;
 using System.Diagnostics;
-using System.Text.RegularExpressions;
 using NzbDrone.Plugin.Sleezer.Core.Model;
 using Xabe.FFmpeg;
 
@@ -79,7 +78,7 @@ public class CorruptionScanner : ICorruptionScanner
 
             if (exitCode != 0)
             {
-                string reason = CleanFfmpegErrors(stderr);
+                string reason = FfmpegErrorFormatter.CleanFfmpegErrors(stderr);
                 return new Result(true, reason);
             }
 
@@ -146,26 +145,4 @@ public class CorruptionScanner : ICorruptionScanner
         return (proc.ExitCode, stderr);
     }
 
-    internal static string CleanFfmpegErrors(string stderr)
-    {
-        if (string.IsNullOrWhiteSpace(stderr))
-            return "Non-zero exit code";
-
-        string cleaned = CodecPrefixPattern.Replace(stderr, string.Empty);
-        cleaned = PipeSeparatorPattern.Replace(cleaned, " | ");
-        cleaned = WhitespacePattern.Replace(cleaned, " ").Trim();
-
-        string[] parts = cleaned.Split(" | ", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        HashSet<string> seen = new(StringComparer.Ordinal);
-        List<string> unique = new(parts.Length);
-        foreach (string p in parts)
-            if (seen.Add(p))
-                unique.Add(p);
-
-        return unique.Count > 0 ? string.Join(" | ", unique) : "Non-zero exit code";
-    }
-
-    private static readonly Regex CodecPrefixPattern = new(@"\[[\w:#/]+ @ 0x[0-9a-fA-F]+\]\s*", RegexOptions.Compiled);
-    private static readonly Regex PipeSeparatorPattern = new(@"\s*\|\s*", RegexOptions.Compiled);
-    private static readonly Regex WhitespacePattern = new(@"\s+", RegexOptions.Compiled);
 }

@@ -40,7 +40,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
         private readonly List<Task> _runningTasks = new();
         private readonly object _lock = new();
 
-        private DeezerSettings _settings;
+        private DeezerSettings? _settings;
         private readonly Logger _logger;
         private readonly ICorruptionScanner _corruptionScanner;
         private readonly IPreImportTagger _preImportTagger;
@@ -50,7 +50,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
 
         public DownloadTaskQueue(
             int capacity,
-            DeezerSettings settings,
+            DeezerSettings? settings,
             ICorruptionScanner corruptionScanner,
             IPreImportTagger preImportTagger,
             IMetadataFactory metadataFactory,
@@ -95,8 +95,14 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                     if (item.Status == DownloadItemStatus.Completed)
                         await RunPostProcessAsync(item, token);
                 }
-                catch (TaskCanceledException) { }
-                catch (OperationCanceledException) { }
+                catch (TaskCanceledException)
+                {
+                    _logger.Trace("Deezer download task cancelled: {Title}", item.Title);
+                }
+                catch (OperationCanceledException)
+                {
+                    _logger.Trace("Deezer download operation cancelled: {Title}", item.Title);
+                }
                 catch (Exception ex)
                 {
                     item.Status = DownloadItemStatus.Failed;
@@ -117,7 +123,9 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
 
                 var item = await DequeueAsync(stoppingToken);
                 var token = GetTokenForItem(item);
-                var downloadTask = item.DoDownload(_settings, _logger, token);
+                // SetSettings is always invoked before any queue/download call on the proxy,
+                // so by the time we dequeue an item the settings must be populated.
+                var downloadTask = item.DoDownload(_settings!, _logger, token);
 
                 lock (_lock)
                     _runningTasks.Add(HandleTask(item, downloadTask));

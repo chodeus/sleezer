@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Run against whatever major runtime is installed (CI has 8, dev boxes may have 10+). -->
+    <RollForward>LatestMajor</RollForward>
+    <!-- Opt out of Lidarr's Directory.Build.props Test-classification so the test host
+         lands in a predictable bin/ path instead of Lidarr's _tests/ output folder. -->
+    <LidarrOutputType>Library</LidarrOutputType>
+    <!-- Tests pull in a handful of plugin source files directly rather than referencing
+         the full Sleezer.csproj, which would drag in ILRepack, DeezNET, and the whole
+         Lidarr submodule. Keep this project self-contained so `dotnet test` runs fast. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.10.0" />
+    <PackageReference Include="xunit" Version="2.9.0" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Pull in just the files under test to avoid dragging the full plugin build graph. -->
+    <Compile Include="..\..\src\Sleezer\Core\PostProcessing\FeaturedArtistStripper.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Core\PostProcessing\FfmpegErrorFormatter.cs"
+             LinkBase="SourceUnderTest" />
+  </ItemGroup>
+
+</Project>

@@ -63,7 +63,6 @@
 	<Import Project="$(MSBuildProjectDirectory)\PreBuild.targets" />
 	<Import Project="$(MSBuildProjectDirectory)\Debug.targets" />
 	<Import Project="$(MSBuildProjectDirectory)\PluginInfo.targets" />
-	<Import Project="$(MSBuildProjectDirectory)\PluginKeys.targets" />
 
 	<!-- Force copy System.Text.Json.dll to output directory for ILRepack -->
 	<Target Name="CopySystemTextJson" AfterTargets="Build">

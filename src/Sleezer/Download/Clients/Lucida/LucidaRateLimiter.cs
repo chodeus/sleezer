@@ -161,7 +161,11 @@ public sealed class LucidaRateLimiter : ILucidaRateLimiter
         {
             slot.PollingSemaphore.Release();
         }
-        catch (SemaphoreFullException) { }
+        catch (SemaphoreFullException)
+        {
+            // Expected: caller released more than it acquired (race between cancellation
+            // and polling completion). Swallow and fall through to the counter fixup below.
+        }
 
         int current = Interlocked.Decrement(ref slot.ActivePolling);
         if (current < 0)

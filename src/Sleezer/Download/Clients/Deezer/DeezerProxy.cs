@@ -67,7 +67,8 @@ namespace NzbDrone.Core.Download.Clients.Deezer
         {
             _taskQueue.SetSettings(settings);
 
-            var downloadItem = await DownloadItem.From(remoteAlbum);
+            var downloadItem = await DownloadItem.From(remoteAlbum)
+                ?? throw new InvalidOperationException($"Unable to parse Deezer URL from release: {remoteAlbum.Release.DownloadUrl}");
             await _taskQueue.QueueBackgroundWorkItemAsync(downloadItem);
             return downloadItem.ID;
         }

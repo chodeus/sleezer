@@ -7,6 +7,8 @@ using NzbDrone.Plugin.Sleezer.Core.Records;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using Xabe.FFmpeg;
 using Xabe.FFmpeg.Downloader;
+// Aliased so `XabeFFmpeg` can't be shadowed by our local Metadata.FFmpeg namespace.
+using XabeFFmpeg = Xabe.FFmpeg.FFmpeg;
 
 namespace NzbDrone.Plugin.Sleezer.Core.Model
 {
@@ -199,7 +201,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
 
             try
             {
-                IMediaInfo mediaInfo = await FFmpeg.GetMediaInfo(TrackPath);
+                IMediaInfo mediaInfo = await XabeFFmpeg.GetMediaInfo(TrackPath);
                 IVideoStream? coverStream = mediaInfo.VideoStreams
                     .FirstOrDefault(vs => CoverArtCodecs.Contains(vs.Codec ?? ""));
 
@@ -209,7 +211,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
                 string tempCoverPath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.jpg");
                 try
                 {
-                    IConversion conversion = FFmpeg.Conversions.New()
+                    IConversion conversion = XabeFFmpeg.Conversions.New()
                         .AddParameter($"-i \"{TrackPath}\"")
                         .AddParameter("-an -vcodec copy")
                         .SetOutput(tempCoverPath);
@@ -266,7 +268,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
 
                 byte[]? preservedCoverArt = AlbumCover?.Length > 0 ? AlbumCover : await TryExtractCoverArtAsync();
 
-                IConversion conversion = await FFmpeg.Conversions.FromSnippet.Convert(TrackPath, tempOutputPath);
+                IConversion conversion = await XabeFFmpeg.Conversions.FromSnippet.Convert(TrackPath, tempOutputPath);
 
                 foreach (string parameter in BaseConversionParameters[audioFormat])
                     conversion.AddParameter(parameter);
@@ -353,7 +355,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
         {
             try
             {
-                IMediaInfo mediaInfo = await FFmpeg.GetMediaInfo(TrackPath);
+                IMediaInfo mediaInfo = await XabeFFmpeg.GetMediaInfo(TrackPath);
 
                 bool hasRealVideo = mediaInfo.VideoStreams.Any(vs =>
                     !CoverArtCodecs.Contains(vs.Codec ?? "") &&
@@ -386,7 +388,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
 
             try
             {
-                IMediaInfo mediaInfo = await FFmpeg.GetMediaInfo(TrackPath);
+                IMediaInfo mediaInfo = await XabeFFmpeg.GetMediaInfo(TrackPath);
                 IAudioStream? audioStream = mediaInfo.AudioStreams.FirstOrDefault();
 
                 if (audioStream == null)
@@ -402,7 +404,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
                 if (File.Exists(tempOutputPath))
                     File.Delete(tempOutputPath);
 
-                IConversion conversion = await FFmpeg.Conversions.FromSnippet.ExtractAudio(TrackPath, tempOutputPath);
+                IConversion conversion = await XabeFFmpeg.Conversions.FromSnippet.ExtractAudio(TrackPath, tempOutputPath);
                 foreach (string parameter in ExtractionParameters)
                     conversion.AddParameter(parameter);
 
@@ -453,7 +455,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
                 if (File.Exists(tempOutput))
                     File.Delete(tempOutput);
 
-                IConversion conversion = FFmpeg.Conversions.New()
+                IConversion conversion = XabeFFmpeg.Conversions.New()
                     .AddParameter($"-decryption_key {decryptionKey}")
                     .AddParameter($"-i \"{TrackPath}\"")
                     .AddParameter("-c copy")
@@ -507,7 +509,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
         {
             try
             {
-                IMediaInfo mediaInfo = await FFmpeg.GetMediaInfo(TrackPath);
+                IMediaInfo mediaInfo = await XabeFFmpeg.GetMediaInfo(TrackPath);
                 string codec = mediaInfo.AudioStreams.FirstOrDefault()?.Codec.ToLower() ?? string.Empty;
                 if (string.IsNullOrEmpty(codec))
                     return false;
@@ -597,7 +599,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
         {
             try
             {
-                IMediaInfo mediaInfo = await FFmpeg.GetMediaInfo(filePath);
+                IMediaInfo mediaInfo = await XabeFFmpeg.GetMediaInfo(filePath);
                 IAudioStream? audioStream = mediaInfo.AudioStreams.FirstOrDefault();
 
                 if (audioStream == null)
@@ -626,10 +628,10 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
 
             bool isInstalled = false;
 
-            if (!string.IsNullOrEmpty(FFmpeg.ExecutablesPath) && Directory.Exists(FFmpeg.ExecutablesPath))
+            if (!string.IsNullOrEmpty(XabeFFmpeg.ExecutablesPath) && Directory.Exists(XabeFFmpeg.ExecutablesPath))
             {
                 string[] ffmpegPatterns = ["ffmpeg", "ffmpeg.exe", "ffmpeg.bin"];
-                string[] files = Directory.GetFiles(FFmpeg.ExecutablesPath);
+                string[] files = Directory.GetFiles(XabeFFmpeg.ExecutablesPath);
                 if (files.Any(file => ffmpegPatterns.Contains(Path.GetFileName(file), StringComparer.OrdinalIgnoreCase) && IsExecutable(file)))
                 {
                     isInstalled = true;
@@ -647,7 +649,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
                         string[] ffmpegPatterns = ["ffmpeg", "ffmpeg.exe", "ffmpeg.bin"];
                         if (Directory.GetFiles(dir).Any(file => ffmpegPatterns.Contains(Path.GetFileName(file), StringComparer.OrdinalIgnoreCase) && IsExecutable(file)))
                         {
-                            FFmpeg.SetExecutablesPath(dir);
+                            XabeFFmpeg.SetExecutablesPath(dir);
                             isInstalled = true;
                         }
                     }
@@ -665,7 +667,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
 
                         if (files.Any(file => ffmpegPatterns.Contains(Path.GetFileName(file), StringComparer.OrdinalIgnoreCase) && IsExecutable(file)))
                         {
-                            FFmpeg.SetExecutablesPath(path);
+                            XabeFFmpeg.SetExecutablesPath(path);
                             isInstalled = true;
                             break;
                         }
@@ -718,7 +720,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
         {
             NzbDroneLogger.GetLogger(typeof(AudioMetadataHandler)).Trace($"Installing FFmpeg to: {path}");
             ResetFFmpegInstallationCheck();
-            FFmpeg.SetExecutablesPath(path);
+            XabeFFmpeg.SetExecutablesPath(path);
             return CheckFFmpegInstalled() ? Task.CompletedTask : FFmpegDownloader.GetLatestVersion(FFmpegVersion.Official, path);
         }
     }

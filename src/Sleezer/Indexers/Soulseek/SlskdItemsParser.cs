@@ -138,7 +138,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 ExplicitContent = ExtractExplicitTag(folderData.Path),
                 Priotity = priority,
                 CustomString = JsonConvert.SerializeObject(filesToDownload),
-                ExtraInfo = [edition, $"👤 {folderData.Username} ", $"{(folderData.HasFreeUploadSlot ? "⚡" : "❌")} {folderData.UploadSpeed / 1024.0 / 1024.0:F2}MB/s ", folderData.QueueLength == 0 ? "" : $"📋 {folderData.QueueLength}"],
+                ExtraInfo = [edition ?? string.Empty, $"👤 {folderData.Username} ", $"{(folderData.HasFreeUploadSlot ? "⚡" : "❌")} {folderData.UploadSpeed / 1024.0 / 1024.0:F2}MB/s ", folderData.QueueLength == 0 ? "" : $"📋 {folderData.QueueLength}"],
                 Duration = TotalDuration
             };
         }

@@ -5,12 +5,15 @@ using System.Threading.Tasks;
 using AngleSharp.Dom;
 using AngleSharp.Html.Parser;
 using AngleSharp.XPath;
+using NLog;
 
 namespace NzbDrone.Plugin.Sleezer.Deezer
 {
     public static class ARLUtilities
     {
         private const string FIREHAWK_URL = "https://rentry.org/firehawk52";
+        private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
+        private static readonly TimeSpan ArlValidationTimeout = TimeSpan.FromSeconds(30);
 
         public static async Task<string> GetFirstValidARL()
         {
@@ -57,15 +60,21 @@ namespace NzbDrone.Plugin.Sleezer.Deezer
             try
             {
                 // calling this gets a checkForm/API token, it will always return one regardless of the arl being valid or not, requiring the additional checks
-                DeezerAPI.Instance.Client.SetARL(token).Wait();
+                Task setArlTask = DeezerAPI.Instance.Client.SetARL(token);
+                if (!setArlTask.Wait(ArlValidationTimeout))
+                {
+                    _logger.Debug("ARL validation timed out after {Seconds}s; treating as invalid", ArlValidationTimeout.TotalSeconds);
+                    return false;
+                }
 
                 bool accountActive = DeezerAPI.Instance.Client.GWApi.ActiveUserData!["USER"]!.Value<long>("USER_ID") == 0;
                 bool hasStreaming = DeezerAPI.Instance.Client.GWApi.ActiveUserData!["USER"]!["OPTIONS"]!.Value<bool>("web_streaming");
                 if (accountActive && hasStreaming)
                     return false;
             }
-            catch
+            catch (Exception ex)
             {
+                _logger.Debug(ex, "ARL validation failed");
                 return false;
             }
 
