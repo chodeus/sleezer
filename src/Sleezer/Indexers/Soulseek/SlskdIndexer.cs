@@ -1,0 +1,108 @@
+using FluentValidation.Results;
+using Newtonsoft.Json;
+using NLog;
+using NzbDrone.Common.Extensions;
+using NzbDrone.Common.Http;
+using NzbDrone.Core.Configuration;
+using NzbDrone.Core.Download.History;
+using NzbDrone.Core.History;
+using NzbDrone.Core.Indexers;
+using NzbDrone.Core.Parser;
+using NzbDrone.Core.Parser.Model;
+using NzbDrone.Core.Queue;
+using System.Net;
+using NzbDrone.Plugin.Sleezer.Core.Replacements;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
+using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
+using NzbDrone.Plugin.Sleezer.Indexers.Soulseek.Search.Core;
+
+namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
+{
+    public class SlskdIndexer : ExtendedHttpIndexerBase<SlskdSettings, LazyIndexerPageableRequest>
+    {
+        public override string Name => "Slskd";
+        public override string Protocol => nameof(SoulseekDownloadProtocol);
+        public override bool SupportsRss => false;
+        public override bool SupportsSearch => true;
+        public override int PageSize => 50;
+        public override TimeSpan RateLimit => new(3);
+
+        private readonly SlskdRequestGenerator _indexerRequestGenerator;
+        private readonly IParseIndexerResponse _parseIndexerResponse;
+
+        internal new SlskdSettings Settings => base.Settings;
+
+        public SlskdIndexer(IHttpClient httpClient, Lazy<IIndexerFactory> indexerFactory, IIndexerStatusService indexerStatusService, ISlskdSearchChain slskdSearchChain, ISlskdItemsParser slskdItemsParser, IHistoryService historyService, IDownloadHistoryService downloadHistoryService, IQueueService queueService, IConfigService configService, IParsingService parsingService, ISlskdCorruptUserTracker corruptUserTracker, Logger logger)
+          : base(httpClient, indexerStatusService, configService, parsingService, logger)
+        {
+            _parseIndexerResponse = new SlskdIndexerParser(this, indexerFactory, httpClient, slskdItemsParser, historyService, downloadHistoryService, queueService, corruptUserTracker);
+            _indexerRequestGenerator = new SlskdRequestGenerator(this, slskdSearchChain, httpClient);
+        }
+
+        protected override IList<ReleaseInfo> CleanupReleases(IEnumerable<ReleaseInfo> releases, bool isRecent = false)
+        {
+            IList<ReleaseInfo> result = base.CleanupReleases(releases, isRecent);
+
+            foreach (ReleaseInfo release in result)
+            {
+                if (release is not TorrentInfo slskd)
+                    continue;
+
+                int basePriority = release.IndexerPriority;
+                int score = Math.Clamp(slskd.Seeders ?? 0, 0, 10000);
+                release.IndexerPriority = basePriority + 12 - (int)Math.Round(score / 10000.0 * 24);
+            }
+
+            return result;
+        }
+
+        protected override async Task Test(List<ValidationFailure> failures) => failures.AddIfNotNull(await TestConnection());
+
+        public override IIndexerRequestGenerator<LazyIndexerPageableRequest> GetExtendedRequestGenerator() => _indexerRequestGenerator;
+
+        public override IParseIndexerResponse GetParser() => _parseIndexerResponse;
+
+        protected override async Task<ValidationFailure> TestConnection()
+        {
+            try
+            {
+                HttpRequest request = new HttpRequestBuilder($"{Settings.BaseUrl}/api/v0/application")
+                    .SetHeader("X-API-KEY", Settings.ApiKey).Build();
+                request.AllowAutoRedirect = true;
+                request.RequestTimeout = TimeSpan.FromSeconds(30);
+                HttpResponse response = await _httpClient.ExecuteAsync(request);
+                _logger.Debug($"TestConnection Response: {response.Content}");
+
+                if (response.StatusCode != HttpStatusCode.OK)
+                    return new ValidationFailure("BaseUrl", $"Unable to connect to Slskd. Status: {response.StatusCode}");
+
+                dynamic? jsonResponse = JsonConvert.DeserializeObject<dynamic>(response.Content);
+                if (jsonResponse == null)
+                    return new ValidationFailure("BaseUrl", "Failed to parse Slskd response.");
+
+                string? serverState = jsonResponse?.server?.state?.ToString();
+                if (string.IsNullOrEmpty(serverState) || !serverState.Contains("Connected"))
+                    return new ValidationFailure("BaseUrl", $"Slskd server is not connected. State: {serverState}");
+
+                if (!string.IsNullOrWhiteSpace(Settings.IgnoreListPath))
+                {
+                    if (!File.Exists(Settings.IgnoreListPath))
+                        return new ValidationFailure("IgnoreListPath", "Ignore List File does not exists.");
+                    SlskdIndexerParser.InvalidIgnoreCache(Settings.IgnoreListPath);
+                    return PermissionTester.TestReadWritePermissions(Path.GetDirectoryName(Settings.IgnoreListPath)!, _logger)!;
+                }
+                return null!;
+            }
+            catch (HttpException ex)
+            {
+                _logger.Warn(ex, "Unable to connect to Slskd.");
+                return new ValidationFailure("BaseUrl", $"Unable to connect to Slskd: {ex.Message}");
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, "Unexpected error while testing Slskd connection.");
+                return new ValidationFailure(string.Empty, $"Unexpected error: {ex.Message}");
+            }
+        }
+    }
+}

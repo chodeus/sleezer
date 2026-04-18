@@ -1,0 +1,85 @@
+<Project>
+	<!-- Common to all Lidarr Projects -->
+	<PropertyGroup>
+	<!--	<TreatWarningsAsErrors>true</TreatWarningsAsErrors> -->
+
+		<PlatformTarget>AnyCPU</PlatformTarget>
+		<TargetLatestRuntimePatch>true</TargetLatestRuntimePatch>
+		
+		<LidarrRootDir>$(MSBuildThisFileDirectory)</LidarrRootDir>
+
+		<!-- Specifies the type of output -->
+		<LidarrOutputType>Library</LidarrOutputType>
+		<LidarrOutputType Condition="$(MSBuildProjectName.Contains('.Test'))">Test</LidarrOutputType>
+		<LidarrOutputType Condition="'$(MSBuildProjectName)'=='ServiceInstall'">Exe</LidarrOutputType>
+		<LidarrOutputType Condition="'$(MSBuildProjectName)'=='ServiceUninstall'">Exe</LidarrOutputType>
+		<LidarrOutputType Condition="'$(MSBuildProjectName)'=='Lidarr'">Exe</LidarrOutputType>
+		<LidarrOutputType Condition="'$(MSBuildProjectName)'=='Lidarr.Console'">Exe</LidarrOutputType>
+		<LidarrOutputType Condition="'$(MSBuildProjectName)'=='Lidarr.Update'">Update</LidarrOutputType>
+
+		<!-- Specifies whether it's one of our own libraries -->
+		<LidarrProject>false</LidarrProject>
+		<LidarrProject Condition="$(MSBuildProjectName.StartsWith('Lidarr'))">true</LidarrProject>
+		<LidarrProject Condition="$(MSBuildProjectName.StartsWith('ServiceInstall'))">true</LidarrProject>
+		<LidarrProject Condition="$(MSBuildProjectName.StartsWith('ServiceUninstall'))">true</LidarrProject>
+
+		<PluginProject>true</PluginProject>
+	</PropertyGroup>
+
+	<Target Name="PrintOutputPath" BeforeTargets="Build">
+		<Message Text="PluginProject: $(PluginProject)" Importance="high" />
+		<Message Text="OutputPath: $(OutputPath)" Importance="high" />
+		<Message Text="MSBuildProjectName: $(MSBuildProjectName)" Importance="high" />
+		<Message Text="LidarrRootDir: $(LidarrRootDir)" Importance="high" />
+	</Target>
+
+	<PropertyGroup>
+		<Configuration Condition="'$(Configuration)'==''">Release</Configuration>
+		<!-- Centralize intermediate and default outputs -->
+		<BaseIntermediateOutputPath>$(LidarrRootDir)_temp\obj\$(MSBuildProjectName)\</BaseIntermediateOutputPath>
+		<IntermediateOutputPath>$(LidarrRootDir)_temp\obj\$(MSBuildProjectName)\$(Configuration)\</IntermediateOutputPath>
+		<OutputPath>$(LidarrRootDir)_temp\bin\$(Configuration)\$(MSBuildProjectName)\</OutputPath>
+
+		<!-- Output to _output and _tests respectively -->
+		<OutputPath Condition="'$(LidarrProject)'=='true'">$(LidarrRootDir)_output\</OutputPath>
+		<OutputPath Condition="'$(PluginProject)'=='true'">$(LidarrRootDir)_plugins\$(TargetFramework)\$(MSBuildProjectName)</OutputPath>
+		<OutputPath Condition="'$(LidarrOutputType)'=='Test'">$(LidarrRootDir)_tests\</OutputPath>
+		<OutputPath Condition="'$(LidarrOutputType)'=='Update'">$(LidarrRootDir)_output\Lidarr.Update\</OutputPath>
+
+		<!-- Paths relative to project file for better readability -->
+		<BaseIntermediateOutputPath>$([MSBuild]::MakeRelative('$(MSBuildProjectDirectory)', '$(BaseIntermediateOutputPath)'))</BaseIntermediateOutputPath>
+		<IntermediateOutputPath>$([MSBuild]::MakeRelative('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)'))</IntermediateOutputPath>
+		<OutputPath>$([MSBuild]::MakeRelative('$(MSBuildProjectDirectory)', '$(OutputPath)'))</OutputPath>
+
+		<DebugSymbols>true</DebugSymbols>
+	</PropertyGroup>
+
+	<!-- Test projects need bindingRedirects -->
+	<PropertyGroup Condition="'$(LidarrOutputType)'=='Test'">
+		<AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+		<GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
+		<SelfContained>false</SelfContained>
+	</PropertyGroup>
+
+	<!-- Set the AssemblyConfiguration attribute for projects -->
+	<ItemGroup Condition="'$(LidarrProject)'=='true'">
+		<AssemblyAttribute Include="System.Reflection.AssemblyConfigurationAttribute">
+			<_Parameter1>$(AssemblyConfiguration)</_Parameter1>
+		</AssemblyAttribute>
+	</ItemGroup>
+
+	<PropertyGroup>
+		<AppendTargetFrameworkToOutputPath Condition="'$(PluginProject)'=='true'">false</AppendTargetFrameworkToOutputPath>
+		<!-- For now keep the NzbDrone namespace -->
+		<RootNamespace Condition="'$(LidarrProject)'=='true'">$(MSBuildProjectName.Replace('Lidarr','NzbDrone'))</RootNamespace>
+	</PropertyGroup>
+
+	<!-- Allow building net framework using mono -->
+	<ItemGroup>
+		<PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.0">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+		</PackageReference>
+	</ItemGroup>
+
+</Project>

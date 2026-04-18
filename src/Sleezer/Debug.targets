@@ -1,0 +1,15 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+	<!-- Copy the files to the plugin folder -->
+	<Target Name="PostBuild" AfterTargets="ILRepacker" Condition="'$(Configuration)' == 'Debug'">
+		<PropertyGroup>
+			<PluginName>$(MSBuildProjectName)</PluginName>
+			<DestinationFolder>C:\ProgramData\Lidarr\plugins\$(Author)\$(PluginName)</DestinationFolder>
+		</PropertyGroup>
+		<Message Text="Plugin Name: $(PluginName)" Importance="high" />
+		<Message Text="Destination Folder: $(DestinationFolder)" Importance="high" />
+		<MakeDir Directories="$(DestinationFolder)" />
+		<Copy SourceFiles="$(TargetPath)" DestinationFiles="$(DestinationFolder)\Lidarr.Plugin.$(PluginName).dll" SkipUnchangedFiles="true" />
+		<Copy SourceFiles="$(TargetDir)$(TargetName).pdb" DestinationFiles="$(DestinationFolder)\Lidarr.Plugin.$(PluginName).pdb" SkipUnchangedFiles="true" Condition="Exists('$(TargetDir)$(TargetName).pdb')" />
+		<Copy SourceFiles="$(TargetDir)$(TargetName).deps.json" DestinationFiles="$(DestinationFolder)\Lidarr.Plugin.$(PluginName).deps.json" SkipUnchangedFiles="true" Condition="Exists('$(TargetDir)$(TargetName).deps.json')" />
+	</Target>
+</Project>

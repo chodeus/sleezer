@@ -1,0 +1,111 @@
+using FluentValidation.Results;
+using NLog;
+using NzbDrone.Common.Disk;
+using NzbDrone.Core.Configuration;
+using NzbDrone.Core.Download;
+using NzbDrone.Core.Indexers;
+using NzbDrone.Core.Localization;
+using NzbDrone.Core.Organizer;
+using NzbDrone.Core.Parser.Model;
+using NzbDrone.Core.RemotePathMappings;
+
+namespace NzbDrone.Plugin.Sleezer.Download.Clients.Lucida
+{
+    /// <summary>
+    /// Lucida download client for high-quality music downloads
+    /// Integrates with Lucida web interface to download tracks and albums
+    /// </summary>
+    public class LucidaClient : DownloadClientBase<LucidaProviderSettings>
+    {
+        private readonly ILucidaDownloadManager _downloadManager;
+        private readonly INamingConfigService _namingService;
+        private readonly ILucidaRateLimiter _rateLimiter;
+
+        public LucidaClient(
+            ILucidaDownloadManager downloadManager,
+            ILucidaRateLimiter rateLimiter,
+            IConfigService configService,
+            IDiskProvider diskProvider,
+            INamingConfigService namingConfigService,
+            IRemotePathMappingService remotePathMappingService,
+            ILocalizationService localizationService,
+            Logger logger)
+            : base(configService, diskProvider, remotePathMappingService, localizationService, logger)
+        {
+            _downloadManager = downloadManager;
+            _namingService = namingConfigService;
+            _rateLimiter = rateLimiter;
+        }
+
+        public override string Name => "Lucida";
+        public override string Protocol => nameof(LucidaDownloadProtocol);
+        public new LucidaProviderSettings Settings => base.Settings;
+
+        public override Task<string> Download(RemoteAlbum remoteAlbum, IIndexer indexer) => _downloadManager.Download(remoteAlbum, indexer, _namingService.GetConfig(), this);
+
+        public override IEnumerable<DownloadClientItem> GetItems() => _downloadManager.GetItems();
+
+        public override void RemoveItem(DownloadClientItem item, bool deleteData)
+        {
+            if (deleteData)
+                DeleteItemData(item);
+            _downloadManager.RemoveItem(item);
+        }
+
+        public override DownloadClientInfo GetStatus() => new()
+        {
+            IsLocalhost = false,
+            OutputRootFolders = [new OsPath(Settings.DownloadPath)]
+        };
+
+        protected override void Test(List<ValidationFailure> failures)
+        {
+            if (!_diskProvider.FolderExists(Settings.DownloadPath))
+            {
+                failures.Add(new ValidationFailure("DownloadPath", "Download path does not exist"));
+                return;
+            }
+
+            if (!_diskProvider.FolderWritable(Settings.DownloadPath))
+            {
+                failures.Add(new ValidationFailure("DownloadPath", "Download path is not writable"));
+                return;
+            }
+
+            TestWorkerHealth();
+        }
+
+        private void TestWorkerHealth()
+        {
+            try
+            {
+                IReadOnlyDictionary<string, LucidaWorkerState> states = _rateLimiter.GetWorkerStates();
+                List<KeyValuePair<string, LucidaWorkerState>> availableWorkers = states.Where(s => s.Value.IsAvailable).ToList();
+                List<KeyValuePair<string, LucidaWorkerState>> rateLimitedWorkers = [.. states.Where(s => s.Value.RateLimitedUntil.HasValue && s.Value.RateLimitedUntil.Value > DateTime.UtcNow)];
+
+                if (availableWorkers.Count == 0)
+                {
+                    _logger.Debug("No Lucida workers currently available, all may be rate limited");
+                    foreach (KeyValuePair<string, LucidaWorkerState> worker in rateLimitedWorkers)
+                    {
+                        TimeSpan remaining = worker.Value.RateLimitedUntil!.Value - DateTime.UtcNow;
+                        _logger.Debug($"  Worker '{worker.Key}' rate limited for {remaining.TotalSeconds:F0}s more");
+                    }
+                }
+                else
+                {
+                    _logger.Debug($"Lucida workers available: {availableWorkers.Count}/{states.Count}");
+                    foreach (KeyValuePair<string, LucidaWorkerState> state in states)
+                    {
+                        _logger.Trace($"  Worker '{state.Key}': available={state.Value.IsAvailable}, " +
+                                     $"active={state.Value.ActiveRequests}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Debug(ex, "Failed to check Lucida worker health during test");
+            }
+        }
+    }
+}

@@ -1,0 +1,136 @@
+﻿using NzbDrone.Core.Parser.Model;
+using System.Text.RegularExpressions;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
+
+namespace NzbDrone.Plugin.Sleezer.Core.Model
+{
+    /// <summary>
+    /// Contains combined information about an album, search parameters, and search results.
+    /// </summary>
+    public partial class AlbumData(string name, string downloadProtocol)
+    {
+        public string? Guid { get; set; }
+        public string IndexerName { get; } = name;
+
+        // Mixed
+        public string AlbumId { get; set; } = string.Empty;
+
+        // Properties from AlbumInfo
+        public string AlbumName { get; set; } = string.Empty;
+
+        public string ArtistName { get; set; } = string.Empty;
+        public string InfoUrl { get; set; } = string.Empty;
+        public string ReleaseDate { get; set; } = string.Empty;
+        public DateTime ReleaseDateTime { get; set; }
+        public string ReleaseDatePrecision { get; set; } = string.Empty;
+        public int TotalTracks { get; set; }
+        public bool ExplicitContent { get; set; }
+        public string CustomString { get; set; } = string.Empty;
+        public string CoverResolution { get; set; } = string.Empty;
+
+        // Properties from YoutubeSearchResults
+        public int Bitrate { get; set; }
+
+        public int BitDepth { get; set; }
+        public long Duration { get; set; }
+
+        // Soulseek
+        public long? Size { get; set; }
+
+        public int Priotity { get; set; }
+        public List<string>? ExtraInfo { get; set; }
+
+        public string DownloadProtocol { get; set; } = downloadProtocol;
+
+        // Not used
+        public AudioFormat Codec { get; set; } = AudioFormat.AAC;
+
+        /// <summary>
+        /// Converts AlbumData into a ReleaseInfo object.
+        /// </summary>
+        public ReleaseInfo ToReleaseInfo() => new()
+        {
+            Guid = Guid ?? $"{IndexerName}-{AlbumId}-{Codec}-{Bitrate}-{BitDepth}",
+            Artist = ArtistName,
+            Album = AlbumName,
+            DownloadUrl = AlbumId,
+            InfoUrl = InfoUrl,
+            PublishDate = ReleaseDateTime == DateTime.MinValue ? DateTime.UtcNow : ReleaseDateTime,
+            DownloadProtocol = DownloadProtocol,
+            Title = ConstructTitle(),
+            Codec = Codec.ToString(),
+            Resolution = CoverResolution,
+            Source = CustomString,
+            Container = Bitrate.ToString(),
+            Size = Size ?? (Duration > 0 ? Duration : TotalTracks * 300) * Bitrate * 1000 / 8
+        };
+
+        /// <summary>
+        /// Parses the release date based on the precision.
+        /// </summary>
+        public void ParseReleaseDate() => ReleaseDateTime = ReleaseDatePrecision switch
+        {
+            "year" => new DateTime(int.Parse(ReleaseDate), 1, 1),
+            "month" => DateTime.ParseExact(ReleaseDate, "yyyy-MM", System.Globalization.CultureInfo.InvariantCulture),
+            "day" => DateTime.ParseExact(ReleaseDate, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+            _ => throw new FormatException($"Unsupported release_date_precision: {ReleaseDatePrecision}"),
+        };
+
+        /// <summary>
+        /// Constructs a title string for the album in a format optimized for parsing.
+        /// </summary>
+        /// <returns>A formatted title string.</returns>
+        private string ConstructTitle()
+        {
+            string normalizedAlbumName = NormalizeAlbumName(AlbumName);
+
+            string title = $"{ArtistName} - {normalizedAlbumName}";
+
+            if (ReleaseDateTime != DateTime.MinValue)
+                title += $" ({ReleaseDateTime.Year})";
+
+            if (ExplicitContent)
+                title += " [Explicit]";
+
+            int calculatedBitrate = Bitrate;
+            if (calculatedBitrate <= 0 && Size.HasValue && Duration > 0)
+                calculatedBitrate = (int)(Size.Value * 8 / (Duration * 1000));
+
+            if (AudioFormatHelper.IsLossyFormat(Codec) && calculatedBitrate != 0)
+                title += $" [{Codec} {calculatedBitrate}kbps]";
+            else if (!AudioFormatHelper.IsLossyFormat(Codec) && BitDepth != 0)
+                title += $" [{Codec} {BitDepth}bit]";
+            else
+                title += $" [{Codec}]";
+
+            if (ExtraInfo?.Count > 0)
+                title += string.Concat(ExtraInfo.Where(info => !string.IsNullOrEmpty(info)).Select(info => $" [{info}]"));
+
+            title += " [WEB]";
+            return title;
+        }
+
+        /// <summary>
+        /// Normalizes the album name to handle featuring artists and other parentheses.
+        /// </summary>
+        /// <param name="albumName">The album name to normalize.</param>
+        /// <returns>The normalized album name.</returns>
+        private static string NormalizeAlbumName(string albumName)
+        {
+            if (FeatRegex().IsMatch(albumName)) // TODO ISMatch vs Match
+            {
+                Match match = FeatRegex().Match(albumName);
+                string featuringArtist = albumName[(match.Index + match.Length)..].Trim();
+
+                albumName = $"{albumName[..match.Index].Trim()} (feat. {featuringArtist})";
+            }
+            return FeatReplaceRegex().Replace(albumName, match => $"{{{match.Value.Trim('(', ')')}}}");
+        }
+
+        [GeneratedRegex(@"(?i)\b(feat\.|ft\.|featuring)\b", RegexOptions.IgnoreCase, "de-DE")]
+        private static partial Regex FeatRegex();
+
+        [GeneratedRegex(@"\((?!feat\.)[^)]*\)")]
+        private static partial Regex FeatReplaceRegex();
+    }
+}

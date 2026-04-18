@@ -1,0 +1,71 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<TargetFramework>net8.0</TargetFramework>
+		<DebugType Condition="'$(Configuration)'=='Debug'">embedded</DebugType>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<AssemblyName>Lidarr.Plugin.$(MSBuildProjectName)</AssemblyName>
+		<RootNamespace>NzbDrone.Plugin.Sleezer</RootNamespace>
+		<AssemblyVersion>0.1.0.0</AssemblyVersion>
+		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+		<Branch></Branch>
+		<Author>chodeus</Author>
+		<RepoUrl>https://github.com/chodeus/sleezer</RepoUrl>
+		<CI>false</CI>
+		<InformationalVersion>$(AssemblyVersion)-$(Branch)</InformationalVersion>
+		<DefineConstants Condition="'$(CI)' == true">$(DefineConstants);CI</DefineConstants>
+		<DefineConstants Condition="'$(Branch)' == 'main'">$(DefineConstants);MASTER_BRANCH</DefineConstants>
+		<DefineConstants Condition="'$(Branch)' == 'develop'">$(DefineConstants);DEV_BRANCH</DefineConstants>
+		<DefineConstants Condition="'$(Branch)' != 'main' AND '$(Branch)' != 'develop'">$(DefineConstants);FEATURE_BRANCH</DefineConstants>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<!-- From Tubifarry base -->
+		<PackageReference Include="FuzzySharp" Version="2.0.2" />
+		<PackageReference Include="ILRepack.Lib.MSBuild.Task" Version="2.0.44.2">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
+		<PackageReference Include="Shard.DownloadAssistant" Version="1.1.2" />
+		<PackageReference Include="System.Text.Json" Version="8.0.6" GeneratePathProperty="true" />
+		<PackageReference Include="Xabe.FFmpeg" Version="6.0.2" />
+		<PackageReference Include="Xabe.FFmpeg.Downloader" Version="6.0.2" />
+
+		<!-- From Deezer plugin -->
+		<PackageReference Include="AngleSharp" Version="1.2.0-beta.431" />
+		<PackageReference Include="AngleSharp.XPath" Version="2.0.4" />
+		<PackageReference Include="DeezNET" Version="1.2.1" />
+		<PackageReference Include="SkiaSharp" Version="3.0.0-preview.4.1" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<AdditionalFiles Remove="..\..\stylecop.json" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\..\ext\Lidarr\src\NzbDrone.Common\Lidarr.Common.csproj" />
+		<ProjectReference Include="..\..\ext\Lidarr\src\NzbDrone.Core\Lidarr.Core.csproj" />
+		<ProjectReference Include="..\..\ext\Lidarr\src\Lidarr.Http\Lidarr.Http.csproj">
+			<Private>false</Private>
+			<ExcludeAssets>runtime</ExcludeAssets>
+		</ProjectReference>
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Update="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+		</PackageReference>
+	</ItemGroup>
+
+	<!-- Import target files -->
+	<Import Project="$(MSBuildProjectDirectory)\PreBuild.targets" />
+	<Import Project="$(MSBuildProjectDirectory)\Debug.targets" />
+	<Import Project="$(MSBuildProjectDirectory)\PluginInfo.targets" />
+	<Import Project="$(MSBuildProjectDirectory)\PluginKeys.targets" />
+
+	<!-- Force copy System.Text.Json.dll to output directory for ILRepack -->
+	<Target Name="CopySystemTextJson" AfterTargets="Build">
+		<Copy SourceFiles="$(PkgSystem_Text_Json)\lib\net8.0\System.Text.Json.dll" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
+	</Target>
+</Project>
