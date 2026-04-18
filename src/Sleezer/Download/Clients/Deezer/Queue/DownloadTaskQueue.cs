@@ -9,6 +9,7 @@ using NLog;
 using NzbDrone.Common.Disk;
 using NzbDrone.Core.Exceptions;
 using NzbDrone.Core.Extras.Metadata;
+using NzbDrone.Core.Indexers;
 using NzbDrone.Core.Music;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Common.Instrumentation.Extensions;
@@ -43,6 +44,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
         private DeezerSettings? _settings;
         private readonly Logger _logger;
         private readonly ICorruptionScanner _corruptionScanner;
+        private readonly ICorruptionFailureHandler _corruptionFailureHandler;
         private readonly IPreImportTagger _preImportTagger;
         private readonly IMetadataFactory _metadataFactory;
         private readonly IDiskProvider _diskProvider;
@@ -53,6 +55,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
             int capacity,
             DeezerSettings? settings,
             ICorruptionScanner corruptionScanner,
+            ICorruptionFailureHandler corruptionFailureHandler,
             IPreImportTagger preImportTagger,
             IMetadataFactory metadataFactory,
             IDiskProvider diskProvider,
@@ -67,6 +70,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
             _cancellationSources = new();
             _settings = settings;
             _corruptionScanner = corruptionScanner;
+            _corruptionFailureHandler = corruptionFailureHandler;
             _preImportTagger = preImportTagger;
             _metadataFactory = metadataFactory;
             _diskProvider = diskProvider;
@@ -165,15 +169,24 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
 
             if (scanEnabled)
             {
-                int corruptCount = await ScanAndDeleteCorruptAsync(item, folder, ct);
-                if (corruptCount > 0)
+                List<CorruptionStrike> strikes = await ScanForCorruptAsync(folder, ct);
+                if (strikes.Count > 0)
                 {
-                    // Deezer downloads are deterministic, so a corrupt file would just
-                    // recur on retry. Mark the album failed so Lidarr doesn't import the
-                    // partial set; deleted corrupt files are gone, the rest stay on disk
-                    // for the user to review.
+                    // One corrupt file poisons the album. Mark the item Failed,
+                    // then delegate to the shared failure handler: it wipes the
+                    // whole folder and publishes DownloadFailedEvent so Lidarr
+                    // blocklists this release and searches for a different one.
                     item.Status = DownloadItemStatus.Failed;
-                    _logger.Warn($"[post-process] Deezer item {item.ID}: {corruptCount} corrupt file(s) deleted; marking download Failed.");
+                    _logger.Warn("[post-process] Deezer item {ID}: {Count} corrupt file(s) found; wiping album and requesting re-search.",
+                                 item.ID, strikes.Count);
+
+                    await _corruptionFailureHandler.HandleAsync(
+                        downloadId: item.ID,
+                        releaseTitle: item.Title,
+                        folder: folder,
+                        strikes: strikes,
+                        protocolName: nameof(DeezerDownloadProtocol),
+                        ct: ct);
                     return;
                 }
             }
@@ -203,14 +216,16 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
             }
         }
 
-        private async Task<int> ScanAndDeleteCorruptAsync(DownloadItem item, string folder, CancellationToken ct)
+        private async Task<List<CorruptionStrike>> ScanForCorruptAsync(string folder, CancellationToken ct)
         {
+            List<CorruptionStrike> strikes = new();
+
             string[] audioFiles = _diskProvider.GetFiles(folder, recursive: true)
                 .Where(p => AudioExtensions.Contains(Path.GetExtension(p)))
                 .ToArray();
 
             if (audioFiles.Length == 0)
-                return 0;
+                return strikes;
 
             int concurrency = Math.Max(2, Environment.ProcessorCount / 2);
             using SemaphoreSlim gate = new(concurrency);
@@ -226,21 +241,17 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                 finally { gate.Release(); }
             }).ToArray();
 
-            int corruptCount = 0;
             foreach (Task<(string path, CorruptionScanner.Result result)> t in tasks)
             {
                 (string path, CorruptionScanner.Result result) = await t;
                 if (!result.IsCorrupt)
                     continue;
 
-                corruptCount++;
-                _logger.Warn($"[post-process] Deezer corrupt file: {Path.GetFileName(path)} \u2014 {result.Reason}");
-
-                try { _diskProvider.DeleteFile(path); }
-                catch (Exception ex) { _logger.Warn(ex, $"[post-process] Failed to delete corrupt file {path}"); }
+                _logger.Warn("[post-process] Deezer corrupt file: {File} — {Reason}", Path.GetFileName(path), result.Reason);
+                strikes.Add(new CorruptionStrike(Path.GetFileName(path), result.Reason));
             }
 
-            return corruptCount;
+            return strikes;
         }
 
         private FFmpegSettings? GetSharedPostProcessingSettings()

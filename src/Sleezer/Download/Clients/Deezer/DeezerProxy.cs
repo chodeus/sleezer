@@ -29,13 +29,14 @@ namespace NzbDrone.Core.Download.Clients.Deezer
         public DeezerProxy(
             ICacheManager cacheManager,
             ICorruptionScanner corruptionScanner,
+            ICorruptionFailureHandler corruptionFailureHandler,
             IPreImportTagger preImportTagger,
             IMetadataFactory metadataFactory,
             IDiskProvider diskProvider,
             Logger logger)
         {
             _startTimeCache = cacheManager.GetCache<DateTime?>(GetType(), "startTimes");
-            _taskQueue = new(500, null, corruptionScanner, preImportTagger, metadataFactory, diskProvider, logger);
+            _taskQueue = new(500, null, corruptionScanner, corruptionFailureHandler, preImportTagger, metadataFactory, diskProvider, logger);
 
             _taskQueue.StartQueueHandler();
         }

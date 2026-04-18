@@ -535,7 +535,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 if (scanEnabled)
                 {
                     // 1. Corruption scan across every audio file in the folder.
-                    List<CorruptionStrike> strikes = await ScanFolderForCorruptionAsync(item, folderPath, cts.Token);
+                    List<SlskdCorruptionStrike> strikes = await ScanFolderForCorruptionAsync(item, folderPath, cts.Token);
 
                     if (strikes.Count > 0)
                     {
@@ -584,12 +584,12 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         item.PostProcessTasks.Add(task);
     }
 
-    private async Task<List<CorruptionStrike>> ScanFolderForCorruptionAsync(
+    private async Task<List<SlskdCorruptionStrike>> ScanFolderForCorruptionAsync(
         SlskdDownloadItem item,
         string folderPath,
         CancellationToken ct)
     {
-        List<CorruptionStrike> strikes = new();
+        List<SlskdCorruptionStrike> strikes = new();
 
         // Re-apply the FFmpeg metadata provider's path if set (Xabe's global state
         // resets on Lidarr restart; the provider's Test only writes it for the current run).
@@ -639,7 +639,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             if (fileState == null)
                 _logger.Warn($"[post-process] Corrupt file {filename} not mapped to any tracked slskd transfer; counting as corruption but skipping retry short-circuit.");
 
-            strikes.Add(new CorruptionStrike(fileState, result.Reason));
+            strikes.Add(new SlskdCorruptionStrike(fileState, result.Reason));
         }
 
         watch.Stop();
