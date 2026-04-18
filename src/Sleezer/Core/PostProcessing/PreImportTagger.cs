@@ -50,7 +50,7 @@ public class PreImportTagger : IPreImportTagger
         _logger = logger;
     }
 
-    public record TaggingResult(int Tagged, int SkippedLowConfidence, int Errored);
+    public record TaggingResult(int Tagged, int SkippedWeakMatch, int Errored);
 
     public Task<TaggingResult> TagCompletedDownloadAsync(
         Album album,
@@ -158,7 +158,7 @@ public class PreImportTagger : IPreImportTagger
             if (albumDistance > confidenceThreshold || release.TrackMapping == null)
             {
                 skipped += release.LocalTracks.Count;
-                _logger.Info($"Pre-import tag: album match confidence {albumDistance:F3} above threshold {confidenceThreshold:F3} — skipping tagging for {release.LocalTracks.Count} files in {sourceId}");
+                _logger.Info($"Pre-import tag: album match distance {albumDistance:F3} exceeds max {confidenceThreshold:F3} — match too weak, skipping tagging for {release.LocalTracks.Count} files in {sourceId}");
                 continue;
             }
 
@@ -175,7 +175,7 @@ public class PreImportTagger : IPreImportTagger
                 if (trackDistance > confidenceThreshold)
                 {
                     skipped++;
-                    _logger.Trace($"Pre-import tag: track match {trackDistance:F3} above threshold; skipping {Path.GetFileName(localTrack.Path)}");
+                    _logger.Trace($"Pre-import tag: track match distance {trackDistance:F3} exceeds max; skipping {Path.GetFileName(localTrack.Path)}");
                     continue;
                 }
 
@@ -186,7 +186,7 @@ public class PreImportTagger : IPreImportTagger
             }
         }
 
-        _logger.Info($"Pre-import tag: {sourceId} tagged={tagged} skipped_low_confidence={skipped} errored={errored}");
+        _logger.Info($"Pre-import tag: {sourceId} tagged={tagged} skipped_weak_match={skipped} errored={errored}");
         return new TaggingResult(tagged, skipped, errored);
     }
 
