@@ -67,6 +67,9 @@ namespace NzbDrone.Core.Indexers.Deezer
             var missing128 = songs.Any(d => d["FILESIZE_MP3_128"]!.Value<long>() == 0);
             var missing320 = songs.Any(d => d["FILESIZE_MP3_320"]!.Value<long>() == 0);
             var missingFlac = songs.Any(d => d["FILESIZE_FLAC"]!.Value<long>() == 0);
+            // For the MP3-320 fallback: every track must be available in FLAC or MP3 320 (or both),
+            // otherwise we can't cover the album even with fallback enabled.
+            var flacOrMp3320CoversAll = songs.All(d => d["FILESIZE_FLAC"]!.Value<long>() > 0 || d["FILESIZE_MP3_320"]!.Value<long>() > 0);
 
             if (Settings.HideAlbumsWithMissing && missing128)
                 return null;
@@ -105,10 +108,23 @@ namespace NzbDrone.Core.Indexers.Deezer
                 torrentInfos.Add(ToReleaseInfo(result, 3, size320, explicitType));
             }
 
-            // FLAC — only if user has lossless AND all tracks have FLAC
-            if (!missingFlac && DeezerAPI.Instance.Client.GWApi.ActiveUserData?["USER"]?["OPTIONS"]?["web_lossless"]?.Value<bool>() == true)
+            // FLAC — only if user has lossless AND all tracks have FLAC,
+            // OR (with fallback opt-in) every track is available in at least one of FLAC/MP3 320 and user has both HQ streaming and lossless.
+            var hasLossless = DeezerAPI.Instance.Client.GWApi.ActiveUserData?["USER"]?["OPTIONS"]?["web_lossless"]?.Value<bool>() == true;
+            var hasHq = DeezerAPI.Instance.Client.GWApi.ActiveUserData?["USER"]?["OPTIONS"]?["web_hq"]?.Value<bool>() == true;
+            if (!missingFlac && hasLossless)
             {
                 torrentInfos.Add(ToReleaseInfo(result, 9, sizeFlac, explicitType));
+            }
+            else if (missingFlac && Settings.AllowMp3FallbackForMissingFlac && flacOrMp3320CoversAll && hasLossless && hasHq)
+            {
+                // Size reflects what will actually be downloaded: FLAC where available, MP3 320 otherwise.
+                var sizeMixed = songs.Sum(d =>
+                {
+                    var flacBytes = d["FILESIZE_FLAC"]!.Value<long>();
+                    return flacBytes > 0 ? flacBytes : d["FILESIZE_MP3_320"]!.Value<long>();
+                });
+                torrentInfos.Add(ToReleaseInfo(result, 9, sizeMixed, explicitType));
             }
 
             return torrentInfos;

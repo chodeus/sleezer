@@ -100,23 +100,28 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
 
         public int FailedTracks { get; private set; }
 
-        private (long id, long size)[] _tracks = null!;
+        private (long id, long size, Bitrate bitrate)[] _tracks = null!;
         private DeezerURL _deezerUrl = null!;
         private JToken _deezerAlbum = null!;
         private DateTime _lastARLValidityCheck = DateTime.MinValue;
 
         public async Task DoDownload(DeezerSettings settings, Logger logger, CancellationToken cancellation = default)
         {
+            var fallbackCount = _tracks.Count(t => t.bitrate != Bitrate);
+            if (fallbackCount > 0)
+                logger.Info("Deezer download: {FallbackCount} of {TrackCount} track(s) lack {RequestedBitrate}; using MP3 320 for those.",
+                    fallbackCount, _tracks.Length, Bitrate);
+
             List<Task> tasks = new();
             using SemaphoreSlim semaphore = new(1, 1);
-            foreach (var (trackId, trackSize) in _tracks)
+            foreach (var (trackId, trackSize, trackBitrate) in _tracks)
             {
                 tasks.Add(Task.Run(async () =>
                 {
                     await semaphore.WaitAsync(cancellation);
                     try
                     {
-                        await DoTrackDownload(trackId, settings, cancellation);
+                        await DoTrackDownload(trackId, trackBitrate, settings, cancellation);
                         DownloadedSize += trackSize;
                     }
                     catch (TaskCanceledException)
@@ -154,7 +159,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                 Status = DownloadItemStatus.Completed;
         }
 
-        private async Task DoTrackDownload(long track, DeezerSettings settings, CancellationToken cancellation = default)
+        private async Task DoTrackDownload(long track, Bitrate trackBitrate, DeezerSettings settings, CancellationToken cancellation = default)
         {
             var page = await DeezerAPI.Instance.Client.GWApi.GetTrackPage(track, cancellation);
 
@@ -171,7 +176,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
             var artistName = page["DATA"]!["ART_NAME"]!.ToString();
             var duration = page["DATA"]!["DURATION"]!.Value<int>();
 
-            var ext = Bitrate == Bitrate.FLAC ? "flac" : "mp3";
+            var ext = trackBitrate == Bitrate.FLAC ? "flac" : "mp3";
             var outPath = Path.Combine(settings.DownloadPath, MetadataUtilities.GetFilledTemplate("%albumartist%/%album%/", ext, page, _deezerAlbum), MetadataUtilities.GetFilledTemplate("%track% - %title%.%ext%", ext, page, _deezerAlbum));
             var outDir = Path.GetDirectoryName(outPath)!;
 
@@ -181,19 +186,19 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
 
             try
             {
-                await DeezerAPI.Instance.Client.Downloader.WriteRawTrackToFile(track, outPath, Bitrate, null, cancellation);
+                await DeezerAPI.Instance.Client.Downloader.WriteRawTrackToFile(track, outPath, trackBitrate, null, cancellation);
 
                 if (File.Exists(outPath) && new FileInfo(outPath).Length == 0)
                 {
                     File.Delete(outPath);
-                    throw new InvalidOperationException($"Deezer returned an empty file for track {track} at {Bitrate}.");
+                    throw new InvalidOperationException($"Deezer returned an empty file for track {track} at {trackBitrate}.");
                 }
             }
             catch (Exception ex) when (IsLicenseRightsError(ex))
             {
                 TryDeleteEmptyFile(outPath);
                 throw new InsufficientLicenseRightsException(
-                    $"License check failed for track {track} at {Bitrate}: {ex.Message}", ex);
+                    $"License check failed for track {track} at {trackBitrate}: {ex.Message}", ex);
             }
             catch (Exception ex) when (IsGeoRestrictionError(ex))
             {
@@ -276,9 +281,20 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                 _ => "FILESIZE"
             };
 
-            _tracks ??= albumPage["SONGS"]!["data"]!.Select(t => (t["SNG_ID"]!.Value<long>(), t[filesizeKey]!.Value<long>())).ToArray();
+            // Per-track bitrate selection. For FLAC, fall back to MP3 320 when a track lacks FLAC — if the
+            // parser emitted this release with AllowMp3FallbackForMissingFlac enabled, the user opted in.
+            // For MP3 bitrates, there is no fallback path; a 0-size track stays 0 and trips the guard below.
+            _tracks ??= albumPage["SONGS"]!["data"]!.Select(t =>
+            {
+                var id = t["SNG_ID"]!.Value<long>();
+                var primarySize = t[filesizeKey]!.Value<long>();
+                if (primarySize > 0 || Bitrate != Bitrate.FLAC)
+                    return (id, primarySize, Bitrate);
+                var fallbackSize = t["FILESIZE_MP3_320"]!.Value<long>();
+                return fallbackSize > 0 ? (id, fallbackSize, Bitrate.MP3_320) : (id, 0L, Bitrate);
+            }).ToArray();
 
-            // Defense-in-depth: the parser should not emit a release for a bitrate that any track lacks,
+            // Defense-in-depth: the parser should not emit a release that leaves any track uncovered,
             // but if that check is ever bypassed, refuse here rather than write 0-byte files to disk.
             var unavailable = _tracks.Count(t => t.size == 0);
             if (unavailable > 0)
