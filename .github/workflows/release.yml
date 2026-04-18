@@ -1,0 +1,73 @@
+name: Release
+
+# Cuts a new v<major>.<minor>.<patch> tag from the current main tip.
+# Pushing the tag triggers main.yml which builds and publishes the release.
+# Run from the Actions tab: Release -> Run workflow -> pick patch/minor/major.
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump
+        type: choice
+        required: true
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Compute next version
+        id: next
+        run: |
+          set -euo pipefail
+          latest=$(git tag --list 'v*' --sort=-v:refname | head -n1)
+          if [ -z "$latest" ]; then
+            latest="v0.0.0"
+          fi
+          echo "Latest tag: $latest"
+
+          stripped=${latest#v}
+          IFS=. read -r major minor patch <<<"$stripped"
+
+          case "${{ inputs.bump }}" in
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
+          esac
+
+          next="v${major}.${minor}.${patch}"
+          echo "Next tag: $next"
+          echo "tag=$next" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure tag does not already exist
+        run: |
+          if git rev-parse -q --verify "refs/tags/${{ steps.next.outputs.tag }}" >/dev/null; then
+            echo "::error::Tag ${{ steps.next.outputs.tag }} already exists."
+            exit 1
+          fi
+
+      - name: Create and push tag
+        env:
+          TAG: ${{ steps.next.outputs.tag }}
+          BUMP: ${{ inputs.bump }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "$TAG ($BUMP release)"
+          git push origin "$TAG"
