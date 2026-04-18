@@ -4,20 +4,20 @@ using System.Text.RegularExpressions;
 using NzbDrone.Plugin.Sleezer.Core.Model;
 using Xabe.FFmpeg;
 
-namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
+namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing;
 
-public interface ISlskdCorruptionScanner
+public interface ICorruptionScanner
 {
-    Task<SlskdCorruptionScanner.Result> ScanAsync(string path, int timeoutSeconds, CancellationToken ct);
+    Task<CorruptionScanner.Result> ScanAsync(string path, int timeoutSeconds, CancellationToken ct);
 }
 
-public class SlskdCorruptionScanner : ISlskdCorruptionScanner
+public class CorruptionScanner : ICorruptionScanner
 {
     private const long MinFileBytes = 1024;
 
     private readonly Logger _logger;
 
-    public SlskdCorruptionScanner(Logger logger)
+    public CorruptionScanner(Logger logger)
     {
         _logger = logger;
     }

@@ -134,6 +134,15 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Converter
         [FieldDefinition(9, Label = "Custom Conversion Rules", Type = FieldType.KeyValueList, Section = MetadataSectionType.Metadata, HelpText = "Custom conversion rules. Examples: 'flac -> mp3:320:cbr' (FLAC to CBR MP3), 'mp3:320 -> mp3:128' (downsample), 'flac:24 -> flac:16' (reduce bit depth). Add ':cbr' for constant bitrate encoding. Upsampling is blocked automatically.")]
         public IEnumerable<KeyValuePair<string, string>> CustomConversion { get; set; } = [];
 
+        [FieldDefinition(10, Label = "Enable Corrupt File Scan", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "After download, scan audio files for corruption (size, TagLib parse, ffmpeg decode). Failed files are quarantined.")]
+        public bool EnableCorruptFileScan { get; set; } = true;
+
+        [FieldDefinition(11, Label = "Enable Pre-Import Tagging", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Run Lidarr's identification + tag writer on downloaded files before import, so untagged or mistagged releases match cleanly.")]
+        public bool EnablePreImportTagging { get; set; } = true;
+
+        [FieldDefinition(12, Label = "Strip Featured Artists", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "When pre-import tagging, strip '(feat. X)' / '(featuring Y)' / '(ft Z)' suffixes from track titles and artist tags before writing.")]
+        public bool StripFeaturedArtists { get; set; } = true;
+
         public NzbDroneValidationResult Validate() => new(Validator.Validate(this));
     }
 

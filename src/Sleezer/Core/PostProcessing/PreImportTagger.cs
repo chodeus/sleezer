@@ -7,20 +7,22 @@ using NzbDrone.Core.MediaFiles.TrackImport.Identification;
 using NzbDrone.Core.Music;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Core.Qualities;
-using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek.Models;
 
-namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
+namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing;
 
-public interface ISlskdPreImportTagger
+public interface IPreImportTagger
 {
-    Task<SlskdPreImportTagger.TaggingResult> TagCompletedDownloadAsync(
-        SlskdDownloadItem item,
+    Task<PreImportTagger.TaggingResult> TagCompletedDownloadAsync(
+        Album album,
+        Artist artist,
+        AlbumRelease? albumRelease,
+        string sourceId,
         string completedFolderPath,
         double confidenceThreshold,
         CancellationToken ct);
 }
 
-public class SlskdPreImportTagger : ISlskdPreImportTagger
+public class PreImportTagger : IPreImportTagger
 {
     private static readonly string[] AudioExtensions =
     [
@@ -34,7 +36,7 @@ public class SlskdPreImportTagger : ISlskdPreImportTagger
     private readonly IDiskProvider _diskProvider;
     private readonly Logger _logger;
 
-    public SlskdPreImportTagger(
+    public PreImportTagger(
         IIdentificationService identificationService,
         IAudioTagService audioTagService,
         IDiskProvider diskProvider,
@@ -49,24 +51,34 @@ public class SlskdPreImportTagger : ISlskdPreImportTagger
     public record TaggingResult(int Tagged, int SkippedLowConfidence, int Errored);
 
     public Task<TaggingResult> TagCompletedDownloadAsync(
-        SlskdDownloadItem item,
+        Album album,
+        Artist artist,
+        AlbumRelease? albumRelease,
+        string sourceId,
         string completedFolderPath,
         double confidenceThreshold,
         CancellationToken ct)
     {
         try
         {
-            TaggingResult result = TagInternal(item, completedFolderPath, confidenceThreshold, ct);
+            TaggingResult result = TagInternal(album, artist, albumRelease, sourceId, completedFolderPath, confidenceThreshold, ct);
             return Task.FromResult(result);
         }
         catch (Exception ex)
         {
-            _logger.Error(ex, $"Pre-import tagging failed for {item.ID}");
+            _logger.Error(ex, $"Pre-import tagging failed for {sourceId}");
             return Task.FromResult(new TaggingResult(0, 0, 1));
         }
     }
 
-    private TaggingResult TagInternal(SlskdDownloadItem item, string folderPath, double confidenceThreshold, CancellationToken ct)
+    private TaggingResult TagInternal(
+        Album album,
+        Artist artist,
+        AlbumRelease? albumRelease,
+        string sourceId,
+        string folderPath,
+        double confidenceThreshold,
+        CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
 
@@ -76,16 +88,10 @@ public class SlskdPreImportTagger : ISlskdPreImportTagger
             return new TaggingResult(0, 0, 0);
         }
 
-        Album? album = ResolveAlbum(item);
-        Artist? artist = album?.Artist?.Value;
-        AlbumRelease? albumRelease = album?.AlbumReleases?.Value?.FirstOrDefault(r => r.Monitored)
-                                     ?? album?.AlbumReleases?.Value?.FirstOrDefault();
-
-        if (album == null || artist == null)
-        {
-            _logger.Debug($"Pre-import tag: skipping {item.ID}; missing Album/Artist on ReleaseInfo. Lidarr's importer will tag later if configured.");
-            return new TaggingResult(0, 0, 0);
-        }
+        // Caller may pass null albumRelease — fall back to the album's monitored
+        // release (or first available) so callers don't all have to repeat that.
+        albumRelease ??= album.AlbumReleases?.Value?.FirstOrDefault(r => r.Monitored)
+                         ?? album.AlbumReleases?.Value?.FirstOrDefault();
 
         List<string> audioFiles = EnumerateAudioFiles(folderPath);
         if (audioFiles.Count == 0)
@@ -135,7 +141,7 @@ public class SlskdPreImportTagger : ISlskdPreImportTagger
             if (albumDistance > confidenceThreshold || release.TrackMapping == null)
             {
                 skipped += release.LocalTracks.Count;
-                _logger.Info($"Pre-import tag: album match confidence {albumDistance:F3} above threshold {confidenceThreshold:F3} — skipping tagging for {release.LocalTracks.Count} files in {item.ID}");
+                _logger.Info($"Pre-import tag: album match confidence {albumDistance:F3} above threshold {confidenceThreshold:F3} — skipping tagging for {release.LocalTracks.Count} files in {sourceId}");
                 continue;
             }
 
@@ -163,7 +169,7 @@ public class SlskdPreImportTagger : ISlskdPreImportTagger
             }
         }
 
-        _logger.Info($"Pre-import tag: {item.ID} tagged={tagged} skipped_low_confidence={skipped} errored={errored}");
+        _logger.Info($"Pre-import tag: {sourceId} tagged={tagged} skipped_low_confidence={skipped} errored={errored}");
         return new TaggingResult(tagged, skipped, errored);
     }
 
@@ -194,8 +200,6 @@ public class SlskdPreImportTagger : ISlskdPreImportTagger
             return false;
         }
     }
-
-    private static Album? ResolveAlbum(SlskdDownloadItem item) => item.ResolvedAlbum;
 
     private List<string> EnumerateAudioFiles(string folderPath)
     {
@@ -228,11 +232,11 @@ public class SlskdPreImportTagger : ISlskdPreImportTagger
         catch { return DateTime.UtcNow; }
     }
 
-    private NzbDrone.Core.Parser.Model.ParsedTrackInfo SafeReadTags(string path)
+    private ParsedTrackInfo SafeReadTags(string path)
     {
         try
         {
-            NzbDrone.Core.Parser.Model.ParsedTrackInfo? info = _audioTagService.ReadTags(path);
+            ParsedTrackInfo? info = _audioTagService.ReadTags(path);
             if (info != null)
                 return info;
         }
@@ -244,7 +248,7 @@ public class SlskdPreImportTagger : ISlskdPreImportTagger
         // Lidarr's AggregateFilenameInfo does TrackNumbers.First() == 0 which
         // throws on an empty array. Seed with [0] so the "missing data" branch
         // fires gracefully instead.
-        return new NzbDrone.Core.Parser.Model.ParsedTrackInfo
+        return new ParsedTrackInfo
         {
             TrackNumbers = new[] { 0 }
         };

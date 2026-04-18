@@ -8,7 +8,9 @@ using NzbDrone.Core.RemotePathMappings;
 using System.Collections.Concurrent;
 using System.Text.Json;
 using NzbDrone.Core.Extras.Metadata;
+using NzbDrone.Core.Music;
 using NzbDrone.Plugin.Sleezer.Core.Model;
+using NzbDrone.Plugin.Sleezer.Core.PostProcessing;
 using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek.Models;
 using NzbDrone.Plugin.Sleezer.Indexers.Soulseek;
 using NzbDrone.Plugin.Sleezer.Metadata.Converter;
@@ -42,8 +44,8 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     private readonly IDiskProvider _diskProvider;
     private readonly Logger _logger;
     private readonly SlskdRetryHandler _retryHandler;
-    private readonly ISlskdCorruptionScanner _corruptionScanner;
-    private readonly ISlskdPreImportTagger _preImportTagger;
+    private readonly ICorruptionScanner _corruptionScanner;
+    private readonly IPreImportTagger _preImportTagger;
     private readonly ISlskdCorruptionHandler _corruptionHandler;
     private readonly IMetadataFactory _metadataFactory;
     private readonly ISlskdWatchdog _watchdog;
@@ -61,8 +63,8 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         ISlskdItemsParser slskdItemsParser,
         IRemotePathMappingService remotePathMappingService,
         IDiskProvider diskProvider,
-        ISlskdCorruptionScanner corruptionScanner,
-        ISlskdPreImportTagger preImportTagger,
+        ICorruptionScanner corruptionScanner,
+        IPreImportTagger preImportTagger,
         ISlskdCorruptionHandler corruptionHandler,
         IMetadataFactory metadataFactory,
         ISlskdWatchdog watchdog,
@@ -96,12 +98,9 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
         try
         {
-            AudioConverterSettings? codecTinkerSettings = _metadataFactory.All()
-                .Where(d => d.Settings is AudioConverterSettings)
-                .Select(d => d.Settings as AudioConverterSettings)
-                .FirstOrDefault(s => !string.IsNullOrWhiteSpace(s?.FFmpegPath));
+            AudioConverterSettings? codecTinkerSettings = GetSharedPostProcessingSettings();
 
-            if (codecTinkerSettings != null)
+            if (codecTinkerSettings != null && !string.IsNullOrWhiteSpace(codecTinkerSettings.FFmpegPath))
             {
                 FFmpeg.SetExecutablesPath(codecTinkerSettings.FFmpegPath);
                 AudioMetadataHandler.ResetFFmpegInstallationCheck();
@@ -114,6 +113,22 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }
 
         _ffmpegResolved = true;
+    }
+
+    private AudioConverterSettings? GetSharedPostProcessingSettings()
+    {
+        try
+        {
+            return _metadataFactory.All()
+                .Where(d => d.Settings is AudioConverterSettings)
+                .Select(d => d.Settings as AudioConverterSettings)
+                .FirstOrDefault(s => s != null);
+        }
+        catch (Exception ex)
+        {
+            _logger.Debug(ex, "[post-process] Failed to read shared post-processing settings; treating toggles as disabled.");
+            return null;
+        }
     }
 
     public async Task<string> DownloadAsync(RemoteAlbum remoteAlbum, int definitionId, SlskdProviderSettings settings)
@@ -487,7 +502,14 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         if (!_postProcessed.TryAdd(item.ID, 0))
             return;
 
-        if (!settings.CorruptionCheck)
+        AudioConverterSettings? sharedSettings = GetSharedPostProcessingSettings();
+        // Per-slskd CorruptionCheck is AND-gated with the global toggle so existing
+        // users who explicitly opted out don't get scans turned back on by the new
+        // global default. Tagging has no per-slskd analogue.
+        bool scanEnabled = (sharedSettings?.EnableCorruptFileScan ?? false) && settings.CorruptionCheck;
+        bool tagEnabled = sharedSettings?.EnablePreImportTagging ?? false;
+
+        if (!scanEnabled && !tagEnabled)
             return;
 
         Task task = Task.Run(async () =>
@@ -509,23 +531,43 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                     return;
                 }
 
-                // 1. Corruption scan across every audio file in the folder.
-                List<CorruptionStrike> strikes = await ScanFolderForCorruptionAsync(item, folderPath, cts.Token);
-
-                if (strikes.Count > 0)
+                if (scanEnabled)
                 {
-                    // 2a. Corruption path: delete folder, short-circuit retries,
-                    //     publish DownloadFailedEvent. Skip tagging (file is gone).
-                    await _corruptionHandler.HandleCorruptDownloadAsync(item, strikes, folderPath, settings, cts.Token);
-                    return;
+                    // 1. Corruption scan across every audio file in the folder.
+                    List<CorruptionStrike> strikes = await ScanFolderForCorruptionAsync(item, folderPath, cts.Token);
+
+                    if (strikes.Count > 0)
+                    {
+                        // 2a. Corruption path: delete folder, short-circuit retries,
+                        //     publish DownloadFailedEvent. Skip tagging (file is gone).
+                        await _corruptionHandler.HandleCorruptDownloadAsync(item, strikes, folderPath, settings, cts.Token);
+                        return;
+                    }
                 }
 
-                // 2b. Clean path: run Lidarr-backed pre-import tagging.
-                await _preImportTagger.TagCompletedDownloadAsync(
-                    item,
-                    folderPath,
-                    TagConfidenceThreshold,
-                    cts.Token);
+                if (tagEnabled)
+                {
+                    Album? album = item.ResolvedAlbum;
+                    Artist? artist = album?.Artist?.Value;
+                    if (album == null || artist == null)
+                    {
+                        _logger.Debug($"[post-process] Pre-import tag: skipping {item.ID}; no ResolvedAlbum/Artist (item likely reconstructed from history in inclusive mode).");
+                        return;
+                    }
+
+                    AlbumRelease? albumRelease = album.AlbumReleases?.Value?.FirstOrDefault(r => r.Monitored)
+                                                  ?? album.AlbumReleases?.Value?.FirstOrDefault();
+
+                    // 2b. Clean path: run Lidarr-backed pre-import tagging.
+                    await _preImportTagger.TagCompletedDownloadAsync(
+                        album,
+                        artist,
+                        albumRelease,
+                        item.ID,
+                        folderPath,
+                        TagConfidenceThreshold,
+                        cts.Token);
+                }
             }
             catch (OperationCanceledException)
             {
@@ -570,20 +612,20 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         int concurrency = Math.Max(2, Environment.ProcessorCount / 2);
         using SemaphoreSlim gate = new(concurrency);
 
-        Task<(string path, SlskdCorruptionScanner.Result result)>[] tasks = audioFiles.Select(async path =>
+        Task<(string path, CorruptionScanner.Result result)>[] tasks = audioFiles.Select(async path =>
         {
             await gate.WaitAsync(ct);
             try
             {
-                SlskdCorruptionScanner.Result r = await _corruptionScanner.ScanAsync(path, CorruptionScanTimeoutSeconds, ct);
+                CorruptionScanner.Result r = await _corruptionScanner.ScanAsync(path, CorruptionScanTimeoutSeconds, ct);
                 return (path, r);
             }
             finally { gate.Release(); }
         }).ToArray();
 
-        foreach (Task<(string path, SlskdCorruptionScanner.Result result)> t in tasks)
+        foreach (Task<(string path, CorruptionScanner.Result result)> t in tasks)
         {
-            (string path, SlskdCorruptionScanner.Result result) = await t;
+            (string path, CorruptionScanner.Result result) = await t;
             if (!result.IsCorrupt)
                 continue;
 

@@ -2,7 +2,7 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 	
 	<PropertyGroup>
-		<SubmoduleDir>$(MSBuildProjectDirectory)\..\Submodules\Lidarr</SubmoduleDir>
+		<SubmoduleDir>$(MSBuildProjectDirectory)\..\..\ext\Lidarr</SubmoduleDir>
 		<!-- Check for a known file/folder that should exist if submodule is initialized -->
 		<SubmoduleMarker>$(SubmoduleDir)\src\NzbDrone.Core\Lidarr.Core.csproj</SubmoduleMarker>
 	</PropertyGroup>
