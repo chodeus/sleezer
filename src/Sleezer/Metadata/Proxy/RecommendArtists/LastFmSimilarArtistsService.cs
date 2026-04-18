@@ -101,9 +101,9 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.RecommendArtists
                 CacheType = (CacheType)settings.RequestCacheType,
             };
 
-            _imageScraper ??= new LastfmImageScraper(_httpClient, NzbDrone.Plugin.Sleezer.UserAgent, _cache);
+            _imageScraper ??= new LastfmImageScraper(_httpClient, SleezerPlugin.UserAgent, _cache);
 
-            _apiService ??= new LastfmApiService(_httpClient, NzbDrone.Plugin.Sleezer.UserAgent)
+            _apiService ??= new LastfmApiService(_httpClient, SleezerPlugin.UserAgent)
             {
                 ApiKey = settings.ApiKey,
                 PageSize = 50,
@@ -123,7 +123,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.RecommendArtists
                     .AddQueryParam("api_key", settings.ApiKey)
                     .AddQueryParam("format", "json")
                     .AddQueryParam("limit", limit)
-                    .SetHeader("User-Agent", NzbDrone.Plugin.Sleezer.UserAgent)
+                    .SetHeader("User-Agent", SleezerPlugin.UserAgent)
                     .Accept(HttpAccept.Json);
 
                 if (isMbid)

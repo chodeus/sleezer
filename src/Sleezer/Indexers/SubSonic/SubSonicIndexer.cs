@@ -56,7 +56,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.SubSonic
                 {
                     RequestTimeout = TimeSpan.FromSeconds(Settings.RequestTimeout)
                 };
-                request.Headers["User-Agent"] = NzbDrone.Plugin.Sleezer.UserAgent;
+                request.Headers["User-Agent"] = SleezerPlugin.UserAgent;
 
                 _logger.Trace("Testing SubSonic connection to: {BaseUrl}", Settings.BaseUrl);
 

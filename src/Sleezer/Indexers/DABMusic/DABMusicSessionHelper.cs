@@ -63,7 +63,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.DABMusic
             {
                 HttpRequest request = new HttpRequestBuilder($"{baseUrl.TrimEnd('/')}/api/auth/login")
                     .SetHeader("Content-Type", "application/json")
-                    .SetHeader("User-Agent", NzbDrone.Plugin.Sleezer.UserAgent)
+                    .SetHeader("User-Agent", SleezerPlugin.UserAgent)
                     .Post()
                     .Build();
 

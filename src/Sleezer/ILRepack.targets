@@ -13,7 +13,6 @@
 			<InputAssemblies Include="$(OutputPath)Acornima.dll" />
 			<InputAssemblies Include="$(OutputPath)System.Text.Json.dll" />
 			<InputAssemblies Include="$(OutputPath)Jint.dll" />
-			<InputAssemblies Include="$(OutputPath)System.Diagnostics.DiagnosticSource.dll" />
 			<!-- From Deezer plugin -->
 			<InputAssemblies Include="$(OutputPath)AngleSharp.dll" />
 			<InputAssemblies Include="$(OutputPath)AngleSharp.XPath.dll" />

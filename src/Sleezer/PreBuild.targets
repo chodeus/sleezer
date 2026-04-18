@@ -28,20 +28,24 @@
 			Condition="!Exists('$(SubmoduleMarker)')" />
 	</Target>
 	
-	<!-- Build the Lidarr frontend if unavailable -->
-	<Target Name="LidarrFrontendBuild" BeforeTargets="BeforeBuild" DependsOnTargets="InitializeSubmodules" Condition="'$(CI)' != 'true'">
-		<Message Importance="High" Text="Checking Lidarr frontend..." Condition="!Exists('$(SubmoduleDir)\_output\UI\')" />
-		
-		<Exec
-			Command="yarn install"
-			WorkingDirectory="$(SubmoduleDir)"
-			Condition="!Exists('$(SubmoduleDir)\_output\UI\')" />
-		<Exec
-			Command="yarn build"
-			WorkingDirectory="$(SubmoduleDir)"
-			Condition="!Exists('$(SubmoduleDir)\_output\UI\')" />
-		
-		<Message Importance="High" Text="Lidarr frontend built successfully." Condition="!Exists('$(SubmoduleDir)\_output\UI\')" />
+	<!--
+	  Build the Lidarr frontend if it isn't already built.
+	  Only runs locally (CI skips) and only if yarn is on PATH. If yarn isn't
+	  available we emit a warning and move on — building the plugin itself
+	  doesn't need the Lidarr UI, it's just convenient for people who want
+	  to run Lidarr + Sleezer from this working tree.
+	-->
+	<Target Name="LidarrFrontendBuild" BeforeTargets="BeforeBuild" DependsOnTargets="InitializeSubmodules" Condition="'$(CI)' != 'true' AND !Exists('$(SubmoduleDir)\_output\UI\')">
+		<Exec Command="command -v yarn || which yarn" IgnoreExitCode="true" ConsoleToMSBuild="true">
+			<Output TaskParameter="ExitCode" PropertyName="YarnAvailable" />
+		</Exec>
+
+		<Warning Text="yarn is not installed; skipping Lidarr frontend build. The plugin will still build, but Lidarr's web UI won't be available if you run Lidarr from this working tree. Install yarn (https://classic.yarnpkg.com/) to enable the UI build." Condition="'$(YarnAvailable)' != '0'" />
+
+		<Message Importance="High" Text="Building Lidarr frontend (yarn install; yarn build)..." Condition="'$(YarnAvailable)' == '0'" />
+		<Exec Command="yarn install" WorkingDirectory="$(SubmoduleDir)" Condition="'$(YarnAvailable)' == '0'" />
+		<Exec Command="yarn build" WorkingDirectory="$(SubmoduleDir)" Condition="'$(YarnAvailable)' == '0'" />
+		<Message Importance="High" Text="Lidarr frontend built successfully." Condition="'$(YarnAvailable)' == '0'" />
 	</Target>
 	
 </Project>

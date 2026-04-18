@@ -39,7 +39,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.SubSonic
         }
 
         private static string GenerateSaltFromAssembly() =>
-            CalculateMd5Hash(PluginInfo.InformationalVersion + NzbDrone.Plugin.Sleezer.UserAgent + NzbDrone.Plugin.Sleezer.LastStarted)[..7];
+            CalculateMd5Hash(PluginInfo.InformationalVersion + SleezerPlugin.UserAgent + SleezerPlugin.LastStarted)[..7];
 
         private static string CalculateMd5Hash(string input)
         {

@@ -52,7 +52,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.TripleTriple
                 RequestTimeout = TimeSpan.FromSeconds(_settings.RequestTimeout),
                 ContentSummary = new TripleTripleRequestData(baseUrl, country, codec, isSingle).ToJson()
             };
-            req.Headers["User-Agent"] = NzbDrone.Plugin.Sleezer.UserAgent;
+            req.Headers["User-Agent"] = SleezerPlugin.UserAgent;
             req.Headers["Referer"] = $"{baseUrl}/search/{Uri.EscapeDataString(query)}";
 
             chain.AddTier([new IndexerRequest(req)]);
@@ -67,7 +67,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.TripleTriple
                     RequestTimeout = TimeSpan.FromSeconds(_settings.RequestTimeout),
                     ContentSummary = new TripleTripleRequestData(baseUrl, country, codec, true).ToJson()
                 };
-                fallbackReq.Headers["User-Agent"] = NzbDrone.Plugin.Sleezer.UserAgent;
+                fallbackReq.Headers["User-Agent"] = SleezerPlugin.UserAgent;
                 fallbackReq.Headers["Referer"] = $"{baseUrl}/search/{Uri.EscapeDataString(query)}";
 
                 chain.AddTier([new IndexerRequest(fallbackReq)]);

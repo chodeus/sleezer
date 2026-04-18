@@ -2,7 +2,7 @@
 {
     public record MappingAgent
     {
-        public string UserAgent { get; set; } = NzbDrone.Plugin.Sleezer.UserAgent;
+        public string UserAgent { get; set; } = SleezerPlugin.UserAgent;
 
         public static T? MapAgent<T>(T? mappingAgent, string userAgent) where T : MappingAgent
         {

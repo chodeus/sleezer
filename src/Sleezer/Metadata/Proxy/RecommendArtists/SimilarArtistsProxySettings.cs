@@ -24,7 +24,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.RecommendArtists
 
             // Validate the system stability for Memory cache
             RuleFor(x => x.RequestCacheType)
-                .Must((type) => type == (int)CacheType.Permanent || NzbDrone.Plugin.Sleezer.AverageRuntime > TimeSpan.FromDays(1))
+                .Must((type) => type == (int)CacheType.Permanent || SleezerPlugin.AverageRuntime > TimeSpan.FromDays(1))
                 .When(x => x.RequestCacheType == (int)CacheType.Memory)
                 .WithMessage("The system is not detected as stable. Please wait for the system to stabilize or use permanent cache.");
 
@@ -35,7 +35,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.RecommendArtists
 
             // Validate the system stability for Memory cache
             RuleFor(x => x.RequestCacheType)
-                .Must((type) => type == (int)CacheType.Permanent || NzbDrone.Plugin.Sleezer.AverageRuntime > TimeSpan.FromDays(1))
+                .Must((type) => type == (int)CacheType.Permanent || SleezerPlugin.AverageRuntime > TimeSpan.FromDays(1))
                 .When(x => x.RequestCacheType == (int)CacheType.Memory)
                 .WithMessage("The system is not detected as stable. Please wait for the system to stabilize or use permanent cache.");
         }

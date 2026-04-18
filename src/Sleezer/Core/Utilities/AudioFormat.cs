@@ -1,6 +1,4 @@
-﻿using NzbDrone.Plugin.Sleezer.Download.Clients.YouTube;
-
-namespace NzbDrone.Plugin.Sleezer.Core.Utilities
+﻿namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 {
     public enum AudioFormat
     {
@@ -150,18 +148,6 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             AudioFormat.AC3 => ".ac3",
             AudioFormat.EAC3 => ".ec3",
             _ => ".aac" // Default to AAC if the format is unknown
-        };
-
-        /// <summary>
-        /// Converts a <see cref="ReEncodeOptions"/> value to the corresponding <see cref="AudioFormat"/>.
-        /// </summary>
-        public static AudioFormat ConvertOptionToAudioFormat(ReEncodeOptions reEncodeOption) => reEncodeOption switch
-        {
-            ReEncodeOptions.AAC => AudioFormat.AAC,
-            ReEncodeOptions.MP3 => AudioFormat.MP3,
-            ReEncodeOptions.Opus => AudioFormat.Opus,
-            ReEncodeOptions.Vorbis => AudioFormat.Vorbis,
-            _ => AudioFormat.Unknown
         };
 
         /// <summary>

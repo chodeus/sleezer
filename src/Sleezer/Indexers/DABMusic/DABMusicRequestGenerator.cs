@@ -67,7 +67,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.DABMusic
                 SuppressHttpError = false,
                 LogHttpError = true
             };
-            req.Headers["User-Agent"] = NzbDrone.Plugin.Sleezer.UserAgent;
+            req.Headers["User-Agent"] = SleezerPlugin.UserAgent;
 
             DABMusicSession? session = _sessionManager.GetOrCreateSession(baseUrl, _settings.Email, _settings.Password);
 

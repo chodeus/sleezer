@@ -12,6 +12,7 @@ using NzbDrone.Core.Extras.Metadata;
 using NzbDrone.Core.Music;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Common.Instrumentation.Extensions;
+using NzbDrone.Plugin.Sleezer.Core.Model;
 using NzbDrone.Plugin.Sleezer.Core.PostProcessing;
 using NzbDrone.Plugin.Sleezer.Metadata.FFmpeg;
 using XabeFFmpeg = Xabe.FFmpeg.FFmpeg;

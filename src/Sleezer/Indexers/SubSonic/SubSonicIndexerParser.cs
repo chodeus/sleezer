@@ -170,7 +170,7 @@ public class SubSonicIndexerParser(Logger logger, IHttpClient httpClient) : ISub
         {
             RequestTimeout = TimeSpan.FromSeconds(_settings!.RequestTimeout)
         };
-        request.Headers["User-Agent"] = NzbDrone.Plugin.Sleezer.UserAgent;
+        request.Headers["User-Agent"] = SleezerPlugin.UserAgent;
         return request;
     }
 

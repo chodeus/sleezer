@@ -52,7 +52,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Lucida
             try
             {
                 HttpRequest req = new(baseUrl);
-                req.Headers["User-Agent"] = NzbDrone.Plugin.Sleezer.UserAgent;
+                req.Headers["User-Agent"] = SleezerPlugin.UserAgent;
                 HttpResponse response = await _httpClient.ExecuteAsync(req);
                 if (response.StatusCode != System.Net.HttpStatusCode.OK)
                 {

@@ -89,7 +89,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.SubSonic
                 LogHttpError = true
             };
 
-            req.Headers["User-Agent"] = NzbDrone.Plugin.Sleezer.UserAgent;
+            req.Headers["User-Agent"] = SleezerPlugin.UserAgent;
             return new IndexerRequest(req);
         }
     }

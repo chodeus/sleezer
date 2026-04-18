@@ -44,7 +44,7 @@ namespace NzbDrone.Plugin.Sleezer.Download.Base
 
             HttpRequestMessage request = new(method, requestUrl);
 
-            request.Headers.Add("User-Agent", NzbDrone.Plugin.Sleezer.UserAgent);
+            request.Headers.Add("User-Agent", SleezerPlugin.UserAgent);
             request.Headers.Add("Accept", "application/json,text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8");
 
             return request;
@@ -280,7 +280,7 @@ namespace NzbDrone.Plugin.Sleezer.Download.Base
             try
             {
                 if (!request.Headers.Contains("User-Agent"))
-                    request.Headers.Add("User-Agent", NzbDrone.Plugin.Sleezer.UserAgent);
+                    request.Headers.Add("User-Agent", SleezerPlugin.UserAgent);
 
                 if (!request.Headers.Contains("Accept"))
                     request.Headers.Add("Accept", "application/json,text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8");

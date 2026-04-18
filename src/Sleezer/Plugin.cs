@@ -12,9 +12,14 @@ using NzbDrone.Core.Plugins.Commands;
 using NzbDrone.Core.Profiles.Delay;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
+// Disambiguate: our root namespace is `NzbDrone.Plugin.Sleezer`, which causes
+// C# to resolve the unqualified identifier `Plugin` to the `NzbDrone.Plugin`
+// namespace rather than the Lidarr base class `NzbDrone.Core.Plugins.Plugin`.
+using PluginBase = NzbDrone.Core.Plugins.Plugin;
+
 namespace NzbDrone.Plugin.Sleezer
 {
-    public class SleezerPlugin : Plugin
+    public class SleezerPlugin : PluginBase
 #if !MASTER_BRANCH
         , IHandle<ApplicationStartingEvent>
 #endif
