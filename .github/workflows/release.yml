@@ -71,3 +71,15 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -a "$TAG" -m "$TAG ($BUMP release)"
           git push origin "$TAG"
+
+    outputs:
+      tag: ${{ steps.next.outputs.tag }}
+
+  # Tags pushed by GITHUB_TOKEN don't trigger other workflows, so we invoke
+  # the build pipeline directly here instead of relying on main.yml's
+  # push:tags trigger to fire.
+  build:
+    needs: [tag]
+    uses: ./.github/workflows/main.yml
+    with:
+      tag_ref: refs/tags/${{ needs.tag.outputs.tag }}
