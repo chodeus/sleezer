@@ -12,6 +12,11 @@ on:
         required: true
         type: string
         description: "Branch name (passed from main workflow)"
+      tag_ref:
+        required: false
+        type: string
+        description: "Full git ref of the tag to build (e.g. refs/tags/v1.0.4). Falls back to GITHUB_REF when omitted, which is correct only for push:tags triggers — workflow_call invocations MUST pass this."
+        default: ""
     outputs:
       plugin_name:
         description: "The name of the plugin"
@@ -103,8 +108,21 @@ jobs:
 
       - name: Extract version from tag
         id: extract_version
+        env:
+          TAG_REF_INPUT: ${{ inputs.tag_ref }}
         run: |
-          TAG_VERSION=${GITHUB_REF#refs/tags/v}
+          # When invoked via workflow_call from release.yml, GITHUB_REF is the
+          # caller's ref (refs/heads/main) — useless for version extraction.
+          # Prefer the explicit tag_ref input; fall back to GITHUB_REF for the
+          # push:tags entry point where it's already refs/tags/vX.Y.Z.
+          if [ -n "$TAG_REF_INPUT" ]; then
+            SOURCE_REF="$TAG_REF_INPUT"
+          else
+            SOURCE_REF="$GITHUB_REF"
+          fi
+          echo "Version source ref: $SOURCE_REF"
+
+          TAG_VERSION=${SOURCE_REF#refs/tags/v}
           # Remove branch suffix if present
           if [[ "$TAG_VERSION" == *-* ]]; then
             VERSION_ONLY=${TAG_VERSION%%-*}

@@ -40,6 +40,11 @@ on:
         required: true
         type: string
         description: "Git branch name for target_commitish"
+      tag_ref:
+        required: false
+        type: string
+        description: "Full git ref of the tag (refs/tags/vX.Y.Z). Falls back to github.ref for push:tags; workflow_call invocations MUST pass this or the release ends up tagged against refs/heads/main."
+        default: ""
     outputs:
       release_url:
         description: "URL of the created release"
@@ -95,7 +100,7 @@ jobs:
         id: create_release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref }}
+          tag_name: ${{ inputs.tag_ref != '' && inputs.tag_ref || github.ref }}
           name: "🚀 Release ${{ inputs.package_version }}"
           body_path: ${{ steps.verify_artifacts.outputs.release_notes_path }}
           prerelease: ${{ inputs.is_prerelease == 'true' }}

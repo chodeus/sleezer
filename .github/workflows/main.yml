@@ -38,6 +38,7 @@ jobs:
     with:
       override_plugin_name: 'Sleezer'
       branch_name: ${{ needs.branch-detection.outputs.branch_name }}
+      tag_ref: ${{ inputs.tag_ref || github.ref }}
 
   # Extract git-specific information
   git-info:
@@ -110,5 +111,6 @@ jobs:
       git_commit: ${{ needs.git-info.outputs.git_commit }}
       branch_repo_url: ${{ needs.git-info.outputs.branch_repo_url }}
       git_branch: ${{ needs.git-info.outputs.git_branch }}
+      tag_ref: ${{ inputs.tag_ref || github.ref }}
     needs: [metadata, git-info, compilation, packaging, release-notes]
     if: needs.compilation.outputs.build_status == 'success'
