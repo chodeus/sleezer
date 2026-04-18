@@ -1,5 +1,6 @@
 using NLog;
 using NzbDrone.Core.Indexers;
+using NzbDrone.Core.Indexers.Exceptions;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Indexers.Soulseek.Search.Transformers;
 
@@ -96,6 +97,13 @@ public sealed class SearchPipeline : ISlskdSearchChain
         {
             var searchQuery = SearchQuery.FromContext(context) with { SearchText = query };
             return searchExecutor(searchQuery).ToList();
+        }
+        catch (RequestLimitReachedException)
+        {
+            // slskd is disconnected / temporarily banned — let Lidarr's indexer
+            // backoff handler see it so the indexer gets disabled once, instead
+            // of us swallowing it and logging a stack per strategy tier.
+            throw;
         }
         catch (Exception ex)
         {
