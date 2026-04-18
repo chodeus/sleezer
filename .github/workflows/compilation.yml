@@ -126,11 +126,16 @@ jobs:
       - name: Build with package version and metadata
         id: build_step
         run: |
-          # Restore NuGet packages first
-          dotnet restore *.sln
-          
+          # Restore NuGet packages first.
+          # NuGetAudit=false: the upstream Lidarr submodule pins MailKit 4.14
+          # which has a known moderate-severity advisory. Lidarr treats audit
+          # warnings as errors; disabling the audit lets restore succeed
+          # without us forking/patching the submodule.
+          dotnet restore *.sln -p:NuGetAudit=false
+
           # Then build with all parameters
           dotnet build *.sln -c Release -f ${{ inputs.framework }} \
+            -p:NuGetAudit=false \
             -p:Version=${{ inputs.package_version }} \
             -p:AssemblyVersion=${{ inputs.package_version }} \
             -p:FileVersion=${{ inputs.package_version }} \
