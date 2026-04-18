@@ -2,7 +2,7 @@
 
 ![License](https://img.shields.io/github/license/chodeus/sleezer) ![GitHub release (latest by date)](https://img.shields.io/github/v/release/chodeus/sleezer) ![GitHub last commit](https://img.shields.io/github/last-commit/chodeus/sleezer) ![GitHub stars](https://img.shields.io/github/stars/chodeus/sleezer)
 
-Sleezer is a Lidarr plugin that adds **Deezer**, **Slskd (Soulseek)**, and a handful of other music sources behind a single install. It also ships shared post-processing — corrupt-file scanning, tag cleanup, and featured-artist stripping — that applies to every download source, not just one. 🛠️
+Sleezer is a Lidarr plugin that adds **Deezer**, **Slskd (Soulseek)**, and a handful of other music sources behind a single install. It also ships shared post-processing — corrupt-file scanning, tag cleanup, and featured-artist stripping — that applies to every download source addedin this plugin 🛠️
 
 Credit where it's due: Sleezer is built on [Lidarr.Plugin.Deezer](https://github.com/TrevTV/Lidarr.Plugin.Deezer) by [TrevTV](https://github.com/TrevTV) and [Tubifarry](https://github.com/TypNull/Tubifarry) by [TypNull](https://github.com/TypNull). See [Credits](#credits-).
 
@@ -123,7 +123,7 @@ Sleezer ships with a downloader (`Xabe.FFmpeg.Downloader`) and will fetch FFmpeg
 
 ### Corrupt File Scan & Pre-Import Tagging 🧼
 
-These two features live under FFmpeg's settings because they depend on it. Both are available to **every** download source in Sleezer — Deezer, Slskd, and all of the web clients — not just Slskd like they were in Tubifarry.
+These two features live under FFmpeg's settings because they depend on it. Both are available to **every** download source in Sleezer — Deezer, Slskd, and all of the web clients.
 
 All three toggles default **on**.
 
