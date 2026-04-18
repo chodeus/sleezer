@@ -1,0 +1,278 @@
+# Sleezer for Lidarr 🎶
+
+![License](https://img.shields.io/github/license/chodeus/sleezer) ![GitHub release (latest by date)](https://img.shields.io/github/v/release/chodeus/sleezer) ![GitHub last commit](https://img.shields.io/github/last-commit/chodeus/sleezer) ![GitHub stars](https://img.shields.io/github/stars/chodeus/sleezer)
+
+Sleezer is a plugin for **Lidarr** that adds **Deezer**, **Slskd (Soulseek)**, and a handful of other music sources to your library management — all behind a single plugin install. It's a merge of the best parts of [Lidarr.Plugin.Deezer](https://github.com/TrevTV/Lidarr.Plugin.Deezer) (by [TrevTV](https://github.com/TrevTV)) and [Tubifarry](https://github.com/TypNull/Tubifarry) (by [TypNull](https://github.com/TypNull)), with the YouTube, Spotify, Lyrics, and telemetry pieces removed and the corrupt-file / pre-import-tag handling made available to every source. 🛠️
+
+> **Note**: This is a fresh merge. Some details below may drift as the code settles — open an issue if something reads stale.
+
+---
+
+## Table of Contents 📑
+
+1. [Installation 🚀](#installation-)
+2. [Deezer Setup 🎧](#deezer-setup-)
+3. [Soulseek (Slskd) Setup 🐟](#soulseek-slskd-setup-)
+4. [Web Clients 📻](#web-clients-)
+5. [FFmpeg 🎛️](#ffmpeg-️)
+6. [Corrupt File Scan & Pre-Import Tagging 🧼](#corrupt-file-scan--pre-import-tagging-)
+7. [Queue Cleaner 🧹](#queue-cleaner-)
+8. [Search Sniper 🏹](#search-sniper-)
+9. [Custom Metadata Sources 🧩](#custom-metadata-sources-)
+10. [Similar Artists 🧷](#similar-artists-)
+11. [Troubleshooting 🛠️](#troubleshooting-)
+12. [Credits 🙌](#credits-)
+13. [License 📄](#license-)
+
+---
+
+## Installation 🚀
+
+Sleezer requires a Lidarr install running on the `plugins` branch. If you're on Docker, the [hotio](https://hotio.dev) `pr-plugins` image is the easiest way to get there:
+
+```yml
+  lidarr:
+    image: ghcr.io/hotio/lidarr:pr-plugins
+    container_name: lidarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+    volumes:
+      - /path/to/config/:/config
+      - /path/to/downloads/:/downloads
+      - /path/to/music:/music
+    ports:
+      - 8686:8686
+    restart: unless-stopped
+```
+
+1. In Lidarr, go to `System -> Plugins`.
+2. Paste `https://github.com/chodeus/sleezer` into the GitHub URL box and click **Install**.
+3. Restart Lidarr when prompted.
+
+---
+
+### Deezer Setup 🎧
+
+Sleezer talks to Deezer directly (no Deemix middleman) using the `DeezNET` library.
+
+> ⚠️ Deezer actively moves against downloading tools. Sleezer does its best, but there is no guarantee you won't be rate-limited or have an ARL banned.
+
+#### Setting Up the Deezer Indexer
+
+1. Go to `Settings -> Indexers` and click **Add**.
+2. In the modal, select `Deezer` (under **Other** at the bottom).
+3. Paste your personal ARL into the box. If you leave it blank the plugin will pick a public ARL automatically — this works but is less reliable.
+4. Press **Save**. The first save performs a handful of auth calls and can take a few seconds.
+
+#### Setting Up the Deezer Download Client
+
+1. Go to `Settings -> Download Clients` and click **Add**.
+2. Select `Deezer` from the list.
+3. Set the download path and the audio quality you want.
+4. **Profiles → Delay Profiles**: click the wrench on the default profile and tick **Deezer** so Lidarr is allowed to grab releases from it.
+
+#### ARL tips
+
+* If your downloads suddenly start failing, rotate the ARL before anything else. Most "Deezer broke" reports are single-ARL bans.
+* Leaving the ARL field blank uses Sleezer's public-ARL rotation — works but slower and occasionally stale.
+
+---
+
+### Soulseek (Slskd) Setup 🐟
+
+Sleezer includes both the Slskd indexer and download client, so Lidarr can search Soulseek and grab results through your existing Slskd instance.
+
+#### Setting Up the Slskd Indexer
+
+1. Navigate to `Settings -> Indexers` and click **Add**.
+2. Select `Slskd` from the list.
+3. Configure:
+   * **URL**: the URL of your Slskd instance (e.g. `http://localhost:5030`).
+   * **API Key**: from Slskd's Options panel.
+   * **Include Only Audio Files**: enable to filter search results.
+
+#### Setting Up the Slskd Download Client
+
+1. Go to `Settings -> Download Clients` and click **Add**.
+2. Select `Slskd` from the list.
+3. The download path is fetched from Slskd automatically; if it doesn't match the host view, use **Remote Path** mappings.
+
+---
+
+### Web Clients 📻
+
+Sleezer also ships a family of "web-client" indexers inherited from Tubifarry. These are third-party music services that vary in uptime and quality — Sleezer isn't responsible for any of them.
+
+**Supported:**
+* **Lucida** — a multi-source music-downloading service.
+* **DABmusic** — a high-resolution audio streaming platform.
+* **T2Tunes** — a music-downloading service backed by Amazon Music.
+* **Subsonic** — a music-streaming API standard with broad compatibility.
+
+The Subsonic indexer/client is generic: any service that implements the [Subsonic API](https://www.subsonic.org/pages/api.jsp) should plug in without modification.
+
+---
+
+### FFmpeg 🎛️
+
+**FFmpeg** (the component formerly known as "Codec Tinker" in Tubifarry) converts imported audio files between formats. You can set default rules (e.g. "convert all WAV to FLAC", "convert AAC ≥ 256k to MP3 300k") or per-artist overrides. It also backs the corrupt-file scan and pre-import tagging described in the next section, so even users who never touch conversion still benefit from having it configured.
+
+> Lossy formats (MP3, AAC) can't be converted up into lossless formats (FLAC, WAV). Quality that wasn't there can't be restored.
+
+#### How to Enable FFmpeg
+
+1. Go to `Settings -> Metadata` in Lidarr.
+2. Open **FFmpeg** (the MetadataConsumer).
+3. Toggle the switch to enable.
+
+#### How to Use FFmpeg
+
+1. **Default Conversion Settings** — pick your target format (FLAC, Opus, MP3, ALAC …).
+2. **Custom Conversion Rules** — strings like `wav -> flac`, `AAC>=256k -> MP3:300k`, or `all -> alac`.
+3. **Custom Conversion Rules On Artists** — tags like `opus-192` applied to every album of a specific artist.
+4. **Format toggles** — convert-MP3, convert-FLAC, etc., if you want the simple per-format toggles instead of rules.
+
+#### FFmpeg binary
+
+Sleezer ships with a downloader (`Xabe.FFmpeg.Downloader`) and will fetch FFmpeg on first use if it can't find one on PATH. You can also set the FFmpeg binary path explicitly in the settings panel.
+
+---
+
+### Corrupt File Scan & Pre-Import Tagging 🧼
+
+These two features live under FFmpeg's settings because they depend on it. Both are available to **every** download source in Sleezer — Deezer, Slskd, and all of the web clients — not just Slskd like they were in Tubifarry.
+
+All three toggles default **on**.
+
+#### Enable Corrupt File Scan
+
+When a download finishes, Sleezer runs each audio file through FFmpeg to detect truncated/corrupt streams. If something's broken, the download is deleted and marked failed so Lidarr grabs a different release instead of importing a silent half-track.
+
+#### Enable Pre-Import Tagging
+
+Before Lidarr sees the finished folder, Sleezer reads each file's embedded tags, matches them to the intended Lidarr release via MusicBrainz metadata, and rewrites the file's tags to match. The goal is to make Lidarr's importer see exactly the album/track Lidarr asked for, not whatever the download source happened to name things.
+
+#### Strip Featured Artists
+
+This is the one that fixes the classic "75% match" import failure on Deezer. Deezer's track titles often read `"Song Name (feat. Other Artist)"`. Lidarr compares that against MusicBrainz which just lists `"Song Name"`, and the fuzzy match falls just under Lidarr's 80% default threshold — so the import silently fails.
+
+With **Strip Featured Artists** enabled, Sleezer:
+
+1. Reads the Title/Artist/AlbumArtist tags from the file.
+2. Strips bracketed featured-artist suffixes: `(feat. X)`, `[featuring Y]`, `{ft. Z}` — case-insensitive, bracket-style agnostic.
+3. Writes the cleaned tags back to the file.
+4. Renames the file from the cleaned tag so the filename Lidarr parses also matches.
+
+Bare-text suffixes without brackets (`Foo feat. Bar`) are left alone to avoid false positives on track titles that legitimately contain the word "feat".
+
+---
+
+### Queue Cleaner 🧹
+
+**Queue Cleaner** handles downloads that fail to import. When Lidarr can't import a grab (missing tracks, bad metadata, etc.), Queue Cleaner can rename files from their embedded tags, retry the import, blocklist the release, or just remove the files.
+
+**Key options:**
+* *Blocklist* — remove, blocklist, or both, for failed imports.
+* *Rename* — auto-rename folders and tracks from embedded metadata.
+* *Clean Imports* — rule-based: clean when tracks are missing, metadata is incomplete, or always.
+* *Retry Finding Release* — auto-retry search if the import failed.
+
+**Enable:** `Settings -> Connect`, add a new **Queue Cleaner** connection, configure.
+
+---
+
+### Search Sniper 🏹
+
+**Search Sniper** staggers searches for missing albums so you don't hammer every indexer at once. Instead of running the wanted-list in one pass, it picks a few random albums at an interval and searches just those, tracking what's been tried recently.
+
+You can also trigger it manually from the **Tasks** tab.
+
+**Enable:** `Settings -> Metadata`, open **Search Sniper**, and configure:
+* **Picks Per Interval** — how many items to search each cycle.
+* **Min Refresh Interval** — how often to run.
+* **Cache Type** — Memory or Permanent.
+* **Cache Retention Time** — days to keep the cache.
+* **Pause When Queued** — stop when the queue hits this size.
+* **Search Options** — at least one of Missing albums / Missing tracks / Cutoff not met.
+
+---
+
+### Custom Metadata Sources 🧩
+
+Sleezer can fetch artist and album metadata from **Discogs**, **Deezer**, and **Last.fm** in addition to MusicBrainz. These fill gaps when MusicBrainz is incomplete — cover art, additional artist bios, etc. The **MetaMix** layer combines them intelligently.
+
+**Enable a single source:**
+
+1. `Settings -> Metadata`, open the source you want (Discogs, Deezer, Last.fm).
+2. Toggle on.
+3. Configure **User Agent**, **API Key**, caching mode, cache directory.
+
+**Enable MetaMix:**
+
+1. `Settings -> Metadata`, open **MetaMix**.
+2. **Priority Rules** — hierarchy among sources (lower number = higher priority).
+3. **Dynamic Threshold** — how willing MetaMix is to use lower-priority sources.
+4. **Multi-Source Population** — missing fields from the primary get filled in from secondary sources.
+
+Best results come with artists that are linked across multiple metadata systems, which is typically the case on MusicBrainz.
+
+---
+
+### Similar Artists 🧷
+
+**Similar Artists** lets you discover related artists via Last.fm's recommendation data, right inside Lidarr's search. Prefix an artist search with `~` and you get back a list of recommendations ready to add.
+
+**Enable:** `Settings -> Metadata`, enable these three:
+* **Similar Artists** — enter your Last.fm API key.
+* **Lidarr Default** — required for normal searches.
+* **MetaMix** — coordinates the search flow.
+
+**Examples:**
+* `similar:Pink Floyd`
+* `~20244d07-534f-4eff-b4d4-930878889970`
+
+---
+
+## Troubleshooting 🛠️
+
+* **Deezer downloads fail / 403s** — rotate the ARL. Single-ARL bans are the most common cause.
+* **Slskd download path permissions** — Lidarr needs read/write on the Slskd download folder. For Docker, check volume mounts and PUID/PGID.
+* **FFmpeg issues** — make sure FFmpeg is on PATH, or set its location explicitly in FFmpeg settings. If it's still failing, enable Lidarr's Trace logging and look for the full ffmpeg command line in the log.
+* **Metadata not being added** — confirm your files are in a supported format. If you're using FFmpeg conversion, check the output format is one Lidarr accepts (AAC in MP4, FLAC, MP3, Opus, ALAC).
+* **"X% match" import failure on Deezer** — enable **Strip Featured Artists** (see above). This is the single biggest fix for Deezer's `(feat. X)` titles being rejected by Lidarr's 80% matcher.
+* **No release found** — confirm the indexer is enabled in Delay Profiles (the wrench icon on each profile).
+
+Enable **Debug** log level in `Settings -> General` if you're filing an issue — Sleezer logs the request/response lifecycle at Debug and ARL/API-key values are redacted.
+
+---
+
+## Credits 🙌
+
+Sleezer exists because of two people:
+
+* **[TrevTV](https://github.com/TrevTV)** — author of [Lidarr.Plugin.Deezer](https://github.com/TrevTV/Lidarr.Plugin.Deezer) and the [DeezNET](https://github.com/TrevTV/DeezNET) client library that powers Sleezer's Deezer integration. Nothing Deezer-related in this plugin would exist without his work.
+* **[TypNull](https://github.com/TypNull)** — author of [Tubifarry](https://github.com/TypNull/Tubifarry), which contributed the Slskd integration, web-client framework, FFmpeg pipeline, Queue Cleaner, Search Sniper, custom metadata sources, and Similar Artists. Sleezer is basically Tubifarry with YouTube/Spotify/Lyrics/telemetry stripped out and Deezer bolted in.
+
+Also thanks to the maintainers of Lidarr's plugin system, and the authors of every bundled library listed in [NOTICE](NOTICE).
+
+If you're reporting an issue with something that originated upstream (DeezNET, the Slskd protocol, etc.), the bug tracker on the upstream repo is usually the right place. For issues with Sleezer's integration of them — or anything added in the merge — the [Sleezer issue tracker](https://github.com/chodeus/sleezer/issues) is the right place.
+
+---
+
+## Contributing 🤝
+
+Open an issue or PR on the [GitHub repo](https://github.com/chodeus/sleezer). Contributions follow the guidelines in [CONTRIBUTION.md](CONTRIBUTION.md).
+
+---
+
+## License 📄
+
+Sleezer is licensed under **GPL-3.0**. See [LICENSE](LICENSE) for the full text and [NOTICE](NOTICE) for attributions to the upstream projects and bundled libraries.
+
+The GPL-3.0 license is required because Sleezer bundles [DeezNET](https://github.com/TrevTV/DeezNET), which is GPL-3.0 itself.
+
+---
+
+Enjoy seamless music downloads with Sleezer! 🎧

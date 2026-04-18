@@ -1,0 +1,70 @@
+Sleezer — a Lidarr plugin for Deezer, Slskd, and other music sources.
+
+Copyright (C) 2026 chodeus and contributors.
+
+Sleezer is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License as published by the Free Software
+Foundation, version 3. See the LICENSE file for the full text.
+
+
+== Attributions ==
+
+Sleezer was assembled by merging two upstream Lidarr plugins. It would not
+exist without the original authors of those projects.
+
+* Portions of the Deezer indexer, Deezer download client, ARL handling, and
+  the `DeezNET` client library are Copyright (C) TrevTV and contributors, and
+  were originally distributed as part of `Lidarr.Plugin.Deezer`.
+    https://github.com/TrevTV/Lidarr.Plugin.Deezer
+    https://github.com/TrevTV/DeezNET  (GPL-3.0)
+
+* Portions of the Slskd indexer and download client, the multi-source web-
+  client framework (Lucida, DABmusic, T2Tunes, Subsonic), the FFmpeg
+  conversion pipeline (formerly "Codec Tinker"), Queue Cleaner, Search
+  Sniper, custom metadata source framework, and Similar Artists recommender
+  are Copyright (C) TypNull and contributors, and were originally distributed
+  as part of `Tubifarry` under the MIT License.
+    https://github.com/TypNull/Tubifarry  (MIT — relicensed under GPL-3.0 in Sleezer)
+
+The MIT license under which Tubifarry is originally released is compatible
+with GPL-3.0; the combined work is distributed under GPL-3.0 because the
+bundled `DeezNET` library is GPL-3.0.
+
+
+== Bundled third-party libraries ==
+
+Sleezer merges the following libraries into the final plugin assembly via
+ILRepack. Each is distributed under its own license; the file named below
+contains or links to the authoritative license text from upstream.
+
+ Library                                License       Upstream
+ ---------------------------------------  ------------  ---------------------------------------------
+ DeezNET                                  GPL-3.0       https://github.com/TrevTV/DeezNET
+ TagLibSharp                              LGPL-2.1      https://github.com/mono/taglib-sharp
+ Xabe.FFmpeg                              Apache-2.0    https://github.com/tomaszzmuda/Xabe.FFmpeg
+ Xabe.FFmpeg.Downloader                   Apache-2.0    https://github.com/tomaszzmuda/Xabe.FFmpeg
+ Jint                                     BSD-2-Clause  https://github.com/sebastienros/jint
+ AngleSharp                               MIT           https://github.com/AngleSharp/AngleSharp
+ AngleSharp.XPath                         MIT           https://github.com/AngleSharp/AngleSharp.XPath
+ BouncyCastle.Cryptography                MIT           https://github.com/bcgit/bc-csharp
+ SkiaSharp                                MIT           https://github.com/mono/SkiaSharp
+ FuzzySharp                               MIT           https://github.com/JakeBayer/FuzzySharp
+ Shard.DownloadAssistant (DownloadAssistant, Requests) MIT  https://github.com/Shard-Software/Shard.DownloadAssistant
+ Acornima                                 MIT           https://github.com/adams85/acornima
+ System.Text.Json                         MIT           https://github.com/dotnet/runtime
+ System.Diagnostics.DiagnosticSource      MIT           https://github.com/dotnet/runtime
+ Microsoft.Extensions.Logging.Abstractions MIT          https://github.com/dotnet/runtime
+ Microsoft.Bcl.AsyncInterfaces            MIT           https://github.com/dotnet/runtime
+
+TagLibSharp (LGPL-2.1) is distributed as a merged assembly for plugin-loader
+convenience; upstream source is available at the URL above, satisfying the
+LGPL's source-availability requirement for linked libraries.
+
+
+== Reporting issues with third-party code ==
+
+Bugs or security issues in the libraries listed above should be reported to
+their upstream projects. Bugs in Sleezer's integration of them — or in code
+that originated in `Lidarr.Plugin.Deezer` or `Tubifarry` and has been merged
+here — belong on the Sleezer issue tracker:
+    https://github.com/chodeus/sleezer/issues
