@@ -30,6 +30,27 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
 
     public class DownloadItem
     {
+        // Rebuilds the minimal display state for a download that completed in a
+        // prior plugin lifetime. The returned item is Lidarr-facing only — it
+        // holds no DeezNET handles, no track list, and must never be re-enqueued
+        // for download. It exists so GetQueue can report completed downloads
+        // that are still on disk after a restart.
+        public static DownloadItem FromPersisted(PersistedDownloadItem persisted)
+        {
+            return new DownloadItem
+            {
+                ID = persisted.ID,
+                Title = persisted.Title,
+                Artist = persisted.Artist,
+                Explicit = persisted.Explicit,
+                Bitrate = persisted.Bitrate,
+                TotalSize = persisted.TotalSize,
+                DownloadedSize = persisted.TotalSize,
+                DownloadFolder = persisted.DownloadFolder,
+                Status = persisted.Status,
+            };
+        }
+
         public static async Task<DownloadItem?> From(RemoteAlbum remoteAlbum)
         {
             string url = remoteAlbum.Release.DownloadUrl.Trim();

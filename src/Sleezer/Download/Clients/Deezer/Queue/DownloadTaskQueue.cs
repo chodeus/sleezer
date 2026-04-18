@@ -47,6 +47,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
         private readonly IMetadataFactory _metadataFactory;
         private readonly IDiskProvider _diskProvider;
         private bool _ffmpegResolved;
+        private int _rehydrated;
 
         public DownloadTaskQueue(
             int capacity,
@@ -72,7 +73,12 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
             _logger = logger;
         }
 
-        public void SetSettings(DeezerSettings settings) => _settings = settings;
+        public void SetSettings(DeezerSettings settings)
+        {
+            _settings = settings;
+            if (Interlocked.CompareExchange(ref _rehydrated, 1, 0) == 0)
+                TryRehydrateFromDisk(settings);
+        }
 
         public void StartQueueHandler()
         {
@@ -94,6 +100,8 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
 
                     if (item.Status == DownloadItemStatus.Completed)
                         await RunPostProcessAsync(item, token);
+
+                    TryPersistCompletedItem(item);
                 }
                 catch (TaskCanceledException)
                 {
@@ -293,10 +301,16 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
             if (workItem == null)
                 return;
 
-            _cancellationSources[workItem].Cancel();
+            // Rehydrated items were never enqueued, so they have no cancellation source.
+            if (_cancellationSources.TryGetValue(workItem, out CancellationTokenSource? src))
+            {
+                src.Cancel();
+                _cancellationSources.Remove(workItem);
+            }
+
+            TryDeleteSidecar(workItem);
 
             _items.Remove(workItem);
-            _cancellationSources.Remove(workItem);
         }
 
         public DownloadItem[] GetQueueListing()
@@ -310,6 +324,90 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                 return src!.Token;
 
             return default;
+        }
+
+        private void TryPersistCompletedItem(DownloadItem item)
+        {
+            // Only completed downloads are persisted. Failed/cancelled items
+            // may have had files deleted by the corrupt-scan pass, so their
+            // on-disk state isn't a valid import target.
+            if (item.Status != DownloadItemStatus.Completed)
+                return;
+
+            if (string.IsNullOrEmpty(item.DownloadFolder) || !_diskProvider.FolderExists(item.DownloadFolder))
+                return;
+
+            try
+            {
+                PersistedDownloadItem.CaptureFrom(item).WriteTo(item.DownloadFolder);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warn(ex, "Failed to persist Deezer download state for {Title}; this download will not survive a Lidarr restart.", item.Title);
+            }
+        }
+
+        private void TryRehydrateFromDisk(DeezerSettings settings)
+        {
+            string? root = settings.DownloadPath;
+            if (string.IsNullOrEmpty(root) || !_diskProvider.FolderExists(root))
+                return;
+
+            try
+            {
+                string[] sidecars = Directory.GetFiles(
+                    root,
+                    PersistedDownloadItem.SidecarFileName,
+                    SearchOption.AllDirectories);
+
+                int count = 0;
+                foreach (string sidecarPath in sidecars)
+                {
+                    PersistedDownloadItem? persisted;
+                    try
+                    {
+                        persisted = PersistedDownloadItem.TryRead(sidecarPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.Debug(ex, "Skipping unreadable Deezer sidecar at {Path}", sidecarPath);
+                        continue;
+                    }
+
+                    if (persisted == null || persisted.Status != DownloadItemStatus.Completed)
+                        continue;
+
+                    if (_items.Any(i => i.ID == persisted.ID))
+                        continue;
+
+                    _items.Add(DownloadItem.FromPersisted(persisted));
+                    count++;
+                }
+
+                if (count > 0)
+                    _logger.Info("Rehydrated {Count} completed Deezer download(s) from disk.", count);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warn(ex, "Failed to scan Deezer download path for persisted state; starting with an empty queue.");
+            }
+        }
+
+        private void TryDeleteSidecar(DownloadItem item)
+        {
+            if (string.IsNullOrEmpty(item.DownloadFolder))
+                return;
+
+            try
+            {
+                string path = PersistedDownloadItem.SidecarPath(item.DownloadFolder);
+                if (File.Exists(path))
+                    File.Delete(path);
+            }
+            catch (Exception ex)
+            {
+                _logger.Debug(ex, "Failed to delete Deezer sidecar in {Folder}", item.DownloadFolder);
+            }
         }
     }
 }

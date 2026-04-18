@@ -1,0 +1,73 @@
+using System.IO;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using DeezNET.Data;
+
+namespace NzbDrone.Core.Download.Clients.Deezer.Queue
+{
+    // On-disk record written as a sidecar next to the completed audio files so
+    // Lidarr can re-discover Deezer downloads after the plugin restarts. Only
+    // the fields ToDownloadClientItem actually reads are persisted — RemoteAlbum
+    // and the live DeezNET handles don't round-trip and aren't needed once a
+    // download has completed and post-processing has finished.
+    public class PersistedDownloadItem
+    {
+        public const string SidecarFileName = ".sleezer-state.json";
+
+        // Bumped when the schema changes incompatibly so old sidecars can be ignored.
+        public const int CurrentSchemaVersion = 1;
+
+        private static readonly JsonSerializerOptions SerializerOptions = new()
+        {
+            WriteIndented = false,
+            Converters = { new JsonStringEnumConverter() },
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        };
+
+        public int SchemaVersion { get; set; } = CurrentSchemaVersion;
+
+        public string ID { get; set; } = string.Empty;
+        public string Title { get; set; } = string.Empty;
+        public string Artist { get; set; } = string.Empty;
+        public bool Explicit { get; set; }
+
+        public Bitrate Bitrate { get; set; }
+        public long TotalSize { get; set; }
+        public string DownloadFolder { get; set; } = string.Empty;
+        public DownloadItemStatus Status { get; set; }
+
+        public static string SidecarPath(string downloadFolder)
+            => Path.Combine(downloadFolder, SidecarFileName);
+
+        public static PersistedDownloadItem CaptureFrom(DownloadItem item)
+        {
+            return new PersistedDownloadItem
+            {
+                ID = item.ID,
+                Title = item.Title,
+                Artist = item.Artist,
+                Explicit = item.Explicit,
+                Bitrate = item.Bitrate,
+                TotalSize = item.TotalSize,
+                DownloadFolder = item.DownloadFolder,
+                Status = item.Status,
+            };
+        }
+
+        public void WriteTo(string folder)
+        {
+            string path = SidecarPath(folder);
+            string json = JsonSerializer.Serialize(this, SerializerOptions);
+            File.WriteAllText(path, json);
+        }
+
+        public static PersistedDownloadItem? TryRead(string sidecarPath)
+        {
+            string json = File.ReadAllText(sidecarPath);
+            PersistedDownloadItem? parsed = JsonSerializer.Deserialize<PersistedDownloadItem>(json, SerializerOptions);
+            if (parsed == null || parsed.SchemaVersion != CurrentSchemaVersion)
+                return null;
+            return parsed;
+        }
+    }
+}
