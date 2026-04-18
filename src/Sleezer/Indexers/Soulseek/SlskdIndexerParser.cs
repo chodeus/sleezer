@@ -162,7 +162,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             }
             else
             {
-                _logger.Warn($"Failed to expand directory for {folderData.Username}:{directoryGroup.Key}");
+                _logger.Warn("Failed to expand directory for {Username}:{Directory}", folderData.Username, directoryGroup.Key);
             }
             return null;
         }

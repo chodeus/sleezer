@@ -281,7 +281,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy
             }
             catch (InvalidOperationException ex)
             {
-                _logger.Warn($"{ex.Message}. Proxy will be excluded from the system.");
+                _logger.Warn(ex, "Proxy will be excluded from the system");
                 return false;
             }
         }

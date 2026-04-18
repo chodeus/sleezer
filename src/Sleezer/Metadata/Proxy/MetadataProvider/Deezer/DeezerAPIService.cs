@@ -94,7 +94,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Deezer
             }
             catch (HttpException ex)
             {
-                _logger.Warn($"API Error: {ex.Message}");
+                _logger.Warn(ex, "Deezer API error");
                 _circuitBreaker.RecordFailure();
                 return default;
             }

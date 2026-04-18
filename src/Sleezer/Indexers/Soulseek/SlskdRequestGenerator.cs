@@ -151,7 +151,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             }
             catch (HttpException ex) when (ex.Response.StatusCode == HttpStatusCode.NotFound)
             {
-                _logger.Warn($"Search request failed for: {searchText}. Error: {ex.Message}");
+                _logger.Warn(ex, "Search request failed for: {SearchText}", searchText);
                 return null;
             }
             catch (Exception ex)
@@ -276,7 +276,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
             if (response.StatusCode != HttpStatusCode.OK)
             {
-                _logger.Warn($"Failed to fetch search results for ID {searchId}. Status: {response.StatusCode}, Content: {response.Content}");
+                _logger.Warn("Failed to fetch search results for ID {SearchId}. Status: {StatusCode}", searchId, response.StatusCode);
+                _logger.Debug("Response body: {Content}", response.Content);
                 return null;
             }
 

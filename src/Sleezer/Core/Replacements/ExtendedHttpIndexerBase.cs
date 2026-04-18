@@ -277,9 +277,9 @@ namespace NzbDrone.Plugin.Sleezer.Core.Replacements
         {
             _indexerStatusService.RecordFailure(Definition.Id);
             if (ex.Response.HasHttpServerError)
-                _logger.Warn("Unable to connect to {0} at [{1}]. Indexer's server is unavailable. Try again later. {2}", this, url, ex.Message);
+                _logger.Warn(ex, "Unable to connect to {0} at [{1}]. Indexer's server is unavailable. Try again later. {2}", this, url, ex.Message);
             else
-                _logger.Warn("{0} {1}", this, ex.Message);
+                _logger.Warn(ex, "{0} {1}", this, ex.Message);
         }
 
         private void HandleTooManyRequestsException(TooManyRequestsException ex, TimeSpan minimumBackoff)

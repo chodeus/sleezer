@@ -167,7 +167,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Discogs
             }
             catch (HttpException ex)
             {
-                _logger.Warn($"API Error: {ex.Message}");
+                _logger.Warn(ex, "Discogs API error");
                 return default;
             }
         }

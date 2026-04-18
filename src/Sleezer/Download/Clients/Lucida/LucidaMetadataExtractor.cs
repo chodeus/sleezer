@@ -35,7 +35,7 @@ public static partial class LucidaMetadataExtractor
         }
         catch (Exception ex)
         {
-            _logger.Debug($"Native API metadata failed, falling back to HTML: {ex.Message}");
+            _logger.Debug(ex, "Native API metadata failed, falling back to HTML");
         }
 
         if (album is not { IsValid: true })
@@ -113,7 +113,7 @@ public static partial class LucidaMetadataExtractor
         }
         catch (JsonException ex)
         {
-            _logger.Debug($"Metadata API response not valid JSON: {ex.Message}");
+            _logger.Debug(ex, "Metadata API response not valid JSON");
             return null;
         }
 
@@ -153,7 +153,7 @@ public static partial class LucidaMetadataExtractor
         }
         catch (Exception ex)
         {
-            _logger.Debug($"HTML page fetch failed: {ex.Message}");
+            _logger.Debug(ex, "HTML page fetch failed");
             return null;
         }
 
@@ -205,7 +205,7 @@ public static partial class LucidaMetadataExtractor
         }
         catch (Exception ex)
         {
-            _logger.Debug($"CSRF token fetch failed: {ex.Message}");
+            _logger.Debug(ex, "CSRF token fetch failed");
             return;
         }
 
@@ -358,7 +358,7 @@ public static partial class LucidaMetadataExtractor
         }
         catch (JsonException ex)
         {
-            _logger.Debug($"Direct JSON parse failed, trying Jint fallback: {ex.Message}");
+            _logger.Debug(ex, "Direct JSON parse failed, trying Jint fallback");
         }
 
         return ExecuteJintOnDataArray(jsonArray);

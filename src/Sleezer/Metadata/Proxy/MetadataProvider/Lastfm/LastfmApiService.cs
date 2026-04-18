@@ -437,7 +437,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Lastfm
             }
             catch (HttpException ex)
             {
-                _logger.Warn($"API Error: {ex.Message}");
+                _logger.Warn(ex, "Last.fm API error");
                 _circuitBreaker.RecordFailure();
                 return default;
             }

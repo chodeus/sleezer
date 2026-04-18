@@ -396,7 +396,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Lastfm
             }
             catch (Exception ex)
             {
-                _logger.Error($"Error fetching top albums for artist {artist.Name}: {ex.Message}");
+                _logger.Error(ex, "Error fetching top albums for artist {ArtistName}", artist.Name);
                 artist.Albums = new LazyLoaded<List<Album>>([]);
             }
         }
