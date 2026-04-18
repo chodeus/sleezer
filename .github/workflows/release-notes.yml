@@ -1,0 +1,101 @@
+name: Generate Release Notes
+
+on:
+  workflow_call:
+    inputs:
+      plugin_name:
+        required: true
+        type: string
+        description: "Name of the plugin"
+      package_version:
+        required: true
+        type: string
+        description: "Version number for the release"
+      build_suffix:
+        required: true
+        type: string
+        description: "Build suffix based on framework and branch"
+      minimum_lidarr_version:
+        required: true
+        type: string
+        description: "Minimum required Lidarr version"
+      commit_messages:
+        required: true
+        type: string
+        description: "Commit messages since last release"
+      git_commit:
+        required: true
+        type: string
+        description: "Git commit SHA used for the build"
+      branch_repo_url:
+        required: true
+        type: string
+        description: "Repository URL with branch path"
+      git_branch:
+        required: true
+        type: string
+        description: "Current git branch"
+      plugin_input_format:
+        required: true
+        type: string
+        description: "Plugin input format: name@owner#branch"
+    outputs:
+      release_notes_id:
+        description: "ID of the generated release notes"
+        value: ${{ jobs.generate.outputs.release_notes_id }}
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    outputs:
+      release_notes_id: ${{ steps.create_notes.outputs.release_notes_id }}
+    steps:
+      - name: Generate Release Notes
+        id: create_notes
+        run: |
+          # Generate a unique ID for this release notes
+          NOTES_ID="release-notes-${{ github.run_id }}"
+          echo "release_notes_id=$NOTES_ID" >> $GITHUB_OUTPUT
+          
+          # Print the commit messages for debugging
+          echo "Commit messages:"
+          echo "${{ inputs.commit_messages }}"
+          
+          # Use the git_branch input directly
+          BRANCH_NAME="${{ inputs.git_branch }}"
+          echo "Using branch from git-info: $BRANCH_NAME"
+          
+          # Set default branch
+          DEFAULT_BRANCH="master"
+          
+          # Generate release notes in markdown
+          cat > release_notes.md << EOL
+          
+          ## 📝 What's New:
+          ${{ inputs.commit_messages }}
+          
+          ---
+          
+          ## 📥 Installation Notes:
+          - In Lidarr, navigate to **System -> Plugins**
+          - Enter: \`${{ inputs.plugin_input_format }}\`
+          
+          ---
+          
+          ## 📦 Package Information
+          **Version:** ${{ inputs.package_version }}
+          **.NET Version:** ${{ inputs.build_suffix }}
+          **Minimum Lidarr Version:** ${{ inputs.minimum_lidarr_version }}
+          **Commit:** ${{ inputs.git_commit }}
+          EOL
+          
+          # Debug: Show what was generated
+          echo "Generated release notes:"
+          cat release_notes.md
+
+      - name: Upload Release Notes
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.create_notes.outputs.release_notes_id }}
+          path: release_notes.md
+          retention-days: 1
