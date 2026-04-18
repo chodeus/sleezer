@@ -1,3 +1,4 @@
+using System.Text;
 using NLog;
 using NzbDrone.Common.Disk;
 using NzbDrone.Core.Datastore;
@@ -19,6 +20,7 @@ public interface IPreImportTagger
         string sourceId,
         string completedFolderPath,
         double confidenceThreshold,
+        bool stripFeaturedArtists,
         CancellationToken ct);
 }
 
@@ -57,11 +59,12 @@ public class PreImportTagger : IPreImportTagger
         string sourceId,
         string completedFolderPath,
         double confidenceThreshold,
+        bool stripFeaturedArtists,
         CancellationToken ct)
     {
         try
         {
-            TaggingResult result = TagInternal(album, artist, albumRelease, sourceId, completedFolderPath, confidenceThreshold, ct);
+            TaggingResult result = TagInternal(album, artist, albumRelease, sourceId, completedFolderPath, confidenceThreshold, stripFeaturedArtists, ct);
             return Task.FromResult(result);
         }
         catch (Exception ex)
@@ -78,6 +81,7 @@ public class PreImportTagger : IPreImportTagger
         string sourceId,
         string folderPath,
         double confidenceThreshold,
+        bool stripFeaturedArtists,
         CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
@@ -100,17 +104,30 @@ public class PreImportTagger : IPreImportTagger
             return new TaggingResult(0, 0, 0);
         }
 
-        List<LocalTrack> localTracks = audioFiles.Select(path => new LocalTrack
+        List<LocalTrack> localTracks = audioFiles.Select(path =>
         {
-            Path = path,
-            Size = SafeFileSize(path),
-            Modified = SafeFileModified(path),
-            Quality = new QualityModel(Quality.Unknown),
-            // Lidarr's AggregateFilenameInfo + CandidateService dereference
-            // FileTrackInfo.Title / .ReleaseMBId / .TrackNumbers, so it has to
-            // be populated before Identify runs. This mirrors what
-            // ImportDecisionMaker.GetLocalTracks does in the normal flow.
-            FileTrackInfo = SafeReadTags(path)
+            ParsedTrackInfo info = SafeReadTags(path);
+            if (stripFeaturedArtists)
+            {
+                // Pre-clean the tag-derived title before Identify so a tag like
+                // "Foo (feat. Bar)" still matches a catalog track named "Foo".
+                info.Title = FeaturedArtistStripper.Strip(info.Title);
+                info.CleanTitle = FeaturedArtistStripper.Strip(info.CleanTitle);
+                info.ArtistTitle = FeaturedArtistStripper.Strip(info.ArtistTitle);
+            }
+
+            return new LocalTrack
+            {
+                Path = path,
+                Size = SafeFileSize(path),
+                Modified = SafeFileModified(path),
+                Quality = new QualityModel(Quality.Unknown),
+                // Lidarr's AggregateFilenameInfo + CandidateService dereference
+                // FileTrackInfo.Title / .ReleaseMBId / .TrackNumbers, so it has to
+                // be populated before Identify runs. This mirrors what
+                // ImportDecisionMaker.GetLocalTracks does in the normal flow.
+                FileTrackInfo = info
+            };
         }).ToList();
 
         IdentificationOverrides overrides = new()
@@ -162,7 +179,7 @@ public class PreImportTagger : IPreImportTagger
                     continue;
                 }
 
-                if (TryTagSingleFile(localTrack, track, album, release.AlbumRelease))
+                if (TryTagSingleFile(localTrack, track, album, release.AlbumRelease, stripFeaturedArtists))
                     tagged++;
                 else
                     errored++;
@@ -173,7 +190,7 @@ public class PreImportTagger : IPreImportTagger
         return new TaggingResult(tagged, skipped, errored);
     }
 
-    private bool TryTagSingleFile(LocalTrack localTrack, Track track, Album album, AlbumRelease? albumRelease)
+    private bool TryTagSingleFile(LocalTrack localTrack, Track track, Album album, AlbumRelease? albumRelease, bool stripFeaturedArtists)
     {
         try
         {
@@ -192,6 +209,10 @@ public class PreImportTagger : IPreImportTagger
             };
 
             _audioTagService.WriteTags(transient, newDownload: true, force: true);
+
+            if (stripFeaturedArtists)
+                ApplyFeaturedArtistCleanup(transient, track);
+
             return true;
         }
         catch (Exception ex)
@@ -199,6 +220,72 @@ public class PreImportTagger : IPreImportTagger
             _logger.Warn(ex, $"Pre-import tag: write failed for {localTrack.Path}");
             return false;
         }
+    }
+
+    /// <summary>
+    /// After Lidarr's tag writer runs, re-open the file with TagLib and strip
+    /// bracketed `(feat. X)` suffixes from Title / Performers / AlbumArtists.
+    /// Then rename the file from the cleaned title so Lidarr's importer sees
+    /// the clean basename. Best-effort: any failure is logged and swallowed
+    /// so the parent tag-write still counts as a success.
+    /// </summary>
+    private void ApplyFeaturedArtistCleanup(TrackFile transient, Track track)
+    {
+        string path = transient.Path;
+        try
+        {
+            using (TagLib.File file = TagLib.File.Create(path))
+            {
+                file.Tag.Title = FeaturedArtistStripper.Strip(file.Tag.Title);
+                file.Tag.Performers = file.Tag.Performers.Select(p => FeaturedArtistStripper.Strip(p)).ToArray();
+                file.Tag.AlbumArtists = file.Tag.AlbumArtists.Select(a => FeaturedArtistStripper.Strip(a)).ToArray();
+                file.Save();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Warn(ex, $"Pre-import tag: feat-strip tag rewrite failed for {path}");
+            return;
+        }
+
+        try
+        {
+            string? dir = Path.GetDirectoryName(path);
+            string ext = Path.GetExtension(path);
+            string cleanTitle = FeaturedArtistStripper.Strip(track.Title);
+            if (string.IsNullOrWhiteSpace(cleanTitle) || string.IsNullOrEmpty(dir))
+                return;
+
+            int trackNumber = track.AbsoluteTrackNumber;
+            string baseName = trackNumber > 0
+                ? $"{trackNumber:D2} - {SanitiseForFilename(cleanTitle)}{ext}"
+                : $"{SanitiseForFilename(cleanTitle)}{ext}";
+
+            string newPath = Path.Combine(dir, baseName);
+            if (string.Equals(newPath, path, StringComparison.OrdinalIgnoreCase))
+                return;
+            if (File.Exists(newPath))
+            {
+                _logger.Trace($"Pre-import tag: feat-strip rename target already exists, skipping: {newPath}");
+                return;
+            }
+
+            File.Move(path, newPath);
+            transient.Path = newPath;
+        }
+        catch (Exception ex)
+        {
+            _logger.Warn(ex, $"Pre-import tag: feat-strip rename failed for {path}");
+        }
+    }
+
+    private static readonly char[] InvalidFilenameChars = Path.GetInvalidFileNameChars();
+    private static string SanitiseForFilename(string input)
+    {
+        StringBuilder sb = new(input.Length);
+        foreach (char c in input)
+            sb.Append(InvalidFilenameChars.Contains(c) ? '_' : c);
+        return sb.ToString().Trim();
     }
 
     private List<string> EnumerateAudioFiles(string folderPath)

@@ -181,6 +181,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                     item.ID,
                     folder,
                     TagConfidenceThreshold,
+                    sharedSettings?.StripFeaturedArtists ?? false,
                     ct);
             }
         }

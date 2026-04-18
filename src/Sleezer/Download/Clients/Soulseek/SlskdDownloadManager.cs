@@ -566,6 +566,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                         item.ID,
                         folderPath,
                         TagConfidenceThreshold,
+                        sharedSettings?.StripFeaturedArtists ?? false,
                         cts.Token);
                 }
             }
