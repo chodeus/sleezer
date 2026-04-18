@@ -13,8 +13,8 @@ using NzbDrone.Core.Music;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Common.Instrumentation.Extensions;
 using NzbDrone.Plugin.Sleezer.Core.PostProcessing;
-using NzbDrone.Plugin.Sleezer.Metadata.Converter;
-using Xabe.FFmpeg;
+using NzbDrone.Plugin.Sleezer.Metadata.FFmpeg;
+using XabeFFmpeg = Xabe.FFmpeg.FFmpeg;
 
 namespace NzbDrone.Core.Download.Clients.Deezer.Queue
 {
@@ -130,7 +130,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
 
         private async Task RunPostProcessAsync(DownloadItem item, CancellationToken ct)
         {
-            AudioConverterSettings? sharedSettings = GetSharedPostProcessingSettings();
+            FFmpegSettings? sharedSettings = GetSharedPostProcessingSettings();
             bool scanEnabled = sharedSettings?.EnableCorruptFileScan ?? false;
             bool tagEnabled = sharedSettings?.EnablePreImportTagging ?? false;
 
@@ -226,13 +226,13 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
             return corruptCount;
         }
 
-        private AudioConverterSettings? GetSharedPostProcessingSettings()
+        private FFmpegSettings? GetSharedPostProcessingSettings()
         {
             try
             {
                 return _metadataFactory.All()
-                    .Where(d => d.Settings is AudioConverterSettings)
-                    .Select(d => d.Settings as AudioConverterSettings)
+                    .Where(d => d.Settings is FFmpegSettings)
+                    .Select(d => d.Settings as FFmpegSettings)
                     .FirstOrDefault(s => s != null);
             }
             catch (Exception ex)
@@ -249,17 +249,17 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
 
             try
             {
-                AudioConverterSettings? settings = GetSharedPostProcessingSettings();
+                FFmpegSettings? settings = GetSharedPostProcessingSettings();
                 if (settings != null && !string.IsNullOrWhiteSpace(settings.FFmpegPath))
                 {
-                    FFmpeg.SetExecutablesPath(settings.FFmpegPath);
+                    XabeFFmpeg.SetExecutablesPath(settings.FFmpegPath);
                     AudioMetadataHandler.ResetFFmpegInstallationCheck();
-                    _logger.Trace($"[post-process] Applied Codec Tinker FFmpeg path: {settings.FFmpegPath}");
+                    _logger.Trace($"[post-process] Applied FFmpeg path: {settings.FFmpegPath}");
                 }
             }
             catch (Exception ex)
             {
-                _logger.Debug(ex, "[post-process] Failed to resolve ffmpeg from Codec Tinker settings; falling back to PATH lookup.");
+                _logger.Debug(ex, "[post-process] Failed to resolve ffmpeg from FFmpeg metadata settings; falling back to PATH lookup.");
             }
 
             _ffmpegResolved = true;

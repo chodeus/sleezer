@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 using NzbDrone.Plugin.Sleezer.Core.Model;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
-namespace NzbDrone.Plugin.Sleezer.Metadata.Converter
+namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
 {
     public class ConversionResult
     {

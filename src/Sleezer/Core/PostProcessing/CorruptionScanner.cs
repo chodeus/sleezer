@@ -67,7 +67,7 @@ public class CorruptionScanner : ICorruptionScanner
             // Tier 3: ffmpeg decode
             if (!AudioMetadataHandler.CheckFFmpegInstalled())
             {
-                _logger.Warn("Corruption check: ffmpeg not found. Configure FFmpeg Path under Settings \u2192 Metadata \u2192 Codec Tinker and hit Test to auto-install. Accepting file based on size+TagLib only until then.");
+                _logger.Warn("Corruption check: ffmpeg not found. Configure FFmpeg Path under Settings \u2192 Metadata \u2192 FFmpeg and hit Test to auto-install. Accepting file based on size+TagLib only until then.");
                 return new Result(false, null);
             }
 

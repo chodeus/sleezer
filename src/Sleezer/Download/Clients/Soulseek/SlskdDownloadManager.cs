@@ -13,8 +13,8 @@ using NzbDrone.Plugin.Sleezer.Core.Model;
 using NzbDrone.Plugin.Sleezer.Core.PostProcessing;
 using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek.Models;
 using NzbDrone.Plugin.Sleezer.Indexers.Soulseek;
-using NzbDrone.Plugin.Sleezer.Metadata.Converter;
-using Xabe.FFmpeg;
+using NzbDrone.Plugin.Sleezer.Metadata.FFmpeg;
+using XabeFFmpeg = Xabe.FFmpeg.FFmpeg;
 
 namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
 
@@ -85,11 +85,12 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     }
 
     /// <summary>
-    /// Resolves ffmpeg from any configured Codec Tinker metadata provider, mirroring
-    /// the path Codec Tinker validated against. Runs once per process lifetime so we
-    /// don't re-read settings on every scan. Codec Tinker is NzbDrone.Plugin.Sleezer's canonical
-    /// ffmpeg configurator - this keeps the corruption scanner from needing a duplicate
-    /// FFmpeg Path setting on the slskd client.
+    /// Resolves ffmpeg from the configured FFmpeg metadata provider, mirroring
+    /// the path it validated against. Runs once per process lifetime so we
+    /// don't re-read settings on every scan. The FFmpeg metadata provider is
+    /// NzbDrone.Plugin.Sleezer's canonical ffmpeg configurator — this keeps the
+    /// corruption scanner from needing a duplicate FFmpeg Path setting on the
+    /// slskd client.
     /// </summary>
     private void EnsureFFmpegResolved()
     {
@@ -98,30 +99,30 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
         try
         {
-            AudioConverterSettings? codecTinkerSettings = GetSharedPostProcessingSettings();
+            FFmpegSettings? ffmpegSettings = GetSharedPostProcessingSettings();
 
-            if (codecTinkerSettings != null && !string.IsNullOrWhiteSpace(codecTinkerSettings.FFmpegPath))
+            if (ffmpegSettings != null && !string.IsNullOrWhiteSpace(ffmpegSettings.FFmpegPath))
             {
-                FFmpeg.SetExecutablesPath(codecTinkerSettings.FFmpegPath);
+                XabeFFmpeg.SetExecutablesPath(ffmpegSettings.FFmpegPath);
                 AudioMetadataHandler.ResetFFmpegInstallationCheck();
-                _logger.Trace($"[post-process] Applied Codec Tinker FFmpeg path: {codecTinkerSettings.FFmpegPath}");
+                _logger.Trace($"[post-process] Applied FFmpeg path: {ffmpegSettings.FFmpegPath}");
             }
         }
         catch (Exception ex)
         {
-            _logger.Debug(ex, "[post-process] Failed to resolve ffmpeg from Codec Tinker settings; falling back to PATH lookup.");
+            _logger.Debug(ex, "[post-process] Failed to resolve ffmpeg from FFmpeg metadata settings; falling back to PATH lookup.");
         }
 
         _ffmpegResolved = true;
     }
 
-    private AudioConverterSettings? GetSharedPostProcessingSettings()
+    private FFmpegSettings? GetSharedPostProcessingSettings()
     {
         try
         {
             return _metadataFactory.All()
-                .Where(d => d.Settings is AudioConverterSettings)
-                .Select(d => d.Settings as AudioConverterSettings)
+                .Where(d => d.Settings is FFmpegSettings)
+                .Select(d => d.Settings as FFmpegSettings)
                 .FirstOrDefault(s => s != null);
         }
         catch (Exception ex)
@@ -502,7 +503,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         if (!_postProcessed.TryAdd(item.ID, 0))
             return;
 
-        AudioConverterSettings? sharedSettings = GetSharedPostProcessingSettings();
+        FFmpegSettings? sharedSettings = GetSharedPostProcessingSettings();
         // Per-slskd CorruptionCheck is AND-gated with the global toggle so existing
         // users who explicitly opted out don't get scans turned back on by the new
         // global default. Tagging has no per-slskd analogue.
@@ -590,8 +591,8 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     {
         List<CorruptionStrike> strikes = new();
 
-        // Re-apply Codec Tinker's ffmpeg path if set (Xabe's global state resets
-        // on Lidarr restart; Codec Tinker's Test only writes it for the current run).
+        // Re-apply the FFmpeg metadata provider's path if set (Xabe's global state
+        // resets on Lidarr restart; the provider's Test only writes it for the current run).
         EnsureFFmpegResolved();
 
         // Only scan audio files. Non-audio artifacts (covers, nfos, logs) would

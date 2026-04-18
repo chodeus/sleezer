@@ -1,4 +1,4 @@
-﻿using NLog;
+using NLog;
 using NzbDrone.Core.Extras.Metadata;
 using NzbDrone.Core.Extras.Metadata.Files;
 using NzbDrone.Core.MediaFiles;
@@ -7,15 +7,17 @@ using NzbDrone.Core.Tags;
 using NzbDrone.Plugin.Sleezer.Core.Model;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using Xabe.FFmpeg;
+// Aliased so `XabeFFmpeg` can't be shadowed by our local Metadata.FFmpeg namespace.
+using XabeFFmpeg = Xabe.FFmpeg.FFmpeg;
 
-namespace NzbDrone.Plugin.Sleezer.Metadata.Converter
+namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
 {
-    public class AudioConverter(Logger logger, Lazy<ITagService> tagService) : MetadataBase<AudioConverterSettings>
+    public class FFmpegConverter(Logger logger, Lazy<ITagService> tagService) : MetadataBase<FFmpegSettings>
     {
         private readonly Logger _logger = logger;
         private readonly Lazy<ITagService> _tagService = tagService;
 
-        public override string Name => "Codec Tinker";
+        public override string Name => "FFmpeg";
 
         public override MetadataFile FindMetadataFile(Artist artist, string path) => default!;
 
@@ -71,7 +73,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Converter
         {
             try
             {
-                IMediaInfo mediaInfo = await FFmpeg.GetMediaInfo(filePath);
+                IMediaInfo mediaInfo = await XabeFFmpeg.GetMediaInfo(filePath);
                 IAudioStream? audioStream = mediaInfo.AudioStreams.FirstOrDefault();
 
                 if (audioStream == null)

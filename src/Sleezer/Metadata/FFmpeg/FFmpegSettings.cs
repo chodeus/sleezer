@@ -1,17 +1,18 @@
-﻿using FluentValidation;
+using FluentValidation;
 using NzbDrone.Core.Annotations;
 using NzbDrone.Core.Extras.Metadata;
 using NzbDrone.Core.ThingiProvider;
 using NzbDrone.Core.Validation;
 using NzbDrone.Plugin.Sleezer.Core.Model;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
-using Xabe.FFmpeg;
+// Aliased so `XabeFFmpeg` can't be shadowed by our local Metadata.FFmpeg namespace.
+using XabeFFmpeg = Xabe.FFmpeg.FFmpeg;
 
-namespace NzbDrone.Plugin.Sleezer.Metadata.Converter
+namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
 {
-    public class AudioConverterSettingsValidator : AbstractValidator<AudioConverterSettings>
+    public class FFmpegSettingsValidator : AbstractValidator<FFmpegSettings>
     {
-        public AudioConverterSettingsValidator()
+        public FFmpegSettingsValidator()
         {
             // Validate FFmpegPath
             RuleFor(x => x.FFmpegPath)
@@ -74,7 +75,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Converter
             return true;
         }
 
-        private static bool IsValidStaticConversion(AudioConverterSettings settings) =>
+        private static bool IsValidStaticConversion(FFmpegSettings settings) =>
             AudioFormatHelper.IsLossyFormat((AudioFormat)settings.TargetFormat) || (!settings.ConvertMP3 && !settings.ConvertAAC && !settings.ConvertOpus && !settings.ConvertOther);
 
         private static async Task<bool> TestFFmpeg(string ffmpegPath)
@@ -82,8 +83,8 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Converter
             if (string.IsNullOrWhiteSpace(ffmpegPath))
                 return false;
 
-            string oldPath = FFmpeg.ExecutablesPath;
-            FFmpeg.SetExecutablesPath(ffmpegPath);
+            string oldPath = XabeFFmpeg.ExecutablesPath;
+            XabeFFmpeg.SetExecutablesPath(ffmpegPath);
             AudioMetadataHandler.ResetFFmpegInstallationCheck();
 
             if (!AudioMetadataHandler.CheckFFmpegInstalled())
@@ -95,7 +96,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Converter
                 catch
                 {
                     if (!string.IsNullOrEmpty(oldPath))
-                        FFmpeg.SetExecutablesPath(oldPath);
+                        XabeFFmpeg.SetExecutablesPath(oldPath);
                     return false;
                 }
             }
@@ -103,9 +104,9 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Converter
         }
     }
 
-    public class AudioConverterSettings : IProviderConfig
+    public class FFmpegSettings : IProviderConfig
     {
-        private static readonly AudioConverterSettingsValidator Validator = new();
+        private static readonly FFmpegSettingsValidator Validator = new();
 
         [FieldDefinition(0, Label = "FFmpeg Path", Type = FieldType.Path, Section = MetadataSectionType.Metadata, Placeholder = "/downloads/FFmpeg", HelpText = "Specify the path to the FFmpeg binary.")]
         public string FFmpegPath { get; set; } = string.Empty;
