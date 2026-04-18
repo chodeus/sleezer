@@ -25,11 +25,15 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
 
         public override MetadataFileResult AlbumMetadata(Artist artist, Album album, string albumPath) => default!;
 
-        public override List<ImageFileResult> ArtistImages(Artist artist) => default!;
+        // Lidarr's MetadataService foreach-iterates these directly without a null-check
+        // (unlike ArtistMetadata/AlbumMetadata/TrackMetadata, which it does null-guard), so
+        // returning `default!` (== null) NRE's the scan pipeline. Match ProxyBase's pattern
+        // of returning an empty list — we don't produce images here anyway.
+        public override List<ImageFileResult> ArtistImages(Artist artist) => [];
 
-        public override List<ImageFileResult> AlbumImages(Artist artist, Album album, string albumFolder) => default!;
+        public override List<ImageFileResult> AlbumImages(Artist artist, Album album, string albumFolder) => [];
 
-        public override List<ImageFileResult> TrackImages(Artist artist, TrackFile trackFile) => default!;
+        public override List<ImageFileResult> TrackImages(Artist artist, TrackFile trackFile) => [];
 
         public override MetadataFileResult TrackMetadata(Artist artist, TrackFile trackFile)
         {
