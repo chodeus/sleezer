@@ -316,7 +316,7 @@ jobs:
 
           (
             cd "$PLUGIN_OUTPUT_DIR"
-            find . -name "*.${PLUGIN_NAME}.*" -o -name "*.Plugin.${PLUGIN_NAME}.*" | xargs zip -r "$PACKAGE_PATH"
+            find . \( -name "*.${PLUGIN_NAME}.*" -o -name "*.Plugin.${PLUGIN_NAME}.*" \) -exec zip -r "$PACKAGE_PATH" {} +
             [ -f "release_notes.txt" ] && zip -r "$PACKAGE_PATH" release_notes.txt
           )
 
