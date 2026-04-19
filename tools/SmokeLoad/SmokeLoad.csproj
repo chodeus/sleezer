@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Minimal net8.0 console tool that loads the packaged plugin DLL and walks
+    its types, mimicking what Lidarr's DryIoc container does when registering
+    services. Any BCL/runtime version mismatch (the bug that broke v1.1.1)
+    surfaces here as a FileNotFoundException inside a ReflectionTypeLoadException,
+    instead of silently being swallowed by Lidarr's plugin loader.
+
+    NOT in Sleezer.sln — it is a build-time tool, not a shipped artefact.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Sleezer.SmokeLoad</RootNamespace>
+    <AssemblyName>Sleezer.SmokeLoad</AssemblyName>
+    <!-- Opt out of the repo-wide plugin-output path (the root
+         Directory.Build.props routes every csproj to _plugins/<tfm>/<name>/).
+         This is a build-time tool, not a Lidarr plugin. -->
+    <PluginProject>false</PluginProject>
+    <OutputPath>bin/$(Configuration)/</OutputPath>
+    <AppendTargetFrameworkToOutputPath>true</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+
+</Project>
