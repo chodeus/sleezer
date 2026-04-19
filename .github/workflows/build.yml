@@ -329,6 +329,48 @@ jobs:
           unzip -l "$PACKAGE_PATH"
           echo "package_name=$PACKAGE_NAME" >> "$GITHUB_OUTPUT"
 
+      - name: Smoke-load packaged plugin
+        # Catches the v1.1.1-class regression where a dependency bump pulls
+        # in a BCL transitive (e.g. System.IO.Pipelines 10) that Lidarr's
+        # net8.0 host cannot resolve, and the plugin silently disappears
+        # from the UI. See tools/SmokeLoad/Program.cs for the mechanic.
+        env:
+          PACKAGE_NAME: ${{ steps.package.outputs.package_name }}
+        run: |
+          set -euo pipefail
+
+          PLUGIN_ZIP="$GITHUB_WORKSPACE/$PACKAGE_NAME"
+          if [ ! -f "$PLUGIN_ZIP" ]; then
+            echo "::error::Packaged zip not found at $PLUGIN_ZIP"
+            exit 1
+          fi
+
+          # Lidarr's built assemblies (Lidarr.Common, Lidarr.Core, Lidarr.Http
+          # and their transitive non-BCL deps) — Directory.Build.props routes
+          # LidarrProject outputs to _output/.
+          HOST_DIR="$GITHUB_WORKSPACE/_output"
+          if [ ! -d "$HOST_DIR" ]; then
+            echo "::error::Lidarr host runtime dir not found at $HOST_DIR"
+            exit 1
+          fi
+
+          STAGE=$(mktemp -d)
+          unzip -o "$PLUGIN_ZIP" -d "$STAGE"
+          PLUGIN_DLL="$STAGE/Lidarr.Plugin.$PLUGIN_NAME.dll"
+          if [ ! -f "$PLUGIN_DLL" ]; then
+            echo "::error::Plugin DLL not found in package after unzip: $PLUGIN_DLL"
+            ls -la "$STAGE"
+            exit 1
+          fi
+
+          # Build the tool outside the plugin solution so it doesn't drag in
+          # the Lidarr submodule.
+          dotnet build tools/SmokeLoad/SmokeLoad.csproj \
+            -c Release -p:NuGetAudit=false --nologo
+
+          dotnet run --project tools/SmokeLoad/SmokeLoad.csproj \
+            -c Release --no-build -- "$PLUGIN_DLL" "$HOST_DIR"
+
       - name: Upload plugin package
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
