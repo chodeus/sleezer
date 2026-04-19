@@ -76,10 +76,10 @@ jobs:
       tag: ${{ steps.next.outputs.tag }}
 
   # Tags pushed by GITHUB_TOKEN don't trigger other workflows, so we invoke
-  # the build pipeline directly here instead of relying on main.yml's
+  # the build pipeline directly here instead of relying on build.yml's
   # push:tags trigger to fire.
   build:
     needs: [tag]
-    uses: ./.github/workflows/main.yml
+    uses: ./.github/workflows/build.yml
     with:
       tag_ref: refs/tags/${{ needs.tag.outputs.tag }}
