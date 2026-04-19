@@ -221,7 +221,8 @@ jobs:
             ${{ runner.os }}-nuget-
 
       - name: Pin SDK via global.json
-        run: echo '{"sdk":{"version": "${{ env.DOTNET_VERSION }}"}}' > ./global.json
+        run: |
+          echo '{"sdk":{"version": "${{ env.DOTNET_VERSION }}"}}' > ./global.json
 
       - name: Write release notes file (msbuild property)
         env:
