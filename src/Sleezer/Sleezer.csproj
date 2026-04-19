@@ -28,7 +28,11 @@
 			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>
 		<PackageReference Include="Shard.DownloadAssistant" Version="1.1.2" />
-		<PackageReference Include="System.Text.Json" Version="10.0.6" GeneratePathProperty="true" />
+		<!-- PIN: stay on 8.x while TargetFramework=net8.0. System.Text.Json 9+
+		     transitively brings System.IO.Pipelines 9+/10+, which Lidarr's
+		     net8.0 runtime cannot resolve; DryIoc silently fails to enumerate
+		     plugin types and the plugin is skipped with no UI error. -->
+		<PackageReference Include="System.Text.Json" Version="8.0.6" GeneratePathProperty="true" />
 		<PackageReference Include="Xabe.FFmpeg" Version="6.0.2" />
 		<PackageReference Include="Xabe.FFmpeg.Downloader" Version="6.0.2" />
 

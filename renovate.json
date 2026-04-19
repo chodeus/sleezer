@@ -1,4 +1,14 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>chodeus/chodeus-ops"]
+  "extends": ["github>chodeus/chodeus-ops"],
+  "packageRules": [
+    {
+      "description": "Pin System.Text.Json and friends to 8.x — 9+ needs a newer runtime than Lidarr (net8.0) provides; breaks plugin loading.",
+      "matchPackageNames": [
+        "System.Text.Json",
+        "System.IO.Pipelines"
+      ],
+      "allowedVersions": "<9.0.0"
+    }
+  ]
 }
