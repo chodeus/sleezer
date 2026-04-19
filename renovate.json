@@ -3,12 +3,24 @@
   "extends": ["github>chodeus/chodeus-ops"],
   "packageRules": [
     {
-      "description": "Pin System.Text.Json and friends to 8.x — 9+ needs a newer runtime than Lidarr (net8.0) provides; breaks plugin loading.",
+      "description": "Hard pin: System.Text.Json / System.IO.Pipelines must stay on 8.x while TargetFramework=net8.0. 9+ brings runtime assemblies Lidarr's host does not ship, and the plugin silently fails to load (DryIoc FileNotFoundException). See PR #20.",
       "matchPackageNames": [
         "System.Text.Json",
         "System.IO.Pipelines"
       ],
       "allowedVersions": "<9.0.0"
+    },
+    {
+      "description": "BCL + ASP.NET / DI runtime surface: require manual dashboard approval for any major bump. These packages ship with the .NET runtime Lidarr hosts us in (net8.0), so crossing majors is the same class of break as the System.Text.Json 10 incident. Minor/patch bumps still auto-merge.",
+      "matchPackageNames": [
+        "/^System\\./",
+        "/^Microsoft\\.Extensions\\./",
+        "/^Microsoft\\.Bcl\\./",
+        "/^Microsoft\\.NETCore\\./",
+        "/^Microsoft\\.AspNetCore\\./"
+      ],
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
     }
   ]
 }
