@@ -1,0 +1,415 @@
+name: Build Plugin
+
+# Replaces the old 9-file reusable pipeline (main.yml + 8 callees) with a
+# single orchestrator that does extract + build + package in one job and
+# publishes in another. Same zip filename, same release body, same
+# is_prerelease / is_latestrelease semantics, same NuGetAudit=false, same
+# plugin_input_format for Lidarr. See publishing-step comment on tag_ref
+# fallback — workflow_call callers MUST pass tag_ref.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_call:
+    inputs:
+      tag_ref:
+        required: true
+        type: string
+        description: "Full git ref of the tag to build (e.g. refs/tags/v1.0.3)"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.tag_ref || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_VERSION: '8.0.404'
+  PLUGIN_NAME: 'Sleezer'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      tag_ref: ${{ steps.meta.outputs.tag_ref }}
+      package_version: ${{ steps.meta.outputs.package_version }}
+      is_prerelease: ${{ steps.meta.outputs.is_prerelease }}
+      is_latestrelease: ${{ steps.git_info.outputs.is_latestrelease }}
+      framework: ${{ steps.meta.outputs.framework }}
+      minimum_lidarr_version: ${{ steps.meta.outputs.minimum_lidarr_version }}
+      git_branch: ${{ steps.git_info.outputs.git_branch }}
+      git_commit: ${{ steps.git_info.outputs.git_commit }}
+      branch_repo_url: ${{ steps.git_info.outputs.branch_repo_url }}
+      plugin_input_format: ${{ steps.git_info.outputs.plugin_input_format }}
+      commit_messages: ${{ steps.git_info.outputs.commit_messages }}
+      package_name: ${{ steps.package.outputs.package_name }}
+    steps:
+      - name: Checkout with submodules
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          submodules: 'recursive'
+          fetch-depth: 0
+
+      - name: Fetch tags
+        run: git fetch --tags --force
+
+      - name: Extract metadata
+        id: meta
+        env:
+          TAG_REF_INPUT: ${{ inputs.tag_ref }}
+        run: |
+          set -euo pipefail
+
+          # workflow_call passes explicit tag_ref; push:tags uses GITHUB_REF.
+          SOURCE_REF="${TAG_REF_INPUT:-$GITHUB_REF}"
+          echo "Source ref: $SOURCE_REF"
+          echo "tag_ref=$SOURCE_REF" >> "$GITHUB_OUTPUT"
+
+          # refs/tags/vX.Y.Z[-suffix] -> X.Y.Z
+          TAG_VERSION="${SOURCE_REF#refs/tags/v}"
+          if [[ "$TAG_VERSION" == *-* ]]; then
+            TAG_VERSION="${TAG_VERSION%%-*}"
+          fi
+          echo "package_version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
+
+          # 0.x versions are prereleases
+          if [[ "$TAG_VERSION" == 0.* ]]; then
+            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          # TargetFramework from csproj with fallback
+          PROJECT_FILE=""
+          if [ -f "src/$PLUGIN_NAME/$PLUGIN_NAME.csproj" ]; then
+            PROJECT_FILE="src/$PLUGIN_NAME/$PLUGIN_NAME.csproj"
+          elif [ -f "$PLUGIN_NAME/$PLUGIN_NAME.csproj" ]; then
+            PROJECT_FILE="$PLUGIN_NAME/$PLUGIN_NAME.csproj"
+          else
+            PROJECT_FILE=$(find . -name "*.csproj" -not -path "./ext/*" -not -path "./Submodules/*" | head -n1)
+          fi
+
+          FRAMEWORK="net6.0"
+          if [ -n "$PROJECT_FILE" ]; then
+            F=$(grep -o '<TargetFramework>[^<]*</TargetFramework>' "$PROJECT_FILE" | sed 's/<TargetFramework>\(.*\)<\/TargetFramework>/\1/')
+            [ -n "$F" ] && FRAMEWORK="$F"
+          fi
+          echo "framework=$FRAMEWORK" >> "$GITHUB_OUTPUT"
+
+          # Minimum Lidarr version from submodule azure-pipelines.yml majorVersion
+          if [ -f "ext/Lidarr/azure-pipelines.yml" ]; then
+            RAW_YAML=$(cat ext/Lidarr/azure-pipelines.yml)
+          elif [ -f "Submodules/Lidarr/azure-pipelines.yml" ]; then
+            RAW_YAML=$(cat Submodules/Lidarr/azure-pipelines.yml)
+          else
+            echo "::error::Lidarr submodule azure-pipelines.yml not found"
+            exit 1
+          fi
+          MAJOR=$(echo "$RAW_YAML" | grep "majorVersion:" | head -n1 | sed "s/.*majorVersion: *'\([^']*\)'.*/\1/")
+          DOTS=$(echo "$MAJOR" | awk -F. '{print NF-1}')
+          if [ "$DOTS" -eq 2 ]; then
+            MIN_LIDARR="${MAJOR}.0"
+          else
+            MIN_LIDARR="$MAJOR"
+          fi
+          echo "minimum_lidarr_version=$MIN_LIDARR" >> "$GITHUB_OUTPUT"
+
+          echo "=== Metadata ==="
+          echo "Version: $TAG_VERSION"
+          echo "Framework: $FRAMEWORK"
+          echo "Minimum Lidarr: $MIN_LIDARR"
+
+      - name: Extract git info
+        id: git_info
+        env:
+          TAG_REF: ${{ steps.meta.outputs.tag_ref }}
+          VERSION: ${{ steps.meta.outputs.package_version }}
+        run: |
+          set -euo pipefail
+
+          # Detect branch name from the tag (push:tags has no HEAD branch);
+          # prefer main/master when multiple branches contain the commit.
+          if [[ "$TAG_REF" == refs/tags/* ]]; then
+            TAG_NAME="${TAG_REF#refs/tags/}"
+            DEFAULT_BRANCH=$(git remote show origin | grep 'HEAD branch' | cut -d' ' -f5)
+            CONTAINING=$(git branch -r --contains "$TAG_NAME" 2>/dev/null | grep -v HEAD | sed -e 's/ *origin\///g' || echo "")
+            if echo "$CONTAINING" | grep -qE "^(master|main)$"; then
+              BRANCH_NAME=$(echo "$CONTAINING" | grep -E "^(master|main)$" | head -n1)
+            elif [ -n "$DEFAULT_BRANCH" ] && echo "$CONTAINING" | grep -q "^$DEFAULT_BRANCH$"; then
+              BRANCH_NAME="$DEFAULT_BRANCH"
+            elif [ -n "$CONTAINING" ]; then
+              BRANCH_NAME=$(echo "$CONTAINING" | head -n1)
+            else
+              BRANCH_NAME="${DEFAULT_BRANCH:-main}"
+            fi
+          else
+            BRANCH_NAME="${TAG_REF#refs/heads/}"
+          fi
+          echo "git_branch=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
+
+          GIT_COMMIT=$(git rev-parse --short HEAD)
+          echo "git_commit=$GIT_COMMIT" >> "$GITHUB_OUTPUT"
+
+          REPO_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+          REPO_OWNER="${GITHUB_REPOSITORY%%/*}"
+          REPO_NAME=$(basename "$GITHUB_REPOSITORY")
+
+          if [[ "$BRANCH_NAME" == "master" || "$BRANCH_NAME" == "main" ]]; then
+            BRANCH_REPO_URL="$REPO_URL"
+            PLUGIN_INPUT="$REPO_NAME@$REPO_OWNER"
+          else
+            BRANCH_REPO_URL="$REPO_URL/tree/$BRANCH_NAME"
+            PLUGIN_INPUT="$REPO_NAME@$REPO_OWNER#$BRANCH_NAME"
+          fi
+          echo "repo_owner=$REPO_OWNER" >> "$GITHUB_OUTPUT"
+          echo "branch_repo_url=$BRANCH_REPO_URL" >> "$GITHUB_OUTPUT"
+          echo "plugin_input_format=$PLUGIN_INPUT" >> "$GITHUB_OUTPUT"
+
+          # is_latestrelease: main/master AND non-0.x
+          if [[ ("$BRANCH_NAME" == "master" || "$BRANCH_NAME" == "main") && ! "$VERSION" =~ ^0\. ]]; then
+            echo "is_latestrelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_latestrelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Commits since previous tag; else last 20
+          CURRENT_TAG="${TAG_REF#refs/tags/}"
+          ALL_TAGS=$(git tag --sort=-creatordate)
+          PREVIOUS_TAG=""
+          FOUND=false
+          for tag in $ALL_TAGS; do
+            if $FOUND; then
+              PREVIOUS_TAG="$tag"
+              break
+            fi
+            [ "$tag" = "$CURRENT_TAG" ] && FOUND=true
+          done
+
+          if [ -z "$PREVIOUS_TAG" ]; then
+            MSGS=$(git log --pretty=format:"- %h %s" -n 20)
+          else
+            MSGS=$(git log --pretty=format:"- %h %s" "${PREVIOUS_TAG}..${CURRENT_TAG}")
+          fi
+          [ -z "$MSGS" ] && MSGS="- No significant changes detected between releases."
+
+          {
+            echo "commit_messages<<COMMIT_EOF"
+            echo "$MSGS"
+            echo "COMMIT_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "=== Git info ==="
+          echo "Branch: $BRANCH_NAME"
+          echo "Commit: $GIT_COMMIT"
+          echo "Plugin input: $PLUGIN_INPUT"
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Cache NuGet packages
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Pin SDK via global.json
+        run: echo '{"sdk":{"version": "${{ env.DOTNET_VERSION }}"}}' > ./global.json
+
+      - name: Write release notes file (msbuild property)
+        env:
+          VERSION: ${{ steps.meta.outputs.package_version }}
+          FRAMEWORK: ${{ steps.meta.outputs.framework }}
+          BRANCH: ${{ steps.git_info.outputs.git_branch }}
+          COMMIT: ${{ steps.git_info.outputs.git_commit }}
+          BRANCH_REPO_URL: ${{ steps.git_info.outputs.branch_repo_url }}
+          MIN_LIDARR: ${{ steps.meta.outputs.minimum_lidarr_version }}
+          REPO_OWNER: ${{ steps.git_info.outputs.repo_owner }}
+        run: |
+          mkdir -p ./Properties
+          cat > ./Properties/release_notes.txt << EOL
+          Version: $VERSION
+          Branch: $BRANCH
+          Commit: $COMMIT
+          Framework: $FRAMEWORK
+          Repository: $BRANCH_REPO_URL
+          Minimum Lidarr Version: $MIN_LIDARR
+          Built at: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+
+          Plugin Info:
+          Name: $PLUGIN_NAME
+          Owner: $REPO_OWNER
+          EOL
+
+      - name: Build
+        env:
+          VERSION: ${{ steps.meta.outputs.package_version }}
+          FRAMEWORK: ${{ steps.meta.outputs.framework }}
+          BRANCH: ${{ steps.git_info.outputs.git_branch }}
+          COMMIT: ${{ steps.git_info.outputs.git_commit }}
+          TAG: ${{ steps.meta.outputs.tag_ref }}
+          BRANCH_REPO_URL: ${{ steps.git_info.outputs.branch_repo_url }}
+          REPO_OWNER: ${{ steps.git_info.outputs.repo_owner }}
+          MIN_LIDARR: ${{ steps.meta.outputs.minimum_lidarr_version }}
+        run: |
+          set -euo pipefail
+          # NuGetAudit=false: upstream Lidarr submodule pins MailKit 4.14 with a
+          # moderate advisory. Lidarr treats audit warnings as errors.
+          dotnet restore ./*.sln -p:NuGetAudit=false
+
+          GIT_TAG="${TAG#refs/tags/}"
+          dotnet build ./*.sln -c Release -f "$FRAMEWORK" \
+            -p:NuGetAudit=false \
+            -p:Version="$VERSION" \
+            -p:AssemblyVersion="$VERSION" \
+            -p:FileVersion="$VERSION" \
+            -p:Branch="$BRANCH" \
+            -p:GitCommit="$COMMIT" \
+            -p:GitTag="$GIT_TAG" \
+            -p:RepoUrl="$BRANCH_REPO_URL" \
+            -p:Author="$REPO_OWNER" \
+            -p:ReleaseNotesFile="./Properties/release_notes.txt" \
+            -p:MinimumLidarrVersion="$MIN_LIDARR" \
+            -p:CI="true" \
+            -v:n
+
+      - name: Package plugin
+        id: package
+        env:
+          VERSION: ${{ steps.meta.outputs.package_version }}
+          FRAMEWORK: ${{ steps.meta.outputs.framework }}
+        run: |
+          set -euo pipefail
+
+          # Same search cascade as the old compilation.yml
+          PLUGIN_OUTPUT_DIR=$(find . -type d -path "*/_plugins/*/$PLUGIN_NAME" | head -n1)
+          if [ -z "$PLUGIN_OUTPUT_DIR" ]; then
+            PLUGIN_OUTPUT_DIR=$(find . -type d -path "*/_plugins/*" -name "$PLUGIN_NAME" | head -n1)
+          fi
+          if [ -z "$PLUGIN_OUTPUT_DIR" ]; then
+            PLUGIN_OUTPUT_DIR=$(find . -type d -path "*/_plugins/*" | sort | head -n1)
+          fi
+          if [ -z "$PLUGIN_OUTPUT_DIR" ]; then
+            echo "::error::No plugin output directory found"
+            exit 1
+          fi
+
+          FILES=$(find "$PLUGIN_OUTPUT_DIR" -type f | wc -l)
+          if [ "$FILES" -eq 0 ]; then
+            echo "::error::Plugin output directory is empty"
+            exit 1
+          fi
+
+          cp ./Properties/release_notes.txt "$PLUGIN_OUTPUT_DIR/release_notes.txt"
+
+          # Filename format preserved: ${PLUGIN_NAME}-v${VERSION}.${FRAMEWORK}.zip
+          PACKAGE_NAME="${PLUGIN_NAME}-v${VERSION}.${FRAMEWORK}.zip"
+          PACKAGE_PATH="$GITHUB_WORKSPACE/$PACKAGE_NAME"
+
+          (
+            cd "$PLUGIN_OUTPUT_DIR"
+            find . -name "*.${PLUGIN_NAME}.*" -o -name "*.Plugin.${PLUGIN_NAME}.*" | xargs zip -r "$PACKAGE_PATH"
+            [ -f "release_notes.txt" ] && zip -r "$PACKAGE_PATH" release_notes.txt
+          )
+
+          if [ ! -s "$PACKAGE_PATH" ]; then
+            echo "::error::Package empty or missing at $PACKAGE_PATH"
+            exit 1
+          fi
+
+          echo "Package contents:"
+          unzip -l "$PACKAGE_PATH"
+          echo "package_name=$PACKAGE_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Upload plugin package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: plugin-package
+          path: ${{ steps.package.outputs.package_name }}
+          retention-days: 7
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: build-logs
+          path: |
+            ./**/*.binlog
+            ./**/*.log
+          retention-days: 1
+          if-no-files-found: warn
+
+  publish:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Download plugin package
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: plugin-package
+          path: ./artifacts
+
+      - name: Verify artifact
+        id: verify
+        env:
+          PACKAGE_NAME: ${{ needs.build.outputs.package_name }}
+        run: |
+          ARTIFACT_PATH="./artifacts/$PACKAGE_NAME"
+          if [ ! -s "$ARTIFACT_PATH" ]; then
+            echo "::error::Artifact missing or empty at $ARTIFACT_PATH"
+            ls -la ./artifacts/
+            exit 1
+          fi
+          echo "Size: $(stat -c%s "$ARTIFACT_PATH") bytes"
+          echo "artifact_path=$ARTIFACT_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Generate release notes markdown
+        id: notes
+        env:
+          VERSION: ${{ needs.build.outputs.package_version }}
+          FRAMEWORK: ${{ needs.build.outputs.framework }}
+          MIN_LIDARR: ${{ needs.build.outputs.minimum_lidarr_version }}
+          COMMIT: ${{ needs.build.outputs.git_commit }}
+          PLUGIN_INPUT: ${{ needs.build.outputs.plugin_input_format }}
+          COMMITS: ${{ needs.build.outputs.commit_messages }}
+        run: |
+          cat > release_notes.md << EOL
+
+          ## 📝 What's New:
+          $COMMITS
+
+          ---
+
+          ## 📥 Installation Notes:
+          - In Lidarr, navigate to **System -> Plugins**
+          - Enter: \`$PLUGIN_INPUT\`
+
+          ---
+
+          ## 📦 Package Information
+          **Version:** $VERSION
+          **.NET Version:** $FRAMEWORK
+          **Minimum Lidarr Version:** $MIN_LIDARR
+          **Commit:** $COMMIT
+          EOL
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3
+        with:
+          tag_name: ${{ needs.build.outputs.tag_ref }}
+          name: "🚀 Release ${{ needs.build.outputs.package_version }}"
+          body_path: release_notes.md
+          prerelease: ${{ needs.build.outputs.is_prerelease == 'true' }}
+          make_latest: ${{ needs.build.outputs.is_latestrelease == 'true' }}
+          target_commitish: ${{ needs.build.outputs.git_branch }}
+          files: ${{ steps.verify.outputs.artifact_path }}
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
