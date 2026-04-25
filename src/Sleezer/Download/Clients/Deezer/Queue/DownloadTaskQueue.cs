@@ -152,8 +152,8 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
         private async Task RunPostProcessAsync(DownloadItem item, CancellationToken ct)
         {
             FFmpegSettings? sharedSettings = GetSharedPostProcessingSettings();
-            bool scanEnabled = sharedSettings?.EnableCorruptFileScan ?? false;
-            bool tagEnabled = sharedSettings?.EnablePreImportTagging ?? false;
+            bool scanEnabled = (sharedSettings?.EnableCorruptFileScan ?? false) && (sharedSettings?.CorruptionCheckDeezer ?? false);
+            bool tagEnabled = (sharedSettings?.EnablePreImportTagging ?? false) && (sharedSettings?.PreImportTaggingDeezer ?? false);
 
             if (!scanEnabled && !tagEnabled)
                 return;

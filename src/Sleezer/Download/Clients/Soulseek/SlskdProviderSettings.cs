@@ -73,10 +73,7 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek
         [FieldDefinition(6, Label = "Clean Directories", Type = FieldType.Checkbox, HelpText = "After importing, remove stale directories.", Advanced = true)]
         public bool CleanStaleDirectories { get; set; }
 
-        [FieldDefinition(7, Label = "Corruption Check", Type = FieldType.Checkbox, HelpText = "Scan completed downloads for audio corruption with ffmpeg before Lidarr imports them. Corrupt albums are automatically blocklisted and Lidarr re-searches for a different release. Retries are skipped for corrupt files (the same peer would serve the same bad file). Requires ffmpeg \u2014 configure the path under Settings \u2192 Metadata \u2192 FFmpeg, or have ffmpeg on system PATH.", Advanced = true)]
-        public bool CorruptionCheck { get; set; } = true;
-
-        [FieldDefinition(8, Label = "Ban User After Corrupt Count", Type = FieldType.Number, HelpText = "After this many corrupt files from the same user, exclude them from future searches until the plugin restarts. 0 disables the per-user ban.", Advanced = true)]
+        [FieldDefinition(8, Label = "Ban User After Corrupt Count", Type = FieldType.Number, HelpText = "After this many corrupt files from the same user, exclude them from future searches until the plugin restarts. 0 disables the per-user ban. Requires the corrupt file scan to be enabled for Slskd under Settings \u2192 Metadata \u2192 FFmpeg.", Advanced = true)]
         public int BanUserAfterCorruptCount { get; set; }
 
         [FieldDefinition(9, Label = "Max Queue Position Before Cancel", Type = FieldType.Number, HelpText = "Cancel a queued file when the peer's queue position exceeds this value, forcing Lidarr to re-search with a different peer. 0 disables.", Advanced = true)]

@@ -504,11 +504,8 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             return;
 
         FFmpegSettings? sharedSettings = GetSharedPostProcessingSettings();
-        // Per-slskd CorruptionCheck is AND-gated with the global toggle so existing
-        // users who explicitly opted out don't get scans turned back on by the new
-        // global default. Tagging has no per-slskd analogue.
-        bool scanEnabled = (sharedSettings?.EnableCorruptFileScan ?? false) && settings.CorruptionCheck;
-        bool tagEnabled = sharedSettings?.EnablePreImportTagging ?? false;
+        bool scanEnabled = (sharedSettings?.EnableCorruptFileScan ?? false) && (sharedSettings?.CorruptionCheckSlskd ?? false);
+        bool tagEnabled = (sharedSettings?.EnablePreImportTagging ?? false) && (sharedSettings?.PreImportTaggingSlskd ?? false);
 
         if (!scanEnabled && !tagEnabled)
             return;
