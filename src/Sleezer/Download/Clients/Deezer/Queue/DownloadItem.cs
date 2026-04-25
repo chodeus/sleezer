@@ -153,10 +153,46 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
             }
 
             await Task.WhenAll(tasks);
+
             if (FailedTracks > 0)
+            {
+                logger.Warn("Deezer album {Title}: {Failed}/{Total} tracks failed; marking item Failed", Title, FailedTracks, _tracks.Length);
                 Status = DownloadItemStatus.Failed;
+
+                // Clean up the partial download folder so we don't accumulate
+                // half-finished albums under /data/downloads/deezer/. Lidarr
+                // won't call our DeleteItemData on Failed items, so we have
+                // to do this ourselves here.
+                TryCleanupAfterFailure(settings, logger);
+            }
             else
+            {
                 Status = DownloadItemStatus.Completed;
+            }
+        }
+
+        private void TryCleanupAfterFailure(DeezerSettings settings, Logger logger)
+        {
+            if (string.IsNullOrEmpty(DownloadFolder))
+                return;
+
+            try
+            {
+                if (Directory.Exists(DownloadFolder))
+                {
+                    Directory.Delete(DownloadFolder, recursive: true);
+                    logger.Debug("Deezer: removed failed-download folder {Folder}", DownloadFolder);
+                }
+
+                // Sweep up the now-empty artist folder above us. Same helper
+                // the download-client uses on successful imports.
+                NzbDrone.Core.Download.Clients.Deezer.Deezer.TryRemoveEmptyParentFolders(
+                    DownloadFolder, settings.DownloadPath, logger);
+            }
+            catch (Exception ex)
+            {
+                logger.Debug(ex, "Deezer: could not clean up failed-download folder {Folder}", DownloadFolder);
+            }
         }
 
         private async Task DoTrackDownload(long track, Bitrate trackBitrate, DeezerSettings settings, CancellationToken cancellation = default)
