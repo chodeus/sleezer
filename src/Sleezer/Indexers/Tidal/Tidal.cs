@@ -130,83 +130,30 @@ namespace NzbDrone.Core.Indexers.Tidal
             }
         }
 
-        // Builds an inline data: URL that the Lidarr OAuth popup loads. The
-        // page shows the Tidal verification URL prominently and provides an
-        // "I've Authorized" button which navigates the popup to Lidarr's own
-        // oauth.html callback so the standard onCompleteOauth → getOAuthToken
-        // chain fires. Lets us reuse FieldType.OAuth despite Tidal not
-        // redirecting back to a Lidarr-controlled URL after device-code auth.
+        // jsDelivr CDN URL pointing at the bridge HTML in this repo. Pinned
+        // to main so a sleezer release auto-deploys the bridge update with it.
+        // We can't use a data: URL here — Chrome (and Firefox) block top-level
+        // navigation to data: URLs as a phishing mitigation since Chrome 60,
+        // which manifests as window.open() returning a window whose body
+        // never renders. Real https origin is required.
+        private const string BridgePageBase = "https://cdn.jsdelivr.net/gh/chodeus/sleezer@main/docs/auth-bridge.html";
+
+        // Builds the URL Lidarr's OAuth popup navigates to. The bridge page
+        // shows the Tidal verification URL + user_code, and on click of its
+        // "I've Authorized" button it navigates the popup to Lidarr's own
+        // /oauth.html callback so the standard onCompleteOauth →
+        // getOAuthToken chain fires. Lets us reuse FieldType.OAuth despite
+        // Tidal not redirecting back to a Lidarr-controlled URL after
+        // device-code auth.
         private static string BuildPopupBridgeUrl(string tidalUrl, string userCode, string? callbackUrl)
         {
-            string safeTidalUrl = System.Net.WebUtility.HtmlEncode(tidalUrl);
-            string safeUserCode = System.Net.WebUtility.HtmlEncode(userCode ?? string.Empty);
+            string safeCallback = callbackUrl ?? string.Empty;
 
-            // Fall back to a no-op callback if Lidarr didn't pass one (defensive
-            // — current Lidarr always does, but a future UI variant might not).
-            string safeCallback = string.IsNullOrEmpty(callbackUrl)
-                ? "about:blank"
-                : System.Net.WebUtility.HtmlEncode(callbackUrl);
+            string query = "?tidalUrl=" + Uri.EscapeDataString(tidalUrl)
+                         + "&userCode=" + Uri.EscapeDataString(userCode ?? string.Empty)
+                         + "&callbackUrl=" + Uri.EscapeDataString(safeCallback);
 
-            string html = $$"""
-                <!DOCTYPE html>
-                <html lang="en">
-                <head>
-                  <meta charset="utf-8">
-                  <title>Tidal Authorization</title>
-                  <meta name="viewport" content="width=device-width, initial-scale=1">
-                  <style>
-                    :root { color-scheme: dark; }
-                    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-                           max-width: 520px; margin: 2em auto; padding: 1em 1.5em;
-                           background: #1a1a1a; color: #eee; line-height: 1.5; }
-                    h2 { margin-top: 0; }
-                    ol { padding-left: 1.4em; }
-                    li { margin: 0.4em 0; }
-                    .row { text-align: center; margin: 1em 0; }
-                    .code { display: inline-block; font-family: ui-monospace, Menlo, monospace;
-                            font-size: 1.6em; background: #333; padding: 0.4em 0.9em;
-                            border-radius: 6px; letter-spacing: 0.18em; }
-                    a.btn, button.btn { display: inline-block; padding: 0.65em 1.4em;
-                            margin: 0.3em; border-radius: 6px; cursor: pointer;
-                            text-decoration: none; font-size: 1em; border: 0; }
-                    .primary { background: #00d49f; color: #000; }
-                    .primary:hover { background: #00b287; }
-                    .secondary { background: #2a2a2a; color: #eee; border: 1px solid #444; }
-                    .secondary:hover { background: #333; }
-                    small { color: #888; }
-                  </style>
-                </head>
-                <body>
-                  <h2>Authorize Tidal</h2>
-                  <ol>
-                    <li>Click the button to open Tidal in a new tab.</li>
-                    <li>Log in with your Tidal account if prompted.</li>
-                    <li>Wait until Tidal confirms &ldquo;Device linked&rdquo;.</li>
-                    <li>Come back here and click <strong>I&rsquo;ve Authorized</strong>.</li>
-                  </ol>
-                  <div class="row">
-                    <a class="btn secondary" href="{{safeTidalUrl}}" target="_blank" rel="noopener">Open Tidal &rarr;</a>
-                  </div>
-                  <p style="text-align:center;">If Tidal asks for a code, enter:</p>
-                  <div class="row"><span class="code">{{safeUserCode}}</span></div>
-                  <div class="row">
-                    <button class="btn primary" id="auth-done" data-callback="{{safeCallback}}">I&rsquo;ve Authorized</button>
-                  </div>
-                  <p style="text-align:center;"><small>This window closes automatically once Lidarr has your tokens.</small></p>
-                  <script>
-                    document.getElementById("auth-done").addEventListener("click", function () {
-                      // data-callback already had HTML entities decoded by the parser,
-                      // so this is the raw URL — safe to concatenate query parts.
-                      var cb = this.getAttribute("data-callback");
-                      var sep = cb.indexOf("?") >= 0 ? "&" : "?";
-                      window.location.href = cb + sep + "status=ready";
-                    });
-                  </script>
-                </body>
-                </html>
-                """;
-
-            return "data:text/html;charset=utf-8," + Uri.EscapeDataString(html);
+            return BridgePageBase + query;
         }
 
         private object GetOAuthToken()

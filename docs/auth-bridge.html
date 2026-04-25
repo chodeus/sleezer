@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Tidal Authorization · Sleezer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <style>
+    :root { color-scheme: dark; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+           max-width: 520px; margin: 2em auto; padding: 1em 1.5em;
+           background: #1a1a1a; color: #eee; line-height: 1.5; }
+    h2 { margin-top: 0; }
+    ol { padding-left: 1.4em; }
+    li { margin: 0.4em 0; }
+    .row { text-align: center; margin: 1em 0; }
+    .code { display: inline-block; font-family: ui-monospace, Menlo, monospace;
+            font-size: 1.6em; background: #333; padding: 0.4em 0.9em;
+            border-radius: 6px; letter-spacing: 0.18em; }
+    a.btn, button.btn { display: inline-block; padding: 0.65em 1.4em;
+            margin: 0.3em; border-radius: 6px; cursor: pointer;
+            text-decoration: none; font-size: 1em; border: 0; }
+    .primary { background: #00d49f; color: #000; }
+    .primary:hover { background: #00b287; }
+    .secondary { background: #2a2a2a; color: #eee; border: 1px solid #444; }
+    .secondary:hover { background: #333; }
+    small { color: #888; }
+    #error { background: #5a1f1f; padding: 0.8em 1em; border-radius: 6px;
+             margin: 1em 0; display: none; }
+  </style>
+</head>
+<body>
+  <h2>Authorize Tidal</h2>
+  <ol>
+    <li>Click <strong>Open Tidal</strong> below.</li>
+    <li>Log in with your Tidal account if prompted.</li>
+    <li>Wait until Tidal confirms <em>&ldquo;Device linked&rdquo;</em>.</li>
+    <li>Come back here and click <strong>I&rsquo;ve Authorized</strong>.</li>
+  </ol>
+
+  <div class="row">
+    <a id="open-tidal" class="btn secondary" target="_blank" rel="noopener">Open Tidal &rarr;</a>
+  </div>
+
+  <p style="text-align:center;">If Tidal asks for a code, enter:</p>
+  <div class="row"><span id="user-code" class="code"></span></div>
+
+  <div class="row">
+    <button id="auth-done" class="btn primary">I&rsquo;ve Authorized</button>
+  </div>
+
+  <p style="text-align:center;"><small>This window closes automatically once Lidarr has your tokens.</small></p>
+
+  <div id="error"></div>
+
+  <script>
+    (function () {
+      var params = new URLSearchParams(window.location.search);
+      var tidalUrl = params.get('tidalUrl') || '';
+      var userCode = params.get('userCode') || '';
+      var callbackUrl = params.get('callbackUrl') || '';
+
+      var errEl = document.getElementById('error');
+      function fail(msg) {
+        errEl.textContent = msg;
+        errEl.style.display = 'block';
+      }
+
+      if (!tidalUrl || !callbackUrl) {
+        fail('Missing required parameter — open this page from Lidarr’s Authenticate button, not directly.');
+        return;
+      }
+
+      // Reject anything that isn't an http(s) URL — defensive against query-string injection.
+      try {
+        var t = new URL(tidalUrl);
+        var c = new URL(callbackUrl);
+        if (!/^https?:$/.test(t.protocol) || !/^https?:$/.test(c.protocol)) throw new Error('non-http url');
+      } catch (e) {
+        fail('Invalid URL parameters.');
+        return;
+      }
+
+      document.getElementById('open-tidal').href = tidalUrl;
+      document.getElementById('user-code').textContent = userCode;
+
+      document.getElementById('auth-done').addEventListener('click', function () {
+        var sep = callbackUrl.indexOf('?') >= 0 ? '&' : '?';
+        window.location.href = callbackUrl + sep + 'status=ready';
+      });
+    })();
+  </script>
+</body>
+</html>
