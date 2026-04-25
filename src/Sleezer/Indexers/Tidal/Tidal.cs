@@ -130,13 +130,17 @@ namespace NzbDrone.Core.Indexers.Tidal
             }
         }
 
-        // jsDelivr CDN URL pointing at the bridge HTML in this repo. Pinned
-        // to main so a sleezer release auto-deploys the bridge update with it.
-        // We can't use a data: URL here — Chrome (and Firefox) block top-level
+        // GitHub Pages URL serving the OAuth bridge HTML from docs/auth-bridge.html
+        // in this repo. Pages is required (not jsDelivr / statically.io / raw.github)
+        // because those CDNs proxy GitHub's text/plain content-type, which makes
+        // browsers display the page as plain text instead of rendering it. Pages
+        // is the only option that serves .html files with text/html.
+        //
+        // We also can't use a data: URL — Chrome (and Firefox) block top-level
         // navigation to data: URLs as a phishing mitigation since Chrome 60,
-        // which manifests as window.open() returning a window whose body
-        // never renders. Real https origin is required.
-        private const string BridgePageBase = "https://cdn.jsdelivr.net/gh/chodeus/sleezer@main/docs/auth-bridge.html";
+        // which manifests as window.open() returning a window whose body never
+        // renders.
+        private const string BridgePageBase = "https://chodeus.github.io/sleezer/auth-bridge.html";
 
         // Builds the URL Lidarr's OAuth popup navigates to. The bridge page
         // shows the Tidal verification URL + user_code, and on click of its
