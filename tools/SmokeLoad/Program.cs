@@ -23,16 +23,60 @@ namespace Sleezer.SmokeLoad;
 //   silently disappears from the UI.
 //
 // What this does:
-//   Loads the plugin into an AssemblyLoadContext whose resolver can ONLY
-//   see (a) BCL assemblies that ship with the CI runner's .NET 8 runtime,
-//   and (b) assemblies in lidarr-runtime-dir. Any BCL version mismatch
-//   (the v1.1.1 incident: plugin wanted System.IO.Pipelines 10, host has 8)
-//   fails the load, exit 1, CI red.
+//   Loads the plugin into an AssemblyLoadContext whose resolver looks in:
+//     1. lidarr-runtime-dir (Lidarr's own DLLs from ext/Lidarr/_output/<tfm>/)
+//     2. The NuGet packages cache, for Lidarr's third-party transitive deps
+//        (Newtonsoft.Json, FluentValidation, etc.). Lidarr ships these in
+//        its install dir at runtime, but its build _output/ doesn't include
+//        them — only its own assemblies + native helpers. Without this
+//        fallback, smoke-load reports false positives the moment a plugin
+//        references any common third-party type Lidarr exposes.
+//     3. Default context (CI runner's BCL .NET 8 runtime).
+//
+//   Any BCL version mismatch (the v1.1.1 incident: plugin wanted
+//   System.IO.Pipelines 10, host has 8) still fails the load → exit 1, CI red.
 //
 // Exit codes: 0 = plugin loads cleanly, 1 = load or GetTypes() failed.
 
 internal static class Program
 {
+    // TFM probe order: prefer the runtime we're loading the plugin into
+    // (net8.0), then back off to broadly-compatible tiers. Matches what
+    // .NET's normal assembly resolution would prefer.
+    private static readonly string[] TfmProbeOrder =
+    {
+        "net8.0", "net7.0", "net6.0",
+        "netstandard2.1", "netstandard2.0"
+    };
+
+    private static Assembly? TryResolveFromNuGet(AssemblyLoadContext ctx, string cacheRoot, AssemblyName name)
+    {
+        if (string.IsNullOrEmpty(name.Name))
+            return null;
+
+        string pkgRoot = Path.Combine(cacheRoot, name.Name.ToLowerInvariant());
+        if (!Directory.Exists(pkgRoot))
+            return null;
+
+        // NuGet stores packages as <name>/<version>/lib/<tfm>/<name>.dll.
+        // Newest version first — closer to what a real Lidarr install ships.
+        string[] versions = Directory.GetDirectories(pkgRoot)
+            .OrderByDescending(d => d, StringComparer.Ordinal)
+            .ToArray();
+
+        foreach (string verDir in versions)
+        {
+            foreach (string tfm in TfmProbeOrder)
+            {
+                string candidate = Path.Combine(verDir, "lib", tfm, name.Name + ".dll");
+                if (File.Exists(candidate))
+                    return ctx.LoadFromAssemblyPath(candidate);
+            }
+        }
+
+        return null;
+    }
+
     private static int Main(string[] args)
     {
         if (args.Length < 2)
@@ -58,14 +102,29 @@ internal static class Program
         Console.WriteLine($"plugin: {pluginPath}");
         Console.WriteLine($"host:   {hostDir}");
 
+        string nugetCache = Environment.GetEnvironmentVariable("NUGET_PACKAGES")
+            ?? Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".nuget", "packages");
+        Console.WriteLine($"nuget:  {nugetCache}");
+
         AssemblyLoadContext ctx = new("PluginSmoke", isCollectible: false);
         ctx.Resolving += (c, name) =>
         {
+            // 1. Lidarr's own outputs (Lidarr.Common, Lidarr.Core, etc.)
             string candidate = Path.Combine(hostDir, name.Name + ".dll");
             if (File.Exists(candidate))
                 return c.LoadFromAssemblyPath(candidate);
 
-            // Fall through to default context (CI runner's BCL). Returning
+            // 2. NuGet packages cache — covers Lidarr's third-party transitive
+            // deps that DON'T land in _output/ (Newtonsoft.Json, FluentValidation,
+            // NLog, etc.). Walk versions newest-first; pick the first DLL that
+            // matches a TFM we can load.
+            Assembly? fromCache = TryResolveFromNuGet(c, nugetCache, name);
+            if (fromCache != null)
+                return fromCache;
+
+            // 3. Fall through to default context (CI runner's BCL). Returning
             // null lets .NET keep searching; if nothing resolves, it throws.
             return null;
         };
