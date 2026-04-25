@@ -51,6 +51,14 @@ public class SlskdRetryHandler(ISlskdApiClient apiClient, Logger logger)
         finally
         {
             fileState.IncrementAttempt();
+            // After this attempt the retry budget is gone. Mark the file
+            // terminally failed so SlskdStatusResolver promotes the item to
+            // DownloadItemStatus.Failed on the next poll, even if the retry
+            // sits in "Queued, Remotely" against a dead peer indefinitely.
+            // GetStatus still lets a Completed/Downloading transport state win,
+            // so a healthy retry that succeeds isn't cancelled.
+            if (fileState.RetryCount >= fileState.MaxRetryCount)
+                fileState.MarkRetriesExhausted();
         }
     }
 

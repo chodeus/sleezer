@@ -40,9 +40,24 @@ public class SlskdFileState(SlskdDownloadFile file)
 
     public void MarkWatchdogCancelled() => WatchdogCancelled = true;
 
+    // Sticky terminal flag set by SlskdRetryHandler once IncrementAttempt has
+    // pushed RetryCount to MaxRetryCount. Without this, "exhausted" is derived
+    // from a tuple (RetryCount/_retried/state-string) that races with polling:
+    // a stuck-in-remote-queue retry never re-enters a Failed state-string, so
+    // the resolver would sit in Warning indefinitely waiting for the watchdog.
+    public bool RetriesExhausted { get; private set; }
+
+    public void MarkRetriesExhausted() => RetriesExhausted = true;
+
     public DownloadItemStatus GetStatus()
     {
         DownloadItemStatus status = GetStatus(State);
+        // A successful or actively-progressing transport state always wins:
+        // a retry that's mid-flight or already finished must not be flipped
+        // to Failed just because we previously marked the budget exhausted.
+        if (status == DownloadItemStatus.Completed) return status;
+        if (status == DownloadItemStatus.Downloading) return status;
+        if (RetriesExhausted) return DownloadItemStatus.Failed;
         if ((status == DownloadItemStatus.Failed && RetryCount < MaxRetryCount) || _retried)
             return DownloadItemStatus.Warning;
         return status;

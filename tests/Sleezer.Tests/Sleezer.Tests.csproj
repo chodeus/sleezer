@@ -32,6 +32,22 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Tidal\TidalArtistMatcher.cs"
              LinkBase="SourceUnderTest" />
+    <!-- Slskd retry-exhaustion state machine and its transitive deps. Lidarr.Core
+         supplies DownloadItemStatus via the project reference below. -->
+    <Compile Include="..\..\src\Sleezer\Download\Clients\Soulseek\Models\SlskdFileState.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Download\Clients\Soulseek\Models\SlskdDownloadFile.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Indexers\Soulseek\SlsdkRecords.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Core\Utilities\AudioFormat.cs"
+             LinkBase="SourceUnderTest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Needed for NzbDrone.Core.Download.DownloadItemStatus. Same submodule the
+         main plugin already references; tests build against the identical types. -->
+    <ProjectReference Include="..\..\ext\Lidarr\src\NzbDrone.Core\Lidarr.Core.csproj" />
   </ItemGroup>
 
 </Project>
