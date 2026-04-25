@@ -115,7 +115,7 @@ public class TidalClient
     // path when Lidarr loads our plugin and hands us tokens out of its own
     // settings store. Skips file IO entirely; pairs with IPluginSettings-backed
     // token storage instead of the legacy lastUser.json flow.
-    public async Task LoadFromTokens(string accessToken, string refreshToken, string tokenType, long userId, DateTime expirationDate, CancellationToken token = default)
+    public async Task LoadFromTokens(string accessToken, string refreshToken, string tokenType, long userId, DateTime expirationDate, string countryCode = "", CancellationToken token = default)
     {
         long secondsRemaining = (long)Math.Max(0, (expirationDate - DateTime.UtcNow).TotalSeconds);
         var data = new OAuthTokenData
@@ -127,7 +127,7 @@ public class TidalClient
             ExpiresIn = secondsRemaining,
             Scope = "r_usr+w_usr+w_sub",
             ClientName = "device",
-            User = new OAuthTokenData.UserData { UserId = userId, CountryCode = "" }
+            User = new OAuthTokenData.UserData { UserId = userId, CountryCode = countryCode ?? "" }
         };
 
         var user = new TidalUser(data, jsonPath: null, isPkce: false, expirationDate);

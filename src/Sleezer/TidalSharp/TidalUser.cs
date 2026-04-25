@@ -74,6 +74,11 @@ public class TidalUser
     public string TokenType => _data.TokenType;
 
     public long UserId => _data.UserId;
-    public string CountryCode => _sessionInfo?.CountryCode ?? "";
+    // Fall back to the OAuth token's user.countryCode before the /sessions
+    // bootstrap call has populated _sessionInfo. Tidal now rejects requests
+    // (including the /sessions call itself) that arrive without countryCode,
+    // so the very first request after a fresh login or token-restore needs a
+    // value from somewhere other than the not-yet-fetched session info.
+    public string CountryCode => _sessionInfo?.CountryCode ?? _data.User?.CountryCode ?? "";
     public string SessionID => _sessionInfo?.SessionId ?? "";
 }
