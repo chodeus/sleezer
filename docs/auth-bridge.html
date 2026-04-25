@@ -71,11 +71,25 @@
         return;
       }
 
-      // Reject anything that isn't an http(s) URL — defensive against query-string injection.
+      // Allowlist both URLs to defeat open-redirect / phishing via crafted query params.
+      // tidalUrl must point at Tidal's own auth/link domains; callbackUrl must end in
+      // /oauth.html (Lidarr's standard OAuth callback page) — anything else is rejected.
+      var ALLOWED_TIDAL_HOSTS = ['link.tidal.com', 'auth.tidal.com'];
       try {
         var t = new URL(tidalUrl);
         var c = new URL(callbackUrl);
-        if (!/^https?:$/.test(t.protocol) || !/^https?:$/.test(c.protocol)) throw new Error('non-http url');
+        if (!/^https?:$/.test(t.protocol) || !/^https?:$/.test(c.protocol)) {
+          fail('Invalid URL protocol.');
+          return;
+        }
+        if (ALLOWED_TIDAL_HOSTS.indexOf(t.hostname) < 0) {
+          fail('Refusing to open a non-Tidal URL: ' + t.hostname);
+          return;
+        }
+        if (!/\/oauth\.html$/i.test(c.pathname)) {
+          fail('Refusing to redirect to a non-Lidarr callback path: ' + c.pathname);
+          return;
+        }
       } catch (e) {
         fail('Invalid URL parameters.');
         return;
