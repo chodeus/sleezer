@@ -346,9 +346,13 @@ jobs:
           fi
 
           # Lidarr's built assemblies (Lidarr.Common, Lidarr.Core, Lidarr.Http
-          # and their transitive non-BCL deps) — Directory.Build.props routes
-          # LidarrProject outputs to _output/.
-          HOST_DIR="$GITHUB_WORKSPACE/_output"
+          # and their transitive non-BCL deps). Directory.Build.props inside
+          # ext/Lidarr routes LidarrProject outputs to ext/Lidarr/_output/<tfm>/,
+          # NOT to a workspace-root _output/ — that path was an early guess
+          # that nothing exercised before the v1.2.0 tag (PR #24 introduced
+          # smoke-load but build.yml only runs on tag pushes, so the wrong
+          # path wasn't caught until now).
+          HOST_DIR="$GITHUB_WORKSPACE/ext/Lidarr/_output/net8.0"
           if [ ! -d "$HOST_DIR" ]; then
             echo "::error::Lidarr host runtime dir not found at $HOST_DIR"
             exit 1
