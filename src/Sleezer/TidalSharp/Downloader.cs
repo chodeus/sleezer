@@ -229,24 +229,82 @@ public class Downloader
         return (outStream, streamManifest);
     }
 
+    // Tidal returns this userMessage from playbackinfopostpaywall when a track
+    // exists in metadata but the requested audioquality isn't streamable for
+    // this user/region (e.g. region-locked, removed, or only available at
+    // lower qualities). We treat it as an "unavailable at this quality"
+    // signal and fall back within the same lossy/lossless tier.
+    private const string AssetNotReadyMessage = "Asset is not ready for playback";
+
+    // Tier-locked fallback chains. Crossing the lossless/lossy boundary would
+    // violate the user's Lidarr quality profile (a Lossless profile would
+    // never accept a 320kbps AAC substitute), so the chain only contains
+    // qualities of the same tier as the requested one. Sleezer-specific
+    // logic — preserve on any future TidalSharp upstream sync.
+    private static AudioQuality[] GetTierFallbackChain(AudioQuality requested) => requested switch
+    {
+        AudioQuality.HI_RES_LOSSLESS => [AudioQuality.HI_RES_LOSSLESS, AudioQuality.LOSSLESS],
+        AudioQuality.LOSSLESS => [AudioQuality.LOSSLESS],
+        AudioQuality.HIGH => [AudioQuality.HIGH],
+        AudioQuality.LOW => [AudioQuality.LOW],
+        _ => [requested]
+    };
+
     private async Task<TrackStreamData> GetTrackStreamData(string trackId, AudioQuality quality, CancellationToken token = default)
     {
         if (_cachedStreamData.TryGetValue((trackId, quality), out TrackStreamData? data))
             return data;
 
-        var result = await _api.Call(HttpMethod.Get, $"tracks/{trackId}/playbackinfopostpaywall",
-            urlParameters: new()
+        var chain = GetTierFallbackChain(quality);
+        var attempted = new List<AudioQuality>(chain.Length);
+        APIException? lastUnavailable = null;
+
+        foreach (var attemptQuality in chain)
+        {
+            attempted.Add(attemptQuality);
+
+            // Re-check cache for the fallback quality — if a previous track in
+            // the same release already established the delivered tier, we can
+            // skip the round-trip.
+            if (_cachedStreamData.TryGetValue((trackId, attemptQuality), out TrackStreamData? cached))
+                return cached;
+
+            try
             {
-                { "playbackmode", "STREAM" },
-                { "assetpresentation", "FULL" },
-                { "audioquality", $"{quality}" }
-            },
-            token: token
-        );
-        var streamData = result.ToObject<TrackStreamData>()!;
-        lock (_cachedStreamData)
-            _cachedStreamData.Add((trackId, quality), streamData);
-        return streamData;
+                var result = await _api.Call(HttpMethod.Get, $"tracks/{trackId}/playbackinfopostpaywall",
+                    urlParameters: new()
+                    {
+                        { "playbackmode", "STREAM" },
+                        { "assetpresentation", "FULL" },
+                        { "audioquality", $"{attemptQuality}" }
+                    },
+                    token: token
+                );
+                var streamData = result.ToObject<TrackStreamData>()!;
+                lock (_cachedStreamData)
+                    _cachedStreamData[(trackId, attemptQuality)] = streamData;
+
+                if (attemptQuality != quality)
+                    _logger.Info("Tidal track {TrackId} requested at {Requested} but delivered at {Delivered} (track unavailable at requested quality)",
+                        trackId, quality, attemptQuality);
+
+                return streamData;
+            }
+            catch (APIException ex) when (ex.Message.Contains(AssetNotReadyMessage, StringComparison.OrdinalIgnoreCase))
+            {
+                lastUnavailable = ex;
+                if (chain.Length > 1 && attemptQuality != chain[^1])
+                {
+                    var next = chain[Array.IndexOf(chain, attemptQuality) + 1];
+                    _logger.Warn("Tidal track {TrackId} not available at {Requested}; trying {Fallback} (same tier)",
+                        trackId, attemptQuality, next);
+                }
+            }
+        }
+
+        throw new APIException(
+            $"Tidal couldn't deliver track {trackId} in any quality of the same tier (tried: {string.Join(", ", attempted)}). The track may be region-locked or removed.",
+            lastUnavailable!);
     }
 
     private Dictionary<(string trackId, AudioQuality quality), TrackStreamData> _cachedStreamData = [];
