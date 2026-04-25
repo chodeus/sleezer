@@ -210,7 +210,21 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
             if (!settings.ExtractFlac && !settings.ReEncodeAAC)
                 return filePath;
 
-            var codecs = FFMPEG.ProbeCodecs(filePath);
+            string[] codecs;
+            try
+            {
+                codecs = FFMPEG.ProbeCodecs(filePath);
+            }
+            catch (FFMPEGException ex)
+            {
+                // ffprobe not installed or otherwise broken. Skip the
+                // conversion step so the track download as a whole still
+                // succeeds — Lidarr will import the original M4A. Logged
+                // Warn (not Error) since the user may have intentionally
+                // toggled the conversion options on a host without ffmpeg.
+                logger.Warn(ex, "Tidal: skipping audio conversion for {Path} — ffprobe unavailable", filePath);
+                return filePath;
+            }
             if (codecs.Contains("flac") && settings.ExtractFlac)
             {
                 string newFilePath = Path.ChangeExtension(filePath, "flac");

@@ -70,7 +70,15 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
             _logger = logger;
         }
 
-        public void SetSettings(TidalSettings settings) => _settings = settings;
+        public void SetSettings(TidalSettings settings)
+        {
+            _settings = settings;
+            // Eagerly resolve the FFmpeg binary path so DownloadItem.HandleAudioConversion
+            // (which runs DURING the download, before RunPostProcessAsync would have a
+            // chance to call EnsureFFmpegResolved) can find ffprobe / ffmpeg via the
+            // path the user configured in Lidarr's FFmpeg metadata settings.
+            EnsureFFmpegResolved();
+        }
 
         public void StartQueueHandler() => Task.Run(() => BackgroundProcessing());
 
@@ -284,6 +292,14 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
                 {
                     XabeFFmpeg.SetExecutablesPath(settings.FFmpegPath);
                     AudioMetadataHandler.ResetFFmpegInstallationCheck();
+
+                    // Tidal's audio-conversion path (DownloadItem.HandleAudioConversion)
+                    // shells out to ffmpeg/ffprobe directly via our local FFMPEG wrapper
+                    // — point it at the same configured directory the rest of sleezer
+                    // uses. Without this it falls back to bare PATH lookup which often
+                    // misses ffmpeg installed at /usr/bin in the Lidarr container.
+                    FFMPEG.SetBinaryDirectory(settings.FFmpegPath);
+
                     _logger.Trace("[post-process] Applied FFmpeg path: {Path}", settings.FFmpegPath);
                 }
             }
