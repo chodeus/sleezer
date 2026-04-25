@@ -259,7 +259,8 @@ namespace NzbDrone.Core.Indexers.Tidal
                     Settings.RefreshToken,
                     Settings.TokenType,
                     Settings.UserId,
-                    Settings.Expires).GetAwaiter().GetResult();
+                    Settings.Expires,
+                    Settings.CountryCode).GetAwaiter().GetResult();
                 _loadedAccessToken = Settings.AccessToken;
             }
             catch (Exception ex)
