@@ -170,8 +170,8 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
         private async Task RunPostProcessAsync(DownloadItem item, CancellationToken ct)
         {
             FFmpegSettings? sharedSettings = GetSharedPostProcessingSettings();
-            bool scanEnabled = (sharedSettings?.EnableCorruptFileScan ?? false) && (sharedSettings?.CorruptionCheckTidal ?? false);
-            bool tagEnabled = (sharedSettings?.EnablePreImportTagging ?? false) && (sharedSettings?.PreImportTaggingTidal ?? false);
+            bool scanEnabled = sharedSettings?.CorruptionScanClients?.Contains((int)PostProcessClient.Tidal) ?? false;
+            bool tagEnabled = sharedSettings?.PreImportTaggingClients?.Contains((int)PostProcessClient.Tidal) ?? false;
 
             if (!scanEnabled && !tagEnabled)
                 return;

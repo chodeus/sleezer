@@ -504,8 +504,8 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             return;
 
         FFmpegSettings? sharedSettings = GetSharedPostProcessingSettings();
-        bool scanEnabled = (sharedSettings?.EnableCorruptFileScan ?? false) && (sharedSettings?.CorruptionCheckSlskd ?? false);
-        bool tagEnabled = (sharedSettings?.EnablePreImportTagging ?? false) && (sharedSettings?.PreImportTaggingSlskd ?? false);
+        bool scanEnabled = sharedSettings?.CorruptionScanClients?.Contains((int)PostProcessClient.Slskd) ?? false;
+        bool tagEnabled = sharedSettings?.PreImportTaggingClients?.Contains((int)PostProcessClient.Slskd) ?? false;
 
         if (!scanEnabled && !tagEnabled)
             return;

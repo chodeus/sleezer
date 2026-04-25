@@ -163,19 +163,19 @@ Sleezer ships with a downloader (`Xabe.FFmpeg.Downloader`) and will fetch FFmpeg
 
 These two features live under FFmpeg's settings because they depend on the bundled FFmpeg binary. Both are scoped to **Sleezer's own downloaders only** — Deezer, Tidal, and Slskd. The web clients (Lucida, SubSonic, TripleTriple, DABMusic) currently share a lighter download path that doesn't invoke them, and Lidarr's native torrent/Usenet clients are untouched. Only the FFmpeg *conversion* provider (previous section) runs on imports from every source.
 
-Each feature has a master toggle plus per-client toggles. A feature only runs against a given client when the master switch **and** that client's toggle are both on. **All toggles default off** — nothing runs until you opt in.
+Each feature is opt-in via a chip-style picker: pick which Sleezer downloaders should get the treatment. An empty picker means the feature is off entirely. **Both pickers default empty** — nothing runs until you opt in.
 
-#### Enable Corrupt File Scan
+#### Run Corrupt Scan On
 
 When a download finishes, Sleezer runs each audio file through FFmpeg to detect truncated/corrupt streams. If something's broken, the download is deleted and marked failed so Lidarr grabs a different release instead of importing a silent half-track.
 
-The per-client toggles — **Corrupt Scan: Deezer**, **Corrupt Scan: Tidal**, **Corrupt Scan: Slskd** — let you turn the scan off for a specific client without disabling it everywhere. For example, leave it on for Slskd (where corrupt files from random peers are the whole reason this exists) and turn it off for Deezer if you trust the source.
+Add the clients you want scanned — for example, just **Slskd** (where corrupt files from random peers are the whole reason this exists), or all three if you want belt-and-braces.
 
-#### Enable Pre-Import Tagging
+#### Run Pre-Import Tagging On
 
 Before Lidarr sees the finished folder, Sleezer reads each file's embedded tags, matches them to the intended Lidarr release via MusicBrainz metadata, and rewrites the file's tags to match. The goal is to make Lidarr's importer see exactly the album/track Lidarr asked for, not whatever the download source happened to name things.
 
-Same pattern: per-client toggles — **Pre-Import Tag: Deezer**, **Pre-Import Tag: Tidal**, **Pre-Import Tag: Slskd** — let you decide which clients get the tagging treatment.
+Same picker pattern — add the clients you want tagged.
 
 #### Strip Featured Artists
 
