@@ -72,9 +72,12 @@ Sleezer talks to Tidal directly using a vendored fork of TrevTV's `TidalSharp` l
 
 1. In Lidarr, go to `Settings -> Indexers` and click `+` to add a new indexer.
 2. In the modal, select `Tidal` (under **Other** at the bottom).
-3. Click **Authenticate with Tidal**. A Tidal verification URL opens in a new tab.
-4. Log in to Tidal and grant access. The settings page picks up the tokens automatically — no copy-paste of redirect URLs.
-5. Click **Save**.
+3. Click **Authenticate with Tidal**. A small popup opens with a *"Open Tidal →"* button.
+4. Click *"Open Tidal →"* — your Tidal verification page opens in a separate tab. Log in / grant access until Tidal says **"Device linked"**.
+5. Come back to the popup window and click *"I've Authorized"*. The popup closes automatically; the settings page populates the hidden token fields.
+6. Click **Save**.
+
+> Why the extra "I've Authorized" click? Tidal's device-code OAuth flow doesn't redirect back to Lidarr after you authorize — its "Device linked" page is the end of the road on Tidal's side. The intermediate popup acts as the bridge so Lidarr knows when you're done.
 
 #### Setting Up the Tidal Download Client
 

@@ -93,7 +93,13 @@ namespace NzbDrone.Core.Indexers.Tidal
                     _pendingDeviceAuth = auth;
                 }
 
-                string tidalUrl = auth.VerificationUriComplete;
+                // Defensive: Tidal's device_authorization response always
+                // includes verificationUriComplete in practice, but a future
+                // API change or proxy mangling could omit it.
+                string tidalUrl = auth.VerificationUriComplete ?? string.Empty;
+                if (string.IsNullOrEmpty(tidalUrl))
+                    throw new InvalidOperationException("Tidal device_authorization response missing verificationUriComplete.");
+
                 if (!tidalUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
                     !tidalUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
                     tidalUrl = "https://" + tidalUrl;
