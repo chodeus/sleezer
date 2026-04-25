@@ -1,4 +1,5 @@
 using FluentValidation.Results;
+using NLog;
 using NzbDrone.Common.Http;
 using NzbDrone.Core.Download.Clients;
 using System.Net;
@@ -7,9 +8,47 @@ using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek.Models;
 
 namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
 
-public class SlskdApiClient(IHttpClient httpClient) : ISlskdApiClient
+public class SlskdApiClient(IHttpClient httpClient, Logger logger) : ISlskdApiClient
 {
     private readonly SemaphoreSlim _enqueueLimiter = new(2, 2);
+
+    // Transient HTTP errors that warrant a retry on idempotent (GET) calls.
+    private static readonly HttpStatusCode[] TransientStatuses =
+    {
+        HttpStatusCode.RequestTimeout,
+        HttpStatusCode.BadGateway,
+        HttpStatusCode.ServiceUnavailable,
+        HttpStatusCode.GatewayTimeout
+    };
+
+    // Wrap GET requests with backoff retry. Network blips and slskd restarts surface
+    // here as HttpException; one retry is usually enough. POST/DELETE callers MUST NOT
+    // use this (would risk double-enqueue / double-delete on a successful-but-timed-out call).
+    private async Task<HttpResponse> ExecuteGetWithRetryAsync(HttpRequest request)
+    {
+        const int maxAttempts = 3;
+        for (int attempt = 1; ; attempt++)
+        {
+            try
+            {
+                HttpResponse response = await httpClient.ExecuteAsync(request);
+                if (attempt < maxAttempts && Array.IndexOf(TransientStatuses, response.StatusCode) >= 0)
+                {
+                    int delayMs = 500 * (1 << (attempt - 1));
+                    logger.Debug("[slskd] {Status} from {Url}; retry {Attempt}/{Max} in {Delay}ms", response.StatusCode, request.Url, attempt, maxAttempts - 1, delayMs);
+                    await Task.Delay(delayMs);
+                    continue;
+                }
+                return response;
+            }
+            catch (HttpException ex) when (attempt < maxAttempts)
+            {
+                int delayMs = 500 * (1 << (attempt - 1));
+                logger.Debug(ex, "[slskd] transient error from {Url}; retry {Attempt}/{Max} in {Delay}ms", request.Url, attempt, maxAttempts - 1, delayMs);
+                await Task.Delay(delayMs);
+            }
+        }
+    }
 
     public async Task<(List<string> Enqueued, List<string> Failed)> EnqueueDownloadAsync(
         SlskdProviderSettings settings, string username, IEnumerable<(string Filename, long Size)> files)
@@ -39,7 +78,7 @@ public class SlskdApiClient(IHttpClient httpClient) : ISlskdApiClient
     public async Task<List<SlskdUserTransfers>> GetAllTransfersAsync(SlskdProviderSettings settings, bool includeRemoved = false)
     {
         string endpoint = "/api/v0/transfers/downloads" + (includeRemoved ? "?includeRemoved=true" : "");
-        HttpResponse response = await httpClient.ExecuteAsync(BuildRequest(settings, endpoint));
+        HttpResponse response = await ExecuteGetWithRetryAsync(BuildRequest(settings, endpoint));
 
         if (response.StatusCode != HttpStatusCode.OK)
             return [];
@@ -70,7 +109,7 @@ public class SlskdApiClient(IHttpClient httpClient) : ISlskdApiClient
         HttpRequest request = BuildRequest(settings, $"/api/v0/transfers/downloads/{Uri.EscapeDataString(username)}");
         request.SuppressHttpErrorStatusCodes = new[] { HttpStatusCode.NotFound };
 
-        HttpResponse response = await httpClient.ExecuteAsync(request);
+        HttpResponse response = await ExecuteGetWithRetryAsync(request);
 
         if (response.StatusCode == HttpStatusCode.NotFound)
             return null;
@@ -89,7 +128,7 @@ public class SlskdApiClient(IHttpClient httpClient) : ISlskdApiClient
 
     public async Task<SlskdDownloadFile?> GetTransferAsync(SlskdProviderSettings settings, string username, string fileId)
     {
-        HttpResponse response = await httpClient.ExecuteAsync(
+        HttpResponse response = await ExecuteGetWithRetryAsync(
             BuildRequest(settings, $"/api/v0/transfers/downloads/{Uri.EscapeDataString(username)}/{fileId}"));
 
         if (response.StatusCode != HttpStatusCode.OK)
@@ -101,7 +140,7 @@ public class SlskdApiClient(IHttpClient httpClient) : ISlskdApiClient
 
     public async Task<int?> GetQueuePositionAsync(SlskdProviderSettings settings, string username, string fileId)
     {
-        HttpResponse response = await httpClient.ExecuteAsync(
+        HttpResponse response = await ExecuteGetWithRetryAsync(
             BuildRequest(settings, $"/api/v0/transfers/downloads/{Uri.EscapeDataString(username)}/{fileId}/position"));
 
         if (response.StatusCode != HttpStatusCode.OK)
@@ -113,7 +152,10 @@ public class SlskdApiClient(IHttpClient httpClient) : ISlskdApiClient
             if (doc.RootElement.ValueKind == JsonValueKind.Number)
                 return doc.RootElement.GetInt32();
         }
-        catch { /* fall through */ }
+        catch (JsonException)
+        {
+            // Slskd sometimes returns a bare integer as plain text instead of JSON; fall through to TryParse.
+        }
 
         return int.TryParse(response.Content.Trim(), out int position) ? position : null;
     }
@@ -131,7 +173,7 @@ public class SlskdApiClient(IHttpClient httpClient) : ISlskdApiClient
 
     public async Task<string?> GetDownloadPathAsync(SlskdProviderSettings settings)
     {
-        HttpResponse response = await httpClient.ExecuteAsync(BuildRequest(settings, "/api/v0/options"));
+        HttpResponse response = await ExecuteGetWithRetryAsync(BuildRequest(settings, "/api/v0/options"));
 
         if (response.StatusCode != HttpStatusCode.OK)
             return null;
@@ -162,7 +204,7 @@ public class SlskdApiClient(IHttpClient httpClient) : ISlskdApiClient
             HttpRequest request = BuildRequest(settings, "/api/v0/application");
             request.AllowAutoRedirect = true;
             request.RequestTimeout = TimeSpan.FromSeconds(30);
-            HttpResponse response = await httpClient.ExecuteAsync(request);
+            HttpResponse response = await ExecuteGetWithRetryAsync(request);
 
             if (response.StatusCode != HttpStatusCode.OK)
                 return new ValidationFailure("BaseUrl", $"Unable to connect to Slskd. Status: {response.StatusCode}");
@@ -197,7 +239,7 @@ public class SlskdApiClient(IHttpClient httpClient) : ISlskdApiClient
     public async Task<(List<SlskdEventRecord> Events, int TotalCount)> GetEventsAsync(
         SlskdProviderSettings settings, int offset, int limit)
     {
-        HttpResponse response = await httpClient.ExecuteAsync(
+        HttpResponse response = await ExecuteGetWithRetryAsync(
             BuildRequest(settings, $"/api/v0/events?offset={offset}&limit={limit}"));
 
         if (response.StatusCode != HttpStatusCode.OK)

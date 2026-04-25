@@ -71,7 +71,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 request.AllowAutoRedirect = true;
                 request.RequestTimeout = TimeSpan.FromSeconds(30);
                 HttpResponse response = await _httpClient.ExecuteAsync(request);
-                _logger.Debug($"TestConnection Response: {response.Content}");
+                _logger.Debug("TestConnection Response: {Content}", response.Content);
 
                 if (response.StatusCode != HttpStatusCode.OK)
                     return new ValidationFailure("BaseUrl", $"Unable to connect to Slskd. Status: {response.StatusCode}");

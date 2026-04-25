@@ -70,7 +70,11 @@ namespace NzbDrone.Core.Download.Clients.Deezer
 
         protected override void Test(List<ValidationFailure> failures)
         {
-            // given the way the code is setup, we don't really need to check for a valid arl here
+            // ARL is checked at indexer-level. Here we only verify the configured download path
+            // is usable so misconfigured paths surface up-front instead of mid-download.
+            ValidationFailure folderFailure = TestFolder(Settings.DownloadPath, "DownloadPath");
+            if (folderFailure != null)
+                failures.Add(folderFailure);
         }
     }
 }

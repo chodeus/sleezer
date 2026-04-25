@@ -38,7 +38,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
         public IndexerPageableRequestChain<LazyIndexerPageableRequest> GetSearchRequests(AlbumSearchCriteria searchCriteria)
         {
-            _logger.Trace($"Setting up lazy search for album: {searchCriteria.AlbumQuery} by artist: {searchCriteria.ArtistQuery}");
+            _logger.Trace("Setting up lazy search for album: {Album} by artist: {Artist}", searchCriteria.AlbumQuery, searchCriteria.ArtistQuery);
 
             Album? album = searchCriteria.Albums.FirstOrDefault();
             List<AlbumRelease>? albumReleases = album?.AlbumReleases?.Value;
@@ -68,7 +68,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
         public IndexerPageableRequestChain<LazyIndexerPageableRequest> GetSearchRequests(ArtistSearchCriteria searchCriteria)
         {
-            _logger.Debug($"Setting up lazy search for artist: {searchCriteria.CleanArtistQuery}");
+            _logger.Debug("Setting up lazy search for artist: {Artist}", searchCriteria.CleanArtistQuery);
 
             Album? album = searchCriteria.Albums.FirstOrDefault();
             List<AlbumRelease>? albumReleases = album?.AlbumReleases?.Value;
@@ -108,12 +108,12 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 IndexerRequest? request = GetRequestsAsync(query, searchText).GetAwaiter().GetResult();
                 if (request != null)
                 {
-                    _logger.Trace($"Successfully generated request for search: {searchText}");
+                    _logger.Trace("Successfully generated request for search: {SearchText}", searchText);
                     return [request];
                 }
                 else
                 {
-                    _logger.Trace($"GetRequestsAsync returned null for search: {searchText}");
+                    _logger.Trace("GetRequestsAsync returned null for search: {SearchText}", searchText);
                 }
             }
             catch (RequestLimitReachedException)
@@ -122,7 +122,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             }
             catch (Exception ex)
             {
-                _logger.Error(ex, $"Error executing search: {searchText}");
+                _logger.Error(ex, "Error executing search: {SearchText}", searchText);
             }
 
             return [];
@@ -132,7 +132,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         {
             try
             {
-                _logger.Debug($"Search: {searchText}");
+                _logger.Debug("Search: {SearchText}", searchText);
 
                 dynamic searchData = CreateSearchData(searchText);
                 string searchId = searchData.Id;
@@ -156,7 +156,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             }
             catch (Exception ex)
             {
-                _logger.Error(ex, $"Error generating search request for: {searchText}");
+                _logger.Error(ex, "Error generating search request for: {SearchText}", searchText);
                 return null;
             }
         }
@@ -353,12 +353,12 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 }
                 else
                 {
-                    _logger.Debug($"Directory API returned {response.StatusCode} for {username}:{directoryPath}");
+                    _logger.Debug("Directory API returned {Status} for {Username}:{Directory}", response.StatusCode, username, directoryPath);
                 }
             }
             catch (Exception ex)
             {
-                _logger.Error(ex, $"Error expanding directory {username}:{directoryPath}");
+                _logger.Error(ex, "Error expanding directory {Username}:{Directory}", username, directoryPath);
             }
 
             return null;

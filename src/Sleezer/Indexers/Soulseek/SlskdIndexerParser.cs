@@ -108,13 +108,13 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
                             if (fileCount < searchTextData.MinimumFiles)
                             {
-                                _logger.Trace($"Filtered (too few): {directoryGroup.Key} ({fileCount}/{searchTextData.MinimumFiles} {(filterActive ? "audio tracks" : "files")})");
+                                _logger.Trace("Filtered (too few): {Directory} ({Count}/{Min} {Kind})", directoryGroup.Key, fileCount, searchTextData.MinimumFiles, filterActive ? "audio tracks" : "files");
                                 continue;
                             }
 
                             if (searchTextData.MaximumFiles.HasValue && fileCount > searchTextData.MaximumFiles.Value)
                             {
-                                _logger.Trace($"Filtered (too many): {directoryGroup.Key} ({fileCount}/{searchTextData.MaximumFiles} {(filterActive ? "audio tracks" : "files")})");
+                                _logger.Trace("Filtered (too many): {Directory} ({Count}/{Max} {Kind})", directoryGroup.Key, fileCount, searchTextData.MaximumFiles, filterActive ? "audio tracks" : "files");
                                 continue;
                             }
                         }
@@ -150,14 +150,14 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             if (originalTrack == null)
                 return null;
 
-            _logger.Trace($"Expanding directory for: {folderData.Username}:{directoryGroup.Key}");
+            _logger.Trace("Expanding directory for: {Username}:{Directory}", folderData.Username, directoryGroup.Key);
 
             SlskdRequestGenerator? requestGenerator = _indexer.GetExtendedRequestGenerator() as SlskdRequestGenerator;
             IGrouping<string, SlskdFileData>? expandedGroup = requestGenerator?.ExpandDirectory(folderData.Username, directoryGroup.Key, originalTrack).GetAwaiter().GetResult();
 
             if (expandedGroup != null)
             {
-                _logger.Debug($"Successfully expanded directory to {expandedGroup.Count()} files");
+                _logger.Debug("Successfully expanded directory to {Count} files", expandedGroup.Count());
                 return expandedGroup;
             }
             else
@@ -185,7 +185,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 }
                 catch (HttpException ex)
                 {
-                    _logger.Error(ex, $"Failed to remove slskd search with ID: {searchId}");
+                    _logger.Error(ex, "Failed to remove slskd search with ID: {SearchId}", searchId);
                 }
             });
         }
@@ -335,7 +335,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             }
             catch (HttpException ex)
             {
-                _logger.Error(ex, $"Failed to remove slskd search with ID: {searchId}");
+                _logger.Error(ex, "Failed to remove slskd search with ID: {SearchId}", searchId);
             }
         }
 
@@ -351,17 +351,17 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
                 if (_ignoreListCache.TryGetValue(ignoreListPath, out (HashSet<string> IgnoredUsers, long LastFileSize) cached) && cached.LastFileSize == fileSize)
                 {
-                    _logger.Trace($"Using cached ignore list from: {ignoreListPath} with {cached.IgnoredUsers.Count} users");
+                    _logger.Trace("Using cached ignore list from: {Path} with {Count} users", ignoreListPath, cached.IgnoredUsers.Count);
                     return cached.IgnoredUsers;
                 }
                 HashSet<string> ignoredUsers = SlskdTextProcessor.ParseListContent(File.ReadAllText(ignoreListPath));
                 _ignoreListCache[ignoreListPath] = (ignoredUsers, fileSize);
-                _logger.Trace($"Loaded ignore list with {ignoredUsers.Count} users from: {ignoreListPath}");
+                _logger.Trace("Loaded ignore list with {Count} users from: {Path}", ignoredUsers.Count, ignoreListPath);
                 return ignoredUsers;
             }
             catch (Exception ex)
             {
-                _logger.Warn(ex, $"Failed to load ignore list from: {ignoreListPath}");
+                _logger.Warn(ex, "Failed to load ignore list from: {Path}", ignoreListPath);
                 return null;
             }
         }

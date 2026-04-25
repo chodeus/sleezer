@@ -25,7 +25,7 @@ public sealed class SearchPipeline : ISlskdSearchChain
             .ToList()
             .AsReadOnly();
 
-        _logger.Debug($"SearchPipeline: {_strategies.Count} strategies loaded");
+        _logger.Debug("SearchPipeline: {Count} strategies loaded", _strategies.Count);
     }
 
     public LazyIndexerPageableRequestChain BuildChain(SearchContext context, SearchExecutor searchExecutor)
@@ -36,7 +36,7 @@ public sealed class SearchPipeline : ISlskdSearchChain
         QueryType queryType = QueryAnalyzer.Analyze(context);
         SearchContext ctx = ApplyNormalization(context, queryType);
 
-        _logger.Debug($"Search: Artist='{ctx.Artist}', Album='{ctx.Album}', Type={queryType}");
+        _logger.Debug("Search: Artist='{Artist}', Album='{Album}', Type={QueryType}", ctx.Artist, ctx.Album, queryType);
 
         bool isFirst = true;
         foreach (var strategy in _strategies)
@@ -68,7 +68,7 @@ public sealed class SearchPipeline : ISlskdSearchChain
         var normalized = QueryNormalizer.Normalize(context with { QueryType = queryType });
         
         if (normalized.NormalizedArtist != null || normalized.NormalizedAlbum != null)
-            _logger.Trace($"Normalized: '{normalized.NormalizedArtist ?? context.Artist}' / '{normalized.NormalizedAlbum ?? context.Album}'");
+            _logger.Trace("Normalized: '{Artist}' / '{Album}'", normalized.NormalizedArtist ?? context.Artist, normalized.NormalizedAlbum ?? context.Album);
 
         return normalized;
     }
@@ -86,12 +86,12 @@ public sealed class SearchPipeline : ISlskdSearchChain
 
         if (context.ProcessedSearches.Contains(query))
         {
-            _logger.Trace($"[{strategy.Name}] Skip duplicate: '{query}'");
+            _logger.Trace("[{Strategy}] Skip duplicate: '{Query}'", strategy.Name, query);
             return [];
         }
 
         context.ProcessedSearches.Add(query);
-        _logger.Debug($"[{strategy.Name}] Search: '{query}'");
+        _logger.Debug("[{Strategy}] Search: '{Query}'", strategy.Name, query);
 
         try
         {
@@ -107,7 +107,7 @@ public sealed class SearchPipeline : ISlskdSearchChain
         }
         catch (Exception ex)
         {
-            _logger.Error(ex, $"[{strategy.Name}] Error: '{query}'");
+            _logger.Error(ex, "[{Strategy}] Error: '{Query}'", strategy.Name, query);
             return [];
         }
     }

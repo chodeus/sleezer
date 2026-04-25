@@ -19,7 +19,7 @@ public class SlskdRetryHandler(ISlskdApiClient apiClient, Logger logger)
         if (item == null)
             return;
 
-        _logger.Trace($"Retry triggered: {Path.GetFileName(fileState.File.Filename)} | State: {fileState.State} | Attempt: {fileState.RetryCount + 1}/{fileState.MaxRetryCount}");
+        _logger.Trace("Retry triggered: {Filename} | State: {State} | Attempt: {Attempt}/{Max}", Path.GetFileName(fileState.File.Filename), fileState.State, fileState.RetryCount + 1, fileState.MaxRetryCount);
         _ = RetryDownloadAsync(item, fileState, settings);
     }
 
@@ -42,11 +42,11 @@ public class SlskdRetryHandler(ISlskdApiClient apiClient, Logger logger)
             string username = item.Username ?? ExtractUsernameFromPath(item.ReleaseInfo.DownloadUrl);
 
             await _apiClient.EnqueueDownloadAsync(settings, username, [(fileState.File.Filename, size)]);
-            _logger.Trace($"Retry enqueued: {Path.GetFileName(fileState.File.Filename)}");
+            _logger.Trace("Retry enqueued: {Filename}", Path.GetFileName(fileState.File.Filename));
         }
         catch (Exception ex)
         {
-            _logger.Error(ex, $"Failed to retry download for file: {fileState.File.Filename}");
+            _logger.Error(ex, "Failed to retry download for file: {Filename}", fileState.File.Filename);
         }
         finally
         {

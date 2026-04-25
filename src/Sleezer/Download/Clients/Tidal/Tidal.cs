@@ -118,8 +118,12 @@ namespace NzbDrone.Core.Download.Clients.Tidal
 
         protected override void Test(List<ValidationFailure> failures)
         {
-            // Nothing meaningful to test client-side; the indexer's auth Test
-            // covers the only thing that can fail at this layer.
+            // Auth lives on the indexer; here we verify the configured download path is usable
+            // so misconfigured paths (typos, missing volumes, bad permissions) surface up-front
+            // instead of mid-download.
+            ValidationFailure folderFailure = TestFolder(Settings.DownloadPath, "DownloadPath");
+            if (folderFailure != null)
+                failures.Add(folderFailure);
         }
     }
 }

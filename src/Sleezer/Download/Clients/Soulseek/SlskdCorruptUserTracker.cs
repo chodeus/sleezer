@@ -42,9 +42,9 @@ public class SlskdCorruptUserTracker : ISlskdCorruptUserTracker
         int total = _strikes.AddOrUpdate(username, strikeCount, (_, current) => current + strikeCount);
 
         if (banThreshold > 0 && total >= banThreshold)
-            _logger.Warn($"Slskd user banned after {total} corruption strikes: {username}");
+            _logger.Warn("Slskd user banned after {Total} corruption strikes: {Username}", total, username);
         else
-            _logger.Info($"Slskd corruption strike recorded for {username}: {total} total (threshold {banThreshold})");
+            _logger.Info("Slskd corruption strike recorded for {Username}: {Total} total (threshold {Threshold})", username, total, banThreshold);
     }
 
     public IReadOnlySet<string> GetBannedUsers()

@@ -63,10 +63,16 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 .When(c => !c.UseFallbackSearch)
                 .WithMessage("Track Fallback cannot be enabled without Fallback Search.");
 
+            // Early release limit validation (only if set)
+            RuleFor(c => c.EarlyReleaseLimit)
+                .GreaterThanOrEqualTo(0)
+                .WithMessage("Early Download Limit must be 0 or greater.")
+                .When(c => c.EarlyReleaseLimit.HasValue);
+
             // Results validation
             RuleFor(c => c.MinimumResults)
-              .GreaterThanOrEqualTo(0)
-              .WithMessage("Minimum Results must be at least 0.");
+              .InclusiveBetween(0, 100)
+              .WithMessage("Minimum Results must be between 0 (disabled) and 100.");
 
             // Include File Extensions validation
             RuleFor(c => c.IncludeFileExtensions)
@@ -119,8 +125,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         [FieldDefinition(7, Type = FieldType.Number, Label = "File Limit", HelpText = "Max files per search", Advanced = true)]
         public int FileLimit { get; set; } = 10000;
 
-        [FieldDefinition(8, Type = FieldType.Number, Label = "Max Peer Queue", HelpText = "Max queued requests per peer", Advanced = true)]
-        public int MaximumPeerQueueLength { get; set; } = 1000000;
+        [FieldDefinition(8, Type = FieldType.Number, Label = "Max Peer Queue", HelpText = "Drop search results from peers whose own queue is already longer than this. Lower = prefer faster-responding peers.", Advanced = true)]
+        public int MaximumPeerQueueLength { get; set; } = 250;
 
         private int _minimumPeerUploadSpeedBytes;
 
@@ -176,7 +182,22 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         [FieldDefinition(24, Type = FieldType.Number, Label = "Max Queued/User", HelpText = "Max currently queued albums per user. 0 = disabled.", Advanced = true)]
         public int MaxQueuedPerUser { get; set; }
 
+        [FieldDefinition(25, Type = FieldType.Select, SelectOptions = typeof(MatchStrictnessType), Label = "Match Strictness", HelpText = "How aggressively to fuzzy-match peer folder names against the queried artist/album. Strict = fewer false positives; Loose = more candidates from messy metadata.", Advanced = true)]
+        public int MatchStrictness { get; set; } = (int)MatchStrictnessType.Normal;
+
         public NzbDroneValidationResult Validate() => new(Validator.Validate(this));
+    }
+
+    public enum MatchStrictnessType
+    {
+        [FieldOption(Label = "Strict", Hint = "Tighter fuzzy thresholds; fewer false matches.")]
+        Strict = 5,
+
+        [FieldOption(Label = "Normal", Hint = "Default fuzzy thresholds.")]
+        Normal = 0,
+
+        [FieldOption(Label = "Loose", Hint = "Looser fuzzy thresholds; more candidate folders.")]
+        Loose = -5
     }
 
 

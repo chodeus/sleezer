@@ -102,14 +102,14 @@ public class SlskdWatchdog : ISlskdWatchdog
 
         try
         {
-            _logger.Info($"[watchdog] Cancelling {filename} from {item.Username}: {reason}");
+            _logger.Info("[watchdog] Cancelling {Filename} from {Username}: {Reason}", filename, item.Username, reason);
 
             await _apiClient.DeleteTransferAsync(settings, item.Username!, fileState.File.Id);
             fileState.MarkWatchdogCancelled();
         }
         catch (Exception ex)
         {
-            _logger.Warn(ex, $"[watchdog] Failed to cancel {filename} from {item.Username}");
+            _logger.Warn(ex, "[watchdog] Failed to cancel {Filename} from {Username}", filename, item.Username);
         }
     }
 }

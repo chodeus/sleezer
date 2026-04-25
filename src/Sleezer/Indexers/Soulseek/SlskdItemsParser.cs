@@ -81,25 +81,28 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             string searchArtistNorm = NormalizeString(searchData.Artist ?? "");
             string searchAlbumNorm = NormalizeString(searchData.Album ?? "");
 
-            _logger.Trace($"Creating album data - Dir: '{dirNameNorm}', Search artist: '{searchArtistNorm}', Search album: '{searchAlbumNorm}'");
+            _logger.Trace("Creating album data - Dir: '{Dir}', Search artist: '{Artist}', Search album: '{Album}'", dirNameNorm, searchArtistNorm, searchAlbumNorm);
 
             // Calculate fuzzy scores with caching for performance
             (int fuzzyArtistPartial, int fuzzyArtistTokenSort) = GetCachedFuzzyScores(dirNameNorm, searchArtistNorm);
             (int fuzzyAlbumPartial, int fuzzyAlbumTokenSort) = GetCachedFuzzyScores(dirNameNorm, searchAlbumNorm);
 
+            // MatchStrictnessType values (Strict=+5, Normal=0, Loose=-5) are used directly as a threshold offset.
+            int strictnessOffset = settings?.MatchStrictness ?? 0;
+
             bool isVolumeSearch = !string.IsNullOrEmpty(searchData.Album) && VolumeRegex().Match(searchData.Album).Success;
 
-            bool isAlbumMatch = isVolumeSearch ? CheckVolumeSeriesMatch(directory.Key, searchData.Album) : !string.IsNullOrEmpty(searchAlbumNorm) && (fuzzyAlbumPartial > FuzzyAlbumPartialThreshold || fuzzyAlbumTokenSort > FuzzyAlbumTokenSortThreshold);
-            bool isArtistMatch = IsFuzzyArtistMatch(dirNameNorm, searchArtistNorm);
+            bool isAlbumMatch = isVolumeSearch ? CheckVolumeSeriesMatch(directory.Key, searchData.Album, strictnessOffset) : !string.IsNullOrEmpty(searchAlbumNorm) && (fuzzyAlbumPartial > FuzzyAlbumPartialThreshold + strictnessOffset || fuzzyAlbumTokenSort > FuzzyAlbumTokenSortThreshold + strictnessOffset);
+            bool isArtistMatch = IsFuzzyArtistMatch(dirNameNorm, searchArtistNorm, strictnessOffset);
 
             if (!isArtistMatch && !isAlbumMatch && !string.IsNullOrEmpty(searchData.Artist) && !string.IsNullOrEmpty(searchData.Album))
             {
                 string combinedSearch = NormalizeString($"{searchData.Artist} {searchData.Album}");
                 (int combinedPartial, _) = GetCachedFuzzyScores(dirNameNorm, combinedSearch);
-                isAlbumMatch = combinedPartial > FuzzyCombinedThreshold;
+                isAlbumMatch = combinedPartial > FuzzyCombinedThreshold + strictnessOffset;
             }
 
-            _logger.Debug($"Match results - Artist: {isArtistMatch}, Album: {isAlbumMatch}");
+            _logger.Debug("Match results - Artist: {ArtistMatch}, Album: {AlbumMatch}", isArtistMatch, isAlbumMatch);
 
             // Determine final values for artist, album, year
             string finalArtist = DetermineFinalArtist(isArtistMatch, folderData, searchData);
@@ -112,7 +115,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             List<SlskdFileData>? filesToDownload = directory.GroupBy(f => f.Filename?[..f.Filename.LastIndexOf('\\')]).FirstOrDefault(g => g.Key == directory.Key)?.ToList();
             int actualTrackCount = filesToDownload?.Count ?? 0;
 
-            _logger.Trace($"Audio: {Codec}, BitRate: {BitRate}, BitDepth: {BitDepth}, Files: {actualTrackCount}");
+            _logger.Trace("Audio: {Codec}, BitRate: {BitRate}, BitDepth: {BitDepth}, Files: {TrackCount}", Codec, BitRate, BitDepth, actualTrackCount);
 
             string infoUrl = settings != null ? $"{(string.IsNullOrEmpty(settings.ExternalUrl) ? settings.BaseUrl : settings.ExternalUrl)}/searches/{searchId}" : "";
             string? edition = ExtractEdition(folderData.Path)?.ToUpper();
@@ -198,7 +201,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             return null;
         }
 
-        private bool CheckVolumeSeriesMatch(string directoryPath, string? searchAlbum)
+        private bool CheckVolumeSeriesMatch(string directoryPath, string? searchAlbum, int strictnessOffset = 0)
         {
             if (string.IsNullOrEmpty(searchAlbum))
                 return false;
@@ -221,14 +224,14 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
             bool baseAlbumMatch = Fuzz.PartialRatio(
                 NormalizeString(dirBaseAlbum),
-                NormalizeString(searchBaseAlbum)) > FuzzyAlbumPartialThreshold;
+                NormalizeString(searchBaseAlbum)) > FuzzyAlbumPartialThreshold + strictnessOffset;
 
             return baseAlbumMatch && normSearchVol.Equals(normDirVol, StringComparison.OrdinalIgnoreCase);
         }
 
         public string NormalizeVolume(string volume)
         {
-            _logger.Trace($"Normalizing volume: '{volume}'");
+            _logger.Trace("Normalizing volume: '{Volume}'", volume);
 
             if (_textNumbers.TryGetValue(volume, out string? textNum))
                 return textNum;
@@ -284,7 +287,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             if (total <= 0 || total > 5000)
                 return 0;
 
-            _logger.Trace($"Roman numeral '{roman}' converted to: {total}");
+            _logger.Trace("Roman numeral '{Roman}' converted to: {Total}", roman, total);
             return total;
         }
 
@@ -314,11 +317,11 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             {
                 if (match.Groups["negation"].Success && !string.IsNullOrWhiteSpace(match.Groups["negation"].Value))
                 {
-                    _logger.Trace($"Found negated explicit tag in path, skipping: {match.Value}");
+                    _logger.Trace("Found negated explicit tag in path, skipping: {Match}", match.Value);
                     return false;
                 }
 
-                _logger.Trace($"Extracted explicit tag from path: {path}");
+                _logger.Trace("Extracted explicit tag from path: {Path}", path);
                 return true;
             }
             return false;
@@ -342,22 +345,22 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             return match.Success ? match : null;
         }
 
-        private static bool IsFuzzyArtistMatch(string dirNameNorm, string searchArtistNorm)
+        private static bool IsFuzzyArtistMatch(string dirNameNorm, string searchArtistNorm, int strictnessOffset = 0)
         {
             if (string.IsNullOrEmpty(searchArtistNorm))
                 return false;
             (int partial, int tokenSort) = GetCachedFuzzyScores(dirNameNorm, searchArtistNorm);
-            return partial > FuzzyArtistPartialThreshold || tokenSort > FuzzyArtistTokenSortThreshold;
+            return partial > FuzzyArtistPartialThreshold + strictnessOffset || tokenSort > FuzzyArtistTokenSortThreshold + strictnessOffset;
         }
 
-        private static bool IsFuzzyAlbumMatch(string dirNameNorm, string searchAlbumNorm, bool volumeMatch)
+        private static bool IsFuzzyAlbumMatch(string dirNameNorm, string searchAlbumNorm, bool volumeMatch, int strictnessOffset = 0)
         {
             if (string.IsNullOrEmpty(searchAlbumNorm))
                 return false;
             if (volumeMatch)
                 return true;
             (int partial, int tokenSort) = GetCachedFuzzyScores(dirNameNorm, searchAlbumNorm);
-            return partial > FuzzyAlbumPartialThreshold || tokenSort > FuzzyAlbumTokenSortThreshold;
+            return partial > FuzzyAlbumPartialThreshold + strictnessOffset || tokenSort > FuzzyAlbumTokenSortThreshold + strictnessOffset;
         }
 
         /// <summary>
@@ -443,7 +446,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             if (!commonBitRate.HasValue && totalDuration > 0)
             {
                 commonBitRate = (int)(totalSize * 8 / (totalDuration * 1000));
-                _logger.Trace($"Calculated bitrate: {commonBitRate}");
+                _logger.Trace("Calculated bitrate: {Bitrate}", commonBitRate);
             }
 
             AudioFormat codec = AudioFormatHelper.GetAudioCodecFromExtension(commonExt ?? "");

@@ -61,7 +61,25 @@ public class SlskdClient : DownloadClientBase<SlskdProviderSettings>
         // (which would mismatch the List<ValidationFailure> parameter).
         var failure = _apiClient.TestConnectionAsync(Settings).GetAwaiter().GetResult();
         if (failure != null)
+        {
             failures.Add(failure);
+            return;
+        }
+
+        // Probe the slskd-reported download path on the local filesystem (translated via Remote Path Mapping).
+        // Catches misconfigured RPM, wrong PUID/PGID, and unmounted volumes before the first download instead of mid-import.
+        OsPath localPath = GetRemoteToLocal();
+        if (localPath.IsEmpty)
+        {
+            failures.Add(new ValidationFailure("DownloadPath",
+                $"Slskd reports download path '{Settings.DownloadPath}' but it could not be resolved locally. " +
+                $"If slskd runs on a different host, configure a Remote Path Mapping for host '{Settings.Host}'."));
+            return;
+        }
+
+        ValidationFailure folderFailure = TestFolder(localPath.FullPath, "DownloadPath");
+        if (folderFailure != null)
+            failures.Add(folderFailure);
     }
 
     private OsPath GetRemoteToLocal() =>

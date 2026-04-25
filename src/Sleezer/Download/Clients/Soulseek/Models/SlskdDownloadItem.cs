@@ -54,7 +54,7 @@ public class SlskdDownloadItem
         ReleaseInfo = releaseInfo;
         FileData = JsonSerializer.Deserialize<List<SlskdFileData>>(ReleaseInfo.Source, _jsonOptions) ?? [];
         ID = GetStableMD5Id(FileData.Select(file => file.Filename));
-        _logger.Trace($"Created SlskdDownloadItem with ID: {ID}");
+        _logger.Trace("Created SlskdDownloadItem with ID: {Id}", ID);
     }
 
     public static string GetStableMD5Id(IEnumerable<string?> filenames)
@@ -77,7 +77,7 @@ public class SlskdDownloadItem
                 fileState.UpdateFile(file);
                 if (fileState.State != previousState)
                 {
-                    _logger.Trace($"State change: {Path.GetFileName(file.Filename)} | {previousState} -> {fileState.State}");
+                    _logger.Trace("State change: {Filename} | {Previous} -> {Next}", Path.GetFileName(file.Filename), previousState, fileState.State);
                     FileStateChanged?.Invoke(this, fileState);
                 }
             }
@@ -89,7 +89,7 @@ public class SlskdDownloadItem
                 DownloadItemStatus initialStatus = SlskdFileState.GetStatus(file.State);
                 if (initialStatus == DownloadItemStatus.Failed)
                 {
-                    _logger.Trace($"Initial state is failed: {Path.GetFileName(file.Filename)} | {file.State}");
+                    _logger.Trace("Initial state is failed: {Filename} | {State}", Path.GetFileName(file.Filename), file.State);
                     FileStateChanged?.Invoke(this, newFileState);
                 }
             }

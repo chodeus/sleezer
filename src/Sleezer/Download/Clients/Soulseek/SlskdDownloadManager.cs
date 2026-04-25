@@ -105,7 +105,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             {
                 XabeFFmpeg.SetExecutablesPath(ffmpegSettings.FFmpegPath);
                 AudioMetadataHandler.ResetFFmpegInstallationCheck();
-                _logger.Trace($"[post-process] Applied FFmpeg path: {ffmpegSettings.FFmpegPath}");
+                _logger.Trace("[post-process] Applied FFmpeg path: {Path}", ffmpegSettings.FFmpegPath);
             }
         }
         catch (Exception ex)
@@ -140,7 +140,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         {
             ResolvedAlbum = remoteAlbum.Albums?.FirstOrDefault()
         };
-        _logger.Trace($"Download initiated: {remoteAlbum.Release.Title} | Files: {item.FileData.Count}");
+        _logger.Trace("Download initiated: {Title} | Files: {FileCount}", remoteAlbum.Release.Title, item.FileData.Count);
 
         try
         {
@@ -156,7 +156,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }
         catch (Exception ex)
         {
-            _logger.Error(ex, $"Download enqueue failed for {remoteAlbum.Release.Title}");
+            _logger.Error(ex, "Download enqueue failed for {Title}", remoteAlbum.Release.Title);
             throw;
         }
     }
@@ -201,7 +201,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             }
             catch (Exception ex)
             {
-                _logger.Warn(ex, $"Failed to build DownloadClientItem for {item.ID}. Skipping.");
+                _logger.Warn(ex, "Failed to build DownloadClientItem for {ItemId}. Skipping.", item.ID);
                 continue;
             }
 
@@ -228,7 +228,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }
         catch (Exception ex)
         {
-            _logger.Warn(ex, $"[def={definitionId}] Failed to remove slskd transfers / files for {clientItem.Title}");
+            _logger.Warn(ex, "[def={DefinitionId}] Failed to remove slskd transfers / files for {Title}", definitionId, clientItem.Title);
         }
 
         TryDeleteOutputFolder(clientItem, settings);
@@ -243,7 +243,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     {
         if (clientItem.OutputPath.IsEmpty)
         {
-            _logger.Debug($"[{clientItem.Title}] No OutputPath recorded, skipping folder deletion");
+            _logger.Debug("[{Title}] No OutputPath recorded, skipping folder deletion", clientItem.Title);
             return;
         }
 
@@ -259,7 +259,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         // other download.
         if (string.Equals(folder, localRoot, StringComparison.OrdinalIgnoreCase))
         {
-            _logger.Warn($"[{clientItem.Title}] OutputPath resolves to the download root, refusing to delete");
+            _logger.Warn("[{Title}] OutputPath resolves to the download root, refusing to delete", clientItem.Title);
             return;
         }
 
@@ -267,22 +267,22 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         {
             if (_diskProvider.FolderExists(folder))
             {
-                _logger.Debug($"[{clientItem.Title}] Deleting folder '{folder}'");
+                _logger.Debug("[{Title}] Deleting folder '{Folder}'", clientItem.Title, folder);
                 _diskProvider.DeleteFolder(folder, true);
             }
             else if (_diskProvider.FileExists(folder))
             {
-                _logger.Debug($"[{clientItem.Title}] Deleting file '{folder}'");
+                _logger.Debug("[{Title}] Deleting file '{Folder}'", clientItem.Title, folder);
                 _diskProvider.DeleteFile(folder);
             }
             else
             {
-                _logger.Debug($"[{clientItem.Title}] Folder '{folder}' already gone, skipping");
+                _logger.Debug("[{Title}] Folder '{Folder}' already gone, skipping", clientItem.Title, folder);
             }
         }
         catch (Exception ex)
         {
-            _logger.Warn(ex, $"[{clientItem.Title}] Failed to delete output folder '{folder}'");
+            _logger.Warn(ex, "[{Title}] Failed to delete output folder '{Folder}'", clientItem.Title, folder);
         }
     }
 
@@ -330,7 +330,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 ProcessUserTransfers(definitionId, settings, user, currentIdSet);
         }
 
-        _logger.Debug($"[def={definitionId}] Polled {activeUsernames.Count} users | Tracked: {currentIdSet.Count}");
+        _logger.Debug("[def={DefinitionId}] Polled {UserCount} users | Tracked: {Tracked}", definitionId, activeUsernames.Count, currentIdSet.Count);
 
         // Run watchdog on all tracked items - states are freshly updated above.
         // Fire-and-forget per item with per-item error isolation so one peer's
@@ -343,7 +343,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             }
             catch (Exception ex)
             {
-                _logger.Warn(ex, $"[def={definitionId}] Watchdog failed for item {item.ID}");
+                _logger.Warn(ex, "[def={DefinitionId}] Watchdog failed for item {ItemId}", definitionId, item.ID);
             }
         }
 
@@ -353,7 +353,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 .Where(i => !currentIdSet.ContainsKey(i.ID) && i.ReleaseInfo.DownloadProtocol == null)
                 .ToList())
             {
-                _logger.Trace($"[def={definitionId}] Pruning inclusive item {item.ID} (gone from Slskd)");
+                _logger.Trace("[def={DefinitionId}] Pruning inclusive item {ItemId} (gone from Slskd)", definitionId, item.ID);
                 RemoveItemFromDict(definitionId, item.ID);
             }
         }
@@ -373,7 +373,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             SlskdDownloadItem? item = GetItem(definitionId, hash);
             if (item == null)
             {
-                _logger.Trace($"[def={definitionId}] Unknown item {hash}: checking history");
+                _logger.Trace("[def={DefinitionId}] Unknown item {Hash}: checking history", definitionId, hash);
                 DownloadHistory? history = _downloadHistoryService.GetLatestGrab(hash);
 
                 if (history != null)
@@ -428,7 +428,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             }
             catch (Exception ex)
             {
-                _logger.Warn(ex, $"[def={definitionId}] Failed to process event {record.Type} ({record.Id})");
+                _logger.Warn(ex, "[def={DefinitionId}] Failed to process event {EventType} ({EventId})", definitionId, record.Type, record.Id);
             }
         }
 
@@ -446,7 +446,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             string remoteDir = doc.RootElement.TryGetProperty("remoteDirectoryName", out JsonElement rdn) ? rdn.GetString() ?? "" : "";
             string username = doc.RootElement.TryGetProperty("username", out JsonElement un) ? un.GetString() ?? "" : "";
 
-            _logger.Trace($"[def={definitionId}] Event DownloadDirectoryComplete: {remoteDir} by {username}: forcing refresh");
+            _logger.Trace("[def={DefinitionId}] Event DownloadDirectoryComplete: {RemoteDir} by {Username}: forcing refresh", definitionId, remoteDir, username);
 
             // Refresh transfer state FIRST so any item whose SlskdDownloadDirectory
             // hasn't been populated yet (common for downloads that complete between
@@ -468,11 +468,11 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 // slskd has no active transfers for this user — the event log is
                 // replaying an old completion whose transfer was already cleaned
                 // up. Nothing to post-process; stay quiet.
-                _logger.Trace($"[def={definitionId}] DownloadDirectoryComplete for {remoteDir} by {username}: stale replayed event, no active transfer at slskd — skipping");
+                _logger.Trace("[def={DefinitionId}] DownloadDirectoryComplete for {RemoteDir} by {Username}: stale replayed event, no active transfer at slskd — skipping", definitionId, remoteDir, username);
             }
             else
             {
-                _logger.Warn($"[def={definitionId}] DownloadDirectoryComplete for {remoteDir} by {username} but no tracked item matched — skipping post-process");
+                _logger.Warn("[def={DefinitionId}] DownloadDirectoryComplete for {RemoteDir} by {Username} but no tracked item matched — skipping post-process", definitionId, remoteDir, username);
             }
         }
         else if (record.Type == SlskdEventTypes.DownloadFileComplete && _logger.IsTraceEnabled)
@@ -482,7 +482,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             {
                 string filename = transferEl.TryGetProperty("filename", out JsonElement fn) ? fn.GetString() ?? "" : "";
                 string username = transferEl.TryGetProperty("username", out JsonElement un) ? un.GetString() ?? "" : "";
-                _logger.Trace($"[def={definitionId}] Event DownloadFileComplete: {Path.GetFileName(filename)} by {username}");
+                _logger.Trace("[def={DefinitionId}] Event DownloadFileComplete: {Filename} by {Username}", definitionId, Path.GetFileName(filename), username);
             }
         }
     }
@@ -512,7 +512,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
         Task task = Task.Run(async () =>
         {
-            using CancellationTokenSource cts = new(TimeSpan.FromMinutes(30));
+            using CancellationTokenSource cts = new(TimeSpan.FromMinutes(settings.PostProcessingTimeoutMinutes));
 
             try
             {
@@ -525,7 +525,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
                 if (!_diskProvider.FolderExists(folderPath))
                 {
-                    _logger.Warn($"[post-process] Folder missing after DownloadDirectoryComplete: {folderPath}");
+                    _logger.Warn("[post-process] Folder missing after DownloadDirectoryComplete: {FolderPath}", folderPath);
                     return;
                 }
 
@@ -549,7 +549,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                     Artist? artist = album?.Artist?.Value;
                     if (album == null || artist == null)
                     {
-                        _logger.Debug($"[post-process] Pre-import tag: skipping {item.ID}; no ResolvedAlbum/Artist (item likely reconstructed from history in inclusive mode).");
+                        _logger.Debug("[post-process] Pre-import tag: skipping {ItemId}; no ResolvedAlbum/Artist (item likely reconstructed from history in inclusive mode).", item.ID);
                         return;
                     }
 
@@ -570,11 +570,11 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             }
             catch (OperationCanceledException)
             {
-                _logger.Warn($"[post-process] Timed out for {item.ID}");
+                _logger.Warn("[post-process] Timed out for {ItemId}", item.ID);
             }
             catch (Exception ex)
             {
-                _logger.Error(ex, $"[post-process] Unexpected failure for {item.ID}");
+                _logger.Error(ex, "[post-process] Unexpected failure for {ItemId}", item.ID);
             }
         });
 
@@ -599,11 +599,11 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             .ToArray();
         if (audioFiles.Length == 0)
         {
-            _logger.Info($"[post-process] {item.ID}: no audio files in {folderPath}; nothing to scan");
+            _logger.Info("[post-process] {ItemId}: no audio files in {FolderPath}; nothing to scan", item.ID, folderPath);
             return strikes;
         }
 
-        _logger.Info($"[post-process] {item.ID}: scanning {audioFiles.Length} audio file(s) in {folderPath}");
+        _logger.Info("[post-process] {ItemId}: scanning {Count} audio file(s) in {FolderPath}", item.ID, audioFiles.Length, folderPath);
         System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
 
         // Concurrency tuned to machine. Ffmpeg is CPU-bound so we cap at half
@@ -634,13 +634,13 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 .FirstOrDefault(fs => string.Equals(Path.GetFileName(fs.File.Filename), filename, StringComparison.OrdinalIgnoreCase));
 
             if (fileState == null)
-                _logger.Warn($"[post-process] Corrupt file {filename} not mapped to any tracked slskd transfer; counting as corruption but skipping retry short-circuit.");
+                _logger.Warn("[post-process] Corrupt file {Filename} not mapped to any tracked slskd transfer; counting as corruption but skipping retry short-circuit.", filename);
 
             strikes.Add(new SlskdCorruptionStrike(fileState, result.Reason));
         }
 
         watch.Stop();
-        _logger.Info($"[post-process] {item.ID}: scan complete in {watch.Elapsed.TotalSeconds:F1}s \u2014 {audioFiles.Length} file(s), {strikes.Count} corrupt");
+        _logger.Info("[post-process] {ItemId}: scan complete in {Seconds:F1}s \u2014 {Count} file(s), {Strikes} corrupt", item.ID, watch.Elapsed.TotalSeconds, audioFiles.Length, strikes.Count);
 
         return strikes;
     }
@@ -684,7 +684,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         List<SlskdDownloadFile> files = item.SlskdDownloadDirectory?.Files ?? [];
         if (files.Count == 0 || item.Username == null)
         {
-            _logger.Debug($"No slskd transfers to cancel for {item.ID} (directory not populated); relying on local folder deletion");
+            _logger.Debug("No slskd transfers to cancel for {ItemId} (directory not populated); relying on local folder deletion", item.ID);
             return;
         }
 
@@ -712,19 +712,19 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 if (_diskProvider.FileExists(localFilePath))
                 {
                     _diskProvider.DeleteFile(localFilePath);
-                    _logger.Debug($"Deleted local file: {localFilePath}");
+                    _logger.Debug("Deleted local file: {Path}", localFilePath);
                 }
                 else
                 {
-                    _logger.Trace($"Local file not found or path not accessible, skipping deletion: {Path.GetFileName(file.Filename)}");
+                    _logger.Trace("Local file not found or path not accessible, skipping deletion: {Filename}", Path.GetFileName(file.Filename));
                 }
             }
             catch (Exception ex)
             {
-                _logger.Warn(ex, $"Failed to delete local file for {Path.GetFileName(file.Filename)}");
+                _logger.Warn(ex, "Failed to delete local file for {Filename}", Path.GetFileName(file.Filename));
             }
 
-            _logger.Trace($"Removed transfer {file.Id}");
+            _logger.Trace("Removed transfer {TransferId}", file.Id);
         }));
     }
 
@@ -744,26 +744,26 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
             if (hasRemaining)
             {
-                _logger.Trace($"Directory {directoryPath} still has active downloads: skipping cleanup");
+                _logger.Trace("Directory {Directory} still has active downloads: skipping cleanup", directoryPath);
                 return;
             }
 
             if (_diskProvider.FolderExists(localPath))
             {
-                _logger.Debug($"Removing stale directory: {localPath}");
+                _logger.Debug("Removing stale directory: {Path}", localPath);
                 _diskProvider.DeleteFolder(localPath, true);
 
                 string? parent = Path.GetDirectoryName(localPath);
                 if (!string.IsNullOrEmpty(parent) && _diskProvider.FolderExists(parent) && _diskProvider.FolderEmpty(parent))
                 {
-                    _logger.Info($"Removing empty parent directory: {parent}");
+                    _logger.Info("Removing empty parent directory: {Parent}", parent);
                     _diskProvider.DeleteFolder(parent, true);
                 }
             }
         }
         catch (Exception ex)
         {
-            _logger.Error(ex, $"Error cleaning stale directories for path: {directoryPath}");
+            _logger.Error(ex, "Error cleaning stale directories for path: {Directory}", directoryPath);
         }
     }
 

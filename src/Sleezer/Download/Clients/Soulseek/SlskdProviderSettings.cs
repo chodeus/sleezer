@@ -22,10 +22,10 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek
                 .WithMessage("API Key is required.");
 
             // Timeout validation (only if it has a value)
-            RuleFor(c => c.Timeout)
-                .GreaterThanOrEqualTo(0.1)
-                .WithMessage("Timeout must be at least 0.1 hours.")
-                .When(c => c.Timeout.HasValue);
+            RuleFor(c => c.TimeoutMinutes)
+                .GreaterThanOrEqualTo(1.0)
+                .WithMessage("Timeout must be at least 1 minute.")
+                .When(c => c.TimeoutMinutes.HasValue);
 
             // RetryAttempts validation
             RuleFor(c => c.RetryAttempts)
@@ -47,6 +47,10 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek
             RuleFor(c => c.StallTimeoutMinutes)
                 .InclusiveBetween(0, 240)
                 .WithMessage("Stall timeout must be between 0 (disabled) and 240 minutes (4h).");
+
+            RuleFor(c => c.PostProcessingTimeoutMinutes)
+                .InclusiveBetween(5, 240)
+                .WithMessage("Post-processing timeout must be between 5 and 240 minutes.");
         }
     }
 
@@ -61,8 +65,8 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek
         [FieldDefinition(1, Label = "API Key", Type = FieldType.Textbox, Privacy = PrivacyLevel.ApiKey, HelpText = "The API key for your Slskd instance. You can find or set this in the Slskd's settings under 'Options'.", Placeholder = "Enter your API key")]
         public string ApiKey { get; set; } = string.Empty;
 
-        [FieldDefinition(3, Label = "Timeout", Type = FieldType.Textbox, HelpText = "Specify the maximum time to wait for a response from the Slskd instance before timing out. Fractional values are allowed (e.g., 1.5 for 1 hour and 30 minutes). Set leave blank for no timeout.", Unit = "hours", Advanced = true, Placeholder = "Enter timeout in hours")]
-        public double? Timeout { get; set; }
+        [FieldDefinition(3, Label = "Timeout", Type = FieldType.Textbox, HelpText = "Maximum time to wait for a response from the Slskd instance before timing out. Fractional values allowed (e.g. 1.5 = 1 minute 30 seconds). Leave blank for no timeout.", Unit = "minutes", Advanced = true, Placeholder = "Enter timeout in minutes")]
+        public double? TimeoutMinutes { get; set; }
 
         [FieldDefinition(4, Label = "Retry Attempts", Type = FieldType.Number, HelpText = "The number of times to retry downloading a file if it fails.", Advanced = true, Placeholder = "Enter retry attempts")]
         public int RetryAttempts { get; set; } = 1;
@@ -77,13 +81,16 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek
         public int BanUserAfterCorruptCount { get; set; }
 
         [FieldDefinition(9, Label = "Max Queue Position Before Cancel", Type = FieldType.Number, HelpText = "Cancel a queued file when the peer's queue position exceeds this value, forcing Lidarr to re-search with a different peer. 0 disables.", Advanced = true)]
-        public int MaxQueuePositionBeforeCancel { get; set; } = 100;
+        public int MaxQueuePositionBeforeCancel { get; set; } = 500;
 
         [FieldDefinition(10, Label = "Max Queue Wait", Type = FieldType.Number, Unit = "minutes", HelpText = "Cancel a file that has been queued at a peer for longer than this. 0 disables.", Advanced = true)]
         public int MaxQueueWaitMinutes { get; set; } = 60;
 
         [FieldDefinition(11, Label = "Stall Timeout", Type = FieldType.Number, Unit = "minutes", HelpText = "Cancel a file that is InProgress but hasn't transferred any new bytes for this long. 0 disables.", Advanced = true)]
         public int StallTimeoutMinutes { get; set; } = 15;
+
+        [FieldDefinition(12, Label = "Post-Processing Timeout", Type = FieldType.Number, Unit = "minutes", HelpText = "Maximum wall time for the corruption scan + pre-import tagger to finish per album. Raise for very large albums on slow disks.", Advanced = true)]
+        public int PostProcessingTimeoutMinutes { get; set; } = 30;
 
         [FieldDefinition(98, Label = "Is Fetched remote", Type = FieldType.Checkbox, Hidden = HiddenType.Hidden)]
         public bool IsRemotePath { get; set; }
@@ -99,7 +106,7 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek
 
         public string DownloadPath { get; set; } = string.Empty;
 
-        public TimeSpan? GetTimeout() => Timeout == null ? null : TimeSpan.FromHours(Timeout.Value);
+        public TimeSpan? GetTimeout() => TimeoutMinutes == null ? null : TimeSpan.FromMinutes(TimeoutMinutes.Value);
 
         public NzbDroneValidationResult Validate() => new(Validator.Validate(this));
 
