@@ -33,7 +33,7 @@ internal class StreamManifest
             MimeType = dashInfo.MimeType;
             SampleRate = dashInfo.AudioSamplingRate;
         }
-        else if (_manifestMimeType == ManifestMimeType.MPD)
+        else if (_manifestMimeType == ManifestMimeType.BTS)
         {
             // TODO: i haven't seen one of these myself so im just guessing based on tidalapi
 
