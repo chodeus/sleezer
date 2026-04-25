@@ -28,6 +28,10 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\PostProcessing\FfmpegErrorFormatter.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Core\Tidal\TidalPathSanitizer.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Core\Tidal\TidalArtistMatcher.cs"
+             LinkBase="SourceUnderTest" />
   </ItemGroup>
 
 </Project>

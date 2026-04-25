@@ -2,7 +2,7 @@
 
 ![License](https://img.shields.io/github/license/chodeus/sleezer) ![GitHub release (latest by date)](https://img.shields.io/github/v/release/chodeus/sleezer) ![GitHub last commit](https://img.shields.io/github/last-commit/chodeus/sleezer) ![GitHub stars](https://img.shields.io/github/stars/chodeus/sleezer)
 
-Sleezer is a Lidarr plugin that adds **Deezer**, **Slskd (Soulseek)**, and a handful of other music sources behind a single install. It also ships post-processing: corrupt-file scanning and pre-import tagging for Deezer/Slskd downloads, plus an FFmpeg-based format converter that runs on every imported track regardless of source. 🛠️
+Sleezer is a Lidarr plugin that adds **Deezer**, **Tidal**, **Slskd (Soulseek)**, and a handful of other music sources behind a single install. It also ships post-processing: corrupt-file scanning and pre-import tagging for Deezer/Tidal/Slskd downloads, plus an FFmpeg-based format converter that runs on every imported track regardless of source. 🛠️
 
 Credit where it's due: Sleezer is built on [Lidarr.Plugin.Deezer](https://github.com/TrevTV/Lidarr.Plugin.Deezer) by [TrevTV](https://github.com/TrevTV) and [Tubifarry](https://github.com/TypNull/Tubifarry) by [TypNull](https://github.com/TypNull). See [Credits](#credits-).
 
@@ -12,8 +12,9 @@ Credit where it's due: Sleezer is built on [Lidarr.Plugin.Deezer](https://github
 
 1. [Installation 🚀](#installation-)
 2. [Deezer Setup 🎧](#deezer-setup-)
-3. [Soulseek (Slskd) Setup 🐟](#soulseek-slskd-setup-)
-4. [Web Clients 📻](#web-clients-)
+3. [Tidal Setup 🌊](#tidal-setup-)
+4. [Soulseek (Slskd) Setup 🐟](#soulseek-slskd-setup-)
+5. [Web Clients 📻](#web-clients-)
 5. [FFmpeg 🎛️](#ffmpeg-️)
 6. [Corrupt File Scan & Pre-Import Tagging 🧼](#corrupt-file-scan--pre-import-tagging-)
 7. [Queue Cleaner 🧹](#queue-cleaner-)
@@ -58,6 +59,38 @@ Sleezer talks to Deezer directly (no Deemix middleman) using the `DeezNET` libra
 
 * If your downloads suddenly start failing, rotate the ARL before anything else. Most "Deezer broke" reports are single-ARL bans.
 * Leaving the ARL field blank uses Sleezer's public-ARL rotation — works but slower and occasionally stale.
+
+---
+
+### Tidal Setup 🌊
+
+Sleezer talks to Tidal directly using a vendored fork of TrevTV's `TidalSharp` library. Auth is one-click thanks to Tidal's device-code OAuth flow.
+
+> ⚠️ A Tidal HiFi or HiFi Plus subscription is required to download lossless / hi-res content. Sleezer will not bypass entitlement checks.
+
+#### Setting Up the Tidal Indexer
+
+1. In Lidarr, go to `Settings -> Indexers` and click `+` to add a new indexer.
+2. In the modal, select `Tidal` (under **Other** at the bottom).
+3. Click **Authenticate with Tidal**. A Tidal verification URL opens in a new tab.
+4. Log in to Tidal and grant access. The settings page picks up the tokens automatically — no copy-paste of redirect URLs.
+5. Click **Save**.
+
+#### Setting Up the Tidal Download Client
+
+1. `Settings -> Download Clients`, click `+` to add.
+2. Select `Tidal` from the list.
+3. Set the **Download Path** Lidarr should monitor.
+4. Optional: enable **Extract FLAC From M4A** (Tidal ships FLAC inside an M4A container; this unwraps it) or **Re-encode AAC into MP3**. Both require FFmpeg on PATH.
+5. **Profiles → Delay Profiles**: tick **Tidal** on the default profile so Lidarr will grab from it.
+
+#### Notes & Troubleshooting
+
+* The post-processing pipeline (corrupt-file scan + pre-import tagging) runs on Tidal downloads, just like Deezer and Slskd.
+* If searches start returning errors that mention `countryCode parameter missing`, that's Tidal's confusing way of saying your session expired. Sleezer detects this and forces a refresh; if that fails, re-authenticate via the indexer settings.
+* Various Artists, Soundtracks, and Cast Recordings are recognised explicitly so they actually return search hits.
+* Tidal music videos and Dolby Atmos tracks are not supported in this release.
+* Tidal does not expose a public RSS / new-release feed, so RSS sync is disabled at the indexer level.
 
 ---
 
@@ -125,7 +158,7 @@ Sleezer ships with a downloader (`Xabe.FFmpeg.Downloader`) and will fetch FFmpeg
 
 ### Corrupt File Scan & Pre-Import Tagging 🧼
 
-These two features live under FFmpeg's settings because they depend on the bundled FFmpeg binary. Both are scoped to **Sleezer's own downloaders only** — Deezer and Slskd. The web clients (Lucida, SubSonic, TripleTriple, DABMusic) currently share a lighter download path that doesn't invoke them, and Lidarr's native torrent/Usenet clients are untouched. Only the FFmpeg *conversion* provider (previous section) runs on imports from every source.
+These two features live under FFmpeg's settings because they depend on the bundled FFmpeg binary. Both are scoped to **Sleezer's own downloaders only** — Deezer, Tidal, and Slskd. The web clients (Lucida, SubSonic, TripleTriple, DABMusic) currently share a lighter download path that doesn't invoke them, and Lidarr's native torrent/Usenet clients are untouched. Only the FFmpeg *conversion* provider (previous section) runs on imports from every source.
 
 All three toggles default **on**.
 
