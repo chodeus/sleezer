@@ -120,10 +120,40 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
             {
                 logger.Warn("Tidal album {Title}: {Failed}/{Total} tracks failed; marking item Failed", Title, FailedTracks, TotalTracks);
                 Status = DownloadItemStatus.Failed;
+
+                // Clean up the partial download folder so we don't accumulate
+                // half-finished albums under /data/downloads/tidal/. Lidarr
+                // won't call our DeleteItemData on Failed items, so we have
+                // to do this ourselves here.
+                TryCleanupAfterFailure(settings, logger);
             }
             else
             {
                 Status = DownloadItemStatus.Completed;
+            }
+        }
+
+        private void TryCleanupAfterFailure(TidalSettings settings, Logger logger)
+        {
+            if (string.IsNullOrEmpty(DownloadFolder))
+                return;
+
+            try
+            {
+                if (System.IO.Directory.Exists(DownloadFolder))
+                {
+                    System.IO.Directory.Delete(DownloadFolder, recursive: true);
+                    logger.Debug("Tidal: removed failed-download folder {Folder}", DownloadFolder);
+                }
+
+                // Sweep up the now-empty artist folder above us. Same helper
+                // the download-client uses on successful imports.
+                NzbDrone.Core.Download.Clients.Tidal.Tidal.TryRemoveEmptyParentFolders(
+                    DownloadFolder, settings.DownloadPath, logger);
+            }
+            catch (Exception ex)
+            {
+                logger.Debug(ex, "Tidal: could not clean up failed-download folder {Folder}", DownloadFolder);
             }
         }
 

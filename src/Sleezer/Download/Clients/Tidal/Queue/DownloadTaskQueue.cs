@@ -300,7 +300,32 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
                     // misses ffmpeg installed at /usr/bin in the Lidarr container.
                     FFMPEG.SetBinaryDirectory(settings.FFmpegPath);
 
+                    // If the user has FFmpeg metadata configured but the binaries
+                    // aren't actually present at that path (clean Lidarr container
+                    // installs are common), trigger the same Xabe.FFmpeg.Downloader
+                    // path that FFmpegSettings.OnSet uses. Makes Tidal's
+                    // ExtractFlac/ReEncodeAAC toggles "just work" out of the box
+                    // instead of silently no-oping with a Warn.
+                    if (!AudioMetadataHandler.CheckFFmpegInstalled())
+                    {
+                        _logger.Info("[post-process] FFmpeg binaries missing at {Path}; downloading via Xabe.FFmpeg.Downloader", settings.FFmpegPath);
+                        try
+                        {
+                            AudioMetadataHandler.InstallFFmpeg(settings.FFmpegPath).GetAwaiter().GetResult();
+                            AudioMetadataHandler.ResetFFmpegInstallationCheck();
+                            _logger.Info("[post-process] FFmpeg auto-install complete at {Path}", settings.FFmpegPath);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.Warn(ex, "[post-process] FFmpeg auto-install failed; Tidal conversion options will gracefully no-op until ffmpeg is available at {Path}", settings.FFmpegPath);
+                        }
+                    }
+
                     _logger.Trace("[post-process] Applied FFmpeg path: {Path}", settings.FFmpegPath);
+                }
+                else
+                {
+                    _logger.Debug("[post-process] No FFmpeg path configured in Lidarr metadata settings; Tidal conversion will skip with a Warn if ffmpeg/ffprobe aren't on PATH inside the container.");
                 }
             }
             catch (Exception ex)
