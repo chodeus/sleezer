@@ -122,6 +122,16 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
             int priority = folderData.CalculatePriority(expectedTrackCount);
 
+            // Surface the peer info (was previously bracketed onto the title
+            // with emoji decorations). Lidarr indexes blocklisting by
+            // DownloadUrl which already contains the username — this is for
+            // operator log review only.
+            _logger.Debug(
+                "Slskd peer for {Artist} - {Album}: user={User} speed={Speed:F2}MB/s queue={Queue} freeSlot={FreeSlot}",
+                finalArtist, finalAlbum, folderData.Username,
+                folderData.UploadSpeed / 1024.0 / 1024.0,
+                folderData.QueueLength, folderData.HasFreeUploadSlot);
+
             return new AlbumData("Slskd", nameof(SoulseekDownloadProtocol))
             {
                 AlbumId = $"/api/v0/transfers/downloads/{folderData.Username}",
@@ -141,7 +151,14 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 ExplicitContent = ExtractExplicitTag(folderData.Path),
                 Priotity = priority,
                 CustomString = JsonConvert.SerializeObject(filesToDownload),
-                ExtraInfo = [edition ?? string.Empty, $"👤 {folderData.Username} ", $"{(folderData.HasFreeUploadSlot ? "⚡" : "❌")} {folderData.UploadSpeed / 1024.0 / 1024.0:F2}MB/s ", folderData.QueueLength == 0 ? "" : $"📋 {folderData.QueueLength}"],
+                // Peer info (user, speed, queue) used to live in ExtraInfo as
+                // bracketed decorations on the release title — visually nice
+                // but a maintenance risk: any future change to Lidarr's title
+                // parser could choke on the unicode/punctuation. Blocklisting
+                // already works by DownloadUrl (which encodes the username),
+                // so we drop the decorations from the title and surface peer
+                // metadata via a Debug log line below for traceability.
+                ExtraInfo = string.IsNullOrEmpty(edition) ? null : [edition],
                 Duration = TotalDuration
             };
         }

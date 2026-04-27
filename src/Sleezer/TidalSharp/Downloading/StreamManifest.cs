@@ -35,7 +35,12 @@ internal class StreamManifest
         }
         else if (_manifestMimeType == ManifestMimeType.BTS)
         {
-            // TODO: i haven't seen one of these myself so im just guessing based on tidalapi
+            // BTS (used for AAC streams) is a small JSON envelope. The DASH
+            // parser above pulls SampleRate from the MPD's AudioSamplingRate,
+            // but the BTS envelope doesn't carry sample rate at all — Tidal
+            // reports it on the parent TrackStreamData instead. Pull it from
+            // there so the manifest-delivered diagnostic logs show a real
+            // value for AAC tracks (was always 0).
 
             var json = JObject.Parse(_decodedManifest);
             Urls = json["urls"]!.Select(t => t.ToString()).ToArray();
@@ -43,6 +48,7 @@ internal class StreamManifest
             MimeType = json["mimeType"]!.ToString();
             EncryptionType = json["encryptionType"]!.ToString();
             EncryptionKey = json["encryptionKey"]?.ToString();
+            SampleRate = (int)stream.SampleRate;
         }
         else
             throw new UnsupportedManifestException("Unknown manifest, this track can't be downloaded.");

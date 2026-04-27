@@ -215,13 +215,15 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
                     return;
                 }
 
-                AlbumRelease? albumRelease = album.AlbumReleases?.Value?.FirstOrDefault(r => r.Monitored)
-                                              ?? album.AlbumReleases?.Value?.FirstOrDefault();
-
+                // Pass null for albumRelease so PreImportTagger lets Lidarr's
+                // CandidateService rank releases by track-count distance —
+                // forcing the monitored release here is what was causing the
+                // "missing tracks" import failures when the download was a
+                // different edition than the monitored one.
                 await _preImportTagger.TagCompletedDownloadAsync(
                     album,
                     artist,
-                    albumRelease,
+                    albumRelease: null,
                     item.ID,
                     folder,
                     TagConfidenceThreshold,

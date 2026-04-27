@@ -92,10 +92,17 @@ public class PreImportTagger : IPreImportTagger
             return new TaggingResult(0, 0, 0);
         }
 
-        // Caller may pass null albumRelease — fall back to the album's monitored
-        // release (or first available) so callers don't all have to repeat that.
-        albumRelease ??= album.AlbumReleases?.Value?.FirstOrDefault(r => r.Monitored)
-                         ?? album.AlbumReleases?.Value?.FirstOrDefault();
+        // Caller can pass null albumRelease to let Lidarr pick the best release
+        // from the album's release group based on track-count distance against
+        // the actual downloaded folder. Forcing a release here (the previous
+        // behaviour: monitored release, fall back to first) is the root cause
+        // of "missing tracks" failures when the download is a different
+        // edition/pressing than the monitored one (see CandidateService.cs:71
+        // — overrides.AlbumRelease causes "Release [...] was forced" and skips
+        // candidate selection). Leaving it null lets CandidateService rank
+        // every release of the album by track-count proximity (see line 137
+        // / 215 in CandidateService.cs) and pick the closest match. We
+        // preserve the monitored fallback for the IDENTIFY-FAILED case below.
 
         List<string> audioFiles = EnumerateAudioFiles(folderPath);
         if (audioFiles.Count == 0)
@@ -147,6 +154,26 @@ public class PreImportTagger : IPreImportTagger
         };
 
         List<LocalAlbumRelease> releases = _identificationService.Identify(localTracks, overrides, config);
+
+        // Fallback: if the unconstrained Identify call found no release within
+        // confidence (e.g. genuinely ambiguous metadata) and the caller didn't
+        // pick one for us, retry constrained to the monitored release. This
+        // preserves the pre-fix behaviour for the edge case where track-count
+        // matching can't disambiguate, while still letting the common case
+        // benefit from CandidateService's track-count ranking.
+        if (albumRelease == null && !releases.Any(r =>
+                (r.Distance?.NormalizedDistance() ?? 1.0) <= confidenceThreshold && r.TrackMapping != null))
+        {
+            AlbumRelease? fallback = album.AlbumReleases?.Value?.FirstOrDefault(r => r.Monitored)
+                                     ?? album.AlbumReleases?.Value?.FirstOrDefault();
+            if (fallback != null)
+            {
+                _logger.Debug($"Pre-import tag: no release matched within confidence for {sourceId} via track-count ranking; retrying constrained to monitored release {fallback.Title}");
+                overrides.AlbumRelease = fallback;
+                albumRelease = fallback;
+                releases = _identificationService.Identify(localTracks, overrides, config);
+            }
+        }
 
         int tagged = 0;
         int skipped = 0;

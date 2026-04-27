@@ -553,14 +553,16 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                         return;
                     }
 
-                    AlbumRelease? albumRelease = album.AlbumReleases?.Value?.FirstOrDefault(r => r.Monitored)
-                                                  ?? album.AlbumReleases?.Value?.FirstOrDefault();
-
                     // 2b. Clean path: run Lidarr-backed pre-import tagging.
+                    // Pass null for albumRelease so PreImportTagger lets
+                    // Lidarr's CandidateService rank releases by track-count
+                    // distance — forcing the monitored release here was the
+                    // cause of "missing tracks" import failures when the
+                    // download is a different edition than the monitored one.
                     await _preImportTagger.TagCompletedDownloadAsync(
                         album,
                         artist,
-                        albumRelease,
+                        albumRelease: null,
                         item.ID,
                         folderPath,
                         TagConfidenceThreshold,

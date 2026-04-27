@@ -281,6 +281,28 @@ public class Downloader
                     token: token
                 );
                 var streamData = result.ToObject<TrackStreamData>()!;
+
+                // Detect Tidal's silent codec downgrade. Per-track licensing in
+                // some regions causes playbackinfopostpaywall to return an mp4a
+                // (AAC) manifest for a LOSSLESS request without raising an
+                // "Asset is not ready" error — the manifest just comes back
+                // lossy. If we accept it, Lidarr imports AAC into a Lossless
+                // quality bucket and the user thinks they have FLAC when they
+                // don't. Failing here aborts the whole album (parallel
+                // DoTrackDownload tasks all hit the same throw) so Lidarr's
+                // DownloadDecisionMaker re-picks — typically a slskd FLAC peer.
+                if (LosslessGuard.IsLosslessTier(attemptQuality))
+                {
+                    string? deliveredCodec = TryReadManifestCodec(streamData);
+                    if (deliveredCodec != null && !LosslessGuard.CodecIsLossless(deliveredCodec))
+                    {
+                        throw new APIException(
+                            $"Tidal returned codec '{deliveredCodec}' for track {trackId} despite a {attemptQuality} request " +
+                            $"— this album/track may not be licensed lossless in your region. Failing the download " +
+                            $"so Lidarr can try another source (e.g. slskd FLAC).");
+                    }
+                }
+
                 lock (_cachedStreamData)
                     _cachedStreamData[(trackId, attemptQuality)] = streamData;
 
@@ -308,6 +330,22 @@ public class Downloader
     }
 
     private Dictionary<(string trackId, AudioQuality quality), TrackStreamData> _cachedStreamData = [];
+
+    // Best-effort codec read from a manifest. Returns null if the manifest
+    // can't be parsed — caller treats that as "don't trigger the silent-
+    // downgrade rejection" so a parse failure surfaces through the normal
+    // GetTrackStream path with a more specific exception.
+    private static string? TryReadManifestCodec(TrackStreamData data)
+    {
+        try
+        {
+            return new Downloading.StreamManifest(data).Codecs;
+        }
+        catch
+        {
+            return null;
+        }
+    }
 }
 
 public class DownloadData<T>(T data, string fileExtension) : IDisposable

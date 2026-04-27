@@ -46,6 +46,12 @@
          the Lidarr.Core ProjectReference below). -->
     <Compile Include="..\..\src\Sleezer\TidalSharp\ExpiredTokenDetector.cs"
              LinkBase="SourceUnderTest" />
+    <!-- Lossless-tier guard for Tidal silent codec downgrade detection.
+         Pulls in the AudioQuality enum from Quality.cs as its only dep. -->
+    <Compile Include="..\..\src\Sleezer\TidalSharp\LosslessGuard.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\TidalSharp\Data\Quality.cs"
+             LinkBase="SourceUnderTest" />
   </ItemGroup>
 
   <ItemGroup>
