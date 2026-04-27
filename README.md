@@ -91,6 +91,7 @@ Sleezer talks to Tidal directly using a vendored fork of TrevTV's `TidalSharp` l
 
 * The post-processing pipeline (corrupt-file scan + pre-import tagging) runs on Tidal downloads, just like Deezer and Slskd.
 * If searches start returning errors that mention `countryCode parameter missing`, that's Tidal's confusing way of saying your session expired. Sleezer detects this and forces a refresh; if that fails, re-authenticate via the indexer settings.
+* If a Tidal download fails with `Tidal returned codec 'MP4A' ... despite a LOSSLESS request`, that's Tidal silently downgrading to AAC for tracks not licensed lossless in your region — common in AU/NZ/SE-Asia for older or remix-heavy catalogue. The grab is failed deliberately so Lidarr can re-pick another source (e.g. a slskd FLAC peer) instead of importing AAC into a Lossless quality bucket. Re-authenticating via a US VPN sometimes unlocks more lossless catalogue if the album genuinely is licensed lossless somewhere.
 * Various Artists, Soundtracks, and Cast Recordings are recognised explicitly so they actually return search hits.
 * Tidal music videos and Dolby Atmos tracks are not supported in this release.
 * Tidal does not expose a public RSS / new-release feed, so RSS sync is disabled at the indexer level.
