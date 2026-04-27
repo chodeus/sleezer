@@ -42,6 +42,10 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Utilities\AudioFormat.cs"
              LinkBase="SourceUnderTest" />
+    <!-- Pure helper — depends only on Newtonsoft.Json (transitively pulled in via
+         the Lidarr.Core ProjectReference below). -->
+    <Compile Include="..\..\src\Sleezer\TidalSharp\ExpiredTokenDetector.cs"
+             LinkBase="SourceUnderTest" />
   </ItemGroup>
 
   <ItemGroup>

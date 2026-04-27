@@ -64,12 +64,12 @@ public class TidalClient
         return true;
     }
 
-    public async Task ForceRefreshToken(CancellationToken token = default)
+    public async Task<bool> ForceRefreshToken(CancellationToken token = default)
     {
         if (ActiveUser == null)
-            return;
+            return false;
 
-        await _session.AttemptTokenRefresh(ActiveUser, token);
+        return await _session.AttemptTokenRefresh(ActiveUser, token);
     }
 
     public async Task<bool> IsLoggedIn(CancellationToken token = default)
@@ -115,7 +115,7 @@ public class TidalClient
     // path when Lidarr loads our plugin and hands us tokens out of its own
     // settings store. Skips file IO entirely; pairs with IPluginSettings-backed
     // token storage instead of the legacy lastUser.json flow.
-    public async Task LoadFromTokens(string accessToken, string refreshToken, string tokenType, long userId, DateTime expirationDate, string countryCode = "", CancellationToken token = default)
+    public async Task LoadFromTokens(string accessToken, string refreshToken, string tokenType, long userId, DateTime expirationDate, string countryCode = "", Action<TidalUser>? onTokensRefreshed = null, CancellationToken token = default)
     {
         long secondsRemaining = (long)Math.Max(0, (expirationDate - DateTime.UtcNow).TotalSeconds);
         var data = new OAuthTokenData
@@ -130,12 +130,17 @@ public class TidalClient
             User = new OAuthTokenData.UserData { UserId = userId, CountryCode = countryCode ?? "" }
         };
 
-        var user = new TidalUser(data, jsonPath: null, isPkce: false, expirationDate);
+        var user = new TidalUser(data, jsonPath: null, isPkce: false, expirationDate)
+        {
+            OnTokensRefreshed = onTokensRefreshed
+        };
 
         ActiveUser = user;
         API.UpdateUser(user);
 
         // Refresh first if expired; otherwise just pull SessionID/CountryCode.
+        // The OnTokensRefreshed hook fires from inside AttemptTokenRefresh on
+        // success, so even this initial load-time refresh gets persisted.
         if (expirationDate <= DateTime.UtcNow)
             await _session.AttemptTokenRefresh(user, token);
 

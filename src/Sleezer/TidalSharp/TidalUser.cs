@@ -43,11 +43,33 @@ public class TidalUser
         _data.AccessToken = data.AccessToken;
         _data.ExpiresIn = data.ExpiresIn;
 
+        // Tidal's refresh endpoint may rotate the refresh_token. When it
+        // does, we MUST persist the new value — the old one is dead. When
+        // the response omits refresh_token, keep the existing one (matches
+        // Lidarr's Spotify import-list pattern).
+        if (!string.IsNullOrEmpty(data.RefreshToken))
+            _data.RefreshToken = data.RefreshToken;
+
         DateTime now = DateTime.UtcNow;
         ExpirationDate = now.AddSeconds(data.ExpiresIn);
 
         await WriteToFile(token);
+
+        // Surface the refreshed tokens to whatever loaded this user, so the
+        // caller (the Lidarr indexer) can persist them back to its settings
+        // store. Without this, refreshes only live in memory and the saved
+        // settings drift further out of date with each refresh — eventually
+        // the saved refresh_token is the dead pre-rotation value and the
+        // user has to re-authenticate manually.
+        OnTokensRefreshed?.Invoke(this);
     }
+
+    // Set by the loader (Core.LoadFromTokens) so refreshes have somewhere
+    // to surface. Public-set so tests can inject; intentionally not an
+    // event because there is exactly one persistence sink (the indexer
+    // settings) and multi-cast semantics would just add subscription-leak
+    // bugs around re-auth.
+    public Action<TidalUser>? OnTokensRefreshed { get; set; }
 
     internal void UpdateJsonPath(string? jsonPath) => _jsonPath = jsonPath;
 

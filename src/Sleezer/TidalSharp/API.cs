@@ -130,37 +130,27 @@ public class API
         string resp = response.Content;
         JObject json = JObject.Parse(resp);
 
-        if (response.HasHttpError && !string.IsNullOrEmpty(_activeUser?.RefreshToken))
+        if (response.HasHttpError && !string.IsNullOrEmpty(_activeUser?.RefreshToken)
+            && ExpiredTokenDetector.LooksExpired(resp, requestHadCountryCode: !string.IsNullOrEmpty(_activeUser?.CountryCode)))
         {
             string? userMessage = json.GetValue("userMessage")?.ToString();
-            // Tidal sometimes serves expired-session responses with the misleading
-            // body "countryCode parameter missing" even when countryCode is set
-            // on the request. Treat that sentinel as an expired-token signal.
-            // Upstream issue: https://github.com/TrevTV/Lidarr.Plugin.Tidal/issues/42
-            bool isExpiredToken = userMessage != null && userMessage.Contains("The token has expired.");
-            bool isMissingCountryCodeWithRequestPresent = userMessage != null
-                && userMessage.Contains("countryCode parameter missing")
-                && !string.IsNullOrEmpty(_activeUser?.CountryCode);
 
-            if (isExpiredToken || isMissingCountryCodeWithRequestPresent)
+            if (refreshAttempts >= 1)
             {
-                if (refreshAttempts >= 1)
-                {
-                    _logger.Error("Tidal still rejected request after token refresh (server said: {UserMessage}); user must re-authenticate", userMessage);
-                    throw new APIException($"Tidal still rejected the request after a successful token refresh: {userMessage}. Re-authenticate the indexer in plugin settings.");
-                }
-
-                _logger.Warn("Tidal session looks expired (server said: {UserMessage}); attempting refresh", userMessage);
-                bool refreshed = await _session.AttemptTokenRefresh(_activeUser!, token);
-                if (refreshed)
-                {
-                    _logger.Debug("Tidal token refreshed; retrying original request");
-                    return await Call(method, path, formParameters, urlParameters, headers, baseUrl, token, refreshAttempts + 1);
-                }
-
-                _logger.Error("Tidal token refresh failed; user must re-authenticate via plugin settings");
-                throw new APIException("Tidal session expired and could not be refreshed. Re-authenticate the indexer in plugin settings.");
+                _logger.Error("Tidal still rejected request after token refresh (server said: {UserMessage}); user must re-authenticate", userMessage);
+                throw new APIException($"Tidal still rejected the request after a successful token refresh: {userMessage}. Re-authenticate the indexer in plugin settings.");
             }
+
+            _logger.Warn("Tidal session looks expired (server said: {UserMessage}); attempting refresh", userMessage);
+            bool refreshed = await _session.AttemptTokenRefresh(_activeUser!, token);
+            if (refreshed)
+            {
+                _logger.Debug("Tidal token refreshed; retrying original request");
+                return await Call(method, path, formParameters, urlParameters, headers, baseUrl, token, refreshAttempts + 1);
+            }
+
+            _logger.Error("Tidal token refresh failed; user must re-authenticate via plugin settings");
+            throw new APIException("Tidal session expired and could not be refreshed. Re-authenticate the indexer in plugin settings.");
         }
 
         if (response.StatusCode == HttpStatusCode.NotFound)

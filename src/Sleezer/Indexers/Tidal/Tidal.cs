@@ -1,10 +1,14 @@
 using System;
 using System.Collections.Generic;
+using System.Net;
+using System.Threading.Tasks;
 using NLog;
 using NzbDrone.Common.Http;
 using NzbDrone.Core.Configuration;
 using NzbDrone.Core.Parser;
+using NzbDrone.Core.Parser.Model;
 using NzbDrone.Plugin.Sleezer.Tidal;
+using TidalSharp;
 using TidalSharp.Data;
 
 namespace NzbDrone.Core.Indexers.Tidal
@@ -36,13 +40,17 @@ namespace NzbDrone.Core.Indexers.Tidal
         // forces a fresh LoadFromTokens call. Empty string = nothing loaded.
         private static string _loadedAccessToken = string.Empty;
 
+        private readonly IIndexerRepository _indexerRepository;
+
         public Tidal(IHttpClient httpClient,
             IIndexerStatusService indexerStatusService,
+            IIndexerRepository indexerRepository,
             IConfigService configService,
             IParsingService parsingService,
             Logger logger)
             : base(httpClient, indexerStatusService, configService, parsingService, logger)
         {
+            _indexerRepository = indexerRepository;
         }
 
         public override IIndexerRequestGenerator GetRequestGenerator()
@@ -260,13 +268,117 @@ namespace NzbDrone.Core.Indexers.Tidal
                     Settings.TokenType,
                     Settings.UserId,
                     Settings.Expires,
-                    Settings.CountryCode).GetAwaiter().GetResult();
+                    Settings.CountryCode,
+                    onTokensRefreshed: PersistRefreshedTokens).GetAwaiter().GetResult();
                 _loadedAccessToken = Settings.AccessToken;
             }
             catch (Exception ex)
             {
                 _logger.Error(ex, "Failed to restore Tidal session from saved tokens; user must re-authenticate");
             }
+        }
+
+        // Fired by TidalSharp from inside any successful AttemptTokenRefresh
+        // (whether triggered by the search FetchPage override below or by the
+        // download path's API.Call). Without this, refreshes only live in the
+        // singleton TidalAPI's in-memory state — Lidarr's settings DB keeps
+        // serving the original (eventually-dead) token to the next process
+        // restart, and the user has to re-authenticate every ~24h when the
+        // saved access_token expires for real.
+        //
+        // Settings is `(TSettings)Definition.Settings`, so mutating Settings
+        // here mutates the same object SetFields serialises out.
+        private void PersistRefreshedTokens(TidalUser user)
+        {
+            try
+            {
+                Settings.AccessToken = user.AccessToken;
+                Settings.RefreshToken = user.RefreshToken;
+                Settings.TokenType = user.TokenType;
+                Settings.Expires = user.ExpirationDate;
+                Settings.UserId = user.UserId;
+                if (!string.IsNullOrEmpty(user.CountryCode))
+                    Settings.CountryCode = user.CountryCode;
+
+                _loadedAccessToken = user.AccessToken;
+
+                // Definition.Id == 0 during the indexer Test flow before the
+                // record is saved; SetFields would no-op or throw. Skip it
+                // — the Test flow doesn't need persistence anyway.
+                if (Definition.Id > 0)
+                {
+                    _indexerRepository.SetFields((IndexerDefinition)Definition, m => m.Settings);
+                    _logger.Debug("Persisted refreshed Tidal tokens to indexer settings (expires {Expires:o})", user.ExpirationDate);
+                }
+            }
+            catch (Exception ex)
+            {
+                // Failing to persist is non-fatal for THIS request (the new
+                // tokens are already live in memory) but means the next
+                // Lidarr restart will load the stale tokens. Log so the user
+                // can spot drift if it happens repeatedly.
+                _logger.Warn(ex, "Tidal token refresh succeeded in memory but could not be saved to indexer settings");
+            }
+        }
+
+        // Lidarr's HttpIndexerBase catches HttpException and just logs it —
+        // there is no built-in retry for 401-with-expired-token. Override
+        // here so a search hitting the standard 24h Tidal access-token
+        // expiry triggers a refresh (which auto-persists via the callback
+        // wired in EnsureTokensLoaded) and one retry, instead of bubbling
+        // the failure up to the user.
+        protected override async Task<IList<ReleaseInfo>> FetchPage(IndexerRequest request, IParseIndexerResponse parser)
+        {
+            try
+            {
+                return await base.FetchPage(request, parser);
+            }
+            catch (HttpException ex) when (ShouldAttemptRefresh(ex))
+            {
+                _logger.Warn("Tidal search hit {Status}; attempting token refresh and retrying once", ex.Response.StatusCode);
+
+                bool refreshed;
+                try
+                {
+                    refreshed = await TidalAPI.Instance!.Client.ForceRefreshToken();
+                }
+                catch (Exception refreshEx)
+                {
+                    _logger.Error(refreshEx, "Tidal token refresh threw during search retry; user must re-authenticate");
+                    throw;
+                }
+
+                if (!refreshed)
+                {
+                    _logger.Error("Tidal token refresh returned false during search retry; refresh_token is likely dead. User must re-authenticate.");
+                    throw;
+                }
+
+                // Re-stamp the Authorization header with the refreshed token.
+                // The original IndexerRequest captured the OLD bearer at
+                // generation time, so a naked retry would 401 again.
+                var user = TidalAPI.Instance!.Client.ActiveUser;
+                if (user != null)
+                {
+                    request.HttpRequest.Headers.Remove("Authorization");
+                    request.HttpRequest.Headers.Add("Authorization", $"{user.TokenType} {user.AccessToken}");
+                }
+
+                return await base.FetchPage(request, parser);
+            }
+        }
+
+        private bool ShouldAttemptRefresh(HttpException ex)
+        {
+            if (ex.Response?.StatusCode != HttpStatusCode.Unauthorized)
+                return false;
+
+            if (string.IsNullOrEmpty(TidalAPI.Instance?.Client.ActiveUser?.RefreshToken))
+                return false;
+
+            return ExpiredTokenDetector.LooksExpired(
+                ex.Response.Content,
+                requestHadCountryCode: !string.IsNullOrEmpty(TidalAPI.Instance?.Client.ActiveUser?.CountryCode));
         }
     }
 }
