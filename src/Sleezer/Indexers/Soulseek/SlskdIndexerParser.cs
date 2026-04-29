@@ -59,7 +59,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
                 if (searchResponse == null)
                 {
-                    _logger.Error("Failed to deserialize slskd search response.");
+                    var snippet = indexerResponse.Content?.Length > 256 ? indexerResponse.Content[..256] + "…" : indexerResponse.Content;
+                    _logger.Error("Failed to deserialize slskd search response — body snippet: {Body}", snippet ?? "<empty>");
                     return [];
                 }
 
@@ -67,10 +68,22 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 HashSet<string>? ignoredUsers = GetIgnoredUsers(Settings.IgnoreListPath);
                 HashSet<string> rateLimitedUsers = GetRateLimitedUsers();
 
-                foreach (SlskdFolderData response in searchResponse.Responses)
+                int totalResponses = searchResponse.Responses?.Count() ?? 0;
+                int droppedIgnored = 0;
+                int droppedRateLimited = 0;
+
+                foreach (SlskdFolderData response in searchResponse.Responses ?? Enumerable.Empty<SlskdFolderData>())
                 {
-                    if (ignoredUsers?.Contains(response.Username) == true || rateLimitedUsers.Contains(response.Username))
+                    if (ignoredUsers?.Contains(response.Username) == true)
+                    {
+                        droppedIgnored++;
                         continue;
+                    }
+                    if (rateLimitedUsers.Contains(response.Username))
+                    {
+                        droppedRateLimited++;
+                        continue;
+                    }
 
                     IEnumerable<SlskdFileData> filteredFiles = SlskdFileData.GetFilteredFiles(response.Files, Settings.OnlyAudioFiles, Settings.IncludeFileExtensions);
 
@@ -124,6 +137,9 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                     }
                 }
 
+                _logger.Debug("Slskd parse: {Total} response(s), {Albums} album(s) emitted, dropped {Ignored} ignored-user / {RateLimited} rate-limited",
+                    totalResponses, albumDatas.Count, droppedIgnored, droppedRateLimited);
+
                 RemoveSearch(searchResponse.Id, albumDatas.Count != 0 && searchTextData.Interactive);
             }
             catch (Exception ex)
@@ -139,11 +155,17 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             if (string.IsNullOrEmpty(searchTextData.Artist) || string.IsNullOrEmpty(searchTextData.Album))
                 return null;
 
-            bool artistMatch = Fuzz.PartialRatio(folderData.Artist, searchTextData.Artist) > 85;
-            bool albumMatch = Fuzz.PartialRatio(folderData.Album, searchTextData.Album) > 85;
+            int artistRatio = Fuzz.PartialRatio(folderData.Artist, searchTextData.Artist);
+            int albumRatio = Fuzz.PartialRatio(folderData.Album, searchTextData.Album);
+            bool artistMatch = artistRatio > 85;
+            bool albumMatch = albumRatio > 85;
 
             if (!artistMatch || !albumMatch)
+            {
+                _logger.Trace("Skip expand for {Username}:{Directory} — artist ratio {ArtistRatio}, album ratio {AlbumRatio} (need >85)",
+                    folderData.Username, directoryGroup.Key, artistRatio, albumRatio);
                 return null;
+            }
 
             SlskdFileData? originalTrack = directoryGroup.FirstOrDefault(x => AudioFormatHelper.GetAudioCodecFromExtension(x.Extension?.ToLowerInvariant() ?? Path.GetExtension(x.Filename) ?? "") != AudioFormat.Unknown);
 

@@ -40,7 +40,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
             if (ShouldConvertTrack(trackFile).GetAwaiter().GetResult())
                 ConvertTrack(trackFile).GetAwaiter().GetResult();
             else
-                _logger.Trace($"No rule matched for {trackFile.OriginalFilePath}");
+                _logger.Trace("FFmpeg: no rule matched for {Path}", trackFile.OriginalFilePath);
             return null!;
         }
 
@@ -63,14 +63,20 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
 
         private async Task PerformConversion(TrackFile trackFile, ConversionResult result)
         {
+            var sourcePath = trackFile.Path;
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            _logger.Debug("FFmpeg convert start: {Source} → {TargetFormat} bitrate={TargetBitrate} bitDepth={TargetBitDepth} cbr={UseCBR}",
+                sourcePath, result.TargetFormat, result.TargetBitrate, result.TargetBitDepth, result.UseCBR);
+
             AudioMetadataHandler audioHandler = new(trackFile.Path);
             bool success = await audioHandler.TryConvertToFormatAsync(result.TargetFormat, result.TargetBitrate, result.TargetBitDepth, result.UseCBR);
             trackFile.Path = audioHandler.TrackPath;
 
             if (success)
-                _logger.Info($"Successfully converted track: {trackFile.Path}");
+                _logger.Info("FFmpeg convert ok in {ElapsedMs}ms: {Source} → {Output}", sw.ElapsedMilliseconds, sourcePath, trackFile.Path);
             else
-                _logger.Warn($"Failed to convert track: {trackFile.Path}");
+                _logger.Error("FFmpeg convert failed in {ElapsedMs}ms for {Source} (target={TargetFormat}); leaving original in place",
+                    sw.ElapsedMilliseconds, sourcePath, result.TargetFormat);
         }
 
         private async Task<int?> GetTrackBitrateAsync(string filePath)
@@ -141,7 +147,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
             // Block lossy to lossless conversion
             if (AudioFormatHelper.IsLossyFormat(trackFormat) && !AudioFormatHelper.IsLossyFormat(rule.TargetFormat))
             {
-                _logger.Warn($"Blocked lossy to lossless conversion from {trackFormat} to {rule.TargetFormat}");
+                _logger.Warn("Blocked lossy→lossless conversion from {Source} to {Target}", trackFormat, rule.TargetFormat);
                 return ConversionResult.Blocked();
             }
 
@@ -152,7 +158,8 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
                 rule.TargetBitrate.HasValue &&
                 rule.TargetBitrate.Value > currentBitrate.Value)
             {
-                _logger.Warn($"Blocked bitrate upsampling from {currentBitrate}kbps to {rule.TargetBitrate}kbps for {trackFormat}");
+                _logger.Warn("Blocked bitrate upsampling from {CurrentBitrate}kbps to {TargetBitrate}kbps for {Format}",
+                    currentBitrate, rule.TargetBitrate, trackFormat);
                 return ConversionResult.Blocked();
             }
 
@@ -163,7 +170,8 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
                 rule.TargetBitDepth.HasValue &&
                 rule.TargetBitDepth.Value > currentBitDepth.Value)
             {
-                _logger.Warn($"Blocked bit depth upsampling from {currentBitDepth}-bit to {rule.TargetBitDepth}-bit for {trackFormat}");
+                _logger.Warn("Blocked bit-depth upsampling from {CurrentBitDepth}-bit to {TargetBitDepth}-bit for {Format}",
+                    currentBitDepth, rule.TargetBitDepth, trackFormat);
                 return ConversionResult.Blocked();
             }
 
@@ -188,10 +196,8 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
                 if (result.IsBlocked)
                     return result;
 
-                _logger.Debug($"Using artist tag rule for {trackFile.Artist?.Value?.Name}: {artistRule.TargetFormat}" +
-                             (artistRule.TargetBitrate.HasValue ? $":{artistRule.TargetBitrate}kbps" :
-                              artistRule.TargetBitDepth.HasValue ? $":{artistRule.TargetBitDepth}-bit" : "") +
-                             (artistRule.UseCBR ? ":cbr" : ""));
+                _logger.Debug("Using artist tag rule for {Artist}: target={Target} bitrate={Bitrate} bitDepth={BitDepth} cbr={Cbr}",
+                    trackFile.Artist?.Value?.Name, artistRule.TargetFormat, artistRule.TargetBitrate, artistRule.TargetBitDepth, artistRule.UseCBR);
                 return result;
             }
 
@@ -219,7 +225,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
             ConversionRule? artistRule = GetArtistTagRule(trackFile);
             if (artistRule != null && artistRule.TargetFormat == AudioFormat.Unknown)
             {
-                _logger.Debug($"Skipping conversion due to no-conversion artist tag for {trackFile.Artist?.Value?.Name}");
+                _logger.Debug("Skipping conversion due to no-conversion artist tag for {Artist}", trackFile.Artist?.Value?.Name);
                 return false;
             }
 
@@ -228,7 +234,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
                 return false;
 
             int? currentBitrate = await GetTrackBitrateAsync(trackFile.Path);
-            _logger.Trace($"Track bitrate found for {trackFile.Path} at {currentBitrate ?? 0}kbps");
+            _logger.Trace("Probed bitrate for {Path}: {Bitrate}kbps", trackFile.Path, currentBitrate ?? 0);
 
             if (artistRule != null)
                 return true;
@@ -246,7 +252,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
             {
                 if (RuleParser.TryParseArtistTag(tag.Label, out ConversionRule rule))
                 {
-                    _logger.Debug($"Found artist tag rule: {tag.Label} for {trackFile.Artist.Value.Name}");
+                    _logger.Debug("Found artist tag rule {Tag} for {Artist}", tag.Label, trackFile.Artist.Value.Name);
                     return rule;
                 }
             }
@@ -262,7 +268,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
             bool bitrateMatches = rule.MatchesBitrate(currentBitrate);
             if (formatMatches && bitrateMatches)
             {
-                _logger.Debug($"Matched conversion rule: {rule}");
+                _logger.Debug("Matched conversion rule {Rule}", rule);
                 return true;
             }
             return false;
@@ -278,17 +284,17 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
                 AudioFormat detectedFormat = await AudioMetadataHandler.GetSupportedCodecAsync(trackPath);
                 if (detectedFormat != AudioFormat.Unknown)
                 {
-                    _logger.Trace($"Detected codec-based format {detectedFormat} for .m4a file: {trackPath}");
+                    _logger.Trace("Detected codec-based format {Format} for .m4a {Path}", detectedFormat, trackPath);
                     return detectedFormat;
                 }
 
-                _logger.Warn($"Failed to detect codec for .m4a file, falling back to extension-based detection: {trackPath}");
+                _logger.Warn("Failed to detect codec for .m4a, falling back to extension-based detection: {Path}", trackPath);
             }
 
             // For all other extensions, use extension-based detection
             AudioFormat trackFormat = AudioFormatHelper.GetAudioCodecFromExtension(extension);
             if (trackFormat == AudioFormat.Unknown)
-                _logger.Warn($"Unknown audio format for track: {trackPath}");
+                _logger.Warn("Unknown audio format for track: {Path}", trackPath);
             return trackFormat;
         }
 
@@ -297,7 +303,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
             string sourceDescription = FormatDescriptionWithBitrate(sourceFormat, sourceBitrate);
             string targetDescription = FormatDescriptionWithBitrate(targetFormat, targetBitrate);
 
-            _logger.Debug($"Converting {sourceDescription} to {targetDescription}: {trackPath}");
+            _logger.Debug("Conversion plan: {Source} → {Target} for {Path}", sourceDescription, targetDescription, trackPath);
         }
 
         private static string FormatDescriptionWithBitrate(AudioFormat format, int? bitrate)

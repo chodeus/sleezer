@@ -25,6 +25,7 @@ public class CorruptionScanner : ICorruptionScanner
 
     public async Task<Result> ScanAsync(string path, int timeoutSeconds, CancellationToken ct)
     {
+        var sw = Stopwatch.StartNew();
         try
         {
             // Tier 1: size check
@@ -35,31 +36,37 @@ public class CorruptionScanner : ICorruptionScanner
             }
             catch (Exception ex)
             {
-                _logger.Error(ex, $"Corruption scan: file not accessible at {path}");
+                _logger.Error(ex, "Corruption scan: file not accessible at {Path}", path);
                 return new Result(true, $"File not accessible: {ex.Message}");
             }
 
             if (size < MinFileBytes)
             {
+                _logger.Debug("Corruption scan {Path}: corrupt \u2014 too small ({Size} bytes)", path, size);
                 return new Result(true, $"File too small ({size} bytes)");
             }
+            _logger.Trace("Corruption scan {Path}: size ok ({Size} bytes)", path, size);
 
             // Tier 2: TagLib parse
             try
             {
                 using TagLib.File file = TagLib.File.Create(path);
                 _ = file.Properties?.Duration;
+                _logger.Trace("Corruption scan {Path}: TagLib parsed", path);
             }
             catch (TagLib.CorruptFileException ex)
             {
+                _logger.Debug(ex, "Corruption scan {Path}: TagLib reports corrupt", path);
                 return new Result(true, $"TagLib corrupt: {ex.Message}");
             }
             catch (TagLib.UnsupportedFormatException)
             {
                 // Unsupported by TagLib is not the same as corrupt - fall through.
+                _logger.Trace("Corruption scan {Path}: TagLib unsupported format, falling through to ffmpeg", path);
             }
             catch (Exception ex)
             {
+                _logger.Debug(ex, "Corruption scan {Path}: TagLib threw unexpected error \u2014 treating as corrupt", path);
                 return new Result(true, $"TagLib error: {ex.Message}");
             }
 
@@ -73,15 +80,18 @@ public class CorruptionScanner : ICorruptionScanner
             (int exitCode, string stderr) = await RunFfmpegDecodeAsync(path, timeoutSeconds, ct);
             if (exitCode == -1)
             {
+                _logger.Debug("Corruption scan {Path}: ffmpeg decode timed out after {Timeout}s", path, timeoutSeconds);
                 return new Result(true, $"Decode timed out (>{timeoutSeconds}s)");
             }
 
             if (exitCode != 0)
             {
                 string reason = FfmpegErrorFormatter.CleanFfmpegErrors(stderr);
+                _logger.Debug("Corruption scan {Path}: ffmpeg verdict corrupt (exit={ExitCode}) \u2014 {Reason}", path, exitCode, reason);
                 return new Result(true, reason);
             }
 
+            _logger.Debug("Corruption scan {Path}: ok in {ElapsedMs}ms", path, sw.ElapsedMilliseconds);
             return new Result(false, null);
         }
         catch (OperationCanceledException)
@@ -90,7 +100,7 @@ public class CorruptionScanner : ICorruptionScanner
         }
         catch (Exception ex)
         {
-            _logger.Error(ex, $"Unexpected error scanning {path}");
+            _logger.Error(ex, "Unexpected error scanning {Path}", path);
             return new Result(false, null);
         }
     }

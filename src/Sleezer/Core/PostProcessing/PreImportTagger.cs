@@ -69,7 +69,7 @@ public class PreImportTagger : IPreImportTagger
         }
         catch (Exception ex)
         {
-            _logger.Error(ex, $"Pre-import tagging failed for {sourceId}");
+            _logger.Error(ex, "Pre-import tagging failed for {SourceId}", sourceId);
             return Task.FromResult(new TaggingResult(0, 0, 1));
         }
     }
@@ -88,7 +88,7 @@ public class PreImportTagger : IPreImportTagger
 
         if (!_diskProvider.FolderExists(folderPath))
         {
-            _logger.Warn($"Pre-import tag: folder does not exist: {folderPath}");
+            _logger.Warn("Pre-import tag: folder does not exist: {Folder}", folderPath);
             return new TaggingResult(0, 0, 0);
         }
 
@@ -107,9 +107,12 @@ public class PreImportTagger : IPreImportTagger
         List<string> audioFiles = EnumerateAudioFiles(folderPath);
         if (audioFiles.Count == 0)
         {
-            _logger.Debug($"Pre-import tag: no audio files found under {folderPath}");
+            _logger.Debug("Pre-import tag: no audio files found under {Folder}", folderPath);
             return new TaggingResult(0, 0, 0);
         }
+
+        _logger.Debug("Pre-import tag: identifying {FileCount} audio file(s) for {Album} by {Artist} (sourceId={SourceId})",
+            audioFiles.Count, album.Title, artist.Name, sourceId);
 
         List<LocalTrack> localTracks = audioFiles.Select(path =>
         {
@@ -168,7 +171,8 @@ public class PreImportTagger : IPreImportTagger
                                      ?? album.AlbumReleases?.Value?.FirstOrDefault();
             if (fallback != null)
             {
-                _logger.Debug($"Pre-import tag: no release matched within confidence for {sourceId} via track-count ranking; retrying constrained to monitored release {fallback.Title}");
+                _logger.Debug("Pre-import tag: no release matched within confidence for {SourceId} via track-count ranking; retrying constrained to monitored release {Fallback}",
+                    sourceId, fallback.Title);
                 overrides.AlbumRelease = fallback;
                 albumRelease = fallback;
                 releases = _identificationService.Identify(localTracks, overrides, config);
@@ -185,11 +189,14 @@ public class PreImportTagger : IPreImportTagger
             if (albumDistance > confidenceThreshold || release.TrackMapping == null)
             {
                 skipped += release.LocalTracks.Count;
-                _logger.Info($"Pre-import tag: album match distance {albumDistance:F3} exceeds max {confidenceThreshold:F3} — match too weak, skipping tagging for {release.LocalTracks.Count} files in {sourceId}");
+                _logger.Info("Pre-import tag: album match distance {Distance:F3} exceeds max {Threshold:F3} — match too weak, skipping tagging for {FileCount} files in {SourceId}",
+                    albumDistance, confidenceThreshold, release.LocalTracks.Count, sourceId);
                 continue;
             }
 
             release.AlbumRelease ??= albumRelease;
+            _logger.Debug("Pre-import tag: matched release '{Release}' for {SourceId} with album distance {Distance:F3}; tagging {TrackCount} track(s)",
+                release.AlbumRelease?.Title ?? "<unknown>", sourceId, albumDistance, release.TrackMapping.Mapping.Count);
 
             foreach (KeyValuePair<LocalTrack, Tuple<Track, Distance>> entry in release.TrackMapping.Mapping)
             {
@@ -202,18 +209,24 @@ public class PreImportTagger : IPreImportTagger
                 if (trackDistance > confidenceThreshold)
                 {
                     skipped++;
-                    _logger.Trace($"Pre-import tag: track match distance {trackDistance:F3} exceeds max; skipping {Path.GetFileName(localTrack.Path)}");
+                    _logger.Trace("Pre-import tag: track match distance {Distance:F3} exceeds max; skipping {File}",
+                        trackDistance, Path.GetFileName(localTrack.Path));
                     continue;
                 }
 
                 if (TryTagSingleFile(localTrack, track, album, release.AlbumRelease, stripFeaturedArtists))
+                {
                     tagged++;
+                    _logger.Trace("Pre-import tag: tagged {File} → '{Title}' (track {TrackNum}, distance {Distance:F3})",
+                        Path.GetFileName(localTrack.Path), track.Title, track.AbsoluteTrackNumber, trackDistance);
+                }
                 else
                     errored++;
             }
         }
 
-        _logger.Info($"Pre-import tag: {sourceId} tagged={tagged} skipped_weak_match={skipped} errored={errored}");
+        _logger.Info("Pre-import tag: {SourceId} tagged={Tagged} skipped_weak_match={Skipped} errored={Errored}",
+            sourceId, tagged, skipped, errored);
         return new TaggingResult(tagged, skipped, errored);
     }
 
@@ -244,7 +257,7 @@ public class PreImportTagger : IPreImportTagger
         }
         catch (Exception ex)
         {
-            _logger.Warn(ex, $"Pre-import tag: write failed for {localTrack.Path}");
+            _logger.Warn(ex, "Pre-import tag: write failed for {Path}", localTrack.Path);
             return false;
         }
     }
@@ -271,7 +284,7 @@ public class PreImportTagger : IPreImportTagger
         }
         catch (Exception ex)
         {
-            _logger.Warn(ex, $"Pre-import tag: feat-strip tag rewrite failed for {path}");
+            _logger.Warn(ex, "Pre-import tag: feat-strip tag rewrite failed for {Path}", path);
             return;
         }
 
@@ -293,7 +306,7 @@ public class PreImportTagger : IPreImportTagger
                 return;
             if (File.Exists(newPath))
             {
-                _logger.Trace($"Pre-import tag: feat-strip rename target already exists, skipping: {newPath}");
+                _logger.Trace("Pre-import tag: feat-strip rename target already exists, skipping: {NewPath}", newPath);
                 return;
             }
 
@@ -340,7 +353,7 @@ public class PreImportTagger : IPreImportTagger
         }
         catch (Exception ex)
         {
-            _logger.Warn(ex, $"Failed to enumerate audio files under {folderPath}");
+            _logger.Warn(ex, "Failed to enumerate audio files under {Folder}", folderPath);
         }
         return result;
     }
@@ -367,7 +380,7 @@ public class PreImportTagger : IPreImportTagger
         }
         catch (Exception ex)
         {
-            _logger.Warn(ex, $"Pre-import tag: could not read tags from {path}; using empty placeholder");
+            _logger.Warn(ex, "Pre-import tag: could not read tags from {Path}; using empty placeholder", path);
         }
 
         // Lidarr's AggregateFilenameInfo does TrackNumbers.First() == 0 which

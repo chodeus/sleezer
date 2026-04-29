@@ -130,19 +130,17 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                     }
                     catch (InsufficientLicenseRightsException ex)
                     {
-                        logger.Error("Deezer rejected the download: " + ex.Message);
-                        logger.Error("This usually means the ARL belongs to a free account. Since March 2025 Deezer requires a Premium/HI-FI account to download tracks.");
+                        logger.Error(ex, "Deezer rejected the download for track {TrackId} — ARL likely belongs to a free account. Premium/HI-FI is required as of March 2025.", trackId);
                         FailedTracks++;
                     }
                     catch (GeoRestrictionException ex)
                     {
-                        logger.Error("Track " + trackId + " is not available in your region: " + ex.Message);
+                        logger.Error(ex, "Track {TrackId} is not available in your region", trackId);
                         FailedTracks++;
                     }
                     catch (Exception ex)
                     {
-                        logger.Error("Error while downloading Deezer track " + trackId);
-                        logger.Error(ex.ToString());
+                        logger.Error(ex, "Error while downloading Deezer track {TrackId}", trackId);
                         FailedTracks++;
                     }
                     finally

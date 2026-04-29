@@ -118,8 +118,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                 catch (Exception ex)
                 {
                     item.Status = DownloadItemStatus.Failed;
-                    _logger.Error("Error while downloading Deezer album " + item.Title);
-                    _logger.Error(ex.ToString());
+                    _logger.Error(ex, "Error while downloading Deezer album {Title}", item.Title);
                 }
                 finally
                 {
@@ -156,20 +155,29 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
             bool tagEnabled = sharedSettings?.PreImportTaggingClients?.Contains((int)PostProcessClient.Deezer) ?? false;
 
             if (!scanEnabled && !tagEnabled)
+            {
+                _logger.Debug("[post-process] Deezer item {ID}: scan and tag both disabled; skipping", item.ID);
                 return;
+            }
 
             string? folder = item.DownloadFolder;
             if (string.IsNullOrEmpty(folder) || !_diskProvider.FolderExists(folder))
             {
-                _logger.Warn($"[post-process] Deezer folder missing for {item.ID}; skipping post-process.");
+                _logger.Warn("[post-process] Deezer folder missing for {ID}; skipping post-process", item.ID);
                 return;
             }
+
+            _logger.Debug("[post-process] Deezer item {ID}: scan={ScanEnabled} tag={TagEnabled} folder={Folder}",
+                item.ID, scanEnabled, tagEnabled, folder);
+            var sw = System.Diagnostics.Stopwatch.StartNew();
 
             EnsureFFmpegResolved();
 
             if (scanEnabled)
             {
                 List<CorruptionStrike> strikes = await ScanForCorruptAsync(folder, ct);
+                _logger.Debug("[post-process] Deezer item {ID}: scan completed in {ElapsedMs}ms — {StrikeCount} strike(s)",
+                    item.ID, sw.ElapsedMilliseconds, strikes.Count);
                 if (strikes.Count > 0)
                 {
                     // One corrupt file poisons the album. Mark the item Failed,
@@ -197,9 +205,12 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                 Artist? artist = album?.Artist?.Value;
                 if (album == null || artist == null)
                 {
-                    _logger.Debug($"[post-process] Deezer pre-import tag: skipping {item.ID}; no Album/Artist on RemoteAlbum.");
+                    _logger.Debug("[post-process] Deezer pre-import tag: skipping {ID}; no Album/Artist on RemoteAlbum", item.ID);
                     return;
                 }
+
+                _logger.Debug("[post-process] Deezer item {ID}: tagging '{Album}' by '{Artist}'", item.ID, album.Title, artist.Name);
+                var tagSw = System.Diagnostics.Stopwatch.StartNew();
 
                 // Pass null for albumRelease so PreImportTagger lets Lidarr's
                 // CandidateService rank releases by track-count distance —
@@ -215,6 +226,8 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                     TagConfidenceThreshold,
                     sharedSettings?.StripFeaturedArtists ?? false,
                     ct);
+
+                _logger.Debug("[post-process] Deezer item {ID}: tagging completed in {ElapsedMs}ms", item.ID, tagSw.ElapsedMilliseconds);
             }
         }
 

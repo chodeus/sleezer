@@ -7,6 +7,7 @@ using NzbDrone.Common.Http;
 using NzbDrone.Core.Configuration;
 using NzbDrone.Core.Parser;
 using NzbDrone.Core.Parser.Model;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Tidal;
 using TidalSharp;
 using TidalSharp.Data;
@@ -260,6 +261,12 @@ namespace NzbDrone.Core.Indexers.Tidal
             if (string.Equals(_loadedAccessToken, Settings.AccessToken, StringComparison.Ordinal))
                 return;
 
+            _logger.Debug("Loading Tidal session from saved tokens — access={Access} refresh={Refresh} expires={Expires:o} country={Country}",
+                SecretRedactor.Fingerprint(Settings.AccessToken),
+                SecretRedactor.Fingerprint(Settings.RefreshToken),
+                Settings.Expires,
+                Settings.CountryCode);
+
             try
             {
                 TidalAPI.Instance!.Client.LoadFromTokens(
@@ -271,6 +278,10 @@ namespace NzbDrone.Core.Indexers.Tidal
                     Settings.CountryCode,
                     onTokensRefreshed: PersistRefreshedTokens).GetAwaiter().GetResult();
                 _loadedAccessToken = Settings.AccessToken;
+                var loaded = TidalAPI.Instance!.Client.ActiveUser;
+                if (loaded != null)
+                    _logger.Debug("Tidal session loaded — user={UserId} country={Country} type={Type}",
+                        loaded.UserId, loaded.CountryCode, loaded.TokenType);
             }
             catch (Exception ex)
             {
@@ -353,6 +364,8 @@ namespace NzbDrone.Core.Indexers.Tidal
                     _logger.Error("Tidal token refresh returned false during search retry; refresh_token is likely dead. User must re-authenticate.");
                     throw;
                 }
+
+                _logger.Debug("Tidal token refresh ok during search retry; re-stamping Authorization header and retrying");
 
                 // Re-stamp the Authorization header with the refreshed token.
                 // The original IndexerRequest captured the OLD bearer at

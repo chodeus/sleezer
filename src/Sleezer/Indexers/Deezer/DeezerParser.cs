@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using Newtonsoft.Json.Linq;
+using NLog;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using NzbDrone.Common.Http;
@@ -15,6 +17,7 @@ namespace NzbDrone.Core.Indexers.Deezer
 {
     public class DeezerParser : IParseIndexerResponse
     {
+        private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
         private static readonly Regex ParenToDash = new(@"\s*\(([^)]+)\)", RegexOptions.Compiled);
         private static readonly Regex CollapseSpaces = new(@"\s+", RegexOptions.Compiled);
         // Bounds the blocking wait in ParseResponse. A Deezer search + album enrichment fan-out
@@ -37,8 +40,27 @@ namespace NzbDrone.Core.Indexers.Deezer
                 jsonResponse = task.Result;
             }
             else
-                jsonResponse = new HttpResponse<DeezerSearchResponseWrapper>(response.HttpResponse).Resource.Results;
+            {
+                var wrapper = new HttpResponse<DeezerSearchResponseWrapper>(response.HttpResponse).Resource;
+                jsonResponse = wrapper?.Results!;
 
+                // When Deezer rejects the request (typically: api_token was "null" because the ARL never produced
+                // an ActiveUserData session), the GW endpoint returns a 200 with results.data missing entirely.
+                // Throwing a clear message here replaces a downstream LINQ NRE ("Value cannot be null. Parameter 'source'")
+                // that the indexer test surfaces as "Unable to connect to indexer".
+                if (jsonResponse?.Data == null)
+                {
+                    var bodySnippet = SnippetForLog(response.Content);
+                    _logger.Debug("Deezer search.music response had no results.data — body snippet: {Body}", bodySnippet);
+                    var ex = new InvalidOperationException(
+                        "Deezer rejected the search request — ARL is missing or invalid. Re-authenticate at deezer.com, copy a fresh `arl` cookie, and restart Lidarr.");
+                    ex.Data["DeezerResponseSnippet"] = bodySnippet;
+                    throw ex;
+                }
+            }
+
+            var sw = Stopwatch.StartNew();
+            _logger.Debug("Deezer enrichment fan-out: {AlbumCount} albums", jsonResponse.Data.Count);
             var tasks = jsonResponse.Data.Select(result => ProcessResultAsync(result)).ToArray();
 
             if (!Task.WaitAll(tasks, IndexerParseTimeout))
@@ -49,10 +71,21 @@ namespace NzbDrone.Core.Indexers.Deezer
                 if (task.Result != null)
                     torrentInfos.AddRange(task.Result);
             }
-            
+
+            _logger.Debug("Deezer enrichment done in {ElapsedMs}ms — {ReleaseCount} releases from {AlbumCount} albums",
+                sw.ElapsedMilliseconds, torrentInfos.Count, jsonResponse.Data.Count);
+
             return torrentInfos
                 .OrderByDescending(o => o.Size)
                 .ToArray();
+        }
+
+        private static string SnippetForLog(string? content)
+        {
+            if (string.IsNullOrEmpty(content))
+                return "<empty>";
+            const int MaxLen = 512;
+            return content.Length <= MaxLen ? content : content[..MaxLen] + "…";
         }
 
         private async Task<IList<ReleaseInfo>?> ProcessResultAsync(DeezerGwAlbum result)
@@ -210,6 +243,8 @@ namespace NzbDrone.Core.Indexers.Deezer
         // based on the code for the /api/newReleases endpoint of deemix
         private async Task<DeezerSearchResponse> GenerateSearchResponseFromChannelData(string channelData)
         {
+            var sw = Stopwatch.StartNew();
+            _logger.Debug("Deezer channel parse: building search response from page.get payload");
             var page = JObject.Parse(channelData)["results"]!;
             var musicSection = page["sections"]!.First(s => s["section_id"]!.ToString().Contains("module_id=83718b7b-5503-4062-b8b9-3530e2e2cefa"));
             var channels = musicSection["items"]!.Select(i => i["target"]!.ToString()).ToArray();
@@ -261,8 +296,12 @@ namespace NzbDrone.Core.Indexers.Deezer
             baseObj.Add("data", dataArray);
             baseObj.Add("total", albumCount);
 
-            return baseObj.ToObject<DeezerSearchResponse>()
+            var result = baseObj.ToObject<DeezerSearchResponse>()
                 ?? throw new InvalidOperationException("Deezer channel response failed to deserialize into DeezerSearchResponse");
+
+            _logger.Debug("Deezer channel parse done in {ElapsedMs}ms — {AlbumCount} albums",
+                sw.ElapsedMilliseconds, albumCount);
+            return result;
         }
 
         private async Task<JToken[]> GetChannelNewReleases(string channelName)

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
@@ -20,15 +21,25 @@ namespace NzbDrone.Core.Indexers.Tidal
 
         public IList<ReleaseInfo> ParseResponse(IndexerResponse response)
         {
+            var sw = Stopwatch.StartNew();
             var content = new HttpResponse<TidalSearchResponse>(response.HttpResponse).Content;
             var jsonResponse = JObject.Parse(content).ToObject<TidalSearchResponse>();
             if (jsonResponse?.AlbumResults?.Items == null)
+            {
+                Logger?.Debug("Tidal search response had no albumResults.items");
                 return Array.Empty<ReleaseInfo>();
+            }
+
+            var albumCount = jsonResponse.AlbumResults.Items.Length;
+            var trackCount = jsonResponse.TrackResults?.Items?.Length ?? 0;
+            Logger?.Debug("Tidal parse: {AlbumCount} albums, {TrackCount} tracks (will resolve track-only hits to albums)",
+                albumCount, trackCount);
 
             var releases = new List<ReleaseInfo>();
             foreach (var album in jsonResponse.AlbumResults.Items)
                 releases.AddRange(ProcessAlbumResult(album));
 
+            int resolvedTrackAlbums = 0;
             // Resolve track-only hits to their full album so the result set
             // covers albums Tidal didn't return as a top-level album hit.
             // Run async lookups in parallel rather than the sync-over-async
@@ -44,8 +55,14 @@ namespace NzbDrone.Core.Indexers.Tidal
                 var resolved = Task.WhenAll(trackTasks).GetAwaiter().GetResult();
                 foreach (var batch in resolved)
                     if (batch != null)
+                    {
                         releases.AddRange(batch);
+                        resolvedTrackAlbums++;
+                    }
             }
+
+            Logger?.Debug("Tidal parse done in {ElapsedMs}ms — {ReleaseCount} releases ({ResolvedTrackAlbums} resolved from track hits)",
+                sw.ElapsedMilliseconds, releases.Count, resolvedTrackAlbums);
 
             return releases.OrderByDescending(o => o.Size).ToArray();
         }
