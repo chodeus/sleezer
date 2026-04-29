@@ -6,6 +6,8 @@ using NzbDrone.Core.Indexers;
 using NzbDrone.Core.Indexers.Exceptions;
 using NzbDrone.Core.IndexerSearch.Definitions;
 using NzbDrone.Core.Music;
+using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -18,6 +20,13 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
     internal class SlskdRequestGenerator : IIndexerRequestGenerator<LazyIndexerPageableRequest>
     {
         private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
+
+        // slskd's POST /api/v0/searches is single-concurrency per server: starting a second search while one is
+        // still running yields 429 "Only one concurrent operation is permitted". Lidarr fans out album searches
+        // in parallel (e.g. when a bulk delete triggers 50 missing-album searches), so we serialize the entire
+        // create-and-poll lifecycle here. Keyed per BaseUrl so multiple slskd instances each get their own gate.
+        private static readonly ConcurrentDictionary<string, SemaphoreSlim> _searchGates = new();
+
         private readonly SlskdIndexer _indexer;
         private readonly Logger _logger;
         private readonly IHttpClient _client;
@@ -154,11 +163,22 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 _logger.Warn(ex, "Search request failed for: {SearchText}", searchText);
                 return null;
             }
+            catch (SearchGateTimeoutException)
+            {
+                // Already logged at Warn inside ExecuteSearchAsync. Skip this one so Lidarr re-queues
+                // the album later instead of holding a search-task slot for the full timeout.
+                return null;
+            }
             catch (Exception ex)
             {
                 _logger.Error(ex, "Error generating search request for: {SearchText}", searchText);
                 return null;
             }
+        }
+
+        private sealed class SearchGateTimeoutException : Exception
+        {
+            public SearchGateTimeoutException(string message) : base(message) { }
         }
 
         private dynamic CreateSearchData(string searchText) => new
@@ -188,8 +208,57 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
         private async Task ExecuteSearchAsync(HttpRequest searchRequest, string searchId)
         {
+            // Cap how long a search will sit in the queue waiting for slskd to free up. 2× the per-search
+            // timeout balances "let bulk deletes drain at slskd's pace" against "don't tie up Lidarr's
+            // search-task slot for an album that can be retried later".
+            TimeSpan acquireCap = TimeSpan.FromSeconds(Math.Max(60, Settings.TimeoutInSeconds * 2));
+            SemaphoreSlim gate = _searchGates.GetOrAdd(Settings.BaseUrl ?? string.Empty, _ => new SemaphoreSlim(1, 1));
+
+            // CurrentCount is 1 when free, 0 when held — so "held by someone else" reads as 0 here.
+            bool contended = gate.CurrentCount == 0;
+            if (contended)
+                _logger.Debug("Slskd search gate busy for {BaseUrl}; queuing search {SearchId} (waiting up to {AcquireCap}s)",
+                    Settings.BaseUrl, searchId, (int)acquireCap.TotalSeconds);
+
+            Stopwatch waitSw = Stopwatch.StartNew();
+            if (!await gate.WaitAsync(acquireCap))
+            {
+                _logger.Warn("Slskd search gate timeout for {BaseUrl} after {ElapsedMs}ms; skipping search {SearchId} (Lidarr will retry the album)",
+                    Settings.BaseUrl, waitSw.ElapsedMilliseconds, searchId);
+                throw new SearchGateTimeoutException($"Could not acquire slskd search gate within {acquireCap.TotalSeconds:F0}s");
+            }
+
+            if (contended)
+                _logger.Debug("Slskd search gate acquired for {SearchId} after {WaitMs}ms", searchId, waitSw.ElapsedMilliseconds);
+
+            try
+            {
+                await ExecuteCreateSearchWithRetryAsync(searchRequest, searchId);
+                await WaitOnSearchCompletionAsync(searchId, TimeSpan.FromSeconds(Settings.TimeoutInSeconds));
+            }
+            finally
+            {
+                gate.Release();
+            }
+        }
+
+        // Even with the gate held, a third party may be hitting the same slskd (e.g. the user has the slskd
+        // web UI open and started a manual search). Treat 429 as a transient and retry once after a short
+        // backoff before giving up.
+        private async Task ExecuteCreateSearchWithRetryAsync(HttpRequest searchRequest, string searchId)
+        {
+            try
+            {
+                await _client.ExecuteAsync(searchRequest);
+                return;
+            }
+            catch (HttpException ex) when ((int)ex.Response.StatusCode == 429)
+            {
+                _logger.Debug(ex, "Slskd POST /searches returned 429 inside gate (external concurrency?); retrying in 2s for {SearchId}", searchId);
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(2));
             await _client.ExecuteAsync(searchRequest);
-            await WaitOnSearchCompletionAsync(searchId, TimeSpan.FromSeconds(Settings.TimeoutInSeconds));
         }
 
         private HttpRequest CreateResultRequest(string searchId, SearchQuery query)
