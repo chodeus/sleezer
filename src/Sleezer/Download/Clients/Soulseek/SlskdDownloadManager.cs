@@ -49,7 +49,10 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     private readonly ISlskdCorruptionHandler _corruptionHandler;
     private readonly IMetadataFactory _metadataFactory;
     private readonly ISlskdWatchdog _watchdog;
-    private bool _ffmpegResolved;
+    // Track the last FFmpeg path we resolved against so a user changing the
+    // FFmpeg metadata path mid-run is picked up on the next scan, not at next
+    // Lidarr restart. null = never resolved.
+    private string? _lastResolvedFfmpegPath;
 
     /// <summary>
     /// Tracks per-item post-processing completion so the owning item's status
@@ -94,26 +97,37 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     /// </summary>
     private void EnsureFFmpegResolved()
     {
-        if (_ffmpegResolved)
+        string? configuredPath = null;
+        try
+        {
+            configuredPath = GetSharedPostProcessingSettings()?.FFmpegPath;
+        }
+        catch (Exception ex)
+        {
+            _logger.Debug(ex, "[post-process] Failed to read FFmpeg metadata settings");
+        }
+
+        // Re-resolve only when the configured path actually changes. Avoids
+        // probing the filesystem on every scan while still picking up settings
+        // changes without requiring a Lidarr restart.
+        if (string.Equals(configuredPath, _lastResolvedFfmpegPath, StringComparison.Ordinal))
             return;
 
         try
         {
-            FFmpegSettings? ffmpegSettings = GetSharedPostProcessingSettings();
-
-            if (ffmpegSettings != null && !string.IsNullOrWhiteSpace(ffmpegSettings.FFmpegPath))
+            if (!string.IsNullOrWhiteSpace(configuredPath))
             {
-                XabeFFmpeg.SetExecutablesPath(ffmpegSettings.FFmpegPath);
+                XabeFFmpeg.SetExecutablesPath(configuredPath);
                 AudioMetadataHandler.ResetFFmpegInstallationCheck();
-                _logger.Trace("[post-process] Applied FFmpeg path: {Path}", ffmpegSettings.FFmpegPath);
+                _logger.Info("[post-process] FFmpeg path applied: {Path}", configuredPath);
             }
         }
         catch (Exception ex)
         {
-            _logger.Debug(ex, "[post-process] Failed to resolve ffmpeg from FFmpeg metadata settings; falling back to PATH lookup.");
+            _logger.Debug(ex, "[post-process] Failed to apply ffmpeg path {Path}", configuredPath);
         }
 
-        _ffmpegResolved = true;
+        _lastResolvedFfmpegPath = configuredPath;
     }
 
     private FFmpegSettings? GetSharedPostProcessingSettings()

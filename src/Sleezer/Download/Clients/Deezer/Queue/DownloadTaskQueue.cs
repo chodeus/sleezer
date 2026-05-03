@@ -48,7 +48,10 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
         private readonly IPreImportTagger _preImportTagger;
         private readonly IMetadataFactory _metadataFactory;
         private readonly IDiskProvider _diskProvider;
-        private bool _ffmpegResolved;
+        // Track the last FFmpeg path we resolved against so a user changing the
+        // FFmpeg metadata path mid-run is picked up on the next post-process,
+        // not at next Lidarr restart. null = never resolved.
+        private string? _lastResolvedFfmpegPath;
         private int _rehydrated;
 
         public DownloadTaskQueue(
@@ -173,6 +176,43 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
 
             EnsureFFmpegResolved();
 
+            // Tag first, scan second. Tagging rewrites ID3/Vorbis comments via
+            // Lidarr's IAudioTagService and (when StripFeaturedArtists is on)
+            // re-saves via TagLib. Either step can in principle damage framing
+            // — running the corruption scan AFTER tagging means we validate the
+            // exact bytes Lidarr is about to import, not the pre-tag bytes.
+            if (tagEnabled)
+            {
+                Album? album = item.RemoteAlbum?.Albums?.FirstOrDefault();
+                Artist? artist = album?.Artist?.Value;
+                if (album == null || artist == null)
+                {
+                    _logger.Debug("[post-process] Deezer pre-import tag: skipping {ID}; no Album/Artist on RemoteAlbum", item.ID);
+                }
+                else
+                {
+                    _logger.Debug("[post-process] Deezer item {ID}: tagging '{Album}' by '{Artist}'", item.ID, album.Title, artist.Name);
+                    var tagSw = System.Diagnostics.Stopwatch.StartNew();
+
+                    // Pass null for albumRelease so PreImportTagger lets Lidarr's
+                    // CandidateService rank releases by track-count distance —
+                    // forcing the monitored release here is what was causing the
+                    // "missing tracks" import failures when the download was a
+                    // different edition than the monitored one.
+                    await _preImportTagger.TagCompletedDownloadAsync(
+                        album,
+                        artist,
+                        albumRelease: null,
+                        item.ID,
+                        folder,
+                        TagConfidenceThreshold,
+                        sharedSettings?.StripFeaturedArtists ?? false,
+                        ct);
+
+                    _logger.Debug("[post-process] Deezer item {ID}: tagging completed in {ElapsedMs}ms", item.ID, tagSw.ElapsedMilliseconds);
+                }
+            }
+
             if (scanEnabled)
             {
                 List<CorruptionStrike> strikes = await ScanForCorruptAsync(folder, ct);
@@ -197,37 +237,6 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                         ct: ct);
                     return;
                 }
-            }
-
-            if (tagEnabled)
-            {
-                Album? album = item.RemoteAlbum?.Albums?.FirstOrDefault();
-                Artist? artist = album?.Artist?.Value;
-                if (album == null || artist == null)
-                {
-                    _logger.Debug("[post-process] Deezer pre-import tag: skipping {ID}; no Album/Artist on RemoteAlbum", item.ID);
-                    return;
-                }
-
-                _logger.Debug("[post-process] Deezer item {ID}: tagging '{Album}' by '{Artist}'", item.ID, album.Title, artist.Name);
-                var tagSw = System.Diagnostics.Stopwatch.StartNew();
-
-                // Pass null for albumRelease so PreImportTagger lets Lidarr's
-                // CandidateService rank releases by track-count distance —
-                // forcing the monitored release here is what was causing the
-                // "missing tracks" import failures when the download was a
-                // different edition than the monitored one.
-                await _preImportTagger.TagCompletedDownloadAsync(
-                    album,
-                    artist,
-                    albumRelease: null,
-                    item.ID,
-                    folder,
-                    TagConfidenceThreshold,
-                    sharedSettings?.StripFeaturedArtists ?? false,
-                    ct);
-
-                _logger.Debug("[post-process] Deezer item {ID}: tagging completed in {ElapsedMs}ms", item.ID, tagSw.ElapsedMilliseconds);
             }
         }
 
@@ -287,25 +296,38 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
 
         private void EnsureFFmpegResolved()
         {
-            if (_ffmpegResolved)
+            string? configuredPath = null;
+            try
+            {
+                FFmpegSettings? settings = GetSharedPostProcessingSettings();
+                configuredPath = settings?.FFmpegPath;
+            }
+            catch (Exception ex)
+            {
+                _logger.Debug(ex, "[post-process] Failed to read FFmpeg metadata settings");
+            }
+
+            // Re-resolve only when the configured path actually changes. Avoids
+            // probing the filesystem on every post-process while still picking
+            // up settings changes without requiring a Lidarr restart.
+            if (string.Equals(configuredPath, _lastResolvedFfmpegPath, StringComparison.Ordinal))
                 return;
 
             try
             {
-                FFmpegSettings? settings = GetSharedPostProcessingSettings();
-                if (settings != null && !string.IsNullOrWhiteSpace(settings.FFmpegPath))
+                if (!string.IsNullOrWhiteSpace(configuredPath))
                 {
-                    XabeFFmpeg.SetExecutablesPath(settings.FFmpegPath);
+                    XabeFFmpeg.SetExecutablesPath(configuredPath);
                     AudioMetadataHandler.ResetFFmpegInstallationCheck();
-                    _logger.Trace($"[post-process] Applied FFmpeg path: {settings.FFmpegPath}");
+                    _logger.Info("[post-process] FFmpeg path applied: {Path}", configuredPath);
                 }
             }
             catch (Exception ex)
             {
-                _logger.Debug(ex, "[post-process] Failed to resolve ffmpeg from FFmpeg metadata settings; falling back to PATH lookup.");
+                _logger.Debug(ex, "[post-process] Failed to apply ffmpeg path {Path}", configuredPath);
             }
 
-            _ffmpegResolved = true;
+            _lastResolvedFfmpegPath = configuredPath;
         }
 
         public async ValueTask QueueBackgroundWorkItemAsync(DownloadItem workItem)

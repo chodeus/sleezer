@@ -86,7 +86,11 @@
         };
 
         /// <summary>
-        /// Returns the correct file extension for a given audio codec.
+        /// Returns the correct file extension for a given audio codec, defaulting
+        /// to <c>.aac</c> for unknown codecs. Kept for callers (Lucida, video-audio
+        /// extraction) that already produce AAC-default filenames; do NOT use this
+        /// for rename-in-place flows because an unknown codec will silently change
+        /// the on-disk extension. Use <see cref="TryGetFileExtensionForCodec"/> instead.
         /// </summary>
         public static string GetFileExtensionForCodec(string codec) => codec switch
         {
@@ -102,6 +106,33 @@
             "pcm_s16le" or "pcm_s24le" or "pcm_s32le" => ".wav",
             _ => ".aac" // Default to AAC if the codec is unknown
         };
+
+        /// <summary>
+        /// Strict variant of <see cref="GetFileExtensionForCodec"/>: returns false
+        /// for unknown codecs instead of guessing <c>.aac</c>. Use this in any
+        /// flow that would rename files based on the result — guessing the wrong
+        /// extension on a rename in place corrupts the user's library.
+        /// </summary>
+        public static bool TryGetFileExtensionForCodec(string codec, out string extension)
+        {
+            switch (codec)
+            {
+                case "aac": extension = ".m4a"; return true;
+                case "mp3": extension = ".mp3"; return true;
+                case "opus": extension = ".opus"; return true;
+                case "flac": extension = ".flac"; return true;
+                case "ac3": extension = ".ac3"; return true;
+                case "eac3":
+                case "ec3": extension = ".ec3"; return true;
+                case "alac": extension = ".m4a"; return true;
+                case "vorbis": extension = ".ogg"; return true;
+                case "ape": extension = ".ape"; return true;
+                case "pcm_s16le":
+                case "pcm_s24le":
+                case "pcm_s32le": extension = ".wav"; return true;
+                default: extension = string.Empty; return false;
+            }
+        }
 
         /// <summary>
         /// Determines the audio format from a given codec string.

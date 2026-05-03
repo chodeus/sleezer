@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using NLog;
 using NzbDrone.Core.Extras.Metadata;
 using NzbDrone.Core.Extras.Metadata.Files;
@@ -17,6 +18,20 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
         private readonly Logger _logger = logger;
         private readonly Lazy<ITagService> _tagService = tagService;
 
+        // Process-wide cap on concurrent ffmpeg conversions. Lidarr's MetadataService
+        // is mostly serial today, but on a bulk import (50+ tracks) or a refresh
+        // pass over an existing library, multiple TrackMetadata calls can land
+        // close together. Without a cap each one forks a libmp3lame/libopus
+        // process and CPU saturates. Half the core count leaves headroom for
+        // Lidarr itself; matches the corruption-scanner concurrency strategy.
+        private static readonly SemaphoreSlim ConversionGate = new(Math.Max(2, Environment.ProcessorCount / 2));
+
+        // Deduplicate redundant TrackMetadata invocations on the same path. Lidarr
+        // sometimes fires TrackMetadata twice on the same file (initial import +
+        // post-rename), and we'd rather no-op the second call than race on the
+        // file. Keyed by the absolute path the converter is targeting.
+        private static readonly ConcurrentDictionary<string, byte> _inFlight = new();
+
         public override string Name => "FFmpeg";
 
         public override MetadataFile FindMetadataFile(Artist artist, string path) => default!;
@@ -35,12 +50,54 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
 
         public override List<ImageFileResult> TrackImages(Artist artist, TrackFile trackFile) => [];
 
+        // Lidarr's MetadataBase contract is synchronous: TrackMetadata returns
+        // a MetadataFileResult, and the caller (MetadataService) iterates
+        // sequentially within an artist. We can't make this fully async without
+        // changing Lidarr-side code. What we CAN do:
+        //   1. Push the awaits onto the threadpool via Task.Run so any ambient
+        //      synchronisation context Lidarr's caller might own can't deadlock.
+        //   2. Cap concurrent conversions with a process-wide semaphore.
+        //   3. Deduplicate redundant calls on the same target path.
+        // The caller still blocks until the conversion finishes — that's a
+        // semantic constraint of MetadataBase.TrackMetadata (the result must be
+        // ready before Lidarr persists the file move) — but the work no longer
+        // sits on whatever thread Lidarr arrived on.
         public override MetadataFileResult TrackMetadata(Artist artist, TrackFile trackFile)
         {
-            if (ShouldConvertTrack(trackFile).GetAwaiter().GetResult())
-                ConvertTrack(trackFile).GetAwaiter().GetResult();
-            else
-                _logger.Trace("FFmpeg: no rule matched for {Path}", trackFile.OriginalFilePath);
+            if (trackFile == null)
+                return null!;
+            string path = trackFile.Path ?? string.Empty;
+            if (string.IsNullOrEmpty(path))
+                return null!;
+
+            if (!_inFlight.TryAdd(path, 0))
+            {
+                _logger.Trace("FFmpeg: conversion already in flight for {Path}; skipping duplicate TrackMetadata call", path);
+                return null!;
+            }
+
+            try
+            {
+                Task.Run(async () =>
+                {
+                    await ConversionGate.WaitAsync().ConfigureAwait(false);
+                    try
+                    {
+                        if (await ShouldConvertTrack(trackFile).ConfigureAwait(false))
+                            await ConvertTrack(trackFile).ConfigureAwait(false);
+                        else
+                            _logger.Trace("FFmpeg: no rule matched for {Path}", trackFile.OriginalFilePath);
+                    }
+                    finally
+                    {
+                        ConversionGate.Release();
+                    }
+                }).GetAwaiter().GetResult();
+            }
+            finally
+            {
+                _inFlight.TryRemove(path, out _);
+            }
             return null!;
         }
 

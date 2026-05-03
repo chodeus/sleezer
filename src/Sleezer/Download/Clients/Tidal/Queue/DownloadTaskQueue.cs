@@ -44,7 +44,14 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
         private readonly IPreImportTagger _preImportTagger;
         private readonly IMetadataFactory _metadataFactory;
         private readonly IDiskProvider _diskProvider;
-        private bool _ffmpegResolved;
+        // Track the last FFmpeg path we resolved against so a user changing the
+        // FFmpeg metadata path mid-run is picked up on the next post-process.
+        // null = never resolved.
+        private string? _lastResolvedFfmpegPath;
+
+        // 0 = rehydration not yet attempted, 1 = attempted (idempotent). Mirrors
+        // the Deezer queue's _rehydrated guard.
+        private int _rehydrated;
 
         public DownloadTaskQueue(
             int capacity,
@@ -78,6 +85,8 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
             // chance to call EnsureFFmpegResolved) can find ffprobe / ffmpeg via the
             // path the user configured in Lidarr's FFmpeg metadata settings.
             EnsureFFmpegResolved();
+            if (Interlocked.CompareExchange(ref _rehydrated, 1, 0) == 0)
+                TryRehydrateFromDisk(settings);
         }
 
         public void StartQueueHandler() => Task.Run(() => BackgroundProcessing());
@@ -96,6 +105,8 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
 
                     if (item.Status == DownloadItemStatus.Completed)
                         await RunPostProcessAsync(item, token);
+
+                    TryPersistCompletedItem(item);
                 }
                 catch (TaskCanceledException)
                 {
@@ -192,6 +203,41 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
 
             EnsureFFmpegResolved();
 
+            // Tag first, scan second. See the Deezer queue for the rationale —
+            // we want the corruption scan to validate the exact bytes Lidarr is
+            // about to import, not the pre-tag bytes.
+            if (tagEnabled)
+            {
+                Album? album = item.RemoteAlbum?.Albums?.FirstOrDefault();
+                Artist? artist = album?.Artist?.Value;
+                if (album == null || artist == null)
+                {
+                    _logger.Debug("[post-process] Tidal pre-import tag: skipping {ID}; no Album/Artist on RemoteAlbum", item.ID);
+                }
+                else
+                {
+                    _logger.Debug("[post-process] Tidal item {ID}: tagging '{Album}' by '{Artist}'", item.ID, album.Title, artist.Name);
+                    var tagSw = System.Diagnostics.Stopwatch.StartNew();
+
+                    // Pass null for albumRelease so PreImportTagger lets Lidarr's
+                    // CandidateService rank releases by track-count distance —
+                    // forcing the monitored release here is what was causing the
+                    // "missing tracks" import failures when the download was a
+                    // different edition than the monitored one.
+                    await _preImportTagger.TagCompletedDownloadAsync(
+                        album,
+                        artist,
+                        albumRelease: null,
+                        item.ID,
+                        folder,
+                        TagConfidenceThreshold,
+                        sharedSettings?.StripFeaturedArtists ?? false,
+                        ct);
+
+                    _logger.Debug("[post-process] Tidal item {ID}: tagging completed in {ElapsedMs}ms", item.ID, tagSw.ElapsedMilliseconds);
+                }
+            }
+
             if (scanEnabled)
             {
                 List<CorruptionStrike> strikes = await ScanForCorruptAsync(folder, ct);
@@ -212,37 +258,6 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
                         ct: ct);
                     return;
                 }
-            }
-
-            if (tagEnabled)
-            {
-                Album? album = item.RemoteAlbum?.Albums?.FirstOrDefault();
-                Artist? artist = album?.Artist?.Value;
-                if (album == null || artist == null)
-                {
-                    _logger.Debug("[post-process] Tidal pre-import tag: skipping {ID}; no Album/Artist on RemoteAlbum", item.ID);
-                    return;
-                }
-
-                _logger.Debug("[post-process] Tidal item {ID}: tagging '{Album}' by '{Artist}'", item.ID, album.Title, artist.Name);
-                var tagSw = System.Diagnostics.Stopwatch.StartNew();
-
-                // Pass null for albumRelease so PreImportTagger lets Lidarr's
-                // CandidateService rank releases by track-count distance —
-                // forcing the monitored release here is what was causing the
-                // "missing tracks" import failures when the download was a
-                // different edition than the monitored one.
-                await _preImportTagger.TagCompletedDownloadAsync(
-                    album,
-                    artist,
-                    albumRelease: null,
-                    item.ID,
-                    folder,
-                    TagConfidenceThreshold,
-                    sharedSettings?.StripFeaturedArtists ?? false,
-                    ct);
-
-                _logger.Debug("[post-process] Tidal item {ID}: tagging completed in {ElapsedMs}ms", item.ID, tagSw.ElapsedMilliseconds);
             }
         }
 
@@ -300,13 +315,24 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
 
         private void EnsureFFmpegResolved()
         {
-            if (_ffmpegResolved) return;
+            string? configuredPath = null;
             try
             {
-                FFmpegSettings? settings = GetSharedPostProcessingSettings();
-                if (settings != null && !string.IsNullOrWhiteSpace(settings.FFmpegPath))
+                configuredPath = GetSharedPostProcessingSettings()?.FFmpegPath;
+            }
+            catch (Exception ex)
+            {
+                _logger.Debug(ex, "[post-process] Failed to read FFmpeg metadata settings");
+            }
+
+            if (string.Equals(configuredPath, _lastResolvedFfmpegPath, StringComparison.Ordinal))
+                return;
+
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(configuredPath))
                 {
-                    XabeFFmpeg.SetExecutablesPath(settings.FFmpegPath);
+                    XabeFFmpeg.SetExecutablesPath(configuredPath);
                     AudioMetadataHandler.ResetFFmpegInstallationCheck();
 
                     // Tidal's audio-conversion path (DownloadItem.HandleAudioConversion)
@@ -314,41 +340,45 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
                     // — point it at the same configured directory the rest of sleezer
                     // uses. Without this it falls back to bare PATH lookup which often
                     // misses ffmpeg installed at /usr/bin in the Lidarr container.
-                    FFMPEG.SetBinaryDirectory(settings.FFmpegPath);
+                    FFMPEG.SetBinaryDirectory(configuredPath);
 
                     // If the user has FFmpeg metadata configured but the binaries
                     // aren't actually present at that path (clean Lidarr container
                     // installs are common), trigger the same Xabe.FFmpeg.Downloader
-                    // path that FFmpegSettings.OnSet uses. Makes Tidal's
-                    // ExtractFlac/ReEncodeAAC toggles "just work" out of the box
-                    // instead of silently no-oping with a Warn.
+                    // path that FFmpegSettings.OnSet uses. Bounded by InstallFFmpeg's
+                    // internal deadline so a stuck Xabe download can't park this
+                    // post-process thread forever.
                     if (!AudioMetadataHandler.CheckFFmpegInstalled())
                     {
-                        _logger.Info("[post-process] FFmpeg binaries missing at {Path}; downloading via Xabe.FFmpeg.Downloader", settings.FFmpegPath);
+                        _logger.Info("[post-process] FFmpeg binaries missing at {Path}; downloading via Xabe.FFmpeg.Downloader", configuredPath);
                         try
                         {
-                            AudioMetadataHandler.InstallFFmpeg(settings.FFmpegPath).GetAwaiter().GetResult();
+                            AudioMetadataHandler.InstallFFmpeg(configuredPath).GetAwaiter().GetResult();
                             AudioMetadataHandler.ResetFFmpegInstallationCheck();
-                            _logger.Info("[post-process] FFmpeg auto-install complete at {Path}", settings.FFmpegPath);
+                            _logger.Info("[post-process] FFmpeg auto-install complete at {Path}", configuredPath);
                         }
                         catch (Exception ex)
                         {
-                            _logger.Warn(ex, "[post-process] FFmpeg auto-install failed; Tidal conversion options will gracefully no-op until ffmpeg is available at {Path}", settings.FFmpegPath);
+                            _logger.Warn(ex, "[post-process] FFmpeg auto-install failed; Tidal conversion options will gracefully no-op until ffmpeg is available at {Path}", configuredPath);
                         }
                     }
 
-                    _logger.Trace("[post-process] Applied FFmpeg path: {Path}", settings.FFmpegPath);
+                    _logger.Info("[post-process] FFmpeg path applied: {Path}", configuredPath);
                 }
                 else
                 {
+                    // Clear the wrapper so a path that was previously set then cleared
+                    // doesn't keep leaking through.
+                    FFMPEG.SetBinaryDirectory(null);
                     _logger.Debug("[post-process] No FFmpeg path configured in Lidarr metadata settings; Tidal conversion will skip with a Warn if ffmpeg/ffprobe aren't on PATH inside the container.");
                 }
             }
             catch (Exception ex)
             {
-                _logger.Debug(ex, "[post-process] Failed to resolve ffmpeg path; falling back to PATH lookup.");
+                _logger.Debug(ex, "[post-process] Failed to apply ffmpeg path {Path}", configuredPath);
             }
-            _ffmpegResolved = true;
+
+            _lastResolvedFfmpegPath = configuredPath;
         }
 
         public async ValueTask QueueBackgroundWorkItemAsync(DownloadItem workItem)
@@ -374,6 +404,93 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
                     src.Cancel();
                 _items.Remove(workItem);
                 _cancellationSources.Remove(workItem);
+            }
+            TryDeleteSidecar(workItem);
+        }
+
+        private void TryPersistCompletedItem(DownloadItem item)
+        {
+            // Only completed downloads are persisted. Failed/cancelled items
+            // may have had files deleted by the corrupt-scan pass, so their
+            // on-disk state isn't a valid import target.
+            if (item.Status != DownloadItemStatus.Completed)
+                return;
+
+            if (string.IsNullOrEmpty(item.DownloadFolder) || !_diskProvider.FolderExists(item.DownloadFolder))
+                return;
+
+            try
+            {
+                PersistedDownloadItem.CaptureFrom(item).WriteTo(item.DownloadFolder);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warn(ex, "Failed to persist Tidal download state for {Title}; this download will not survive a Lidarr restart.", item.Title);
+            }
+        }
+
+        private void TryRehydrateFromDisk(TidalSettings settings)
+        {
+            string? root = settings.DownloadPath;
+            if (string.IsNullOrEmpty(root) || !_diskProvider.FolderExists(root))
+                return;
+
+            try
+            {
+                string[] sidecars = Directory.GetFiles(
+                    root,
+                    PersistedDownloadItem.SidecarFileName,
+                    SearchOption.AllDirectories);
+
+                int count = 0;
+                foreach (string sidecarPath in sidecars)
+                {
+                    PersistedDownloadItem? persisted;
+                    try
+                    {
+                        persisted = PersistedDownloadItem.TryRead(sidecarPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.Debug(ex, "Skipping unreadable Tidal sidecar at {Path}", sidecarPath);
+                        continue;
+                    }
+
+                    if (persisted == null || persisted.Status != DownloadItemStatus.Completed)
+                        continue;
+
+                    lock (_lock)
+                    {
+                        if (_items.Any(i => i.ID == persisted.ID))
+                            continue;
+                        _items.Add(DownloadItem.FromPersisted(persisted));
+                    }
+                    count++;
+                }
+
+                if (count > 0)
+                    _logger.Info("Rehydrated {Count} completed Tidal download(s) from disk.", count);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warn(ex, "Failed to scan Tidal download path for persisted state; starting with an empty queue.");
+            }
+        }
+
+        private void TryDeleteSidecar(DownloadItem item)
+        {
+            if (string.IsNullOrEmpty(item.DownloadFolder))
+                return;
+
+            try
+            {
+                string path = PersistedDownloadItem.SidecarPath(item.DownloadFolder);
+                if (File.Exists(path))
+                    File.Delete(path);
+            }
+            catch (Exception ex)
+            {
+                _logger.Trace(ex, "Failed to delete Tidal sidecar for {Title}", item.Title);
             }
         }
 

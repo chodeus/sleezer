@@ -361,13 +361,24 @@ public class PreImportTagger : IPreImportTagger
     private long SafeFileSize(string path)
     {
         try { return new FileInfo(path).Length; }
-        catch { return 0; }
+        catch (Exception ex)
+        {
+            // 0-size makes Lidarr's Identify give the file effectively zero
+            // weight; better than throwing, but still worth tracing so a
+            // disappearing-mid-tag race surfaces in detailed logs.
+            _logger.Trace(ex, "Pre-import tag: could not stat {Path}; treating as 0 bytes", path);
+            return 0;
+        }
     }
 
     private DateTime SafeFileModified(string path)
     {
         try { return File.GetLastWriteTimeUtc(path); }
-        catch { return DateTime.UtcNow; }
+        catch (Exception ex)
+        {
+            _logger.Trace(ex, "Pre-import tag: could not read mtime of {Path}; using now()", path);
+            return DateTime.UtcNow;
+        }
     }
 
     private ParsedTrackInfo SafeReadTags(string path)
@@ -377,10 +388,17 @@ public class PreImportTagger : IPreImportTagger
             ParsedTrackInfo? info = _audioTagService.ReadTags(path);
             if (info != null)
                 return info;
+
+            // ReadTags returned null (typically: file format not understood) —
+            // also worth a Warn since we'll fall through to the [0]-track-number
+            // seed and identification will silently match against the closest
+            // release. Without this warning the user has no way to notice the
+            // mismatch.
+            _logger.Warn("Pre-import tag: ReadTags returned null for {Path}; identification will run with a [0] track-number seed and may misidentify the release.", path);
         }
         catch (Exception ex)
         {
-            _logger.Warn(ex, "Pre-import tag: could not read tags from {Path}; using empty placeholder", path);
+            _logger.Warn(ex, "Pre-import tag: could not read tags from {Path}; identification will run with a [0] track-number seed and may misidentify the release.", path);
         }
 
         // Lidarr's AggregateFilenameInfo does TrackNumbers.First() == 0 which

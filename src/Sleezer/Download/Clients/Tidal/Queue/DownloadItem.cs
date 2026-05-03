@@ -20,6 +20,29 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
         // visible yet to the metadata read (NFS, Unraid mover, etc.).
         private static readonly TimeSpan TagLibRetryDelay = TimeSpan.FromMilliseconds(500);
 
+        // Restore a completed item from sidecar state on disk. Used by
+        // DownloadTaskQueue.TryRehydrateFromDisk after a Lidarr restart so
+        // ToDownloadClientItem can keep reporting Tidal downloads that finished
+        // in a prior plugin lifetime. The returned item is Lidarr-facing only —
+        // it holds no TidalSharp handles, no track list, and must never be
+        // re-enqueued for download. It exists so GetQueue can report completed
+        // downloads that are still on disk after a restart.
+        public static DownloadItem FromPersisted(PersistedDownloadItem persisted)
+        {
+            return new DownloadItem
+            {
+                ID = persisted.ID,
+                Title = persisted.Title,
+                Artist = persisted.Artist,
+                Explicit = persisted.Explicit,
+                Bitrate = persisted.Bitrate,
+                TotalSize = persisted.TotalSize,
+                DownloadedSize = persisted.TotalSize,
+                DownloadFolder = persisted.DownloadFolder,
+                Status = persisted.Status,
+            };
+        }
+
         public static async Task<DownloadItem?> From(RemoteAlbum remoteAlbum)
         {
             var url = remoteAlbum.Release.DownloadUrl.Trim();
@@ -181,6 +204,26 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
                 Directory.CreateDirectory(outDir);
 
             await instance.Client.Downloader.WriteRawTrackToFile(track, Bitrate, outPath, _ => DownloadedSize++, cancellation);
+
+            // Minimum sanity check: a real audio track is well over 50 KB. Tidal's
+            // DASH manifest doesn't surface a pre-known total byte count, so we
+            // can't do the percentage-based partial-write check Deezer does
+            // here, but we can still catch the obvious failure mode where the
+            // stream copy aborted almost immediately. The corruption scanner
+            // (now running tag-then-scan with -err_detect explode + stderr
+            // check) covers the subtler truncation cases where the file is
+            // > 50 KB but still incomplete.
+            if (System.IO.File.Exists(outPath))
+            {
+                long actualSize = new System.IO.FileInfo(outPath).Length;
+                if (actualSize < 50 * 1024)
+                {
+                    System.IO.File.Delete(outPath);
+                    throw new InvalidOperationException(
+                        $"Tidal track {track} at {Bitrate} truncated: only {actualSize:N0} bytes written. Likely a stream-copy abort.");
+                }
+            }
+
             outPath = HandleAudioConversion(outPath, settings, logger);
 
             string plainLyrics = string.Empty;

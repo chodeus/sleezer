@@ -12,6 +12,7 @@ using DeezNET.Data;
 using DeezNET.Exceptions;
 using Newtonsoft.Json.Linq;
 using NLog;
+using NzbDrone.Common.Instrumentation;
 using NzbDrone.Common.Instrumentation.Extensions;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Plugin.Sleezer.Deezer;
@@ -121,7 +122,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                     await semaphore.WaitAsync(cancellation);
                     try
                     {
-                        await DoTrackDownload(trackId, trackBitrate, settings, cancellation);
+                        await DoTrackDownload(trackId, trackBitrate, trackSize, settings, logger, cancellation);
                         DownloadedSize += trackSize;
                     }
                     catch (TaskCanceledException)
@@ -193,7 +194,16 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
             }
         }
 
-        private async Task DoTrackDownload(long track, Bitrate trackBitrate, DeezerSettings settings, CancellationToken cancellation = default)
+        // Threshold for the partial-write guard. The expected size we get from
+        // Deezer's GW API is the catalogued size for the requested bitrate; the
+        // FLAC fallback path can legitimately produce a smaller MP3-320 file
+        // when a track lacks FLAC, so the threshold must be loose. 0.9 catches
+        // catastrophic truncation (network drop, OOM kill, NFS hiccup) without
+        // false-positiving on the FLAC→MP3 fallback (the API switches the
+        // expected size in that case anyway via the FILESIZE_MP3_320 lookup).
+        private const double PartialWriteThreshold = 0.9;
+
+        private async Task DoTrackDownload(long track, Bitrate trackBitrate, long expectedSize, DeezerSettings settings, Logger logger, CancellationToken cancellation = default)
         {
             var page = await DeezerAPI.Instance.Client.GWApi.GetTrackPage(track, cancellation);
 
@@ -226,6 +236,36 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                 {
                     File.Delete(outPath);
                     throw new InvalidOperationException($"Deezer returned an empty file for track {track} at {trackBitrate}.");
+                }
+
+                // Partial-write guard. WriteRawTrackToFile awaits the underlying
+                // HTTP read-and-write, but a network drop / container OOM /
+                // NFS hiccup can leave a non-empty truncated file behind that
+                // the empty-file check above won't catch. Compare against the
+                // expected size from Deezer's GW API; refuse anything materially
+                // smaller and let the caller fail this track loudly rather than
+                // shipping a half-track to Lidarr.
+                if (expectedSize > 0 && File.Exists(outPath))
+                {
+                    long actualSize = new FileInfo(outPath).Length;
+                    if (actualSize < expectedSize * PartialWriteThreshold)
+                    {
+                        File.Delete(outPath);
+                        throw new InvalidOperationException(
+                            $"Deezer track {track} at {trackBitrate} truncated: got {actualSize:N0} of expected {expectedSize:N0} bytes ({(double)actualSize / expectedSize:P0}).");
+                    }
+
+                    if (actualSize < expectedSize)
+                    {
+                        // Above the threshold but still smaller than expected —
+                        // log so we can spot a slow drift over time without
+                        // breaking downloads. Above the threshold it's almost
+                        // always tag-stripping or bitrate-fallback, not real
+                        // corruption (the corruption scanner catches that
+                        // separately during post-process).
+                        logger.Trace("Deezer track {TrackId} at {Bitrate}: got {Actual:N0} of expected {Expected:N0} bytes ({Pct:P0}); within tolerance.",
+                            track, trackBitrate, actualSize, expectedSize, (double)actualSize / expectedSize);
+                    }
                 }
             }
             catch (Exception ex) when (IsLicenseRightsError(ex))
@@ -381,7 +421,11 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                 if (File.Exists(path) && new FileInfo(path).Length == 0)
                     File.Delete(path);
             }
-            catch { /* best-effort cleanup */ }
+            catch (Exception ex)
+            {
+                NzbDroneLogger.GetLogger(typeof(DownloadItem))
+                    .Trace(ex, "Best-effort cleanup of empty file failed at {Path}", path);
+            }
         }
 
         private static async Task CreateLrcFile(string lrcFilePath, List<SyncLyrics> syncLyrics)

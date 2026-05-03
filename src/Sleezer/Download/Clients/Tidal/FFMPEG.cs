@@ -57,20 +57,26 @@ namespace NzbDrone.Core.Download.Clients.Tidal
         {
             // -y: overwrite output without prompting (fixes hang from #12 when leftover files exist)
             // -nostdin: never read stdin, prevents another stall variant
+            // -err_detect explode + -xerror + stderr check: same pattern as the
+            // corruption scanner. Without this, a partially-corrupt input passes
+            // through demuxing silently and we end up with a "successful"
+            // re-mux that's missing frames. See CorruptionScanner.cs for the
+            // detailed rationale on why exit code alone is insufficient.
             var (exitCode, _, err, args) = Call(
                 "ffmpeg",
-                $"-y -nostdin -i {EncodeParameterArgument(input)} -vn -acodec copy {EncodeParameterArgument(output)}");
-            if (exitCode != 0)
-                throw new FFMPEGException($"Conversion without re-encode failed\n{args}\n{err}");
+                $"-v error -err_detect explode -xerror -y -nostdin -i {EncodeParameterArgument(input)} -vn -acodec copy {EncodeParameterArgument(output)}");
+            if (exitCode != 0 || !string.IsNullOrWhiteSpace(err))
+                throw new FFMPEGException($"Conversion without re-encode failed (exit={exitCode})\n{args}\n{err}");
         }
 
         public static void Reencode(string input, string output, int bitrate)
         {
+            // Same hardening as ConvertWithoutReencode — see comment above.
             var (exitCode, _, err, args) = Call(
                 "ffmpeg",
-                $"-y -nostdin -i {EncodeParameterArgument(input)} -b:a {bitrate}k {EncodeParameterArgument(output)}");
-            if (exitCode != 0)
-                throw new FFMPEGException($"Re-encoding failed\n{args}\n{err}");
+                $"-v error -err_detect explode -xerror -y -nostdin -i {EncodeParameterArgument(input)} -b:a {bitrate}k {EncodeParameterArgument(output)}");
+            if (exitCode != 0 || !string.IsNullOrWhiteSpace(err))
+                throw new FFMPEGException($"Re-encoding failed (exit={exitCode})\n{args}\n{err}");
         }
 
         private static (int exitCode, string output, string err, string args) Call(string executable, string arguments)

@@ -93,8 +93,14 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
                 {
                     await AudioMetadataHandler.InstallFFmpeg(ffmpegPath);
                 }
-                catch
+                catch (Exception ex)
                 {
+                    // Log so the user has something to look at if Test fails — the
+                    // validator only surfaces a generic "not installed or invalid"
+                    // error to the UI, but the underlying TimeoutException /
+                    // HttpRequestException / extraction failure goes here.
+                    NzbDrone.Common.Instrumentation.NzbDroneLogger.GetLogger(typeof(FFmpegSettingsValidator))
+                        .Warn(ex, "FFmpeg auto-install failed for path {Path}", ffmpegPath);
                     if (!string.IsNullOrEmpty(oldPath))
                         XabeFFmpeg.SetExecutablesPath(oldPath);
                     return false;

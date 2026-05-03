@@ -3,6 +3,7 @@ using NzbDrone.Common.Instrumentation;
 using NzbDrone.Core.Datastore;
 using NzbDrone.Core.MediaFiles;
 using NzbDrone.Core.Music;
+using NzbDrone.Plugin.Sleezer.Core.PostProcessing;
 using NzbDrone.Plugin.Sleezer.Core.Records;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using Xabe.FFmpeg;
@@ -197,7 +198,10 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
                 if (data?.Length > 0)
                     return data;
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger?.Trace(ex, "TagLib could not read embedded cover from {Path}; falling back to ffprobe", TrackPath);
+            }
 
             try
             {
@@ -227,7 +231,10 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
                         File.Delete(tempCoverPath);
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger?.Trace(ex, "ffprobe/ffmpeg cover extraction failed for {Path}", TrackPath);
+            }
 
             return null;
         }
@@ -316,6 +323,35 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
 
                 _logger?.Trace($"Starting FFmpeg conversion");
                 await conversion.Start();
+
+                // Verify the converter actually produced a decodable file before
+                // we delete the original. A successful Xabe/ffmpeg exit only means
+                // the process returned 0 — it does not prove the muxer wrote a
+                // valid stream. Catching this here is the difference between
+                // "scan said clean" and "external tools later report Header
+                // missing": the converter is the LAST thing to touch the file
+                // before Lidarr finalises the import.
+                if (!File.Exists(tempOutputPath) || new FileInfo(tempOutputPath).Length < 1024)
+                {
+                    _logger?.Error("FFmpeg convert: output {Path} is missing or too small after conversion ({Format} target). Leaving original in place.", tempOutputPath, audioFormat);
+                    if (File.Exists(tempOutputPath))
+                        try { File.Delete(tempOutputPath); } catch (Exception delEx) { _logger?.Trace(delEx, "Could not delete bad temp output {Path}", tempOutputPath); }
+                    return false;
+                }
+
+                (int verifyExit, string verifyStderr) = await CorruptionScanner.DecodeCheckAsync(
+                    tempOutputPath,
+                    timeoutSeconds: 120,
+                    ct: CancellationToken.None);
+                if (verifyExit != 0)
+                {
+                    string reason = verifyExit == -1
+                        ? "decode timed out"
+                        : FfmpegErrorFormatter.CleanFfmpegErrors(verifyStderr);
+                    _logger?.Error("FFmpeg convert: output {Path} failed post-conversion decode (exit={ExitCode}) — {Reason}. Leaving original in place.", tempOutputPath, verifyExit, reason);
+                    try { File.Delete(tempOutputPath); } catch (Exception delEx) { _logger?.Trace(delEx, "Could not delete bad temp output {Path}", tempOutputPath); }
+                    return false;
+                }
 
                 if (File.Exists(TrackPath))
                     File.Delete(TrackPath);
@@ -514,7 +550,16 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
                 if (string.IsNullOrEmpty(codec))
                     return false;
 
-                string correctExtension = AudioFormatHelper.GetFileExtensionForCodec(codec);
+                // Strict lookup: don't guess. The previous behaviour defaulted to
+                // .aac for any unrecognised codec, which means a build of ffmpeg
+                // that reports a codec name we don't list (or a future codec)
+                // would silently rename the user's .mp3 to .aac and break import.
+                if (!AudioFormatHelper.TryGetFileExtensionForCodec(codec, out string correctExtension))
+                {
+                    _logger?.Trace("EnsureFileExt: codec {Codec} not in known map; leaving {Path} alone", codec, TrackPath);
+                    return true;
+                }
+
                 string currentExtension = Path.GetExtension(TrackPath);
 
                 if (!string.Equals(currentExtension, correctExtension, StringComparison.OrdinalIgnoreCase))
@@ -626,60 +671,139 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
             if (_isFFmpegInstalled.HasValue)
                 return _isFFmpegInstalled.Value;
 
-            bool isInstalled = false;
+            // Resolve every candidate (configured path, $FFMPEG, $PATH), probe each
+            // binary's version, and pick the newest. The previous code used the first
+            // candidate found, which meant a Xabe-auto-installed ffmpeg 4.4.1
+            // (ffbinaries.com is frozen at that release) at the user-configured path
+            // would win over the container's system ffmpeg 5.x/6.x — and silently
+            // accept malformed MP3 framing that newer builds correctly flag.
+            List<string> candidates = new();
 
             if (!string.IsNullOrEmpty(XabeFFmpeg.ExecutablesPath) && Directory.Exists(XabeFFmpeg.ExecutablesPath))
+                candidates.AddRange(EnumerateFfmpegBinaries(XabeFFmpeg.ExecutablesPath));
+
+            string? ffmpegEnv = Environment.GetEnvironmentVariable("FFMPEG");
+            if (!string.IsNullOrEmpty(ffmpegEnv))
             {
-                string[] ffmpegPatterns = ["ffmpeg", "ffmpeg.exe", "ffmpeg.bin"];
-                string[] files = Directory.GetFiles(XabeFFmpeg.ExecutablesPath);
-                if (files.Any(file => ffmpegPatterns.Contains(Path.GetFileName(file), StringComparer.OrdinalIgnoreCase) && IsExecutable(file)))
-                {
-                    isInstalled = true;
-                }
+                string envDir = File.Exists(ffmpegEnv) ? Path.GetDirectoryName(ffmpegEnv)! : ffmpegEnv;
+                if (Directory.Exists(envDir))
+                    candidates.AddRange(EnumerateFfmpegBinaries(envDir));
             }
 
-            if (!isInstalled)
+            foreach (string path in Environment.GetEnvironmentVariable("PATH")?.Split(Path.PathSeparator) ?? [])
             {
-                string? ffmpegEnv = Environment.GetEnvironmentVariable("FFMPEG");
-                if (!string.IsNullOrEmpty(ffmpegEnv))
-                {
-                    string dir = File.Exists(ffmpegEnv) ? Path.GetDirectoryName(ffmpegEnv)! : ffmpegEnv;
-                    if (Directory.Exists(dir))
-                    {
-                        string[] ffmpegPatterns = ["ffmpeg", "ffmpeg.exe", "ffmpeg.bin"];
-                        if (Directory.GetFiles(dir).Any(file => ffmpegPatterns.Contains(Path.GetFileName(file), StringComparer.OrdinalIgnoreCase) && IsExecutable(file)))
-                        {
-                            XabeFFmpeg.SetExecutablesPath(dir);
-                            isInstalled = true;
-                        }
-                    }
-                }
+                if (Directory.Exists(path))
+                    candidates.AddRange(EnumerateFfmpegBinaries(path));
             }
 
-            if (!isInstalled)
+            // Deduplicate (the same dir can appear in multiple sources).
+            candidates = candidates
+                .Select(p => Path.GetFullPath(p))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (candidates.Count == 0)
             {
-                foreach (string path in Environment.GetEnvironmentVariable("PATH")?.Split(Path.PathSeparator) ?? [])
-                {
-                    if (Directory.Exists(path))
-                    {
-                        string[] ffmpegPatterns = ["ffmpeg", "ffmpeg.exe", "ffmpeg.bin"];
-                        string[] files = Directory.GetFiles(path);
-
-                        if (files.Any(file => ffmpegPatterns.Contains(Path.GetFileName(file), StringComparer.OrdinalIgnoreCase) && IsExecutable(file)))
-                        {
-                            XabeFFmpeg.SetExecutablesPath(path);
-                            isInstalled = true;
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if (!isInstalled)
                 NzbDroneLogger.GetLogger(typeof(AudioMetadataHandler)).Trace("FFmpeg not found in configured path or system PATH");
+                _isFFmpegInstalled = false;
+                return false;
+            }
 
-            _isFFmpegInstalled = isInstalled;
-            return isInstalled;
+            (string Path, Version Version)? best = null;
+            foreach (string candidate in candidates)
+            {
+                Version? v = ProbeFfmpegVersion(candidate);
+                if (v == null)
+                    continue;
+                if (best == null || v > best.Value.Version)
+                    best = (candidate, v);
+            }
+
+            if (best == null)
+            {
+                // Found binaries but none responded to -version. Fall back to the
+                // first candidate with a passing magic-number check rather than
+                // failing closed; this preserves prior behaviour for exotic builds.
+                string fallback = candidates.First();
+                XabeFFmpeg.SetExecutablesPath(Path.GetDirectoryName(fallback)!);
+                NzbDroneLogger.GetLogger(typeof(AudioMetadataHandler)).Warn("FFmpeg version probe failed for all {Count} candidate(s); using {Path} without version verification.", candidates.Count, fallback);
+                _isFFmpegInstalled = true;
+                return true;
+            }
+
+            XabeFFmpeg.SetExecutablesPath(Path.GetDirectoryName(best.Value.Path)!);
+            Logger logger = NzbDroneLogger.GetLogger(typeof(AudioMetadataHandler));
+            logger.Info("FFmpeg selected: {Path} (version {Version}) out of {Count} candidate(s).", best.Value.Path, best.Value.Version, candidates.Count);
+            if (best.Value.Version.Major < 5)
+                logger.Warn("FFmpeg {Version} is older than 5.x. Older ffmpeg builds silently accept malformed MP3 framing that newer builds correctly flag as corrupt — consider installing a newer ffmpeg on the host or in the container.", best.Value.Version);
+
+            _isFFmpegInstalled = true;
+            return true;
+        }
+
+        private static IEnumerable<string> EnumerateFfmpegBinaries(string dir)
+        {
+            string[] ffmpegPatterns = ["ffmpeg", "ffmpeg.exe", "ffmpeg.bin"];
+            string[] files;
+            try
+            {
+                files = Directory.GetFiles(dir);
+            }
+            catch (Exception ex)
+            {
+                NzbDroneLogger.GetLogger(typeof(AudioMetadataHandler)).Trace(ex, "Failed to enumerate FFmpeg candidates in {Dir}", dir);
+                yield break;
+            }
+
+            foreach (string file in files)
+            {
+                if (ffmpegPatterns.Contains(Path.GetFileName(file), StringComparer.OrdinalIgnoreCase) && IsExecutable(file))
+                    yield return file;
+            }
+        }
+
+        private static Version? ProbeFfmpegVersion(string ffmpegPath)
+        {
+            try
+            {
+                System.Diagnostics.ProcessStartInfo psi = new()
+                {
+                    FileName = ffmpegPath,
+                    RedirectStandardError = true,
+                    RedirectStandardOutput = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                };
+                psi.ArgumentList.Add("-hide_banner");
+                psi.ArgumentList.Add("-version");
+
+                using System.Diagnostics.Process proc = new() { StartInfo = psi };
+                proc.Start();
+                string stdout = proc.StandardOutput.ReadToEnd();
+                _ = proc.StandardError.ReadToEnd();
+                if (!proc.WaitForExit(milliseconds: 5000))
+                {
+                    try { proc.Kill(entireProcessTree: true); } catch (Exception killEx) { NzbDroneLogger.GetLogger(typeof(AudioMetadataHandler)).Trace(killEx, "Failed to kill stuck ffmpeg version probe at {Path}", ffmpegPath); }
+                    return null;
+                }
+
+                // First line: "ffmpeg version 6.1.1-3ubuntu5 Copyright ..."
+                string firstLine = (stdout ?? string.Empty).Split('\n', 2)[0];
+                System.Text.RegularExpressions.Match m = System.Text.RegularExpressions.Regex.Match(
+                    firstLine,
+                    @"ffmpeg\s+version\s+(?<ver>\d+(?:\.\d+){1,3})",
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (!m.Success)
+                    return null;
+                if (!Version.TryParse(m.Groups["ver"].Value, out Version? parsed))
+                    return null;
+                return parsed;
+            }
+            catch (Exception ex)
+            {
+                NzbDroneLogger.GetLogger(typeof(AudioMetadataHandler)).Trace(ex, "FFmpeg version probe failed for {Path}", ffmpegPath);
+                return null;
+            }
         }
 
         private static bool IsExecutable(string filePath)
@@ -710,18 +834,56 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
                     magicNumber[2] == 0xBA && magicNumber[3] == 0xBE)
                     return true;
             }
-            catch { }
+            catch (Exception ex)
+            {
+                // Read failed (perm denied, broken symlink, race) — treat as not
+                // executable. Trace because this fires per candidate during the
+                // ffmpeg-binary search and would be noisy at higher levels.
+                NzbDroneLogger.GetLogger(typeof(AudioMetadataHandler))
+                    .Trace(ex, "IsExecutable: failed to read magic bytes from {Path}", filePath);
+            }
             return false;
         }
 
         public static void ResetFFmpegInstallationCheck() => _isFFmpegInstalled = null;
 
-        public static Task InstallFFmpeg(string path)
+        /// <summary>
+        /// Default deadline applied to <see cref="InstallFFmpeg(string)"/> when callers don't
+        /// supply one. Xabe.FFmpeg.Downloader has no timeout itself; without a deadline a
+        /// stalled HTTPS connection or hung archive extraction blocks indefinitely on the
+        /// thread that called <c>.GetAwaiter().GetResult()</c> (Tidal post-process thread,
+        /// the FFmpeg metadata "Test" button save). 5 minutes is generous enough for a
+        /// real download on a slow connection but still recovers from a hang.
+        /// </summary>
+        public static readonly TimeSpan DefaultInstallDeadline = TimeSpan.FromMinutes(5);
+
+        public static async Task InstallFFmpeg(string path, CancellationToken ct = default)
         {
             NzbDroneLogger.GetLogger(typeof(AudioMetadataHandler)).Trace($"Installing FFmpeg to: {path}");
             ResetFFmpegInstallationCheck();
             XabeFFmpeg.SetExecutablesPath(path);
-            return CheckFFmpegInstalled() ? Task.CompletedTask : FFmpegDownloader.GetLatestVersion(FFmpegVersion.Official, path);
+            if (CheckFFmpegInstalled())
+                return;
+
+            // FFmpegDownloader.GetLatestVersion accepts no CancellationToken, so we
+            // race it against a Task.Delay deadline and bail loudly on timeout
+            // rather than blocking the caller forever.
+            using CancellationTokenSource deadline = ct.CanBeCanceled
+                ? CancellationTokenSource.CreateLinkedTokenSource(ct)
+                : new CancellationTokenSource();
+            deadline.CancelAfter(DefaultInstallDeadline);
+
+            Task download = FFmpegDownloader.GetLatestVersion(FFmpegVersion.Official, path);
+            Task delay = Task.Delay(Timeout.Infinite, deadline.Token);
+            Task winner = await Task.WhenAny(download, delay).ConfigureAwait(false);
+            if (winner == delay)
+            {
+                throw new TimeoutException(
+                    $"FFmpeg auto-install at {path} did not complete within {DefaultInstallDeadline.TotalMinutes:F0} min — bailing out so the caller is not blocked.");
+            }
+
+            // Surface any download exception to the caller.
+            await download.ConfigureAwait(false);
         }
     }
 }
