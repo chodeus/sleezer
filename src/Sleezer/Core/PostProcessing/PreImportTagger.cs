@@ -50,7 +50,12 @@ public class PreImportTagger : IPreImportTagger
         _logger = logger;
     }
 
-    public record TaggingResult(int Tagged, int SkippedWeakMatch, int Errored);
+    // Tagged              — track was identified and Lidarr's tag writer succeeded.
+    // SkippedWeakMatch    — identification confidence below the threshold; tag NOT written.
+    // TagWriteFailed      — identification matched, but the tag-write step itself threw
+    //                       (TagLib/IAudioTagService failure). Distinct from corruption:
+    //                       corruption is detected later, in the post-process scanner.
+    public record TaggingResult(int Tagged, int SkippedWeakMatch, int TagWriteFailed);
 
     public Task<TaggingResult> TagCompletedDownloadAsync(
         Album album,
@@ -225,7 +230,7 @@ public class PreImportTagger : IPreImportTagger
             }
         }
 
-        _logger.Info("Pre-import tag: {SourceId} tagged={Tagged} skipped_weak_match={Skipped} errored={Errored}",
+        _logger.Info("Pre-import tag: {SourceId} tagged={Tagged} skipped_weak_match={Skipped} tag_write_failed={TagWriteFailed}",
             sourceId, tagged, skipped, errored);
         return new TaggingResult(tagged, skipped, errored);
     }
