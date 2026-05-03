@@ -18,6 +18,13 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
         private readonly Logger? _logger;
         private static bool? _isFFmpegInstalled = null;
 
+        // Tracks the last (path, version) we Info-logged from CheckFFmpegInstalled
+        // so re-probes triggered by ResetFFmpegInstallationCheck (one per queue
+        // SetSettings call on startup, etc.) don't re-log the same selection at
+        // Info. Cleared by ResetFFmpegInstallationCheck so a real path change
+        // does still surface.
+        private static string? _lastLoggedFfmpegSelection;
+
         public string TrackPath { get; private set; }
         public Lyric? Lyric { get; set; }
 
@@ -733,9 +740,24 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
 
             XabeFFmpeg.SetExecutablesPath(Path.GetDirectoryName(best.Value.Path)!);
             Logger logger = NzbDroneLogger.GetLogger(typeof(AudioMetadataHandler));
-            logger.Info("FFmpeg selected: {Path} (version {Version}) out of {Count} candidate(s).", best.Value.Path, best.Value.Version, candidates.Count);
-            if (best.Value.Version.Major < 5)
-                logger.Warn("FFmpeg {Version} is older than 5.x. Older ffmpeg builds silently accept malformed MP3 framing that newer builds correctly flag as corrupt — consider installing a newer ffmpeg on the host or in the container.", best.Value.Version);
+
+            // Three queues (Deezer/Tidal/Slskd) each call ResetFFmpegInstallationCheck
+            // when their EnsureFFmpegResolved fires on startup, so this method is
+            // re-entered up to 3× back-to-back with the same answer. Only Info-log
+            // when the resolved selection actually changes; downgrade repeats to
+            // Trace to keep the default-level log clean.
+            string selection = $"{best.Value.Path}|{best.Value.Version}";
+            if (!string.Equals(selection, _lastLoggedFfmpegSelection, StringComparison.Ordinal))
+            {
+                logger.Info("FFmpeg selected: {Path} (version {Version}) out of {Count} candidate(s).", best.Value.Path, best.Value.Version, candidates.Count);
+                if (best.Value.Version.Major < 5)
+                    logger.Warn("FFmpeg {Version} is older than 5.x. Older ffmpeg builds silently accept malformed MP3 framing that newer builds correctly flag as corrupt — consider installing a newer ffmpeg on the host or in the container.", best.Value.Version);
+                _lastLoggedFfmpegSelection = selection;
+            }
+            else
+            {
+                logger.Trace("FFmpeg re-probed: same selection ({Path} v{Version}) — suppressed Info repeat.", best.Value.Path, best.Value.Version);
+            }
 
             _isFFmpegInstalled = true;
             return true;
