@@ -14,6 +14,11 @@ namespace NzbDrone.Plugin.Sleezer.Blocklisting
 
         public bool IsBlocklisted(int artistId, ReleaseInfo release) => _blocklistRepository.BlocklistedByTorrentInfoHash(artistId, release.Guid).Any(b => BaseBlocklist<TProtocol>.SameRelease(b, release));
 
+        // EntityHistory.Data uses PascalCase keys ("Indexer", "Protocol", "Guid",
+        // "PublishedDate", "Size" — see EntityHistoryService.Handle(AlbumGrabbedEvent)).
+        // The dict is case-sensitive, so reading lowercase keys silently returns
+        // null and the blocklist record ends up with empty Indexer/Protocol/
+        // TorrentInfoHash, breaking IsBlocklisted matching against future releases.
         public Blocklist GetBlocklist(DownloadFailedEvent message) => new()
         {
             ArtistId = message.ArtistId,
@@ -21,14 +26,23 @@ namespace NzbDrone.Plugin.Sleezer.Blocklisting
             SourceTitle = message.SourceTitle,
             Quality = message.Quality,
             Date = DateTime.UtcNow,
-            PublishedDate = DateTime.TryParse(message.Data.GetValueOrDefault("publishedDate") ?? string.Empty, out DateTime publishedDate) ? publishedDate : null,
-            Size = long.Parse(message.Data.GetValueOrDefault("size", "0")),
-            Indexer = message.Data.GetValueOrDefault("indexer"),
-            Protocol = message.Data.GetValueOrDefault("protocol"),
+            PublishedDate = DateTime.TryParse(message.Data.GetValueOrDefault("PublishedDate") ?? string.Empty, out DateTime publishedDate) ? publishedDate : null,
+            Size = long.TryParse(message.Data.GetValueOrDefault("Size", "0"), out long size) ? size : 0,
+            Indexer = message.Data.GetValueOrDefault("Indexer"),
+            Protocol = message.Data.GetValueOrDefault("Protocol"),
             Message = message.Message,
-            TorrentInfoHash = message.Data.GetValueOrDefault("guid")
+            TorrentInfoHash = message.Data.GetValueOrDefault("Guid")
         };
 
-        private static bool SameRelease(Blocklist item, ReleaseInfo release) => release.Guid.IsNotNullOrWhiteSpace() ? release.Guid.Equals(item.TorrentInfoHash) : item.Indexer.Equals(release.Indexer, StringComparison.InvariantCultureIgnoreCase);
+        // Defensive: item.Indexer can be null on legacy blocklist entries written
+        // before the case-sensitivity fix landed. Treat null as "no match" rather
+        // than NRE'ing the blocklist lookup.
+        private static bool SameRelease(Blocklist item, ReleaseInfo release)
+        {
+            if (release.Guid.IsNotNullOrWhiteSpace())
+                return release.Guid.Equals(item.TorrentInfoHash);
+            return item.Indexer != null
+                && item.Indexer.Equals(release.Indexer, StringComparison.InvariantCultureIgnoreCase);
+        }
     }
 }

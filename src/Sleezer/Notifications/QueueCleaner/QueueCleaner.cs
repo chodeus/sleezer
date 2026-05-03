@@ -236,6 +236,15 @@ namespace NzbDrone.Plugin.Sleezer.Notifications.QueueCleaner
             item.State = TrackedDownloadState.DownloadFailed;
 
             List<EntityHistory> grabbedItems = [.. _historyService.Find(item.DownloadItem.DownloadId, EntityHistoryEventType.Grabbed)];
+            if (grabbedItems.Count == 0)
+            {
+                // No grab history for this download — nothing to blocklist against.
+                // Without a guard, grabbedItems[^1] would throw IndexOutOfRange and
+                // crash the queue-cleaner loop. Bail out and let the cleaner remove
+                // the queue item without recording a blocklist entry.
+                _logger.Warn("QueueCleaner: no grab history for download {DownloadId}; skipping blocklist record", item.DownloadItem.DownloadId);
+                return;
+            }
             EntityHistory historyItem = grabbedItems[^1];
 
             _ = Enum.TryParse(historyItem.Data.GetValueOrDefault(EntityHistory.RELEASE_SOURCE, nameof(ReleaseSourceType.Unknown)), out ReleaseSourceType releaseSource);
@@ -246,7 +255,12 @@ namespace NzbDrone.Plugin.Sleezer.Notifications.QueueCleaner
                 AlbumIds = grabbedItems.Select(h => h.AlbumId).Distinct().ToList(),
                 Quality = historyItem.Quality,
                 SourceTitle = historyItem.SourceTitle,
-                DownloadClient = historyItem.Data.GetValueOrDefault(EntityHistory.DOWNLOAD_CLIENT),
+                // EntityHistory.Data uses PascalCase keys ("DownloadClient" — see
+                // EntityHistoryService.Handle(AlbumGrabbedEvent)) but the
+                // EntityHistory.DOWNLOAD_CLIENT constant is lowercase. The dict is
+                // case-sensitive so the constant silently returns null. Read the
+                // actual stored key.
+                DownloadClient = historyItem.Data.GetValueOrDefault("DownloadClient"),
                 DownloadId = historyItem.DownloadId,
                 Message = "Import failed: Item removed by Queue Cleaner.",
                 Data = historyItem.Data,

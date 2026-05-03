@@ -27,6 +27,10 @@ namespace NzbDrone.Core.Blocklisting
 
         public Blocklist GetBlocklist(DownloadFailedEvent message)
         {
+            // EntityHistory.Data uses PascalCase keys ("Indexer", "Protocol", "Guid",
+            // "PublishedDate", "Size"). Lowercase reads silently returned null which
+            // fed DateTime.Parse("") → FormatException, crashing the blocklist write.
+            // TryParse is defensive even with the case fix in place.
             return new Blocklist
             {
                 ArtistId = message.ArtistId,
@@ -34,12 +38,12 @@ namespace NzbDrone.Core.Blocklisting
                 SourceTitle = message.SourceTitle,
                 Quality = message.Quality,
                 Date = DateTime.UtcNow,
-                PublishedDate = DateTime.Parse(message.Data.GetValueOrDefault("publishedDate") ?? string.Empty),
-                Size = long.Parse(message.Data.GetValueOrDefault("size", "0")),
-                Indexer = message.Data.GetValueOrDefault("indexer"),
-                Protocol = message.Data.GetValueOrDefault("protocol"),
+                PublishedDate = DateTime.TryParse(message.Data.GetValueOrDefault("PublishedDate") ?? string.Empty, out DateTime publishedDate) ? publishedDate : null,
+                Size = long.TryParse(message.Data.GetValueOrDefault("Size", "0"), out long size) ? size : 0,
+                Indexer = message.Data.GetValueOrDefault("Indexer"),
+                Protocol = message.Data.GetValueOrDefault("Protocol"),
                 Message = message.Message,
-                TorrentInfoHash = message.Data.GetValueOrDefault("guid")
+                TorrentInfoHash = message.Data.GetValueOrDefault("Guid")
             };
         }
 
@@ -50,7 +54,10 @@ namespace NzbDrone.Core.Blocklisting
                 return release.Guid.Equals(item.TorrentInfoHash);
             }
 
-            return item.Indexer.Equals(release.Indexer, StringComparison.InvariantCultureIgnoreCase);
+            // Defensive null-check: legacy blocklist entries written before the
+            // case-sensitivity fix could have null Indexer.
+            return item.Indexer != null
+                && item.Indexer.Equals(release.Indexer, StringComparison.InvariantCultureIgnoreCase);
         }
     }
 }
