@@ -90,16 +90,36 @@ public class CorruptionFailureHandler : ICorruptionFailureHandler
             _ = Enum.TryParse(historyItem.Data.GetValueOrDefault(EntityHistory.RELEASE_SOURCE, nameof(ReleaseSourceType.Unknown)),
                               out ReleaseSourceType releaseSource);
 
+            // Lidarr stores grab metadata in EntityHistory.Data using PascalCase
+            // string literals ("DownloadClient", "DownloadClientName", "Indexer"
+            // — see DownloadHistoryService.Handle(AlbumGrabbedEvent)) but the
+            // EntityHistory.DOWNLOAD_CLIENT / .INDEXER constants are lowercase.
+            // The dict is case-sensitive so reading via the constants silently
+            // returns null, which used to leave DownloadClientInfo unpopulated
+            // and NRE'd Lidarr's DownloadHistoryService.Handle(DownloadFailedEvent)
+            // at line 230 (DownloadClientInfo.Type deref).
+            string downloadClientType = historyItem.Data.GetValueOrDefault("DownloadClient") ?? string.Empty;
+            string downloadClientName = historyItem.Data.GetValueOrDefault("DownloadClientName") ?? string.Empty;
+            string indexer = historyItem.Data.GetValueOrDefault("Indexer") ?? string.Empty;
+
             TrackedDownload tracked = new()
             {
                 DownloadItem = new DownloadClientItem
                 {
                     DownloadId = downloadId,
-                    Title = releaseTitle ?? string.Empty
+                    Title = releaseTitle ?? string.Empty,
+                    // Required by Lidarr's DownloadHistoryService — derefs
+                    // DownloadClientInfo.Type / .Name without null-checks.
+                    DownloadClientInfo = new DownloadClientItemClientInfo
+                    {
+                        Type = downloadClientType,
+                        Name = downloadClientName,
+                        Protocol = protocolName,
+                    }
                 },
                 State = TrackedDownloadState.DownloadFailed,
                 Protocol = protocolName,
-                Indexer = historyItem.Data.GetValueOrDefault("indexer") ?? string.Empty
+                Indexer = indexer,
             };
 
             DownloadFailedEvent evt = new()
@@ -108,7 +128,7 @@ public class CorruptionFailureHandler : ICorruptionFailureHandler
                 AlbumIds = grabbedItems.Select(h => h.AlbumId).Distinct().ToList(),
                 Quality = historyItem.Quality,
                 SourceTitle = historyItem.SourceTitle,
-                DownloadClient = historyItem.Data.GetValueOrDefault(EntityHistory.DOWNLOAD_CLIENT),
+                DownloadClient = downloadClientType,
                 DownloadId = historyItem.DownloadId,
                 Message = BuildFailureMessage(strikes),
                 Data = historyItem.Data,
