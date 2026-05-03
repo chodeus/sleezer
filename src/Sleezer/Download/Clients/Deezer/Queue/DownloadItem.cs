@@ -29,6 +29,11 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
         public GeoRestrictionException(string message, Exception? inner = null) : base(message, inner) { }
     }
 
+    public class TrackUnavailableException : Exception
+    {
+        public TrackUnavailableException(string message, Exception? inner = null) : base(message, inner) { }
+    }
+
     public class DownloadItem
     {
         // Rebuilds the minimal display state for a download that completed in a
@@ -137,6 +142,16 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                     catch (GeoRestrictionException ex)
                     {
                         logger.Error(ex, "Track {TrackId} is not available in your region", trackId);
+                        FailedTracks++;
+                    }
+                    catch (TrackUnavailableException ex)
+                    {
+                        // Demoted from Error to Warn and stripped of stack: this is
+                        // an upstream "track has no sources" condition, not a
+                        // Sleezer crash. The DeezNET-NRE translation layer in
+                        // DoTrackDownload turns the misleading ArgumentNullException
+                        // into this clean message.
+                        logger.Warn("Deezer track {TrackId} unavailable: {Reason}", trackId, ex.Message);
                         FailedTracks++;
                     }
                     catch (Exception ex)
@@ -280,6 +295,12 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                 throw new GeoRestrictionException(
                     $"Track {track} unavailable in your region: {ex.Message}", ex);
             }
+            catch (Exception ex) when (IsDeezNetNoSourcesNre(ex))
+            {
+                TryDeleteEmptyFile(outPath);
+                throw new TrackUnavailableException(
+                    $"Deezer reports no media sources for track {track} (likely removed from catalog or region-locked).", ex);
+            }
             catch
             {
                 TryDeleteEmptyFile(outPath);
@@ -394,6 +415,30 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                 if (msg.Contains("License token has no sufficient rights", StringComparison.OrdinalIgnoreCase))
                     return true;
                 if (cur is AggregateException agg && agg.InnerExceptions.Any(IsLicenseRightsError))
+                    return true;
+            }
+            return false;
+        }
+
+        // DeezNET 1.2.2 has a bug in GetEncryptedTrackData: it dereferences
+        // urls.Data.FirstOrDefault() before checking urls.Data for null. When
+        // Deezer returns no Data array (track removed from catalog, region-locked,
+        // expired token), it throws ArgumentNullException("Value cannot be null.
+        // (Parameter 'source')") instead of the intended NoSourcesAvailableException.
+        // Detect that exact failure mode by stack-frame signature so we can
+        // translate it into a clean TrackUnavailableException without leaving the
+        // misleading NRE-style stack in the user's logs.
+        private static bool IsDeezNetNoSourcesNre(Exception ex)
+        {
+            for (var cur = ex; cur != null; cur = cur.InnerException)
+            {
+                if (cur is ArgumentNullException ane
+                    && string.Equals(ane.ParamName, "source", StringComparison.Ordinal)
+                    && (cur.StackTrace?.Contains("DeezNET.Downloader.GetEncryptedTrackData", StringComparison.Ordinal) ?? false))
+                {
+                    return true;
+                }
+                if (cur is AggregateException agg && agg.InnerExceptions.Any(IsDeezNetNoSourcesNre))
                     return true;
             }
             return false;
