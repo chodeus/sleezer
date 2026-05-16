@@ -23,7 +23,7 @@
 		<!-- From Tubifarry base -->
 		<PackageReference Include="FuzzySharp" Version="2.0.2" />
 		<PackageReference Include="Jint" Version="4.8.0" />
-		<PackageReference Include="ILRepack.Lib.MSBuild.Task" Version="2.0.44.2">
+		<PackageReference Include="ILRepack.Lib.MSBuild.Task" Version="2.0.45">
 			<PrivateAssets>all</PrivateAssets>
 			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>
