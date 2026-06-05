@@ -1,0 +1,56 @@
+name: Release on merge
+
+# When a PR carrying a release:patch | release:minor | release:major label is
+# merged into main, dispatch the existing Release workflow with the matching
+# bump. Release logic stays in release.yml — this just removes the manual click.
+#
+# No label on a merged PR = no release (the job is skipped). Run Release manually
+# from the Actions tab any time as well.
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  actions: write    # dispatch release.yml
+  contents: read
+
+concurrency:
+  group: release-on-merge
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    if: >
+      github.event.pull_request.merged == true &&
+      (contains(github.event.pull_request.labels.*.name, 'release:patch') ||
+       contains(github.event.pull_request.labels.*.name, 'release:minor') ||
+       contains(github.event.pull_request.labels.*.name, 'release:major'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine bump from label
+        id: b
+        env:
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ' ') }}
+        run: |
+          set -euo pipefail
+          # Highest precedence wins if multiple labels are present.
+          case " ${LABELS} " in
+            *" release:major "*) bump='major' ;;
+            *" release:minor "*) bump='minor' ;;
+            *" release:patch "*) bump='patch' ;;
+            *) echo "::error::no release:* label found"; exit 1 ;;
+          esac
+          echo "bump=${bump}" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch Release (${{ steps.b.outputs.bump }})
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BUMP: ${{ steps.b.outputs.bump }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          gh workflow run release.yml -R "${REPO}" -f "bump=${BUMP}"
+          echo "Dispatched Release (bump=${BUMP}) from merged PR #${PR}"
