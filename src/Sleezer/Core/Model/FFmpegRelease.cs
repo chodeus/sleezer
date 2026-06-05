@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace NzbDrone.Plugin.Sleezer.Core.Model
 {
@@ -90,6 +91,25 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
             s = s.Substring(0, end);
 
             return Version.TryParse(s, out Version? v) ? v : null;
+        }
+
+        /// <summary>
+        /// Parse the first line of <c>ffmpeg -version</c> output into a <see cref="Version"/>.
+        /// Handles both the distro form (<c>ffmpeg version 6.1.1-3ubuntu5 Copyright ...</c>) and
+        /// the <c>chodeus/ffmpeg-static</c> form (<c>ffmpeg version n8.1.1-... Copyright ...</c>),
+        /// where the version carries the same leading <c>n</c>/<c>v</c> build-tag prefix that
+        /// <see cref="ParseTag"/> strips. Returns <c>null</c> on anything unparseable.
+        /// </summary>
+        public static Version? ParseFfmpegVersionLine(string? firstLine)
+        {
+            if (string.IsNullOrWhiteSpace(firstLine))
+                return null;
+
+            Match m = Regex.Match(firstLine, @"ffmpeg\s+version\s+[nNvV]?(?<ver>\d+(?:\.\d+){1,3})", RegexOptions.IgnoreCase);
+            if (!m.Success)
+                return null;
+
+            return Version.TryParse(m.Groups["ver"].Value, out Version? v) ? v : null;
         }
 
         /// <summary>True when the interval has elapsed since the last check (or it never ran).</summary>

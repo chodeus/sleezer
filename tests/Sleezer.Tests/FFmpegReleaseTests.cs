@@ -65,6 +65,25 @@ public class FFmpegReleaseTests
     public void ParseTag_returns_null_on_garbage(string? tag)
         => Assert.Null(FFmpegRelease.ParseTag(tag));
 
+    [Theory]
+    // chodeus/ffmpeg-static emits an n-prefixed build tag — the regression this guards.
+    [InlineData("ffmpeg version n8.1.1-... Copyright (c) 2000-2026 the FFmpeg developers", "8.1.1")]
+    [InlineData("ffmpeg version n8.1.1 Copyright (c) 2000-2026 the FFmpeg developers", "8.1.1")]
+    // Distro / other common forms still parse.
+    [InlineData("ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers", "6.1.1")]
+    [InlineData("ffmpeg version 8.1.1 Copyright", "8.1.1")]
+    [InlineData("ffmpeg version v8.1 Copyright", "8.1")]
+    public void ParseFfmpegVersionLine_parses_version(string firstLine, string expected)
+        => Assert.Equal(Version.Parse(expected), FFmpegRelease.ParseFfmpegVersionLine(firstLine));
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("ffmpeg version N-118491-gabc1234")] // git nightly, no dotted-numeric
+    [InlineData("not an ffmpeg version line")]
+    public void ParseFfmpegVersionLine_returns_null_on_unparseable(string? firstLine)
+        => Assert.Null(FFmpegRelease.ParseFfmpegVersionLine(firstLine));
+
     [Fact]
     public void ShouldCheck_true_when_never_checked()
         => Assert.True(FFmpegRelease.ShouldCheck(null, DateTimeOffset.UtcNow, TimeSpan.FromHours(24)));

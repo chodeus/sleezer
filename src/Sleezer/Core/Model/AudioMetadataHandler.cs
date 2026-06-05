@@ -808,17 +808,11 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
                     return null;
                 }
 
-                // First line: "ffmpeg version 6.1.1-3ubuntu5 Copyright ..."
+                // First line: "ffmpeg version 6.1.1-3ubuntu5 Copyright ..." (distro) or
+                // "ffmpeg version n8.1.1-... Copyright ..." (chodeus/ffmpeg-static — the build
+                // tag's leading 'n' must be stripped, same as FFmpegRelease.ParseTag).
                 string firstLine = (stdout ?? string.Empty).Split('\n', 2)[0];
-                System.Text.RegularExpressions.Match m = System.Text.RegularExpressions.Regex.Match(
-                    firstLine,
-                    @"ffmpeg\s+version\s+(?<ver>\d+(?:\.\d+){1,3})",
-                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                if (!m.Success)
-                    return null;
-                if (!Version.TryParse(m.Groups["ver"].Value, out Version? parsed))
-                    return null;
-                return parsed;
+                return FFmpegRelease.ParseFfmpegVersionLine(firstLine);
             }
             catch (Exception ex)
             {
