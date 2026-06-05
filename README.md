@@ -156,7 +156,7 @@ The Subsonic indexer/client is generic: any service that implements the [Subsoni
 
 #### FFmpeg binary
 
-Sleezer auto-downloads FFmpeg on first use if it can't find one, pulling the current static build from [`chodeus/ffmpeg-static`](https://github.com/chodeus/ffmpeg-static) (a verified mirror of the FFmpeg-project-recommended [BtbN builds](https://github.com/BtbN/FFmpeg-Builds)) into the configured FFmpeg directory. It then checks daily for a newer release and updates itself, so you stay on a current FFmpeg without manual steps. A newer FFmpeg already on the host PATH is always preferred over the downloaded copy, and you can still set the FFmpeg path explicitly in the settings panel. Downloads are SHA-256 verified before use. (No macOS build is published — on macOS, install FFmpeg via Homebrew and it'll be picked up from PATH.)
+Sleezer auto-downloads FFmpeg on first use if it can't find one, pulling the current static build from [`chodeus/ffmpeg-static`](https://github.com/chodeus/ffmpeg-static) (compiled fully-static from pinned upstream source, so it runs on both musl/Alpine and glibc Lidarr containers) into the configured FFmpeg directory. It then checks daily for a newer release and updates itself, so you stay on a current FFmpeg without manual steps. A newer FFmpeg already on the host PATH is always preferred over the downloaded copy, and you can still set the FFmpeg path explicitly in the settings panel. Downloads are SHA-256 verified before use. (No macOS build is published — on macOS, install FFmpeg via Homebrew and it'll be picked up from PATH.)
 
 ---
 
