@@ -114,7 +114,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
     {
         private static readonly FFmpegSettingsValidator Validator = new();
 
-        [FieldDefinition(0, Label = "FFmpeg Path", Type = FieldType.Path, Section = MetadataSectionType.Metadata, Placeholder = "/downloads/FFmpeg", HelpText = "Specify the path to the FFmpeg binary.", HelpTextWarning = "Conversion rules below run on EVERY track Lidarr imports, not just Sleezer's Deezer/Tidal/Slskd downloads. Torrent and Usenet imports will also be converted when this provider is enabled. The corrupt-scan and pre-import tagging pickers further down only affect the Sleezer downloaders you select.")]
+        [FieldDefinition(0, Label = "FFmpeg Path", Type = FieldType.Path, Section = MetadataSectionType.Metadata, Placeholder = "/downloads/FFmpeg", HelpText = "Directory where Sleezer keeps FFmpeg. If ffmpeg/ffprobe aren't found here, Sleezer auto-downloads them from chodeus/ffmpeg-static and keeps them updated (checked daily). A newer ffmpeg already on the host PATH is always preferred over the downloaded copy.", HelpTextWarning = "Conversion rules below run on EVERY track Lidarr imports, not just Sleezer's Deezer/Tidal/Slskd downloads. Torrent and Usenet imports will also be converted when this provider is enabled. The corrupt-scan and pre-import tagging pickers further down only affect the Sleezer downloaders you select.")]
         public string FFmpegPath { get; set; } = string.Empty;
 
         [FieldDefinition(1, Label = "Convert MP3", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Convert MP3 files. Applies to all imports (torrent/Usenet/plugin) when this provider is enabled.")]

@@ -325,6 +325,12 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
                 _logger.Debug(ex, "[post-process] Failed to read FFmpeg metadata settings");
             }
 
+            // Throttled (24h), best-effort auto-update of the cached ffmpeg from
+            // chodeus/ffmpeg-static. Fire-and-forget so it never blocks post-process;
+            // it no-ops when the path is unset or we've checked recently.
+            if (!string.IsNullOrWhiteSpace(configuredPath))
+                _ = FFmpegInstaller.EnsureUpToDateAsync(configuredPath, _logger, CancellationToken.None);
+
             if (string.Equals(configuredPath, _lastResolvedFfmpegPath, StringComparison.Ordinal))
                 return;
 
@@ -344,13 +350,13 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
 
                     // If the user has FFmpeg metadata configured but the binaries
                     // aren't actually present at that path (clean Lidarr container
-                    // installs are common), trigger the same Xabe.FFmpeg.Downloader
-                    // path that FFmpegSettings.OnSet uses. Bounded by InstallFFmpeg's
-                    // internal deadline so a stuck Xabe download can't park this
+                    // installs are common), download them from chodeus/ffmpeg-static
+                    // the same way FFmpegSettings' Test does. Bounded by InstallFFmpeg's
+                    // internal deadline so a stuck download can't park this
                     // post-process thread forever.
                     if (!AudioMetadataHandler.CheckFFmpegInstalled())
                     {
-                        _logger.Info("[post-process] FFmpeg binaries missing at {Path}; downloading via Xabe.FFmpeg.Downloader", configuredPath);
+                        _logger.Info("[post-process] FFmpeg binaries missing at {Path}; downloading from chodeus/ffmpeg-static", configuredPath);
                         try
                         {
                             AudioMetadataHandler.InstallFFmpeg(configuredPath).GetAwaiter().GetResult();

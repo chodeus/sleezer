@@ -34,7 +34,6 @@
 		     plugin types and the plugin is skipped with no UI error. -->
 		<PackageReference Include="System.Text.Json" Version="8.0.6" GeneratePathProperty="true" />
 		<PackageReference Include="Xabe.FFmpeg" Version="6.0.2" />
-		<PackageReference Include="Xabe.FFmpeg.Downloader" Version="6.0.2" />
 
 		<!-- From Deezer plugin -->
 		<PackageReference Include="AngleSharp" Version="1.4.0" />

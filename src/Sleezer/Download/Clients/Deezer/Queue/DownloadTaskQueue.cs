@@ -307,6 +307,12 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                 _logger.Debug(ex, "[post-process] Failed to read FFmpeg metadata settings");
             }
 
+            // Throttled (24h), best-effort auto-update of the cached ffmpeg from
+            // chodeus/ffmpeg-static. Fire-and-forget so it never blocks post-process;
+            // it no-ops when the path is unset or we've checked recently.
+            if (!string.IsNullOrWhiteSpace(configuredPath))
+                _ = FFmpegInstaller.EnsureUpToDateAsync(configuredPath, _logger, CancellationToken.None);
+
             // Re-resolve only when the configured path actually changes. Avoids
             // probing the filesystem on every post-process while still picking
             // up settings changes without requiring a Lidarr restart.

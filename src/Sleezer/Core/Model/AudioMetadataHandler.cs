@@ -7,7 +7,6 @@ using NzbDrone.Plugin.Sleezer.Core.PostProcessing;
 using NzbDrone.Plugin.Sleezer.Core.Records;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using Xabe.FFmpeg;
-using Xabe.FFmpeg.Downloader;
 // Aliased so `XabeFFmpeg` can't be shadowed by our local Metadata.FFmpeg namespace.
 using XabeFFmpeg = Xabe.FFmpeg.FFmpeg;
 
@@ -784,7 +783,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
             }
         }
 
-        private static Version? ProbeFfmpegVersion(string ffmpegPath)
+        internal static Version? ProbeFfmpegVersion(string ffmpegPath)
         {
             try
             {
@@ -870,12 +869,11 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
         public static void ResetFFmpegInstallationCheck() => _isFFmpegInstalled = null;
 
         /// <summary>
-        /// Default deadline applied to <see cref="InstallFFmpeg(string)"/> when callers don't
-        /// supply one. Xabe.FFmpeg.Downloader has no timeout itself; without a deadline a
-        /// stalled HTTPS connection or hung archive extraction blocks indefinitely on the
-        /// thread that called <c>.GetAwaiter().GetResult()</c> (Tidal post-process thread,
-        /// the FFmpeg metadata "Test" button save). 5 minutes is generous enough for a
-        /// real download on a slow connection but still recovers from a hang.
+        /// Default deadline applied to <see cref="InstallFFmpeg(string, CancellationToken)"/>
+        /// when callers don't supply one. Without a deadline a stalled HTTPS connection blocks
+        /// indefinitely on the thread that called <c>.GetAwaiter().GetResult()</c> (Tidal
+        /// post-process thread, the FFmpeg metadata "Test" button save). 5 minutes is generous
+        /// enough for a real download on a slow connection but still recovers from a hang.
         /// </summary>
         public static readonly TimeSpan DefaultInstallDeadline = TimeSpan.FromMinutes(5);
 
@@ -887,25 +885,26 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
             if (CheckFFmpegInstalled())
                 return;
 
-            // FFmpegDownloader.GetLatestVersion accepts no CancellationToken, so we
-            // race it against a Task.Delay deadline and bail loudly on timeout
-            // rather than blocking the caller forever.
+            // Pull the current ffmpeg/ffprobe from chodeus/ffmpeg-static. Bound the
+            // download with a deadline so a stalled connection can't park the caller
+            // (sync-over-async on the post-process thread / "Test" button) forever.
             using CancellationTokenSource deadline = ct.CanBeCanceled
                 ? CancellationTokenSource.CreateLinkedTokenSource(ct)
                 : new CancellationTokenSource();
             deadline.CancelAfter(DefaultInstallDeadline);
 
-            Task download = FFmpegDownloader.GetLatestVersion(FFmpegVersion.Official, path);
-            Task delay = Task.Delay(Timeout.Infinite, deadline.Token);
-            Task winner = await Task.WhenAny(download, delay).ConfigureAwait(false);
-            if (winner == delay)
+            try
+            {
+                await FFmpegInstaller.DownloadLatestAsync(path, deadline.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (deadline.IsCancellationRequested && !ct.IsCancellationRequested)
             {
                 throw new TimeoutException(
                     $"FFmpeg auto-install at {path} did not complete within {DefaultInstallDeadline.TotalMinutes:F0} min — bailing out so the caller is not blocked.");
             }
 
-            // Surface any download exception to the caller.
-            await download.ConfigureAwait(false);
+            // Re-probe so the resolver picks up the freshly installed binary.
+            ResetFFmpegInstallationCheck();
         }
     }
 }

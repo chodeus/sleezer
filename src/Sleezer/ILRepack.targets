@@ -6,7 +6,6 @@
 			<InputAssemblies Include="$(OutputPath)DownloadAssistant.dll" />
 			<InputAssemblies Include="$(OutputPath)Requests.dll" />
 			<InputAssemblies Include="$(OutputPath)Xabe.FFmpeg.dll" />
-			<InputAssemblies Include="$(OutputPath)Xabe.FFmpeg.Downloader.dll" />
 			<InputAssemblies Include="$(OutputPath)FuzzySharp.dll" />
 			<InputAssemblies Include="$(OutputPath)Microsoft.Extensions.Logging.Abstractions.dll" />
 			<InputAssemblies Include="$(OutputPath)Microsoft.Bcl.AsyncInterfaces.dll" />
