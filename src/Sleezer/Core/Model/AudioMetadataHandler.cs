@@ -246,6 +246,19 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
         }
 
         /// <summary>
+        /// Builds an FFmpeg conversion that maps only the primary audio stream
+        /// (<c>-map 0:a:0</c>). Explicit mapping stops FFmpeg 8.0 from auto-selecting
+        /// an attached cover-art / video stream, which otherwise breaks the conversion.
+        /// Cover art is preserved separately via TagLib re-embed, so dropping the
+        /// video stream here is intentional.
+        /// </summary>
+        private static IConversion CreateBaseAudioConversion(string inputPath, string outputPath) =>
+            XabeFFmpeg.Conversions.New()
+                .AddParameter($"-i \"{inputPath}\"")
+                .AddParameter("-map 0:a:0")
+                .SetOutput(outputPath);
+
+        /// <summary>
         /// Converts audio to the specified format with optional bitrate control.
         /// </summary>
         /// <param name="audioFormat">Target audio format</param>
@@ -281,7 +294,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
 
                 byte[]? preservedCoverArt = AlbumCover?.Length > 0 ? AlbumCover : await TryExtractCoverArtAsync();
 
-                IConversion conversion = await XabeFFmpeg.Conversions.FromSnippet.Convert(TrackPath, tempOutputPath);
+                IConversion conversion = CreateBaseAudioConversion(TrackPath, tempOutputPath);
 
                 foreach (string parameter in BaseConversionParameters[audioFormat])
                     conversion.AddParameter(parameter);
@@ -446,7 +459,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
                 if (File.Exists(tempOutputPath))
                     File.Delete(tempOutputPath);
 
-                IConversion conversion = await XabeFFmpeg.Conversions.FromSnippet.ExtractAudio(TrackPath, tempOutputPath);
+                IConversion conversion = CreateBaseAudioConversion(TrackPath, tempOutputPath);
                 foreach (string parameter in ExtractionParameters)
                     conversion.AddParameter(parameter);
 
