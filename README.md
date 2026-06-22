@@ -15,15 +15,16 @@ Credit where it's due: Sleezer is built on [Lidarr.Plugin.Deezer](https://github
 3. [Tidal Setup 🌊](#tidal-setup-)
 4. [Soulseek (Slskd) Setup 🐟](#soulseek-slskd-setup-)
 5. [Web Clients 📻](#web-clients-)
-5. [FFmpeg 🎛️](#ffmpeg-️)
-6. [Corrupt File Scan & Pre-Import Tagging 🧼](#corrupt-file-scan--pre-import-tagging-)
-7. [Queue Cleaner 🧹](#queue-cleaner-)
-8. [Search Sniper 🏹](#search-sniper-)
-9. [Custom Metadata Sources 🧩](#custom-metadata-sources-)
-10. [Similar Artists 🧷](#similar-artists-)
-11. [Troubleshooting 🛠️](#troubleshooting-)
-12. [Credits 🙌](#credits-)
-13. [License 📄](#license-)
+6. [FFmpeg 🎛️](#ffmpeg-️)
+7. [Corrupt File Scan & Pre-Import Tagging 🧼](#corrupt-file-scan--pre-import-tagging-)
+8. [Queue Cleaner 🧹](#queue-cleaner-)
+9. [Search Sniper 🏹](#search-sniper-)
+10. [Custom Metadata Sources 🧩](#custom-metadata-sources-)
+11. [Similar Artists 🧷](#similar-artists-)
+12. [Troubleshooting 🛠️](#troubleshooting-)
+13. [Credits 🙌](#credits-)
+14. [Contributing 🤝](#contributing-)
+15. [License 📄](#license-)
 
 ---
 
@@ -77,7 +78,11 @@ Sleezer talks to Tidal directly using a vendored fork of TrevTV's `TidalSharp` l
 5. Come back to the popup window and click *"I've Authorized"*. The popup closes automatically; the settings page populates the hidden token fields.
 6. Click **Save**.
 
-> Why the extra "I've Authorized" click? Tidal's device-code OAuth flow doesn't redirect back to Lidarr after you authorize — its "Device linked" page is the end of the road on Tidal's side. The intermediate popup acts as the bridge so Lidarr knows when you're done.
+<details>
+<summary>Why the extra "I've Authorized" click?</summary>
+
+Tidal's device-code OAuth flow doesn't redirect back to Lidarr after you authorize — its "Device linked" page is the end of the road on Tidal's side. The intermediate popup acts as the bridge so Lidarr knows when you're done.
+</details>
 
 #### Setting Up the Tidal Download Client
 
@@ -91,7 +96,12 @@ Sleezer talks to Tidal directly using a vendored fork of TrevTV's `TidalSharp` l
 
 * The post-processing pipeline (corrupt-file scan + pre-import tagging) runs on Tidal downloads, just like Deezer and Slskd.
 * If searches start returning errors that mention `countryCode parameter missing`, that's Tidal's confusing way of saying your session expired. Sleezer detects this and forces a refresh; if that fails, re-authenticate via the indexer settings.
-* If a Tidal download fails with `Tidal returned codec 'MP4A' ... despite a LOSSLESS request`, that's Tidal silently downgrading to AAC for tracks not licensed lossless in your region — common in AU/NZ/SE-Asia for older or remix-heavy catalogue. The grab is failed deliberately so Lidarr can re-pick another source (e.g. a slskd FLAC peer) instead of importing AAC into a Lossless quality bucket. Re-authenticating via a US VPN sometimes unlocks more lossless catalogue if the album genuinely is licensed lossless somewhere.
+* A Tidal download failing with `Tidal returned codec 'MP4A' ... despite a LOSSLESS request` is expected — the grab is failed deliberately so Lidarr re-picks another source instead of importing AAC into a Lossless bucket.
+  <details>
+  <summary>Why this happens / what to do</summary>
+
+  Tidal silently downgrades to AAC for tracks not licensed lossless in your region — common in AU/NZ/SE-Asia for older or remix-heavy catalogue. Sleezer fails the grab so Lidarr can re-pick another source (e.g. a slskd FLAC peer). Re-authenticating via a US VPN sometimes unlocks more lossless catalogue if the album genuinely is licensed lossless somewhere.
+  </details>
 * Various Artists, Soundtracks, and Cast Recordings are recognised explicitly so they actually return search hits.
 * Tidal music videos and Dolby Atmos tracks are not supported in this release.
 * Tidal does not expose a public RSS / new-release feed, so RSS sync is disabled at the indexer level.
@@ -125,21 +135,19 @@ Sleezer also ships a family of "web-client" indexers inherited from Tubifarry. T
 
 **Supported:**
 * **Lucida** — a multi-source music-downloading service.
-* **DABmusic** — a high-resolution audio streaming platform.
+* **DABMusic** — a high-resolution audio streaming platform.
 * **T2Tunes** — a music-downloading service backed by Amazon Music.
-* **Subsonic** — a music-streaming API standard with broad compatibility.
+* **SubSonic** — a music-streaming API standard with broad compatibility.
 
-The Subsonic indexer/client is generic: any service that implements the [Subsonic API](https://www.subsonic.org/pages/api.jsp) should plug in without modification.
+The SubSonic indexer/client is generic: any service that implements the [Subsonic API](https://www.subsonic.org/pages/api.jsp) should plug in without modification.
 
 ---
 
 ### FFmpeg 🎛️
 
-**FFmpeg** (the component formerly known as "Codec Tinker" in Tubifarry) converts imported audio files between formats. You can set default rules (e.g. "convert all WAV to FLAC", "convert AAC ≥ 256k to MP3 300k") or per-artist overrides. It also backs the corrupt-file scan and pre-import tagging described in the next section, so even users who never touch conversion still benefit from having it configured.
+**FFmpeg** (the component formerly known as "Codec Tinker" in Tubifarry) converts imported audio files between formats. You can set default rules (e.g. "convert all WAV to FLAC", "convert AAC ≥ 256k to MP3 320k") or per-artist overrides. It also backs the corrupt-file scan and pre-import tagging described in the next section, so even users who never touch conversion still benefit from having it configured.
 
 > ⚠️ **Scope note — FFmpeg conversion applies to every track Lidarr imports, not just Sleezer's downloads.** FFmpeg is registered as a Lidarr *Metadata Consumer*, which Lidarr invokes for every imported track regardless of source. Enable it and your torrent, Usenet, and manual imports will also be converted according to the rules you configure. If you only want Sleezer's Deezer/Tidal/Slskd downloads affected, leave the provider disabled — the corrupt-scan and pre-import tagger do **not** require it to be enabled for downloads to work.
-
-> Lossy formats (MP3, AAC) can't be converted up into lossless formats (FLAC, WAV). Quality that wasn't there can't be restored.
 
 #### How to Enable FFmpeg
 
@@ -147,12 +155,67 @@ The Subsonic indexer/client is generic: any service that implements the [Subsoni
 2. Open **FFmpeg** (the MetadataConsumer).
 3. Toggle the switch to enable.
 
-#### How to Use FFmpeg
+#### Conversion targets and bitrates
 
-1. **Default Conversion Settings** — pick your target format (FLAC, Opus, MP3, ALAC …).
-2. **Custom Conversion Rules** — strings like `wav -> flac`, `AAC>=256k -> MP3:300k`, or `all -> alac`.
-3. **Custom Conversion Rules On Artists** — tags like `opus-192` applied to every album of a specific artist.
-4. **Format toggles** — convert-MP3, convert-FLAC, etc., if you want the simple per-format toggles instead of rules.
+The **Default Conversion Settings** dropdown offers four targets: **AAC, MP3, Opus, FLAC**. Custom rules (below) can additionally target **ALAC, WAV, Vorbis/OGG, AIFF, AMR, WMA**.
+
+For lossy targets you may specify a bitrate in kbps. Out-of-range values are clamped to the format's min/max, then rounded to the nearest standard step (`32, 64, 96, 128, 160, 192, 256, 320, 384, 448, 510`):
+
+| Target | Default | Min | Max |
+|--------|--------:|----:|----:|
+| Opus   | 256 | 32 | 510 |
+| MP3    | 320 | 64 | 320 |
+| AAC    | 256 | 64 | 320 |
+| Vorbis | 224 | 64 | 500 |
+| WMA    | 192 | 48 | 320 |
+| AMR    | 12  | 5  | 12  |
+
+Encoding is VBR by default; append `:cbr` to force constant bitrate. Lossless targets (FLAC, ALAC, WAV, AIFF) take an optional **bit-depth** instead of a bitrate — `16`, `24`, or `32`.
+
+#### Custom Conversion Rules
+
+A two-column list. The **Key** is the file you want to match; the **Value** is what to turn it into. One row = one rule. (There's no arrow to type — Lidarr's `source -> target` hint just shows which column is which.)
+
+| Key — match these files | Value — convert them to | Result |
+|-------------------------|-------------------------|--------|
+| `wav` | `flac` | every WAV → FLAC |
+| `all` | `alac` | everything → ALAC |
+| `aac>=256` | `mp3:320` | AAC at 256k or higher → 320k MP3 |
+| `flac:24` | `flac:16` | 24-bit FLAC → 16-bit FLAC |
+| `lossy` | `opus:192:cbr` | any lossy file → 192k CBR Opus |
+
+**What you can put in the Key:**
+* A format — `flac`, `mp3`, `aac`, `wav`, … — or a group: `all`, `lossy`, `lossless`.
+* Optionally, a bitrate filter on a *single lossy format* — `mp3>=256`, `aac<128`, `opus=192`. Operators: `=  !=  <  <=  >  >=`. Groups (`all`/`lossy`/`lossless`) can't take a filter.
+
+**What you can put in the Value:**
+* A target format, optionally followed by a quality:
+  * lossy target → bitrate in kbps: `mp3:320`, `opus:192`
+  * lossless target → bit-depth `16`/`24`/`32`: `flac:24`
+* Add `:cbr` to a lossy target to force constant bitrate: `opus:192:cbr`.
+
+**No-upscaling rules.** Sleezer skips any rule that would fake quality the source doesn't have. There are three separate checks:
+
+| Check | Blocked example | Allowed example |
+|-------|-----------------|-----------------|
+| **Lossy → lossless** — a lossy file already threw data away, so re-wrapping it as FLAC/WAV/ALAC just wastes space | `mp3` → `flac` | `mp3` → `aac:256` (lossy → lossy) |
+| **Bitrate upscaling** — *lossy → lossy only*; the target bitrate can't be higher than the source's | `aac<128` → `mp3:256` | `aac>=256` → `mp3:192` (same or lower) |
+| **Bit-depth upscaling** — *lossless → lossless only*; the target bit-depth can't be higher than the source's | `flac:16` → `flac:24` | `flac:24` → `flac:16` (same or lower) |
+
+The bitrate check **only** compares a lossy source against a lossy target. A lossless source (FLAC, WAV, ALAC) has no bitrate to exceed, so converting it to a lossy format is allowed at **any** bitrate the target supports — e.g. **FLAC → Opus** accepts the full 32–510k range.
+
+#### Per-artist tags
+
+Add a Lidarr **Tag** to an artist to override the rules above for everything by that artist:
+
+* `opus-192`, `flac`, `mp3-320` — format with an optional `-bitrate`.
+* `no-conversion` — disable conversion for that artist entirely.
+
+Artist tags take precedence over Custom Conversion Rules.
+
+#### Per-format toggles
+
+If you'd rather not write rules, the **convert-MP3 / convert-AAC / convert-FLAC / convert-WAV / convert-Opus / convert-Other** checkboxes simply convert any incoming file of that format to the **Default Conversion Settings** target. They only apply when no custom rule and no artist tag already matched the track.
 
 #### FFmpeg binary
 
@@ -162,7 +225,7 @@ Sleezer auto-downloads FFmpeg on first use if it can't find one, pulling the cur
 
 ### Corrupt File Scan & Pre-Import Tagging 🧼
 
-These two features live under FFmpeg's settings because they depend on the bundled FFmpeg binary. Both are scoped to **Sleezer's own downloaders only** — Deezer, Tidal, and Slskd. The web clients (Lucida, SubSonic, TripleTriple, DABMusic) currently share a lighter download path that doesn't invoke them, and Lidarr's native torrent/Usenet clients are untouched. Only the FFmpeg *conversion* provider (previous section) runs on imports from every source.
+These two features live under FFmpeg's settings because they depend on the bundled FFmpeg binary. Both are scoped to **Sleezer's own downloaders only** — Deezer, Tidal, and Slskd. The web clients (Lucida, SubSonic, T2Tunes, DABMusic) currently share a lighter download path that doesn't invoke them, and Lidarr's native torrent/Usenet clients are untouched. Only the FFmpeg *conversion* provider (previous section) runs on imports from every source.
 
 Each feature is opt-in via a chip-style picker: pick which Sleezer downloaders should get the treatment. An empty picker means the feature is off entirely. **Both pickers default empty** — nothing runs until you opt in.
 
