@@ -1,11 +1,11 @@
 name: CI
 
-# Build + test + smoke-load gate on every PR and on pushes to the mainline.
-# build.yml only runs on tag pushes, so before this workflow no dotnet build,
-# dotnet test, or smoke-load ran on ordinary code / dependency changes — they
-# only failed later at release time. This mirrors the compile + smoke-load from
-# build.yml (minus packaging/publishing) and adds the unit-test project, which
-# is deliberately outside Sleezer.sln and so is run explicitly.
+# Build + test gate on every PR and on pushes to the mainline.
+# build.yml only runs on tag pushes, so before this workflow no dotnet build or
+# dotnet test ran on ordinary code / dependency changes — they only failed later
+# at release time. Smoke-load stays release-time (it needs the packaging build
+# that produces _plugins/*/Sleezer); this gate compiles the solution and runs the
+# unit-test project, which is deliberately outside Sleezer.sln and so run explicitly.
 
 on:
   pull_request:
@@ -69,31 +69,3 @@ jobs:
           # + DeezNET into the plugin build graph), so run the project directly.
           dotnet test tests/${PLUGIN_NAME}.Tests/${PLUGIN_NAME}.Tests.csproj \
             -c Release -p:NuGetAudit=false
-
-      - name: Smoke-load plugin
-        run: |
-          set -euo pipefail
-          # Mirrors build.yml's smoke-load: verify the built plugin loads into a
-          # Lidarr-shaped AssemblyLoadContext, catching BCL/transitive-dep
-          # mismatches that make the plugin silently vanish from the UI.
-          PLUGIN_OUTPUT_DIR=$(find . -type d -path "*/_plugins/*/${PLUGIN_NAME}" | head -n1)
-          if [ -z "$PLUGIN_OUTPUT_DIR" ]; then
-            echo "::error::Plugin output directory not found under */_plugins/*/${PLUGIN_NAME}"
-            exit 1
-          fi
-
-          PLUGIN_DLL=$(find "$PLUGIN_OUTPUT_DIR" -name "Lidarr.Plugin.${PLUGIN_NAME}.dll" | head -n1)
-          if [ -z "$PLUGIN_DLL" ]; then
-            echo "::error::Plugin DLL not found under $PLUGIN_OUTPUT_DIR"
-            exit 1
-          fi
-
-          HOST_DIR="$GITHUB_WORKSPACE/ext/Lidarr/_output/net8.0"
-          if [ ! -d "$HOST_DIR" ]; then
-            echo "::error::Lidarr host runtime dir not found at $HOST_DIR"
-            exit 1
-          fi
-
-          # Built outside the plugin solution so it doesn't drag in the submodule.
-          dotnet build tools/SmokeLoad/SmokeLoad.csproj -c Release -p:NuGetAudit=false --nologo
-          dotnet run --project tools/SmokeLoad/SmokeLoad.csproj -c Release --no-build -- "$PLUGIN_DLL" "$HOST_DIR"
