@@ -368,8 +368,14 @@ public static partial class LucidaMetadataExtractor
     {
         try
         {
+            // jsonArray is interpolated from remote-scraped Lucida HTML. Bound
+            // recursion (prevents an uncatchable StackOverflow crash) and
+            // statements alongside the existing time/memory limits so a hostile
+            // payload stays a bounded DoS; no CLR interop is enabled.
             Engine engine = new(opts => opts
+                .LimitRecursion(64)
                 .TimeoutInterval(TimeSpan.FromSeconds(5))
+                .MaxStatements(1_000_000)
                 .LimitMemory(50_000_000));
 
             engine.Execute($@"

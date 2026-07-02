@@ -96,11 +96,20 @@ public class SlskdDownloadItem
         }
     }
 
-    public OsPath GetFullFolderPath(OsPath downloadPath) => new(Path.Combine(
-        downloadPath.FullPath,
-        SlskdDownloadDirectory?.Directory
+    public OsPath GetFullFolderPath(OsPath downloadPath)
+    {
+        string leaf = SlskdDownloadDirectory?.Directory
             .Replace('\\', '/')
             .TrimEnd('/')
             .Split('/')
-            .LastOrDefault() ?? ""));
+            .LastOrDefault() ?? "";
+
+        // A peer-advertised directory like "album/.." reduces to a ".." leaf and
+        // Path.Combine(root, "..") escapes the download root. Refuse relative
+        // segments — fall back to the bare root, which the delete guards reject.
+        if (leaf is ".." or ".")
+            leaf = "";
+
+        return new OsPath(Path.Combine(downloadPath.FullPath, leaf));
+    }
 }

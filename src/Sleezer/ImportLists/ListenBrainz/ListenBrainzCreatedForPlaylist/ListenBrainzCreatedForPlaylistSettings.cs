@@ -35,7 +35,7 @@ namespace NzbDrone.Plugin.Sleezer.ImportLists.ListenBrainz.ListenBrainzCreatedFo
         [FieldDefinition(0, Label = "ListenBrainz Username", HelpText = "The ListenBrainz username to fetch playlists from", Placeholder = "username")]
         public string UserName { get; set; } = string.Empty;
 
-        [FieldDefinition(1, Label = "User Token", Type = FieldType.Password, HelpText = "Optional ListenBrainz user token for authenticated requests (higher rate limits)", Advanced = true)]
+        [FieldDefinition(1, Label = "User Token", Type = FieldType.Password, Privacy = PrivacyLevel.Password, HelpText = "Optional ListenBrainz user token for authenticated requests (higher rate limits)", Advanced = true)]
         public string UserToken { get; set; } = string.Empty;
 
         [FieldDefinition(2, Label = "Playlist Type", Type = FieldType.Select, SelectOptions = typeof(ListenBrainzPlaylistType), HelpText = "Type of created-for playlist to fetch")]

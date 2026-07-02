@@ -273,13 +273,14 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             .TrimEnd('/', '\\');
         string folder = clientItem.OutputPath.FullPath.TrimEnd('/', '\\');
 
-        // Safety: if OutputPath collapses to the remapped download root (happens
-        // when the item was never populated with a SlskdDownloadDirectory, so
-        // GetFullFolderPath returned the bare root), refuse - we'd wipe every
-        // other download.
-        if (string.Equals(folder, localRoot, StringComparison.OrdinalIgnoreCase))
+        // Safety: only delete a folder that canonicalizes to a strict descendant
+        // of the remapped download root. This refuses both the bare root (a
+        // never-populated SlskdDownloadDirectory reduces GetFullFolderPath to the
+        // root) and any peer-controlled '..' traversal that resolves outside it.
+        // Fail closed - if we can't prove containment, we don't delete.
+        if (!IsStrictDescendantOfRoot(folder, localRoot))
         {
-            _logger.Warn("[{Title}] OutputPath resolves to the download root, refusing to delete", clientItem.Title);
+            _logger.Warn("[{Title}] OutputPath '{Folder}' is not inside the download root '{Root}', refusing to delete", clientItem.Title, folder, localRoot);
             return;
         }
 
@@ -303,6 +304,32 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         catch (Exception ex)
         {
             _logger.Warn(ex, "[{Title}] Failed to delete output folder '{Folder}'", clientItem.Title, folder);
+        }
+    }
+
+    /// <summary>
+    /// True only when <paramref name="candidate"/> canonicalizes to a strict
+    /// descendant of <paramref name="root"/> (never equal to it). Both paths are
+    /// resolved with Path.GetFullPath so any '..' segments are collapsed before
+    /// the containment test, defeating peer-controlled directory traversal. Any
+    /// resolution failure returns false (fail closed - never delete).
+    /// </summary>
+    private bool IsStrictDescendantOfRoot(string candidate, string root)
+    {
+        try
+        {
+            string fullRoot = Path.GetFullPath(root)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            string fullCandidate = Path.GetFullPath(candidate);
+
+            string rootWithSep = fullRoot + Path.DirectorySeparatorChar;
+            return fullCandidate.Length > rootWithSep.Length
+                && fullCandidate.StartsWith(rootWithSep, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex)
+        {
+            _logger.Warn(ex, "Path containment check failed for '{Candidate}' under '{Root}'; refusing to delete", candidate, root);
+            return false;
         }
     }
 
@@ -757,6 +784,21 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             string localPath = _remotePathMappingService
                 .RemapRemoteToLocal(settings.Host, new OsPath(Path.Combine(settings.DownloadPath, directoryPath)))
                 .FullPath;
+
+            // directoryPath is peer-controlled (slskd's advertised directory name)
+            // and can carry '..' traversal. Refuse unless the resolved localPath is
+            // a strict descendant of the remapped download root - otherwise a
+            // crafted directory ('../../etc') would recursively delete outside it.
+            string localRoot = _remotePathMappingService
+                .RemapRemoteToLocal(settings.Host, new OsPath(settings.DownloadPath))
+                .FullPath
+                .TrimEnd('/', '\\');
+
+            if (!IsStrictDescendantOfRoot(localPath, localRoot))
+            {
+                _logger.Warn("Refusing stale-directory cleanup: '{Path}' is not inside the download root '{Root}'", localPath, localRoot);
+                return;
+            }
 
             await Task.Delay(1000);
 

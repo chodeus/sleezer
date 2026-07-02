@@ -20,7 +20,7 @@ namespace NzbDrone.Core.Indexers.Deezer
 
         private string _arl = "";
 
-        [FieldDefinition(0, Label = "Arl", Type = FieldType.Textbox, HelpText = "The ARL cookie value from a premium/HI-FI Deezer account. Since March 2025 free accounts cannot download.")]
+        [FieldDefinition(0, Label = "Arl", Type = FieldType.Password, Privacy = PrivacyLevel.ApiKey, HelpText = "The ARL cookie value from a premium/HI-FI Deezer account. Since March 2025 free accounts cannot download.")]
         public string Arl
         {
             get => _arl;

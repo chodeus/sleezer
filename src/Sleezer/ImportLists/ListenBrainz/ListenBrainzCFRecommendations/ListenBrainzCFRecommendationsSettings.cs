@@ -40,7 +40,7 @@ namespace NzbDrone.Plugin.Sleezer.ImportLists.ListenBrainz.ListenBrainzCFRecomme
         [FieldDefinition(0, Label = "ListenBrainz Username", HelpText = "The ListenBrainz username to fetch recording recommendations for", Placeholder = "username")]
         public string UserName { get; set; } = string.Empty;
 
-        [FieldDefinition(1, Label = "User Token", Type = FieldType.Password, HelpText = "Optional ListenBrainz user token for authenticated requests (higher rate limits)", Advanced = true)]
+        [FieldDefinition(1, Label = "User Token", Type = FieldType.Password, Privacy = PrivacyLevel.Password, HelpText = "Optional ListenBrainz user token for authenticated requests (higher rate limits)", Advanced = true)]
         public string UserToken { get; set; } = string.Empty;
 
         [FieldDefinition(2, Label = "Count", Type = FieldType.Number, HelpText = "Number of recording recommendations to fetch (1-100)")]

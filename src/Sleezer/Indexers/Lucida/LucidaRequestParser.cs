@@ -92,7 +92,14 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Lucida
 
         private static (List<LucidaAlbum>? Albums, List<LucidaTrack>? Tracks) ExtractWithJintToRecords(string jsData)
         {
-            Engine engine = new();
+            // Constrain the engine: jsData is interpolated from remote-scraped
+            // Lucida HTML, so bound recursion/statements/time/memory to keep a
+            // hostile payload to a bounded DoS (there is no CLR interop enabled).
+            Engine engine = new(opts => opts
+                .LimitRecursion(64)
+                .TimeoutInterval(TimeSpan.FromSeconds(5))
+                .MaxStatements(1_000_000)
+                .LimitMemory(50_000_000));
             engine.Execute($@"
                     var data = {jsData};
 
