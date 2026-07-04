@@ -287,9 +287,12 @@ jobs:
         run: |
           set -euo pipefail
           # Audit the plugin's OWN direct dependencies before release — the surface we
-          # control. --no-restore reuses the build's restore so the vendored Lidarr tree
-          # is not re-audited. Blocks the release on any CVE in the plugin's own deps.
-          audit=$(dotnet list src/${PLUGIN_NAME}/${PLUGIN_NAME}.csproj package --vulnerable --no-restore 2>&1) || true
+          # control. `dotnet list package` auto-restores on SDK 9+ (which would re-audit
+          # the vendored Lidarr tree), so pass --no-restore there; SDK 8 has no such flag
+          # and reads the Build step's assets directly. Blocks release on any CVE.
+          help=$(dotnet list package --help 2>/dev/null || true)
+          nr=""; case "$help" in *--no-restore*) nr="--no-restore";; esac
+          audit=$(dotnet list src/${PLUGIN_NAME}/${PLUGIN_NAME}.csproj package --vulnerable $nr 2>&1) || true
           echo "$audit"
           if printf '%s' "$audit" | grep -q 'has the following vulnerable'; then
             echo "::error::${PLUGIN_NAME}'s own direct dependencies have a known vulnerability — bump them (see list above)."
