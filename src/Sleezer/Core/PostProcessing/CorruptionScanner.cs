@@ -103,12 +103,22 @@ public class CorruptionScanner : ICorruptionScanner
             // when the decoder skips a bad frame in a way that doesn't propagate to the
             // transcode loop. With `-v error` any output on stderr is by definition an
             // error-level message \u2014 treat that as corruption regardless of exit code.
-            if (!string.IsNullOrWhiteSpace(stderr))
+            // ID3v2 tag-parse errors (bad BOM, unreadable comment/lyrics frame) are
+            // logged at error level on older ffmpeg (4.x-6.x) but the demuxer recovers
+            // by skipping the tag - a malformed metadata frame is not audio corruption,
+            // so treating it as corrupt (delete folder + blocklist + re-search) is a
+            // false positive. Strip that noise first; any real decoder error left over
+            // still trips the check and fails closed.
+            string significant = FfmpegErrorFormatter.StripBenignMetadataNoise(stderr);
+            if (!string.IsNullOrWhiteSpace(significant))
             {
-                string reason = FfmpegErrorFormatter.CleanFfmpegErrors(stderr);
+                string reason = FfmpegErrorFormatter.CleanFfmpegErrors(significant);
                 _logger.Debug("Corruption scan {Path}: ffmpeg exited 0 but emitted error-level output \u2014 {Reason}", path, reason);
                 return new Result(true, reason);
             }
+
+            if (!string.IsNullOrWhiteSpace(stderr))
+                _logger.Trace("Corruption scan {Path}: ignored benign ID3 tag-parse noise (malformed metadata tag, audio decoded clean)", path);
 
             _logger.Debug("Corruption scan {Path}: ok in {ElapsedMs}ms", path, sw.ElapsedMilliseconds);
             return new Result(false, null);
