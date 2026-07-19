@@ -1,0 +1,94 @@
+# .coderabbit.yaml — CodeRabbit review config for chodeus/sleezer (Lidarr plugin, C#/.NET 8)
+language: "en-US"
+
+reviews:
+  profile: "chill"
+  request_changes_workflow: false
+  auto_review:
+    enabled: true
+    drafts: false
+    # Single branch: main is the default branch and is always auto-reviewed.
+    # No non-default base branches, so base_branches is intentionally omitted.
+
+  # Exclude vendored/generated/binary trees so review focuses on real plugin source.
+  path_filters:
+    - "!ext/**"          # vendored Lidarr git submodule (.gitmodules) — not our code
+    - "!_plugins/**"     # packaged plugin output (DLL/PDB), no .cs source
+    - "!_tests/**"       # test/runtime output + localization DLLs, no .cs source
+    - "!_temp/**"        # MSBuild obj/bin intermediate cache
+    - "!tools/**"        # SmokeLoad harness, not shipped plugin logic
+    - "!docs/**"         # static GitHub Pages assets (auth-bridge.html etc.)
+    - "!**/bin/**"
+    - "!**/obj/**"
+    - "!**/*.dll"
+    - "!**/*.pdb"
+    - "!**/*.png"
+    - "!**/*.jpg"
+    - "!**/*.db"
+
+  path_instructions:
+    - path: "src/Sleezer/**/*.cs"
+      instructions: |
+        This is the plugin's real C# source (a Lidarr plugin: Deezer/Tidal/Soulseek
+        indexers, downloaders, TidalSharp, metadata proxy, FFmpeg conversion,
+        notifications). StyleCop already enforces formatting/ordering/naming/whitespace
+        in CI — do NOT report style, using-directive ordering, doc-comment, or layout
+        nits. Review ONLY logic, correctness, and security:
+
+        - Fail closed. Any guard on an auth / credential / permission / config-load path
+          (ARL, Tidal OAuth access/refresh, slskd API key, session/token refresh, token
+          expiry, settings load) must DENY or throw on error or missing config — never
+          return null/empty/false-as-allow or silently continue. Flag
+          `if (config != null && !Allowed()) deny;` shapes that skip the check when
+          config is null. An empty allow/keep/in-use set produced by a FAILED read must
+          be treated as "deny", not "permit everything".
+        - Null-safety (Nullable is enabled): flag likely null-dereference, the `!`
+          null-forgiving operator used to silence a real null, and members returning null
+          where callers assume non-null.
+        - Async/cancellation: propagate CancellationToken through async chains (HTTP,
+          download, FFmpeg, scheduled tasks); flag async-void (except event handlers),
+          fire-and-forget Tasks, and `.Result` / `.Wait()` / `.GetAwaiter().GetResult()`
+          sync-over-async deadlock risks.
+        - IDisposable/using: HttpClient/streams/FileStream/Process/CancellationTokenSource
+          must be disposed (using / await using); flag leaks and flag disposing a shared
+          or injected instance the code does not own.
+        - Exception handling must not swallow: empty `catch {}`,
+          `catch (Exception) { return null; }` on a path whose caller cannot distinguish
+          failure from a legitimate empty result, and catching then discarding the
+          original exception. Distinguish a genuine not-found (cacheable) from a transient
+          network / 5xx / timeout / rate-limit failure — never cache or persist a
+          transient failure as a negative/empty result.
+        - 0 and "" are legitimate values: do NOT treat default(T), 0, "", or an empty
+          collection as "unset/absent". Use explicit null checks, not truthiness; a real
+          0 (track number, bitrate, byte size) or "" must not be coerced to "missing".
+        - Secrets: never put a long-lived token (ARL, Tidal OAuth token, API key) in a
+          URL, query string, log line, or exception message. Redact credentials on EVERY
+          log/serialize/diagnostic path, not just one; ensure a token is not captured in
+          an HttpClient exception's request URI that later gets logged.
+        - Comments: navigational/gotcha only (1-2 lines, non-obvious why), matching
+          existing density — flag added narrative/history essays.
+
+    - path: "tests/Sleezer.Tests/**/*.cs"
+      instructions: |
+        Unit tests. Review for: whether each assertion actually verifies the claimed
+        behavior; tests weakened to pass (guards removed, over-broad matchers, swallowed
+        exceptions); async tests that are not awaited; and shared mutable state leaking
+        between cases. Ignore StyleCop-style nits.
+
+    - path: "**/*.{csproj,props}"
+      instructions: |
+        Dependency / CVE hygiene. The plugin's OWN direct dependencies must stay
+        auditable — CI runs `dotnet list package --vulnerable` against
+        src/Sleezer/Sleezer.csproj before release. Do NOT add anything that disables
+        auditing of the plugin's own project: no `<NuGetAudit>false</NuGetAudit>`, no
+        `<NuGetAuditMode>` narrowing that hides direct-dependency advisories, and no
+        removal of the vulnerable-package audit. The solution-level `-p:NuGetAudit=false`
+        in the CI workflow is a deliberate, documented workaround for the vendored Lidarr
+        submodule's unfixable transitive advisories — that existing usage is fine; flag
+        NEW suppressions, especially any moved into the plugin's csproj/props. Also flag
+        PackageReference version bumps into a known-vulnerable release and pins that a
+        live CVE audit (OSV/GHSA) would flag.
+
+  tools:
+    gitleaks:
+      enabled: true
