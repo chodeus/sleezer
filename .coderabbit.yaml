@@ -17,7 +17,7 @@ reviews:
     - "!_tests/**"       # test/runtime output + localization DLLs, no .cs source
     - "!_temp/**"        # MSBuild obj/bin intermediate cache
     - "!tools/**"        # SmokeLoad harness, not shipped plugin logic
-    - "!docs/**"         # static GitHub Pages assets (auth-bridge.html etc.)
+    - "!docs/**/*.{png,jpg,jpeg,gif,svg,css}"  # docs static assets only — keep auth-bridge.html/js reviewable (it's a live OAuth token bridge)
     - "!**/bin/**"
     - "!**/obj/**"
     - "!**/*.dll"
@@ -88,6 +88,14 @@ reviews:
         NEW suppressions, especially any moved into the plugin's csproj/props. Also flag
         PackageReference version bumps into a known-vulnerable release and pins that a
         live CVE audit (OSV/GHSA) would flag.
+
+    - path: "docs/**/*.{html,js}"
+      instructions: |
+        Client-side OAuth token bridge (auth-bridge.html) for the Deezer/Tidal auth
+        flow. Review for: the redirect-target allowlist must stay strict (only the
+        Lidarr /oauth.html callback path; reject any other pathname) — a weakened
+        allowlist reopens open-redirect / token phishing. Tokens/OAuth codes must not
+        be logged, persisted beyond need, or leaked via a URL a referrer would expose.
 
   tools:
     gitleaks:
