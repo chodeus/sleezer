@@ -6,6 +6,10 @@ name: CI
 # at release time. Smoke-load stays release-time (it needs the packaging build
 # that produces _plugins/*/Sleezer); this gate compiles the solution and runs the
 # unit-test project, which is deliberately outside Sleezer.sln and so run explicitly.
+#
+# dependency-audit re-runs the vulnerability check on a weekly schedule (and on
+# demand) too, independent of build-test — so a newly-disclosed advisory against
+# an already-merged dependency is caught between PRs, not just at the next one.
 
 on:
   pull_request:
@@ -13,6 +17,9 @@ on:
     branches:
       - main
       - master
+  schedule:
+    - cron: '46 6 * * 1'
+  workflow_dispatch: {}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -29,6 +36,9 @@ env:
 
 jobs:
   build-test:
+    # Full build+test stays PR/push-only; the schedule/workflow_dispatch triggers
+    # above exist for dependency-audit, not to re-run the whole build weekly.
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout with submodules
@@ -60,9 +70,52 @@ jobs:
           # NuGetAudit=false: the vendored Lidarr submodule drags in transitive
           # advisories the plugin can't fix (MailKit/MimeKit email, System.Private.Uri
           # 4.3.0 superseded on net8) and Lidarr treats audit warnings as errors. The
-          # plugin's OWN direct deps are audited in the next step instead.
+          # plugin's OWN direct deps are audited by the dependency-audit job instead.
           dotnet restore ./*.sln -p:NuGetAudit=false
           dotnet build ./*.sln -c Release -p:NuGetAudit=false -p:CI="true" -v:n
+
+      - name: Run tests
+        run: |
+          set -euo pipefail
+          # Tests are intentionally excluded from Sleezer.sln (would drag ILRepack
+          # + DeezNET into the plugin build graph), so run the project directly.
+          dotnet test tests/${PLUGIN_NAME}.Tests/${PLUGIN_NAME}.Tests.csproj \
+            -c Release -p:NuGetAudit=false
+
+  dependency-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout with submodules
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          submodules: 'recursive'
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Cache NuGet packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Pin SDK via global.json
+        run: |
+          echo '{"sdk":{"version": "${{ env.DOTNET_VERSION }}"}}' > ./global.json
+
+      - name: Restore
+        run: |
+          set -euo pipefail
+          # Same NuGetAudit=false rationale as build-test: the vendored Lidarr
+          # submodule drags in transitive advisories the plugin can't fix
+          # (MailKit/MimeKit email, System.Private.Uri 4.3.0 superseded on net8).
+          # This job audits the plugin's OWN direct dependencies only, below.
+          dotnet restore ./*.sln -p:NuGetAudit=false
 
       - name: Audit plugin dependencies
         run: |
@@ -70,7 +123,13 @@ jobs:
           # Audit the plugin's OWN direct dependencies — the surface we control (Jint,
           # System.Text.Json, SkiaSharp, DeezNET, …). `dotnet list package` auto-restores
           # on SDK 9+ (which would re-audit the vendored Lidarr tree), so pass --no-restore
-          # there; SDK 8 has no such flag and reads the Build step's assets directly.
+          # there; SDK 8 has no such flag and reads the Restore step's assets directly.
+          #
+          # Deliberately NOT --include-transitive: Sleezer.csproj project-references
+          # the vendored ext/Lidarr submodule (Lidarr.Common/.Core/.Http), so a
+          # transitive scan would resurface the same unfixable advisories that
+          # NuGetAudit=false is suppressing in the restore above, defeating the
+          # point of scoping this audit to dependencies we actually control.
           help=$(dotnet list package --help 2>/dev/null || true)
           nr=""; case "$help" in *--no-restore*) nr="--no-restore";; esac
           audit=$(dotnet list src/${PLUGIN_NAME}/${PLUGIN_NAME}.csproj package --vulnerable $nr 2>&1) || true
@@ -83,11 +142,3 @@ jobs:
             exit 1
           fi
           echo "Plugin direct dependencies: no known vulnerabilities."
-
-      - name: Run tests
-        run: |
-          set -euo pipefail
-          # Tests are intentionally excluded from Sleezer.sln (would drag ILRepack
-          # + DeezNET into the plugin build graph), so run the project directly.
-          dotnet test tests/${PLUGIN_NAME}.Tests/${PLUGIN_NAME}.Tests.csproj \
-            -c Release -p:NuGetAudit=false
