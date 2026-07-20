@@ -20,6 +20,12 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <!-- Same version as Sleezer.csproj — SlskdItemsParser fuzzy matching. -->
+    <PackageReference Include="FuzzySharp" Version="2.0.2" />
+    <!-- NzbDroneLogger's static initializer needs this at runtime (same version
+         as Lidarr.Common); without it any type that logs via NzbDroneLogger
+         throws TypeInitializationException under the test host. -->
+    <PackageReference Include="NLog.Layouts.ClefJsonLayout" Version="1.0.4" />
   </ItemGroup>
 
   <ItemGroup>
@@ -55,6 +61,33 @@
     <Compile Include="..\..\src\Sleezer\TidalSharp\LosslessGuard.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\TidalSharp\Data\Quality.cs"
+             LinkBase="SourceUnderTest" />
+    <!-- Slskd search/matching units (2026-07 audit fixes) and their deps. -->
+    <Compile Include="..\..\src\Sleezer\Indexers\DownloadProtocols.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Indexers\Soulseek\SlskdTextProcessor.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Indexers\Soulseek\SlskdItemsParser.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Indexers\Soulseek\ISlskdItemsParser.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Indexers\Soulseek\SlskdSettings.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Indexers\Soulseek\Search\Core\SearchContext.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Indexers\Soulseek\Search\Templates\TemplateEngine.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Indexers\Soulseek\Search\Transformers\QueryNormalizer.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Indexers\Soulseek\Search\Transformers\QueryBuilder.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Core\Model\AlbumData.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Core\Model\ShareInfo.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Download\Clients\Soulseek\Models\SlskdDownloadItem.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Download\Clients\Soulseek\Models\SlskdDownloadDirectory.cs"
              LinkBase="SourceUnderTest" />
   </ItemGroup>
 

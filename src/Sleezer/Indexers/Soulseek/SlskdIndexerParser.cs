@@ -87,7 +87,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
                     IEnumerable<SlskdFileData> filteredFiles = SlskdFileData.GetFilteredFiles(response.Files, Settings.OnlyAudioFiles, Settings.IncludeFileExtensions);
 
-                    foreach (IGrouping<string, SlskdFileData> directoryGroup in filteredFiles.GroupBy(f => SlskdTextProcessor.GetDirectoryFromFilename(f.Filename)))
+                    foreach (IGrouping<string, SlskdFileData> directoryGroup in filteredFiles.GroupBy(f => SlskdTextProcessor.GetMergedDirectoryKey(f.Filename)))
                     {
                         if (string.IsNullOrEmpty(directoryGroup.Key))
                             continue;
@@ -132,7 +132,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                             }
                         }
 
-                        AlbumData albumData = _itemsParser.CreateAlbumData(searchResponse.Id, finalGroup, searchTextData, folderData, Settings, searchTextData.MinimumFiles);
+                        AlbumData albumData = _itemsParser.CreateAlbumData(searchResponse.Id, finalGroup, searchTextData, folderData, Settings, searchTextData.TrackCount);
                         albumDatas.Add(albumData);
                     }
                 }
@@ -147,7 +147,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 _logger.Error(ex, "Failed to parse Slskd search response.");
             }
 
-            return albumDatas.OrderByDescending(x => x.Priotity).Select(a => a.ToReleaseInfo()).ToList();
+            return albumDatas.OrderByDescending(x => x.Priotity).Select(a => (ReleaseInfo)a.ToShareInfo()).ToList();
         }
 
         private IGrouping<string, SlskdFileData>? TryExpandDirectory(SlskdSearchData searchTextData, IGrouping<string, SlskdFileData> directoryGroup, SlskdFolderData folderData)

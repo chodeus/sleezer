@@ -11,7 +11,6 @@ public static partial class QueryBuilder
         "being", "have", "has", "had", "do", "does", "did", "from", "into"
     };
 
-    private const int MinWordLengthForTrim = 4;
     private const int MinAlbumLengthForPartial = 15;
     private const int MinSignificantWordsForPartial = 2;
 
@@ -54,18 +53,24 @@ public static partial class QueryBuilder
         return text;
     }
 
-    public static string BuildTrimmed(string? text)
+    /// <summary>
+    /// Removes bracketed and dash-appended edition/remix/remaster tails from an
+    /// album title ("Album (Deluxe Edition)" → "Album"). Returns null when
+    /// nothing was stripped or nothing usable remains.
+    /// </summary>
+    public static string? StripEditionSuffixes(string? album)
     {
-        if (string.IsNullOrWhiteSpace(text))
-            return string.Empty;
+        if (string.IsNullOrWhiteSpace(album))
+            return null;
 
-        string[] words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        for (int i = 0; i < words.Length; i++)
-        {
-            if (words[i].Length >= MinWordLengthForTrim && !StopWords.Contains(words[i]))
-                words[i] = words[i][..^1];
-        }
-        return string.Join(" ", words);
+        string stripped = ParenthesesRegex().Replace(album, " ");
+        stripped = EditionTailRegex().Replace(stripped, " ");
+        stripped = System.Text.RegularExpressions.Regex.Replace(stripped, @"\s+", " ").Trim();
+
+        if (stripped.Length < 2 || stripped.Equals(album.Trim(), StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        return stripped;
     }
 
     public static string? BuildPartial(string? text)
@@ -159,6 +164,11 @@ public static partial class QueryBuilder
         if (!romanMatch.Success)
             return null;
 
+        // A standalone "I" is far more often the pronoun than the numeral
+        // ("Him & I" must not become "Him & 1").
+        if (romanMatch.Groups[1].Value.Equals("I", StringComparison.OrdinalIgnoreCase))
+            return null;
+
         // Skip if part of volume reference
         Match volumeMatch = VolumeRegex().Match(album);
         if (volumeMatch.Success &&
@@ -209,6 +219,8 @@ public static partial class QueryBuilder
 
     [GeneratedRegex(@"\([^)]*\)|\[[^\]]*\]", RegexOptions.Compiled)]
     private static partial Regex ParenthesesRegex();
+    [GeneratedRegex(@"\s[-–]\s*(?:\d{4}\s+)?(?:deluxe|expanded|extended|anniversary|special|limited|collector'?s|remaster(?:ed)?|remix(?:es)?|mono|stereo|instrumental|acoustic|live)\b.*$", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+    private static partial Regex EditionTailRegex();
     [GeneratedRegex(@"\b([IVXLCDM]{1,4})\b", RegexOptions.Compiled)]
     private static partial Regex StandaloneRomanRegex();
     [GeneratedRegex(@"\b(Vol(?:ume)?\.?)\s*([0-9]+|[IVXLCDM]+)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)]

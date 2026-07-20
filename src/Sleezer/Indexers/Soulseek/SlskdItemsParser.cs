@@ -39,7 +39,11 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         private static readonly string[] _nonArtistFolders =
         [
             "music", "mp3", "flac", "audio", "compilations", "soundtracks",
-            "pop", "rock", "jazz", "classical", "various", "downloads"
+            "pop", "rock", "jazz", "classical", "various", "downloads",
+            "shared", "share", "shares", "soulseek", "soulseek shared folder",
+            "albums", "album", "complete", "incomplete", "media", "lossless",
+            "lossy", "singles", "eps", "discography", "collection", "itunes",
+            "new music", "sorted", "unsorted"
         ];
 
         public SlskdItemsParser(Logger logger)
@@ -83,37 +87,46 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
             _logger.Trace("Creating album data - Dir: '{Dir}', Search artist: '{Artist}', Search album: '{Album}'", dirNameNorm, searchArtistNorm, searchAlbumNorm);
 
-            // Calculate fuzzy scores with caching for performance
-            (int fuzzyArtistPartial, int fuzzyArtistTokenSort) = GetCachedFuzzyScores(dirNameNorm, searchArtistNorm);
-            (int fuzzyAlbumPartial, int fuzzyAlbumTokenSort) = GetCachedFuzzyScores(dirNameNorm, searchAlbumNorm);
-
             // MatchStrictnessType values (Strict=+5, Normal=0, Loose=-5) are used directly as a threshold offset.
             int strictnessOffset = settings?.MatchStrictness ?? 0;
 
-            bool isVolumeSearch = !string.IsNullOrEmpty(searchData.Album) && VolumeRegex().Match(searchData.Album).Success;
+            // Volume-series matching only applies when the album has an explicit
+            // volume KEYWORD ("Vol. 3", "Part II"). A bare trailing number is not
+            // enough — titles that ARE numbers ("1989", "25", "IV") used to be
+            // force-routed here and could never match their own directories.
+            bool isVolumeSearch = !string.IsNullOrEmpty(searchData.Album) && VolumeKeywordRegex().Match(searchData.Album).Success;
 
-            bool isAlbumMatch = isVolumeSearch ? CheckVolumeSeriesMatch(directory.Key, searchData.Album, strictnessOffset) : !string.IsNullOrEmpty(searchAlbumNorm) && (fuzzyAlbumPartial > FuzzyAlbumPartialThreshold + strictnessOffset || fuzzyAlbumTokenSort > FuzzyAlbumTokenSortThreshold + strictnessOffset);
+            bool isAlbumMatch = isVolumeSearch
+                ? CheckVolumeSeriesMatch(directory.Key, searchData.Album, strictnessOffset)
+                : IsFuzzyAlbumNameMatch(dirNameNorm, searchAlbumNorm, strictnessOffset);
             bool isArtistMatch = IsFuzzyArtistMatch(dirNameNorm, searchArtistNorm, strictnessOffset);
+
+            bool matchedSearchCriteria = string.IsNullOrEmpty(searchAlbumNorm)
+                ? isArtistMatch
+                : isAlbumMatch && (isArtistMatch || string.IsNullOrEmpty(searchArtistNorm));
 
             if (!isArtistMatch && !isAlbumMatch && !string.IsNullOrEmpty(searchData.Artist) && !string.IsNullOrEmpty(searchData.Album))
             {
                 string combinedSearch = NormalizeString($"{searchData.Artist} {searchData.Album}");
                 (int combinedPartial, _) = GetCachedFuzzyScores(dirNameNorm, combinedSearch);
                 isAlbumMatch = combinedPartial > FuzzyCombinedThreshold + strictnessOffset;
+                matchedSearchCriteria = isAlbumMatch;
             }
 
             _logger.Debug("Match results - Artist: {ArtistMatch}, Album: {AlbumMatch}", isArtistMatch, isAlbumMatch);
 
             // Determine final values for artist, album, year
-            string finalArtist = DetermineFinalArtist(isArtistMatch, folderData, searchData);
+            string finalArtist = DetermineFinalArtist(isArtistMatch, isAlbumMatch, folderData, searchData);
             string finalAlbum = DetermineFinalAlbum(isAlbumMatch, folderData, searchData);
             string finalYear = folderData.Year;
 
             (AudioFormat Codec, int? BitRate, int? BitDepth, int? SampleRate, long TotalSize, int TotalDuration) = AnalyzeAudioQuality(directory);
             string qualityInfo = FormatQualityInfo(Codec, BitRate, BitDepth, SampleRate);
 
-            List<SlskdFileData>? filesToDownload = directory.GroupBy(f => f.Filename?[..f.Filename.LastIndexOf('\\')]).FirstOrDefault(g => g.Key == directory.Key)?.ToList();
-            int actualTrackCount = filesToDownload?.Count ?? 0;
+            // The group key is already the merged directory (disc subfolders fold
+            // into their parent), so every file in the group belongs to this release.
+            List<SlskdFileData> filesToDownload = directory.ToList();
+            int actualTrackCount = filesToDownload.Count;
 
             _logger.Trace("Audio: {Codec}, BitRate: {BitRate}, BitDepth: {BitDepth}, Files: {TrackCount}", Codec, BitRate, BitDepth, actualTrackCount);
 
@@ -137,6 +150,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 AlbumId = $"/api/v0/transfers/downloads/{folderData.Username}",
                 ArtistName = finalArtist,
                 AlbumName = finalAlbum,
+                MatchedSearchCriteria = matchedSearchCriteria,
                 ReleaseDate = finalYear,
                 ReleaseDateTime = string.IsNullOrEmpty(finalYear) || !int.TryParse(finalYear, out int yearInt)
                     ? DateTime.MinValue
@@ -172,18 +186,32 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
             string lastComponent = pathComponents[^1];
 
-            // Try artist-album-year pattern
-            Match? match = TryMatchRegex(lastComponent, ArtistAlbumYearRegex());
-            if (match != null)
+            // Year-led folders ("1969 - Artist - Album", "(2002) Album",
+            // "1994 - Album") must be tried before the artist-album split, or the
+            // year gets mistaken for the artist.
+            if (LeadingYearProbeRegex().IsMatch(lastComponent))
             {
-                return (
-                    match.Groups["artist"].Success ? match.Groups["artist"].Value.Trim() : null,
-                    match.Groups["album"].Success ? match.Groups["album"].Value.Trim() : null,
-                    match.Groups["year"].Success ? match.Groups["year"].Value.Trim() : null);
+                Match? yearMatch = TryMatchRegex(lastComponent, YearArtistAlbumRegex());
+                if (yearMatch != null)
+                {
+                    return (
+                        yearMatch.Groups["artist"].Success ? yearMatch.Groups["artist"].Value.Trim() : null,
+                        yearMatch.Groups["album"].Success ? yearMatch.Groups["album"].Value.Trim() : null,
+                        yearMatch.Groups["year"].Success ? yearMatch.Groups["year"].Value.Trim() : null);
+                }
+
+                yearMatch = TryMatchRegex(lastComponent, LeadingYearAlbumRegex());
+                if (yearMatch?.Groups["album"].Success == true)
+                {
+                    return (
+                        GetArtistFromParentFolder(pathComponents),
+                        yearMatch.Groups["album"].Value.Trim(),
+                        yearMatch.Groups["year"].Success ? yearMatch.Groups["year"].Value.Trim() : null);
+                }
             }
 
-            // Try year-artist-album pattern
-            match = TryMatchRegex(lastComponent, YearArtistAlbumRegex());
+            // Try artist-album-year pattern
+            Match? match = TryMatchRegex(lastComponent, ArtistAlbumYearRegex());
             if (match != null)
             {
                 return (
@@ -211,11 +239,18 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         private static string? GetArtistFromParentFolder(string[] pathComponents)
         {
             if (pathComponents.Length < 2) return null;
-            string parentFolder = pathComponents[^2];
-            if (!_nonArtistFolders.Contains(parentFolder.ToLowerInvariant()))
-                return parentFolder;
+            string parentFolder = pathComponents[^2].Trim();
 
-            return null;
+            // Share roots ("@@abc123"), drive letters and generic library folders
+            // are not artist names; better to leave the artist unknown than to
+            // fabricate one Lidarr can never match.
+            if (parentFolder.StartsWith('@') ||
+                parentFolder.Length <= 1 ||
+                ShareRootRegex().IsMatch(parentFolder) ||
+                _nonArtistFolders.Contains(parentFolder.ToLowerInvariant()))
+                return null;
+
+            return parentFolder;
         }
 
         private bool CheckVolumeSeriesMatch(string directoryPath, string? searchAlbum, int strictnessOffset = 0)
@@ -312,11 +347,22 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         {
             if (string.IsNullOrEmpty(input))
                 return string.Empty;
+
+            // Separators (incl. backslash — the full slskd path is normalized
+            // here, and deleting the separator used to glue adjacent path
+            // components into unmatchable tokens) and punctuation become spaces,
+            // never plain deletions, so word tokens survive on both sides of the
+            // fuzzy comparison.
             string normalized = NormalizeCharactersRegex().Replace(input, " ");
-            normalized = RemoveNonAlphanumericRegex().Replace(normalized, "");
+            normalized = RemoveNonAlphanumericRegex().Replace(normalized, " ");
             normalized = ReduceWhitespaceRegex().Replace(normalized.ToLowerInvariant(), " ").Trim();
-            normalized = RemoveWordsRegex().Replace(normalized, "");
-            return ReduceWhitespaceRegex().Replace(normalized, " ").Trim();
+
+            string withoutStopWords = RemoveWordsRegex().Replace(normalized, "");
+            withoutStopWords = ReduceWhitespaceRegex().Replace(withoutStopWords, " ").Trim();
+
+            // Names made entirely of stop words ("The The") must not normalize
+            // to empty — an empty operand can never fuzzy-match anything.
+            return withoutStopWords.Length > 0 ? withoutStopWords : normalized;
         }
 
         private static string CleanComponent(string component)
@@ -362,20 +408,31 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             return match.Success ? match : null;
         }
 
+        // Below this normalized length, PartialRatio saturates at ~100 against
+        // almost any long path ("low" matches "follow", "19" matches "2019"), so
+        // short names require an exact word-token hit instead of a fuzzy score.
+        private const int ShortNameTokenLength = 4;
+
+        private static bool ContainsWordToken(string dirNameNorm, string queryNorm) =>
+            dirNameNorm.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                .Contains(queryNorm, StringComparer.Ordinal);
+
         private static bool IsFuzzyArtistMatch(string dirNameNorm, string searchArtistNorm, int strictnessOffset = 0)
         {
             if (string.IsNullOrEmpty(searchArtistNorm))
                 return false;
+            if (searchArtistNorm.Length <= ShortNameTokenLength)
+                return ContainsWordToken(dirNameNorm, searchArtistNorm);
             (int partial, int tokenSort) = GetCachedFuzzyScores(dirNameNorm, searchArtistNorm);
             return partial > FuzzyArtistPartialThreshold + strictnessOffset || tokenSort > FuzzyArtistTokenSortThreshold + strictnessOffset;
         }
 
-        private static bool IsFuzzyAlbumMatch(string dirNameNorm, string searchAlbumNorm, bool volumeMatch, int strictnessOffset = 0)
+        private static bool IsFuzzyAlbumNameMatch(string dirNameNorm, string searchAlbumNorm, int strictnessOffset = 0)
         {
             if (string.IsNullOrEmpty(searchAlbumNorm))
                 return false;
-            if (volumeMatch)
-                return true;
+            if (searchAlbumNorm.Length <= ShortNameTokenLength)
+                return ContainsWordToken(dirNameNorm, searchAlbumNorm);
             (int partial, int tokenSort) = GetCachedFuzzyScores(dirNameNorm, searchAlbumNorm);
             return partial > FuzzyAlbumPartialThreshold + strictnessOffset || tokenSort > FuzzyAlbumTokenSortThreshold + strictnessOffset;
         }
@@ -408,30 +465,18 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             });
         }
 
-        public static string DetermineRegexMatchType(string folderPath)
-        {
-            string[] pathComponents = SplitPathIntoComponents(folderPath);
-            if (pathComponents.Length == 0)
-                return "none";
-
-            string lastComponent = pathComponents[^1];
-
-            if (TryMatchRegex(lastComponent, ArtistAlbumYearRegex()) != null)
-                return "ArtistAlbumYear";
-
-            if (TryMatchRegex(lastComponent, YearArtistAlbumRegex()) != null)
-                return "YearArtistAlbum";
-
-            if (TryMatchRegex(lastComponent, AlbumYearRegex()) != null)
-                return "AlbumYear";
-
-            return "none";
-        }
-
-        private static string DetermineFinalArtist(bool isArtistMatch, SlskdFolderData folderData, SlskdSearchData searchData)
+        private static string DetermineFinalArtist(bool isArtistMatch, bool isAlbumMatch, SlskdFolderData folderData, SlskdSearchData searchData)
         {
             if (isArtistMatch && !string.IsNullOrEmpty(searchData.Artist))
                 return searchData.Artist;
+
+            // Album matched but the artist name isn't in the path (flat share
+            // layouts, "@@share" roots): trust the album evidence and stamp the
+            // searched artist — a folder-derived "@@abc123" artist would make
+            // Lidarr reject an otherwise-correct release.
+            if (isAlbumMatch && !string.IsNullOrEmpty(searchData.Artist))
+                return searchData.Artist;
+
             if (!string.IsNullOrEmpty(folderData.Artist))
                 return folderData.Artist;
             return searchData.Artist ?? "Unknown Artist";
@@ -441,8 +486,11 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         {
             if (isAlbumMatch && !string.IsNullOrEmpty(searchData.Album))
             {
-                Match folderVersion = VolumeRegex().Match(folderData.Album ?? "");
-                Match searchVersion = VolumeRegex().Match(searchData.Album);
+                // Carry an explicit keyworded volume marker ("Vol. 3") over from
+                // the folder; a bare trailing number ("...CD 1", "1989") must not
+                // be appended to the searched title.
+                Match folderVersion = VolumeKeywordRegex().Match(folderData.Album ?? "");
+                Match searchVersion = VolumeKeywordRegex().Match(searchData.Album);
                 return folderVersion.Success && !searchVersion.Success ? $"{searchData.Album} {folderVersion.Value}" : searchData.Album;
             }
             if (!string.IsNullOrEmpty(folderData.Album))
@@ -523,11 +571,27 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         [GeneratedRegex(@"^(?<album>[^(\[]+)(?:\s*[\(\[](?<year>19\d{2}|20\d{2})[\)\]])?", RegexOptions.ExplicitCapture | RegexOptions.Compiled)]
         private static partial Regex AlbumYearRegex();
 
-        [GeneratedRegex(@"^(?<year>19\d{2}|20\d{2})\s*-\s*(?<artist>[^-]+)\s*-\s*(?<album>.+)(?:\s*[\(\[].+[\)\]])*$", RegexOptions.ExplicitCapture | RegexOptions.Compiled)]
+        // Artist/album splits require " - " (space-hyphen-space): hyphenated
+        // names ("Jay-Z", "AC-DC") must not be cut at their internal hyphen.
+        [GeneratedRegex(@"^(?<year>19\d{2}|20\d{2})\s*-\s*(?<artist>.+?)\s-\s(?<album>.+)$", RegexOptions.ExplicitCapture | RegexOptions.Compiled)]
         private static partial Regex YearArtistAlbumRegex();
 
-        [GeneratedRegex(@"^(?<artist>[^-]+)\s*-\s*(?<album>[^(\[]+)(?:\s*[\(\[](?<year>19\d{2}|20\d{2})[\)\]])?", RegexOptions.ExplicitCapture | RegexOptions.Compiled)]
+        [GeneratedRegex(@"^[\(\[]?(?<year>19\d{2}|20\d{2})[\)\]]?\s*(?:-\s*)?(?<album>.+)$", RegexOptions.ExplicitCapture | RegexOptions.Compiled)]
+        private static partial Regex LeadingYearAlbumRegex();
+
+        [GeneratedRegex(@"^[\(\[]?(?:19|20)\d{2}\b", RegexOptions.ExplicitCapture | RegexOptions.Compiled)]
+        private static partial Regex LeadingYearProbeRegex();
+
+        [GeneratedRegex(@"^(?<artist>.+?)\s-\s(?<album>[^(\[]+)(?:\s*[\(\[](?<year>19\d{2}|20\d{2})[\)\]])?", RegexOptions.ExplicitCapture | RegexOptions.Compiled)]
         private static partial Regex ArtistAlbumYearRegex();
+
+        [GeneratedRegex(@"^[a-zA-Z]:?$|^(?:vol(?:ume)?|cd|disc|disk)\s*\d*$", RegexOptions.IgnoreCase | RegexOptions.ExplicitCapture | RegexOptions.Compiled)]
+        private static partial Regex ShareRootRegex();
+
+        [GeneratedRegex(@"(?ix)
+            (?<=\b(?:volume|vol|part|pt|chapter|sampler|ed|ver|release|issue|series|no|num|phase|stage|book|side|disc|cd|dvd|season|installment|\#)\s*[.,\-_:#]*\s*)
+            (\d+(?:\.\d+)?|[IVXLCDM]+|\d+(?:[-to&]\d+)?|one|two|three|four|five|six|seven|eight|nine|ten)(?!\w)", RegexOptions.ExplicitCapture | RegexOptions.Compiled, "de-DE")]
+        private static partial Regex VolumeKeywordRegex();
 
         [GeneratedRegex(@"(?<year>19\d{2}|20\d{2})", RegexOptions.ExplicitCapture | RegexOptions.Compiled)]
         private static partial Regex YearExtractionRegex();
@@ -550,10 +614,10 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         [GeneratedRegex(@"\s+", RegexOptions.Compiled)]
         private static partial Regex ReduceWhitespaceRegex();
 
-        [GeneratedRegex(@"[^\w\s$-]", RegexOptions.Compiled)]
+        [GeneratedRegex(@"[^\w\s$]", RegexOptions.Compiled)]
         private static partial Regex RemoveNonAlphanumericRegex();
 
-        [GeneratedRegex(@"[._/]+", RegexOptions.Compiled)]
+        [GeneratedRegex(@"[-._/\\]+", RegexOptions.Compiled)]
         private static partial Regex NormalizeCharactersRegex();
     }
 }

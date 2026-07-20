@@ -29,23 +29,22 @@ public class SlskdDownloadItem
 
     public event EventHandler<SlskdFileState>? FileStateChanged;
 
-    private SlskdDownloadDirectory? _slskdDownloadDirectory;
+    // A multi-disc release spans several remote directories (Album\CD1,
+    // Album\CD2); slskd reports transfers per remote directory, so the item
+    // aggregates them and exposes a merged view through SlskdDownloadDirectory.
+    private readonly Dictionary<string, SlskdDownloadDirectory> _remoteDirectories = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _enqueuedFilenames;
     private readonly Dictionary<string, SlskdFileState> _previousFileStates = [];
 
     public List<Task> PostProcessTasks { get; } = [];
     public DownloadItemStatus? LastReportedStatus { get; set; }
+    public bool DiscFoldersMerged { get; set; }
     public IReadOnlyDictionary<string, SlskdFileState> FileStates => _previousFileStates;
 
     public SlskdDownloadDirectory? SlskdDownloadDirectory
     {
-        get => _slskdDownloadDirectory;
-        set
-        {
-            if (_slskdDownloadDirectory == value)
-                return;
-            CompareFileStates(value);
-            _slskdDownloadDirectory = value;
-        }
+        get => BuildMergedDirectory();
+        set => AddOrUpdateDirectory(value);
     }
 
     public SlskdDownloadItem(ReleaseInfo releaseInfo)
@@ -54,7 +53,107 @@ public class SlskdDownloadItem
         ReleaseInfo = releaseInfo;
         FileData = JsonSerializer.Deserialize<List<SlskdFileData>>(ReleaseInfo.Source, _jsonOptions) ?? [];
         ID = GetStableMD5Id(FileData.Select(file => file.Filename));
+        _enqueuedFilenames = FileData
+            .Select(f => f.Filename)
+            .Where(f => !string.IsNullOrEmpty(f))
+            .Select(f => f!)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         _logger.Trace("Created SlskdDownloadItem with ID: {Id}", ID);
+    }
+
+    /// <summary>True when this item enqueued the given remote file.</summary>
+    public bool OwnsFile(string? remoteFilename) =>
+        !string.IsNullOrEmpty(remoteFilename) && _enqueuedFilenames.Contains(remoteFilename);
+
+    /// <summary>True when this item tracks transfers for the given remote directory.</summary>
+    public bool TracksRemoteDirectory(string? remoteDirectory) =>
+        !string.IsNullOrEmpty(remoteDirectory) && _remoteDirectories.ContainsKey(remoteDirectory);
+
+    /// <summary>
+    /// True when the enqueued files span more than one remote directory
+    /// (multi-disc share with CD1/CD2 subfolders).
+    /// </summary>
+    public bool IsMultiDirectory => RemoteDirectoryLeaves().Count > 1;
+
+    /// <summary>
+    /// Leaf folder names of every remote directory the enqueued files live in
+    /// — these are the local folder names slskd downloads into.
+    /// </summary>
+    public IReadOnlyCollection<string> RemoteDirectoryLeaves()
+    {
+        HashSet<string> leaves = new(StringComparer.OrdinalIgnoreCase);
+        foreach (SlskdFileData file in FileData)
+        {
+            string dir = SlskdTextProcessor.GetDirectoryFromFilename(file.Filename);
+            string leaf = LeafOf(dir);
+            if (leaf.Length > 0)
+                leaves.Add(leaf);
+        }
+
+        return leaves;
+    }
+
+    /// <summary>
+    /// Local album folder name for a multi-disc item: the leaf of the common
+    /// remote parent directory (disc subfolders folded away). Falls back to the
+    /// item ID when the share layout gives no usable name.
+    /// </summary>
+    public string LocalAlbumFolderName()
+    {
+        HashSet<string> mergedKeys = new(StringComparer.OrdinalIgnoreCase);
+        foreach (SlskdFileData file in FileData)
+        {
+            string key = SlskdTextProcessor.GetMergedDirectoryKey(file.Filename);
+            if (!string.IsNullOrEmpty(key))
+                mergedKeys.Add(key);
+        }
+
+        string leaf = mergedKeys.Count == 1 ? LeafOf(mergedKeys.First()) : "";
+        return leaf is "" or "." or ".." ? ID : leaf;
+    }
+
+    private static string LeafOf(string path)
+    {
+        string trimmed = path.Replace('\\', '/').TrimEnd('/');
+        int idx = trimmed.LastIndexOf('/');
+        string leaf = idx >= 0 ? trimmed[(idx + 1)..] : trimmed;
+        return leaf is "." or ".." ? "" : leaf;
+    }
+
+    private void AddOrUpdateDirectory(SlskdDownloadDirectory? directory)
+    {
+        if (directory == null || string.IsNullOrEmpty(directory.Directory))
+            return;
+
+        if (_remoteDirectories.TryGetValue(directory.Directory, out SlskdDownloadDirectory? existing) && existing == directory)
+            return;
+
+        CompareFileStates(directory);
+        _remoteDirectories[directory.Directory] = directory;
+    }
+
+    private SlskdDownloadDirectory? BuildMergedDirectory()
+    {
+        if (_remoteDirectories.Count == 0)
+            return null;
+
+        if (_remoteDirectories.Count == 1)
+            return _remoteDirectories.Values.First();
+
+        List<SlskdDownloadFile> allFiles = _remoteDirectories.Values
+            .Where(d => d.Files != null)
+            .SelectMany(d => d.Files!)
+            .ToList();
+
+        // Fold each directory's disc-leaf away; when they all share one parent
+        // (the normal Album\CD1 + Album\CD2 case) report that parent.
+        List<string> mergedParents = _remoteDirectories.Keys
+            .Select(key => SlskdTextProcessor.GetMergedDirectoryKey(key + "\\x"))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        string commonParent = mergedParents.Count == 1 ? mergedParents[0] : _remoteDirectories.Keys.First();
+
+        return new SlskdDownloadDirectory(commonParent, allFiles.Count, allFiles);
     }
 
     public static string GetStableMD5Id(IEnumerable<string?> filenames)
@@ -98,6 +197,12 @@ public class SlskdDownloadItem
 
     public OsPath GetFullFolderPath(OsPath downloadPath)
     {
+        // Multi-disc: slskd downloads each remote disc directory into its own
+        // local folder; the manager merges those into one album folder after
+        // completion, and that folder is what Lidarr imports.
+        if (IsMultiDirectory)
+            return new OsPath(Path.Combine(downloadPath.FullPath, LocalAlbumFolderName()));
+
         string leaf = SlskdDownloadDirectory?.Directory
             .Replace('\\', '/')
             .TrimEnd('/')

@@ -26,9 +26,6 @@ public static partial class QueryAnalyzer
         if (IsShortName(context.Album))
             type |= QueryType.ShortName;
 
-        if (NeedsTypeDisambiguation(context))
-            type |= QueryType.NeedsTypeDisambiguation;
-
         if (HasVolumeReference(context.Album))
             type |= QueryType.HasVolume;
 
@@ -82,32 +79,6 @@ public static partial class QueryAnalyzer
         if (string.IsNullOrWhiteSpace(album))
             return false;
         return album.Trim().Length < ShortNameThreshold;
-    }
-
-    public static bool NeedsTypeDisambiguation(SearchContext context)
-    {
-        if (context.PrimaryType != NzbDrone.Core.Music.PrimaryAlbumType.EP &&
-            context.PrimaryType != NzbDrone.Core.Music.PrimaryAlbumType.Single)
-            return false;
-
-        // Short names always need disambiguation
-        if (IsShortName(context.Album))
-            return true;
-
-        // Self-titled EPs/Singles need disambiguation
-        if (IsSelfTitled(context.Artist, context.Album))
-            return true;
-
-        // Common album-like names that could conflict
-        string? album = context.Album?.Trim();
-        if (string.IsNullOrEmpty(album))
-            return true;
-
-        // Single-word titles are ambiguous
-        if (!album.Contains(' '))
-            return true;
-
-        return false;
     }
 
     public static bool HasVolumeReference(string? album) =>
