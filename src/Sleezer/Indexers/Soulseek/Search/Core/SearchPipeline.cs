@@ -84,6 +84,11 @@ public sealed class SearchPipeline : ISlskdSearchChain
         if (string.IsNullOrWhiteSpace(query))
             return [];
 
+        query = ResolveRestrictedTerms(query);
+
+        if (string.IsNullOrWhiteSpace(query))
+            return [];
+
         if (context.ProcessedSearches.Contains(query))
         {
             _logger.Trace("[{Strategy}] Skip duplicate: '{Query}'", strategy.Name, query);
@@ -110,5 +115,29 @@ public sealed class SearchPipeline : ISlskdSearchChain
             _logger.Error(ex, "[{Strategy}] Error: '{Query}'", strategy.Name, query);
             return [];
         }
+    }
+
+    // The Soulseek server silently filters searches containing certain terms
+    // (mostly DMCA-listed artist names) — they return zero results network-wide.
+    // Rewrite the query with an injected accent so it slips past the filter;
+    // if no rewrite survives, drop the query (BlockedTermEvidenceStrategy
+    // provides the artist-less fallback).
+    private string ResolveRestrictedTerms(string query)
+    {
+        if (!SlskdTextProcessor.ContainsBlockedTerms(query))
+            return query;
+
+        for (int variant = 0; variant < 3; variant++)
+        {
+            string candidate = SlskdTextProcessor.RewriteRestrictedTerms(query, variant);
+            if (candidate != query && !SlskdTextProcessor.ContainsBlockedTerms(candidate))
+            {
+                _logger.Debug("Rewrote server-blocked search term: '{Query}' -> '{Candidate}'", query, candidate);
+                return candidate;
+            }
+        }
+
+        _logger.Debug("Dropping query containing server-blocked term with no viable rewrite: '{Query}'", query);
+        return string.Empty;
     }
 }

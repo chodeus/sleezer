@@ -22,6 +22,41 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         private static readonly Regex VolumePattern = new(@"(Vol(?:ume)?\.?)\s*([0-9]+|[IVXLCDM]+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex RomanNumeralPattern = new(@"\b([IVXLCDM]+)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+        // Terms the Soulseek SERVER silently filters — any search containing one
+        // returns zero results network-wide, regardless of client. Discovered
+        // empirically upstream (TypNull/Tubifarry ae3ce28); mostly DMCA-listed
+        // artists plus a few collateral words. Case-insensitive whole-word match.
+        private static readonly HashSet<string> BlockedSearchTerms = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "beyonce",
+            "Beyoncé",
+            "beyoncè",
+            "gorillaz",
+            "depeche mode",
+            "village people",
+            "chicane",
+            "bryan",
+            "cat power",
+            "lady gaga",
+            "michael jackson",
+            "beatles",
+            "adele",
+            "ymca",
+            "lemonade",
+            "macho man",
+            "rihanna",
+            "weeknd",
+            "kanye west",
+            "kendrick lamar",
+            "frank ocean",
+            "minaj",
+            "linkin park"
+        };
+
+        private static readonly string[][] BlockedTermWords = [.. BlockedSearchTerms
+            .OrderByDescending(t => t.Length)
+            .Select(t => t.Split(' ', StringSplitOptions.RemoveEmptyEntries))];
+
         public static string BuildSearchText(string? artist, string? album)
             => string.Join(" ", new[] { album, artist }.Where(term => !string.IsNullOrWhiteSpace(term)).Select(term => term?.Trim()));
 
@@ -67,6 +102,17 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         public static string NormalizeSpecialCharacters(string? input)
         {
             if (string.IsNullOrEmpty(input)) return string.Empty;
+
+            bool isAscii = true;
+            foreach (char c in input)
+            {
+                if (c > 127)
+                {
+                    isAscii = false;
+                    break;
+                }
+            }
+            if (isAscii) return input;
 
             string decomposed = input.Normalize(NormalizationForm.FormD);
             StringBuilder sb = new(decomposed.Length);
@@ -129,6 +175,127 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 yield return album.Replace(romanMatch.Value, arabicNumber.ToString());
         }
 
+        /// <summary>
+        /// Removes any blocked term (whole-word, case-insensitive) from a query.
+        /// </summary>
+        public static string RemoveBlockedTerms(string searchText)
+        {
+            if (string.IsNullOrWhiteSpace(searchText))
+                return string.Empty;
+
+            string[] words = searchText.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            bool[] removed = new bool[words.Length];
+
+            foreach (string[] termWords in BlockedTermWords)
+            {
+                for (int i = 0; i + termWords.Length <= words.Length; i++)
+                {
+                    bool match = !removed[i];
+                    for (int j = 0; match && j < termWords.Length; j++)
+                        match = !removed[i + j] && string.Equals(words[i + j], termWords[j], StringComparison.OrdinalIgnoreCase);
+                    if (match)
+                        for (int j = 0; j < termWords.Length; j++)
+                            removed[i + j] = true;
+                }
+            }
+
+            return string.Join(' ', words.Where((_, i) => !removed[i]));
+        }
+
+        public static bool ContainsBlockedTerms(string searchText)
+        {
+            if (string.IsNullOrWhiteSpace(searchText))
+                return false;
+
+            string[] words = searchText.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            return RemoveBlockedTerms(searchText).Split(' ', StringSplitOptions.RemoveEmptyEntries).Length != words.Length;
+        }
+
+        private static readonly Dictionary<char, string> AccentInjectionMap = new()
+        {
+            { 'a', "àáâä" }, { 'A', "ÀÁÂÄ" },
+            { 'e', "èéêë" }, { 'E', "ÈÉÊË" },
+            { 'i', "ìíîï" }, { 'I', "ÌÍÎÏ" },
+            { 'o', "òóôö" }, { 'O', "ÒÓÔÖ" },
+            { 'u', "ùúûü" }, { 'U', "ÙÚÛÜ" },
+            { 'y', "ýÿ" }, { 'Y', "ÝŸ" },
+            { 'c', "çć" }, { 'C', "ÇĆ" },
+            { 'n', "ñń" }, { 'N', "ÑŃ" },
+            { 's', "śş" }, { 'S', "ŚŞ" },
+        };
+
+        /// <summary>
+        /// Rewrites blocked terms by injecting an accented character so the
+        /// query slips past the Soulseek server filter while still matching
+        /// share paths that use accented spellings. When no accent can be
+        /// injected the blocked term is dropped entirely.
+        /// </summary>
+        public static string RewriteRestrictedTerms(string searchText, int variant = 0)
+        {
+            if (string.IsNullOrWhiteSpace(searchText))
+                return string.Empty;
+
+            string[] words = searchText.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            string[] normalized = [.. words.Select(NormalizeSpecialCharacters)];
+            bool[] keep = [.. words.Select(_ => true)];
+
+            foreach (string[] termWords in BlockedTermWords)
+                for (int i = 0; i + termWords.Length <= words.Length; i++)
+                {
+                    bool match = true;
+                    for (int j = 0; match && j < termWords.Length; j++)
+                        match = string.Equals(normalized[i + j], termWords[j], StringComparison.OrdinalIgnoreCase);
+                    if (!match)
+                        continue;
+
+                    bool injected = false;
+                    for (int j = 0; j < termWords.Length && !injected; j++)
+                        injected = TryInjectAccent(ref words[i + j], variant);
+
+                    if (!injected)
+                        for (int j = 0; j < termWords.Length; j++)
+                            keep[i + j] = false;
+                }
+
+            return string.Join(' ', words.Where((_, i) => keep[i]));
+        }
+
+        private static bool TryInjectAccent(ref string word, int variant)
+        {
+            for (int c = 0; c < word.Length; c++)
+            {
+                if (AccentInjectionMap.TryGetValue(word[c], out string? variants))
+                {
+                    word = word[..c] + variants[variant % variants.Length] + word[(c + 1)..];
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Distinctive track titles usable as search evidence when the artist
+        /// name itself is server-blocked: cleaned, non-blocked, distinct from
+        /// the album title, longest first.
+        /// </summary>
+        public static IEnumerable<string> GetBlockedTermEvidenceTracks(IEnumerable<string> tracks, string? album)
+        {
+            return tracks
+                .Select(CleanEvidenceTitle)
+                .Where(t => t.Length >= 3
+                            && !ContainsBlockedTerms(t)
+                            && !string.Equals(t, album?.Trim(), StringComparison.OrdinalIgnoreCase))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderByDescending(t => t.Length);
+
+            static string CleanEvidenceTitle(string title)
+            {
+                string cleaned = BracketedContentRegex().Replace(title, " ");
+                cleaned = StripPunctuation(cleaned);
+                return cleaned.Trim();
+            }
+        }
+
         private static readonly char[] PathSeparators = ['\\', '/'];
 
         // Soulseek paths are canonically backslash-separated, but some clients
@@ -179,5 +346,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
         [GeneratedRegex(@"^(?:cd|disc|disk|dvd)\s*[-_. ]?\s*\d{1,2}$", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
         private static partial Regex DiscFolderRegex();
+
+        [GeneratedRegex(@"[\(\[\{].*?[\)\]\}]", RegexOptions.Compiled)]
+        private static partial Regex BracketedContentRegex();
     }
 }
