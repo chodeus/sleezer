@@ -3,6 +3,7 @@ using NzbDrone.Core.Annotations;
 using NzbDrone.Core.ThingiProvider;
 using NzbDrone.Core.Validation;
 using System.Text.RegularExpressions;
+using NzbDrone.Plugin.Sleezer.Indexers.Soulseek;
 
 namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek
 {
@@ -105,6 +106,13 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek
         public bool IsLocalhost { get; set; }
 
         public string DownloadPath { get; set; } = string.Empty;
+
+        // slskd's transfers.download.destination.subdirectory pattern, fetched
+        // alongside DownloadPath during Test. Null/default = per-source-folder.
+        public string? SubdirectoryPattern { get; set; }
+
+        public SlskdDestinationConfig? GetDestinationConfig() =>
+            string.IsNullOrEmpty(DownloadPath) ? null : new SlskdDestinationConfig(DownloadPath, SubdirectoryPattern);
 
         public TimeSpan? GetTimeout() => TimeoutMinutes == null ? null : TimeSpan.FromMinutes(TimeoutMinutes.Value);
 

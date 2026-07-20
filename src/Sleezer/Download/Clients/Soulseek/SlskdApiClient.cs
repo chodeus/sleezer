@@ -5,6 +5,7 @@ using NzbDrone.Core.Download.Clients;
 using System.Net;
 using System.Text.Json;
 using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek.Models;
+using NzbDrone.Plugin.Sleezer.Indexers.Soulseek;
 
 namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
 
@@ -50,29 +51,106 @@ public class SlskdApiClient(IHttpClient httpClient, Logger logger) : ISlskdApiCl
         }
     }
 
-    public async Task<(List<string> Enqueued, List<string> Failed)> EnqueueDownloadAsync(
-        SlskdProviderSettings settings, string username, IEnumerable<(string Filename, long Size)> files)
+    public async Task<SlskdEnqueueResult> EnqueueDownloadAsync(
+        SlskdProviderSettings settings, string username, IEnumerable<(string Filename, long Size)> files, string? externalId = null, string? destination = null)
     {
         await _enqueueLimiter.WaitAsync();
         try
         {
-            string payload = JsonSerializer.Serialize(files.Select(f => new { f.Filename, f.Size }));
-            HttpRequest request = BuildRequest(
+            List<(string Filename, long Size)> fileList = files.ToList();
+
+            // Newer slskd exposes a batch endpoint that reports per-file
+            // failures and accepts a destination subfolder (used to land all
+            // discs of a multi-disc grab in one album folder). Fall back to the
+            // legacy all-or-nothing endpoint when it's absent.
+            SlskdEnqueueResult? batchResult = await TryEnqueueBatchAsync(settings, username, fileList, externalId, destination);
+            if (batchResult != null)
+                return batchResult;
+
+            string payload = JsonSerializer.Serialize(fileList.Select(f => new { f.Filename, f.Size }));
+            HttpResponse response = await httpClient.ExecuteAsync(BuildRequest(
                 settings,
                 $"/api/v0/transfers/downloads/{Uri.EscapeDataString(username)}",
                 HttpMethod.Post,
-                payload);
-            HttpResponse response = await httpClient.ExecuteAsync(request);
+                payload));
 
             if (response.StatusCode != HttpStatusCode.Created)
                 throw new DownloadClientException($"Enqueue failed for {username}. Status: {response.StatusCode}");
 
-            return ([], []);
+            return new SlskdEnqueueResult(null, fileList.Select(f => f.Filename).ToList(), []);
         }
         finally
         {
             _enqueueLimiter.Release();
         }
+    }
+
+    private async Task<SlskdEnqueueResult?> TryEnqueueBatchAsync(
+        SlskdProviderSettings settings, string username, List<(string Filename, long Size)> files, string? externalId, string? destination)
+    {
+        string batchId = Guid.NewGuid().ToString();
+        string payload = JsonSerializer.Serialize(new
+        {
+            id = batchId,
+            username,
+            files = files.Select(f => new { filename = f.Filename, size = f.Size }),
+            options = new { externalId, destination }
+        });
+
+        for (int attempt = 0; ; attempt++)
+        {
+            HttpRequest request = BuildRequest(settings, "/api/v0/transfers/downloads/batches", HttpMethod.Post, payload);
+            request.SuppressHttpError = true;
+            HttpResponse response = await httpClient.ExecuteAsync(request);
+
+            switch (response.StatusCode)
+            {
+                case HttpStatusCode.Created:
+                    return new SlskdEnqueueResult(batchId, files.Select(f => f.Filename).ToList(), []);
+
+                case HttpStatusCode.OK:
+                case HttpStatusCode.MultiStatus:
+                    return ParseBatchResponse(files, response.Content);
+
+                // Older slskd without the batch endpoint — signal legacy fallback.
+                case HttpStatusCode.BadRequest when response.Content?.Contains("QueueDownloadRequest", StringComparison.OrdinalIgnoreCase) == true:
+                case HttpStatusCode.MethodNotAllowed:
+                case HttpStatusCode.NotFound when IsEndpointMissing(response):
+                    logger.Debug("[slskd] batch download endpoint unavailable; using legacy enqueue for {Username}", username);
+                    return null;
+
+                case HttpStatusCode.NotFound:
+                    throw new DownloadClientException($"Enqueue failed for {username}: user appears to be offline.");
+
+                case HttpStatusCode.TooManyRequests when attempt < 2:
+                    await Task.Delay(TimeSpan.FromSeconds(2));
+                    continue;
+
+                default:
+                    throw new DownloadClientException($"Batch enqueue failed for {username}. Status: {response.StatusCode}");
+            }
+        }
+
+        SlskdEnqueueResult ParseBatchResponse(List<(string Filename, long Size)> requested, string content)
+        {
+            List<SlskdEnqueueFailure> failures = [];
+
+            using JsonDocument doc = JsonDocument.Parse(content);
+            if (doc.RootElement.TryGetProperty("failures", out JsonElement failuresEl) &&
+                failuresEl.ValueKind == JsonValueKind.Array)
+            {
+                failures = failuresEl.Deserialize<List<SlskdEnqueueFailure>>() ?? [];
+            }
+
+            HashSet<string> failedNames = failures.Select(f => f.Filename).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            List<string> enqueued = requested.Select(f => f.Filename).Where(f => !failedNames.Contains(f)).ToList();
+
+            return new SlskdEnqueueResult(batchId, enqueued, failures);
+        }
+
+        static bool IsEndpointMissing(HttpResponse response) =>
+            string.IsNullOrWhiteSpace(response.Content) ||
+            !response.Content.Contains("offline", StringComparison.OrdinalIgnoreCase);
     }
 
     public async Task<List<SlskdUserTransfers>> GetAllTransfersAsync(SlskdProviderSettings settings, bool includeRemoved = false)
@@ -171,7 +249,10 @@ public class SlskdApiClient(IHttpClient httpClient, Logger logger) : ISlskdApiCl
         await httpClient.ExecuteAsync(
             BuildRequest(settings, "/api/v0/transfers/downloads/all/completed", HttpMethod.Delete));
 
-    public async Task<string?> GetDownloadPathAsync(SlskdProviderSettings settings)
+    public async Task<string?> GetDownloadPathAsync(SlskdProviderSettings settings) =>
+        (await GetDestinationConfigAsync(settings))?.DownloadsDirectory;
+
+    public async Task<SlskdDestinationConfig?> GetDestinationConfigAsync(SlskdProviderSettings settings)
     {
         HttpResponse response = await ExecuteGetWithRetryAsync(BuildRequest(settings, "/api/v0/options"));
 
@@ -179,11 +260,7 @@ public class SlskdApiClient(IHttpClient httpClient, Logger logger) : ISlskdApiCl
             return null;
 
         using JsonDocument doc = JsonDocument.Parse(response.Content);
-        if (doc.RootElement.TryGetProperty("directories", out JsonElement dirs) &&
-            dirs.TryGetProperty("downloads", out JsonElement dl))
-            return dl.GetString();
-
-        return null;
+        return SlskdDestinationConfig.FromOptions(doc.RootElement);
     }
 
     public async Task<ValidationFailure?> TestConnectionAsync(SlskdProviderSettings settings)
@@ -220,7 +297,9 @@ public class SlskdApiClient(IHttpClient httpClient, Logger logger) : ISlskdApiCl
             if (string.IsNullOrEmpty(serverState) || !serverState.Contains("Connected"))
                 return new ValidationFailure("BaseUrl", $"Slskd server is not connected. State: {serverState}");
 
-            settings.DownloadPath = await GetDownloadPathAsync(settings) ?? string.Empty;
+            SlskdDestinationConfig? destinationConfig = await GetDestinationConfigAsync(settings);
+            settings.DownloadPath = destinationConfig?.DownloadsDirectory ?? string.Empty;
+            settings.SubdirectoryPattern = destinationConfig?.SubdirectoryPattern;
             if (string.IsNullOrEmpty(settings.DownloadPath))
                 return new ValidationFailure("DownloadPath", "DownloadPath could not be found or is invalid.");
 

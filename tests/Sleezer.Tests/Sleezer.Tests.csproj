@@ -89,6 +89,8 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Download\Clients\Soulseek\Models\SlskdDownloadDirectory.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Download\Clients\Soulseek\SlskdPathResolver.cs"
+             LinkBase="SourceUnderTest" />
   </ItemGroup>
 
   <ItemGroup>

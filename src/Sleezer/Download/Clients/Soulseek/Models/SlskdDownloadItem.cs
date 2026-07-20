@@ -39,6 +39,22 @@ public class SlskdDownloadItem
     public List<Task> PostProcessTasks { get; } = [];
     public DownloadItemStatus? LastReportedStatus { get; set; }
     public bool DiscFoldersMerged { get; set; }
+
+    /// <summary>Batch id when the batch enqueue endpoint accepted the download.</summary>
+    public string? BatchId { get; set; }
+
+    /// <summary>
+    /// Local subfolder (relative to the downloads directory) slskd reported via
+    /// a DownloadDirectoryComplete event — ground truth when present.
+    /// </summary>
+    public string? ConfirmedSubdirectory { get; set; }
+
+    /// <summary>
+    /// Local subfolder predicted from the batch destination or the configured
+    /// subdirectory pattern before any event confirms it.
+    /// </summary>
+    public string? DerivedSubdirectory { get; set; }
+
     public IReadOnlyDictionary<string, SlskdFileState> FileStates => _previousFileStates;
 
     public SlskdDownloadDirectory? SlskdDownloadDirectory
@@ -197,6 +213,12 @@ public class SlskdDownloadItem
 
     public OsPath GetFullFolderPath(OsPath downloadPath)
     {
+        // slskd's own placement report (event localDirectoryName) or the
+        // batch/pattern-derived prediction wins over leaf-name guessing.
+        string? knownSubdirectory = ConfirmedSubdirectory ?? DerivedSubdirectory;
+        if (!string.IsNullOrEmpty(knownSubdirectory))
+            return new OsPath(Path.Combine(downloadPath.FullPath, knownSubdirectory.Replace('/', Path.DirectorySeparatorChar)));
+
         // Multi-disc: slskd downloads each remote disc directory into its own
         // local folder; the manager merges those into one album folder after
         // completion, and that folder is what Lidarr imports.
