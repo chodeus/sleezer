@@ -1,6 +1,5 @@
 using NzbDrone.Core.Indexers;
 using NzbDrone.Core.IndexerSearch.Definitions;
-using NzbDrone.Core.Music;
 
 namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek.Search.Core;
 
@@ -13,8 +12,7 @@ public enum QueryType
     VariousArtists = 1 << 2,
     HasVolume = 1 << 3,
     HasRomanNumeral = 1 << 4,
-    NeedsNormalization = 1 << 5,
-    NeedsTypeDisambiguation = 1 << 6
+    NeedsNormalization = 1 << 5
 }
 
 public sealed record SearchContext
@@ -24,7 +22,6 @@ public sealed record SearchContext
     public string? Year { get; init; }
     public bool Interactive { get; init; }
     public int TrackCount { get; init; }
-    public PrimaryAlbumType PrimaryType { get; init; }
     public IReadOnlyList<string> Aliases { get; init; }
     public IReadOnlyList<string> Tracks { get; init; }
     public SlskdSettings Settings { get; init; }
@@ -43,14 +40,6 @@ public sealed record SearchContext
     public bool IsSelfTitled => QueryType.HasFlag(QueryType.SelfTitled);
     public bool IsShortName => QueryType.HasFlag(QueryType.ShortName);
     public bool HasValidYear => !string.IsNullOrEmpty(Year) && Year != "0";
-    public bool NeedsTypeDisambiguation => QueryType.HasFlag(QueryType.NeedsTypeDisambiguation);
-
-    public string? ReleaseTypeTag => PrimaryType switch
-    {
-        var t when t == PrimaryAlbumType.EP => "EP",
-        var t when t == PrimaryAlbumType.Single => "Single",
-        _ => null
-    };
 
     public SearchContext(
         string? Artist,
@@ -58,7 +47,6 @@ public sealed record SearchContext
         string? Year,
         bool Interactive,
         int TrackCount,
-        PrimaryAlbumType PrimaryType,
         IReadOnlyList<string> Aliases,
         IReadOnlyList<string> Tracks,
         SlskdSettings Settings,
@@ -70,7 +58,6 @@ public sealed record SearchContext
         this.Year = Year;
         this.Interactive = Interactive;
         this.TrackCount = TrackCount;
-        this.PrimaryType = PrimaryType;
         this.Aliases = Aliases;
         this.Tracks = Tracks;
         this.Settings = Settings;

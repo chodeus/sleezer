@@ -16,10 +16,7 @@ public sealed class VariousArtistsStrategy : SearchStrategyBase
     public override string? GetQuery(SearchContext context, QueryType queryType)
     {
         if (context.HasValidYear)
-            return QueryBuilder.Build(context.SearchAlbum, context.Year, context.ReleaseTypeTag);
-
-        if (context.NeedsTypeDisambiguation)
-            return QueryBuilder.Build(context.SearchAlbum, context.ReleaseTypeTag);
+            return QueryBuilder.Build(context.SearchAlbum, context.Year);
 
         return context.SearchAlbum;
     }
@@ -39,10 +36,7 @@ public sealed class SelfTitledStrategy : SearchStrategyBase
     public override string? GetQuery(SearchContext context, QueryType queryType)
     {
         if (context.HasValidYear)
-            return QueryBuilder.Build(context.SearchArtist, context.Year, context.ReleaseTypeTag);
-
-        if (context.NeedsTypeDisambiguation)
-            return QueryBuilder.Build(context.SearchArtist, context.ReleaseTypeTag);
+            return QueryBuilder.Build(context.SearchArtist, context.Year);
 
         return context.SearchArtist;
     }
@@ -61,11 +55,11 @@ public sealed class ShortNameStrategy : SearchStrategyBase
 
     public override string? GetQuery(SearchContext context, QueryType queryType)
     {
-        // Short album names need maximum context
+        // Short album names need context, but only words peers actually put in
+        // folder names — the year qualifies, "EP"/"Single" tags do not.
         return QueryBuilder.Build(
             context.SearchArtist,
             context.SearchAlbum,
-            context.HasValidYear ? context.Year : null,
-            context.ReleaseTypeTag);
+            context.HasValidYear ? context.Year : null);
     }
 }

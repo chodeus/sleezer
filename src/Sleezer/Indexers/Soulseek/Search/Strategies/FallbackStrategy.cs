@@ -3,37 +3,31 @@ using NzbDrone.Plugin.Sleezer.Indexers.Soulseek.Search.Transformers;
 
 namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek.Search.Strategies;
 
-public sealed class WildcardStrategy : SearchStrategyBase
+public sealed class EditionStrippedStrategy : SearchStrategyBase
 {
-    public override string Name => "Trimmed Fallback";
+    public override string Name => "Edition Stripped";
     public override SearchTier Tier => SearchTier.Fallback;
     public override int Priority => 0;
 
     public override bool IsEnabled(SlskdSettings settings) => settings.UseFallbackSearch;
 
-    public override bool CanExecute(SearchContext context, QueryType queryType)
-    {
-        bool hasArtist = !string.IsNullOrWhiteSpace(context.SearchArtist) && context.SearchArtist.Length > 3;
-        bool hasAlbum = !string.IsNullOrWhiteSpace(context.SearchAlbum) && context.SearchAlbum.Length > 3;
-        return hasArtist || hasAlbum;
-    }
+    public override bool CanExecute(SearchContext context, QueryType queryType) =>
+        !context.IsSelfTitled &&
+        !string.IsNullOrWhiteSpace(context.SearchAlbum) &&
+        QueryBuilder.StripEditionSuffixes(context.SearchAlbum) != null;
 
+    // "Superstylin' (remixes)" or "OK Computer (Deluxe Edition)" — peers name
+    // folders after the plain album, so retry with the bracketed/edition tail
+    // removed. Replaces the former "Trimmed Fallback" strategy, whose
+    // last-character-stripped words ("Groov Armad Superstyli") matched nothing:
+    // Soulseek requires whole terms, verified ~100% zero-result in live logs.
     public override string? GetQuery(SearchContext context, QueryType queryType)
     {
-        string artistWildcard = QueryBuilder.BuildTrimmed(context.SearchArtist);
+        string? stripped = QueryBuilder.StripEditionSuffixes(context.SearchAlbum);
+        if (string.IsNullOrWhiteSpace(stripped))
+            return null;
 
-        if (context.IsSelfTitled)
-        {
-            if (string.IsNullOrWhiteSpace(artistWildcard))
-                return null;
-
-            return context.HasValidYear
-                ? QueryBuilder.Build(artistWildcard, context.Year)
-                : artistWildcard;
-        }
-
-        string albumWildcard = QueryBuilder.BuildTrimmed(context.SearchAlbum);
-        return QueryBuilder.Build(artistWildcard, albumWildcard);
+        return QueryBuilder.Build(context.SearchArtist, stripped);
     }
 }
 

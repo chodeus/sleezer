@@ -38,6 +38,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
         public long? Size { get; set; }
 
         public int Priotity { get; set; }
+        public bool MatchedSearchCriteria { get; set; }
         public List<string>? ExtraInfo { get; set; }
 
         public string DownloadProtocol { get; set; } = downloadProtocol;
@@ -48,22 +49,39 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
         /// <summary>
         /// Converts AlbumData into a ReleaseInfo object.
         /// </summary>
-        public ReleaseInfo ToReleaseInfo() => new()
+        public ReleaseInfo ToReleaseInfo() => FillReleaseInfo(new ReleaseInfo());
+
+        /// <summary>
+        /// Slskd variant of <see cref="ToReleaseInfo"/>. ShareInfo derives from
+        /// TorrentInfo so the share priority reaches
+        /// SlskdIndexer.CleanupReleases as Seeders; a plain ReleaseInfo made
+        /// that hook dead code and every release ranked on quality alone.
+        /// </summary>
+        public ShareInfo ToShareInfo()
         {
-            Guid = Guid ?? $"{IndexerName}-{AlbumId}-{Codec}-{Bitrate}-{BitDepth}",
-            Artist = ArtistName,
-            Album = AlbumName,
-            DownloadUrl = AlbumId,
-            InfoUrl = InfoUrl,
-            PublishDate = ReleaseDateTime == DateTime.MinValue ? DateTime.UtcNow : ReleaseDateTime,
-            DownloadProtocol = DownloadProtocol,
-            Title = ConstructTitle(),
-            Codec = Codec.ToString(),
-            Resolution = CoverResolution,
-            Source = CustomString,
-            Container = Bitrate.ToString(),
-            Size = Size ?? (Duration > 0 ? Duration : TotalTracks * 300) * Bitrate * 1000 / 8
-        };
+            ShareInfo release = (ShareInfo)FillReleaseInfo(new ShareInfo());
+            release.Seeders = Priotity;
+            release.MatchedSearchCriteria = MatchedSearchCriteria;
+            return release;
+        }
+
+        private ReleaseInfo FillReleaseInfo(ReleaseInfo release)
+        {
+            release.Guid = Guid ?? $"{IndexerName}-{AlbumId}-{Codec}-{Bitrate}-{BitDepth}";
+            release.Artist = ArtistName;
+            release.Album = AlbumName;
+            release.DownloadUrl = AlbumId;
+            release.InfoUrl = InfoUrl;
+            release.PublishDate = ReleaseDateTime == DateTime.MinValue ? DateTime.UtcNow : ReleaseDateTime;
+            release.DownloadProtocol = DownloadProtocol;
+            release.Title = ConstructTitle();
+            release.Codec = Codec.ToString();
+            release.Resolution = CoverResolution;
+            release.Source = CustomString;
+            release.Container = Bitrate.ToString();
+            release.Size = Size ?? (Duration > 0 ? Duration : TotalTracks * 300) * Bitrate * 1000 / 8;
+            return release;
+        }
 
         /// <summary>
         /// Parses the release date based on the precision.

@@ -125,9 +125,15 @@ namespace NzbDrone.Plugin.Sleezer.Core.Replacements
 
                     releases.AddRange(tierReleases);
 
-                    if (pageableRequestChain.AreTierResultsUsable(i, tierReleases.Count))
+                    // Only releases that matched the search criteria count toward
+                    // the stop decision. A tier full of bystander directories
+                    // (parsed but not matching the wanted artist/album) must not
+                    // suppress the broader recovery tiers behind it.
+                    int matchedCount = tierReleases.Count(r => r is not Model.ShareInfo share || share.MatchedSearchCriteria);
+
+                    if (pageableRequestChain.AreTierResultsUsable(i, matchedCount))
                     {
-                        _logger.Debug($"Tier {i + 1} found {tierReleases.Count} usable results out of total {releases.Count} results. Stopping search.");
+                        _logger.Debug($"Tier {i + 1} found {matchedCount} matching results ({tierReleases.Count} parsed) out of total {releases.Count} results. Stopping search.");
                         break;
                     }
                     else if (tierReleases.Count != 0)

@@ -52,10 +52,11 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 .GreaterThanOrEqualTo(1)
                 .WithMessage("Response Limit must be at least 1.");
 
-            // Timeout validation
+            // Timeout validation. Floor of 5s: this value is slskd's server-side
+            // Soulseek search window, and below ~5s most peers never answer.
             RuleFor(c => c.TimeoutInSeconds)
-                .GreaterThanOrEqualTo(2.0)
-                .WithMessage("Timeout must be at least 2 seconds.");
+                .GreaterThanOrEqualTo(5.0)
+                .WithMessage("Timeout must be at least 5 seconds — this is how long slskd collects responses from Soulseek peers.");
 
             // TrackFallback validation
             RuleFor(c => c.UseTrackFallback)
@@ -144,16 +145,16 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         public int TrackCountFilter { get; set; } = (int)TrackCountFilterType.Disabled;
 
         [FieldDefinition(12, Type = FieldType.Number, Label = "Response Limit", HelpText = "Max search responses", Advanced = true)]
-        public int ResponseLimit { get; set; } = 100;
+        public int ResponseLimit { get; set; } = 200;
 
-        [FieldDefinition(13, Type = FieldType.Number, Label = "Timeout", Unit = "seconds", HelpText = "Search timeout", Advanced = true)]
-        public double TimeoutInSeconds { get; set; } = 5;
+        [FieldDefinition(13, Type = FieldType.Number, Label = "Timeout", Unit = "seconds", HelpText = "How long slskd searches the Soulseek network. Soulseek peers commonly answer after 5-20s, so low values silently drop most results.", Advanced = true)]
+        public double TimeoutInSeconds { get; set; } = 15;
 
-        [FieldDefinition(14, Type = FieldType.Checkbox, Label = "Append Year", HelpText = "Append the release year to the first search (ignored when templates are set)", Advanced = true)]
+        [FieldDefinition(14, Type = FieldType.Checkbox, Label = "Append Year", HelpText = "Also try a year-tagged search variant after the plain artist+album query (ignored when templates are set)", Advanced = true)]
         public bool AppendYear { get; set; }
 
         [FieldDefinition(15, Type = FieldType.Checkbox, Label = "Normalize Search", HelpText = "Remove accents and special characters (é→e, ü→u)", Advanced = true)]
-        public bool NormalizedSeach { get; set; }
+        public bool NormalizedSeach { get; set; } = true;
 
         [FieldDefinition(16, Type = FieldType.Checkbox, Label = "Volume Variations", HelpText = "Try alternate volume formats (Vol.1 <-> Volume I)", Advanced = true)]
         public bool HandleVolumeVariations { get; set; }

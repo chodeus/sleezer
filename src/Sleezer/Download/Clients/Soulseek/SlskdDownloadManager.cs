@@ -252,6 +252,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }
 
         TryDeleteOutputFolder(clientItem, settings);
+        TryDeleteUnmergedDiscFolders(item, settings);
 
         RemoveItemFromDict(definitionId, clientItem.DownloadId);
 
@@ -304,6 +305,35 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         catch (Exception ex)
         {
             _logger.Warn(ex, "[{Title}] Failed to delete output folder '{Folder}'", clientItem.Title, folder);
+        }
+    }
+
+    /// <summary>
+    /// Removes the per-disc local folders of a multi-disc item that was
+    /// cancelled or failed before the post-completion merge ran.
+    /// </summary>
+    private void TryDeleteUnmergedDiscFolders(SlskdDownloadItem item, SlskdProviderSettings settings)
+    {
+        if (!item.IsMultiDirectory || item.DiscFoldersMerged)
+            return;
+
+        string localRoot = GetRemoteDownloadPath(settings).FullPath.TrimEnd('/', '\\');
+
+        foreach (string leaf in item.RemoteDirectoryLeaves())
+        {
+            string folder = Path.Combine(localRoot, leaf);
+            if (!IsStrictDescendantOfRoot(folder, localRoot) || !_diskProvider.FolderExists(folder))
+                continue;
+
+            try
+            {
+                _logger.Debug("[{ItemId}] Deleting unmerged disc folder '{Folder}'", item.ID, folder);
+                _diskProvider.DeleteFolder(folder, true);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warn(ex, "[{ItemId}] Failed to delete unmerged disc folder '{Folder}'", item.ID, folder);
+            }
         }
     }
 
@@ -417,7 +447,11 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             string hash = SlskdDownloadItem.GetStableMD5Id(dir.Files?.Select(f => f.Filename) ?? []);
             currentIdSet.TryAdd(hash, true);
 
-            SlskdDownloadItem? item = GetItem(definitionId, hash);
+            // A multi-disc item's ID hashes ALL its files, but slskd reports
+            // transfers per remote directory — the per-directory hash never
+            // matches, so fall back to matching by enqueued-file membership.
+            SlskdDownloadItem? item = GetItem(definitionId, hash)
+                ?? FindItemOwningDirectory(definitionId, dir);
             if (item == null)
             {
                 _logger.Trace("[def={DefinitionId}] Unknown item {Hash}: checking history", definitionId, hash);
@@ -434,6 +468,10 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 SubscribeStateChanges(item, definitionId);
                 AddItem(definitionId, item);
             }
+            else
+            {
+                currentIdSet.TryAdd(item.ID, true);
+            }
 
             item.Username ??= userTransfers.Username;
             item.SlskdDownloadDirectory = dir;
@@ -448,10 +486,24 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }
     }
 
+    private SlskdDownloadItem? FindItemOwningDirectory(int definitionId, SlskdDownloadDirectory dir)
+    {
+        string? probeFile = dir.Files?.FirstOrDefault()?.Filename;
+        if (string.IsNullOrEmpty(probeFile))
+            return null;
+
+        return GetItemsForDef(definitionId).FirstOrDefault(i => i.OwnsFile(probeFile));
+    }
+
     private static bool AllFilesCompleted(SlskdDownloadItem item)
     {
         IReadOnlyDictionary<string, SlskdFileState> states = item.FileStates;
         if (states.Count == 0)
+            return false;
+
+        // Multi-disc: transfer state arrives per remote directory, so wait until
+        // every enqueued file has reported before declaring the album complete.
+        if (item.FileData.Count > 0 && states.Count < item.FileData.Count)
             return false;
 
         foreach (SlskdFileState state in states.Values)
@@ -504,11 +556,17 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
             SlskdDownloadItem? item = GetItemsForDef(definitionId)
                 .FirstOrDefault(i => i.Username == username &&
-                                     string.Equals(i.SlskdDownloadDirectory?.Directory, remoteDir, StringComparison.OrdinalIgnoreCase));
+                                     (i.TracksRemoteDirectory(remoteDir) ||
+                                      string.Equals(i.SlskdDownloadDirectory?.Directory, remoteDir, StringComparison.OrdinalIgnoreCase)));
 
             if (item != null)
             {
-                EnqueuePostProcess(item, settings);
+                // Multi-disc items get one DownloadDirectoryComplete per disc;
+                // only post-process once every enqueued file is done.
+                if (AllFilesCompleted(item))
+                    EnqueuePostProcess(item, settings);
+                else
+                    _logger.Trace("[def={DefinitionId}] Directory {RemoteDir} complete but item {ItemId} still has pending files — waiting", definitionId, remoteDir, item.ID);
             }
             else if (userTransfers == null)
             {
@@ -553,8 +611,9 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         FFmpegSettings? sharedSettings = GetSharedPostProcessingSettings();
         bool scanEnabled = sharedSettings?.CorruptionScanClients?.Contains((int)PostProcessClient.Slskd) ?? false;
         bool tagEnabled = sharedSettings?.PreImportTaggingClients?.Contains((int)PostProcessClient.Slskd) ?? false;
+        bool mergeNeeded = item.IsMultiDirectory && !item.DiscFoldersMerged;
 
-        if (!scanEnabled && !tagEnabled)
+        if (!scanEnabled && !tagEnabled && !mergeNeeded)
             return;
 
         Task task = Task.Run(async () =>
@@ -567,6 +626,23 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 // finishes moving files out of the incomplete dir. Give it a moment.
                 await Task.Delay(TimeSpan.FromSeconds(5), cts.Token);
 
+                // Multi-disc: slskd downloaded each remote disc directory into
+                // its own local folder (CD1, CD2). Merge them into the album
+                // folder BEFORE scanning/importing — the item's OutputPath
+                // (GetFullFolderPath) already points at the merged folder, and
+                // status stays Downloading until this task completes, so Lidarr
+                // cannot import mid-merge.
+                if (mergeNeeded)
+                {
+                    TryMergeDiscFolders(item, settings);
+
+                    if (!item.DiscFoldersMerged)
+                    {
+                        _logger.Warn("[post-process] {ItemId}: skipping scan/tag — disc-folder merge incomplete", item.ID);
+                        return;
+                    }
+                }
+
                 OsPath remotePath = GetRemoteDownloadPath(settings);
                 string folderPath = item.GetFullFolderPath(remotePath).FullPath;
 
@@ -575,6 +651,9 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                     _logger.Warn("[post-process] Folder missing after DownloadDirectoryComplete: {FolderPath}", folderPath);
                     return;
                 }
+
+                if (!scanEnabled && !tagEnabled)
+                    return;
 
                 if (scanEnabled)
                 {
@@ -628,6 +707,81 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         });
 
         item.PostProcessTasks.Add(task);
+    }
+
+    /// <summary>
+    /// Moves the per-disc local folders slskd created (CD1, CD2, ...) into the
+    /// item's album folder, preserving the disc subfolders (Lidarr imports
+    /// multi-disc layouts fine as long as they share one root). Every move is
+    /// gated on the resolved paths being strict descendants of the download
+    /// root — disc leaf names are peer-controlled.
+    /// </summary>
+    private void TryMergeDiscFolders(SlskdDownloadItem item, SlskdProviderSettings settings)
+    {
+        try
+        {
+            string localRoot = GetRemoteDownloadPath(settings).FullPath.TrimEnd('/', '\\');
+            string albumFolder = item.GetFullFolderPath(new OsPath(localRoot)).FullPath;
+
+            if (!IsStrictDescendantOfRoot(albumFolder, localRoot))
+            {
+                _logger.Warn("[merge] Album folder '{Album}' is not inside the download root '{Root}', refusing disc merge", albumFolder, localRoot);
+                return;
+            }
+
+            bool allMoved = true;
+
+            foreach (string leaf in item.RemoteDirectoryLeaves())
+            {
+                string source = Path.Combine(localRoot, leaf);
+                if (!_diskProvider.FolderExists(source))
+                    continue;
+
+                if (!IsStrictDescendantOfRoot(source, localRoot))
+                {
+                    allMoved = false;
+                    continue;
+                }
+
+                if (string.Equals(Path.GetFullPath(source), Path.GetFullPath(albumFolder), StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                string target = Path.Combine(albumFolder, leaf);
+                if (_diskProvider.FolderExists(target))
+                    continue;
+
+                if (!IsStrictDescendantOfRoot(target, localRoot))
+                {
+                    allMoved = false;
+                    continue;
+                }
+
+                try
+                {
+                    if (!_diskProvider.FolderExists(albumFolder))
+                        _diskProvider.CreateFolder(albumFolder);
+
+                    _logger.Debug("[merge] {ItemId}: moving disc folder '{Source}' -> '{Target}'", item.ID, source, target);
+                    _diskProvider.MoveFolder(source, target);
+                }
+                catch (Exception ex)
+                {
+                    allMoved = false;
+                    _logger.Warn(ex, "[merge] {ItemId}: failed to move disc folder '{Source}'", item.ID, source);
+                }
+            }
+
+            // A partial merge must NOT be recorded as merged: the flag guards
+            // both the post-process scan (which would see a disc missing) and
+            // TryDeleteUnmergedDiscFolders cleanup of the leftover folder.
+            item.DiscFoldersMerged = allMoved;
+            if (!allMoved)
+                _logger.Warn("[merge] {ItemId}: disc-folder merge incomplete; leaving unmerged folders in place", item.ID);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "[merge] Disc-folder merge failed for {ItemId}", item.ID);
+        }
     }
 
     private async Task<List<SlskdCorruptionStrike>> ScanFolderForCorruptionAsync(
@@ -837,7 +991,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         SlskdSearchData searchData = new(null, null, false, false, 1, null);
         IGrouping<string, SlskdFileData> dirGroup = dir.ToSlskdFileDataList().GroupBy(_ => dir.Directory).First();
         AlbumData albumData = _slskdItemsParser.CreateAlbumData(string.Empty, dirGroup, searchData, folderData, null, 0);
-        ReleaseInfo release = albumData.ToReleaseInfo();
+        ReleaseInfo release = albumData.ToShareInfo();
         release.DownloadProtocol = null;
         return release;
     }

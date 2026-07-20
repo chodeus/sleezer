@@ -59,11 +59,16 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
             _processedSearches.Clear();
 
+            // Album entity title, NOT searchCriteria.AlbumQuery — AlbumQuery is
+            // "{Title}+{Disambiguation}" and the fused "+..." token poisons the
+            // Soulseek query (every term is mandatory). Self-titled albums keep
+            // their title here too: the pipeline's SelfTitled handling dedupes
+            // the query text, while the parser still needs the album name to
+            // stamp matched directories.
             SearchContext context = new(
                 Artist: searchCriteria.ArtistQuery,
-                Album: searchCriteria.ArtistQuery != searchCriteria.AlbumQuery ? searchCriteria.AlbumQuery : null,
+                Album: album?.Title ?? searchCriteria.AlbumQuery,
                 Year: searchCriteria.AlbumYear.ToString(),
-                PrimaryType: GetPrimaryAlbumType(album?.AlbumType),
                 Interactive: searchCriteria.InteractiveSearch,
                 TrackCount: trackCount,
                 Aliases: searchCriteria.Artist?.Metadata.Value.Aliases ?? [],
@@ -89,11 +94,12 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
             _processedSearches.Clear();
 
+            // Raw artist name — CleanArtistQuery is "+"-joined ("Pink+Floyd"),
+            // which no peer path contains.
             SearchContext context = new(
-                Artist: searchCriteria.CleanArtistQuery,
+                Artist: searchCriteria.ArtistQuery,
                 Album: null,
                 Year: null,
-                PrimaryType: GetPrimaryAlbumType(album?.AlbumType),
                 Interactive: searchCriteria.InteractiveSearch,
                 TrackCount: trackCount,
                 Aliases: searchCriteria.Artist?.Metadata.Value.Aliases ?? [],
@@ -163,22 +169,19 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 _logger.Warn(ex, "Search request failed for: {SearchText}", searchText);
                 return null;
             }
-            catch (SearchGateTimeoutException)
+            catch (RequestLimitReachedException)
             {
-                // Already logged at Warn inside ExecuteSearchAsync. Skip this one so Lidarr re-queues
-                // the album later instead of holding a search-task slot for the full timeout.
-                return null;
+                // Gate timeout / persistent 429. Propagate so Lidarr records a
+                // FAILURE with a short backoff instead of a clean "searched,
+                // nothing found" — swallowing it here made a transient slskd
+                // hiccup indistinguishable from "album does not exist".
+                throw;
             }
             catch (Exception ex)
             {
                 _logger.Error(ex, "Error generating search request for: {SearchText}", searchText);
                 return null;
             }
-        }
-
-        private sealed class SearchGateTimeoutException : Exception
-        {
-            public SearchGateTimeoutException(string message) : base(message) { }
         }
 
         private dynamic CreateSearchData(string searchText) => new
@@ -223,9 +226,11 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             Stopwatch waitSw = Stopwatch.StartNew();
             if (!await gate.WaitAsync(acquireCap))
             {
-                _logger.Warn("Slskd search gate timeout for {BaseUrl} after {ElapsedMs}ms; skipping search {SearchId} (Lidarr will retry the album)",
+                _logger.Warn("Slskd search gate timeout for {BaseUrl} after {ElapsedMs}ms; failing search {SearchId} so Lidarr backs off and retries",
                     Settings.BaseUrl, waitSw.ElapsedMilliseconds, searchId);
-                throw new SearchGateTimeoutException($"Could not acquire slskd search gate within {acquireCap.TotalSeconds:F0}s");
+                throw new RequestLimitReachedException(
+                    $"Could not acquire slskd search gate within {acquireCap.TotalSeconds:F0}s — slskd is busy.",
+                    TimeSpan.FromMinutes(2));
             }
 
             if (contended)
@@ -244,7 +249,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
         // Even with the gate held, a third party may be hitting the same slskd (e.g. the user has the slskd
         // web UI open and started a manual search). Treat 429 as a transient and retry once after a short
-        // backoff before giving up.
+        // backoff; if it persists, fail the search with a short indexer backoff instead of returning an
+        // empty result Lidarr would record as "searched, nothing found".
         private async Task ExecuteCreateSearchWithRetryAsync(HttpRequest searchRequest, string searchId)
         {
             try
@@ -258,7 +264,16 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             }
 
             await Task.Delay(TimeSpan.FromSeconds(2));
-            await _client.ExecuteAsync(searchRequest);
+            try
+            {
+                await _client.ExecuteAsync(searchRequest);
+            }
+            catch (HttpException ex) when ((int)ex.Response.StatusCode == 429)
+            {
+                throw new RequestLimitReachedException(
+                    "slskd keeps returning 429 for new searches — another client is using it. Backing off.",
+                    TimeSpan.FromMinutes(5));
+            }
         }
 
         private HttpRequest CreateResultRequest(string searchId, SearchQuery query)
@@ -291,7 +306,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 Interactive = query.Interactive,
                 ExpandDirectory = query.ExpandDirectory,
                 MimimumFiles = minimumFiles,
-                MaximumFiles = maximumFiles
+                MaximumFiles = maximumFiles,
+                TrackCount = query.TrackCount
             }.ToJson();
 
             return request;
@@ -361,17 +377,6 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
             double delay = (a * Math.Pow(progress, 2)) + (b * progress) + c;
             return Math.Clamp(delay, 0.5, 5);
-        }
-
-        private static PrimaryAlbumType GetPrimaryAlbumType(string? albumType)
-        {
-            if (string.IsNullOrWhiteSpace(albumType))
-                return PrimaryAlbumType.Album;
-
-            PrimaryAlbumType? matchedType = PrimaryAlbumType.All
-                .FirstOrDefault(t => t.Name.Equals(albumType, StringComparison.OrdinalIgnoreCase));
-
-            return matchedType ?? PrimaryAlbumType.Album;
         }
 
         public async Task<IGrouping<string, SlskdFileData>?> ExpandDirectory(string username, string directoryPath, SlskdFileData originalTrack)

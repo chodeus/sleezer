@@ -129,12 +129,37 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 yield return album.Replace(romanMatch.Value, arabicNumber.ToString());
         }
 
+        private static readonly char[] PathSeparators = ['\\', '/'];
+
+        // Soulseek paths are canonically backslash-separated, but some clients
+        // (Nicotine+ on POSIX) leak forward slashes into shared paths.
         public static string GetDirectoryFromFilename(string? filename)
         {
             if (string.IsNullOrEmpty(filename))
                 return "";
-            int lastBackslashIndex = filename.LastIndexOf('\\');
-            return lastBackslashIndex >= 0 ? filename[..lastBackslashIndex] : "";
+            int lastSeparatorIndex = filename.LastIndexOfAny(PathSeparators);
+            return lastSeparatorIndex >= 0 ? filename[..lastSeparatorIndex] : "";
+        }
+
+        public static bool IsDiscFolderName(string? name) =>
+            !string.IsNullOrWhiteSpace(name) && DiscFolderRegex().IsMatch(name.Trim());
+
+        /// <summary>
+        /// Directory key for grouping search-result files into releases. Files
+        /// inside a disc subfolder (Album\CD1, Album\Disc 2) group under the
+        /// parent album folder, so multi-disc shares surface as one release
+        /// instead of per-disc fragments that fail track-count filtering.
+        /// </summary>
+        public static string GetMergedDirectoryKey(string? filename)
+        {
+            string directory = GetDirectoryFromFilename(filename);
+            int lastSeparatorIndex = directory.LastIndexOfAny(PathSeparators);
+            if (lastSeparatorIndex < 0)
+                return directory;
+
+            return IsDiscFolderName(directory[(lastSeparatorIndex + 1)..])
+                ? directory[..lastSeparatorIndex]
+                : directory;
         }
 
         public static HashSet<string> ParseListContent(string content)
@@ -151,5 +176,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
         [GeneratedRegex(@"\s+")]
         private static partial Regex StripPunctuationRegex();
+
+        [GeneratedRegex(@"^(?:cd|disc|disk|dvd)\s*[-_. ]?\s*\d{1,2}$", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+        private static partial Regex DiscFolderRegex();
     }
 }
