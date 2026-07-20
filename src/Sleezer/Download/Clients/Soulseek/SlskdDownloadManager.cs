@@ -633,7 +633,15 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 // status stays Downloading until this task completes, so Lidarr
                 // cannot import mid-merge.
                 if (mergeNeeded)
+                {
                     TryMergeDiscFolders(item, settings);
+
+                    if (!item.DiscFoldersMerged)
+                    {
+                        _logger.Warn("[post-process] {ItemId}: skipping scan/tag — disc-folder merge incomplete", item.ID);
+                        return;
+                    }
+                }
 
                 OsPath remotePath = GetRemoteDownloadPath(settings);
                 string folderPath = item.GetFullFolderPath(remotePath).FullPath;
@@ -721,18 +729,32 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 return;
             }
 
+            bool allMoved = true;
+
             foreach (string leaf in item.RemoteDirectoryLeaves())
             {
                 string source = Path.Combine(localRoot, leaf);
-                if (!IsStrictDescendantOfRoot(source, localRoot) || !_diskProvider.FolderExists(source))
+                if (!_diskProvider.FolderExists(source))
                     continue;
+
+                if (!IsStrictDescendantOfRoot(source, localRoot))
+                {
+                    allMoved = false;
+                    continue;
+                }
 
                 if (string.Equals(Path.GetFullPath(source), Path.GetFullPath(albumFolder), StringComparison.OrdinalIgnoreCase))
                     continue;
 
                 string target = Path.Combine(albumFolder, leaf);
-                if (!IsStrictDescendantOfRoot(target, localRoot) || _diskProvider.FolderExists(target))
+                if (_diskProvider.FolderExists(target))
                     continue;
+
+                if (!IsStrictDescendantOfRoot(target, localRoot))
+                {
+                    allMoved = false;
+                    continue;
+                }
 
                 try
                 {
@@ -744,11 +766,17 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 }
                 catch (Exception ex)
                 {
+                    allMoved = false;
                     _logger.Warn(ex, "[merge] {ItemId}: failed to move disc folder '{Source}'", item.ID, source);
                 }
             }
 
-            item.DiscFoldersMerged = true;
+            // A partial merge must NOT be recorded as merged: the flag guards
+            // both the post-process scan (which would see a disc missing) and
+            // TryDeleteUnmergedDiscFolders cleanup of the leftover folder.
+            item.DiscFoldersMerged = allMoved;
+            if (!allMoved)
+                _logger.Warn("[merge] {ItemId}: disc-folder merge incomplete; leaving unmerged folders in place", item.ID);
         }
         catch (Exception ex)
         {
