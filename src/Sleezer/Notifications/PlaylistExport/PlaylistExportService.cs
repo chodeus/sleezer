@@ -24,10 +24,10 @@ public interface IPlaylistExportService
 }
 
 public sealed partial class PlaylistExportService : IPlaylistExportService,
-    IHandle<ApplicationStartedEvent>,
-    IHandle<ProviderAddedEvent<IImportList>>,
-    IHandle<ProviderUpdatedEvent<IImportList>>,
-    IHandle<ProviderDeletedEvent<IImportList>>
+    IHandleAsync<ApplicationStartedEvent>,
+    IHandleAsync<ProviderAddedEvent<IImportList>>,
+    IHandleAsync<ProviderUpdatedEvent<IImportList>>,
+    IHandleAsync<ProviderDeletedEvent<IImportList>>
 {
     private const string SnapshotKey = "playlistExport.snapshots";
 
@@ -63,11 +63,13 @@ public sealed partial class PlaylistExportService : IPlaylistExportService,
         _logger = logger;
     }
 
-    public void Handle(ApplicationStartedEvent message) => RefreshSchema();
-    public void Handle(ProviderAddedEvent<IImportList> message) => RefreshSchema();
-    public void Handle(ProviderUpdatedEvent<IImportList> message) => RefreshSchema();
+    // Async handlers: schema refresh walks providers and (on Windows exe)
+    // could block the synchronous event bus during startup, hanging boot.
+    public Task HandleAsync(ApplicationStartedEvent message) => Task.Run(RefreshSchema);
+    public Task HandleAsync(ProviderAddedEvent<IImportList> message) => Task.Run(RefreshSchema);
+    public Task HandleAsync(ProviderUpdatedEvent<IImportList> message) => Task.Run(RefreshSchema);
 
-    public void Handle(ProviderDeletedEvent<IImportList> message)
+    public Task HandleAsync(ProviderDeletedEvent<IImportList> message)
     {
         Dictionary<int, PlaylistSnapshot> snapshots = GetSnapshots();
 
@@ -92,6 +94,7 @@ public sealed partial class PlaylistExportService : IPlaylistExportService,
         }
 
         RefreshSchema();
+        return Task.CompletedTask;
     }
 
     public void RefreshSchema()
