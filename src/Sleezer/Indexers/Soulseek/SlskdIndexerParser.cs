@@ -309,16 +309,25 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 // busy source retries soon while a dead share sits out a day.
                 Dictionary<string, (int Count, DateTime Last)> perRelease = new(StringComparer.OrdinalIgnoreCase);
                 Dictionary<string, int> perUser = new(StringComparer.OrdinalIgnoreCase);
+                int? indexerId = _indexer.Definition?.Id;
                 foreach (EntityHistory history in _historyService.Since(DateTime.UtcNow.AddHours(-24), EntityHistoryEventType.DownloadFailed))
                 {
                     if (string.IsNullOrWhiteSpace(history.DownloadId))
+                        continue;
+
+                    // Same scoping as GetGrabCounts: a torrent failure's
+                    // DownloadUrl would otherwise contribute a junk "username".
+                    DownloadHistory? grab = _downloadHistoryService.GetLatestGrab(history.DownloadId);
+                    if (grab == null || !string.Equals(grab.Protocol, nameof(SoulseekDownloadProtocol), StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    if (indexerId.HasValue && grab.IndexerId != indexerId.Value)
                         continue;
 
                     string baseId = SlskdDownloadItem.StripRetrySuffix(history.DownloadId);
                     (int count, DateTime last) = perRelease.GetValueOrDefault(baseId);
                     perRelease[baseId] = (count + 1, history.Date > last ? history.Date : last);
 
-                    string? username = ExtractUsernameFromUrl(_downloadHistoryService.GetLatestGrab(history.DownloadId)?.Release?.DownloadUrl);
+                    string? username = ExtractUsernameFromUrl(grab.Release?.DownloadUrl);
                     if (username != null)
                         perUser[username] = perUser.GetValueOrDefault(username) + 1;
                 }
