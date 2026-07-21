@@ -63,13 +63,14 @@ public sealed partial class PlaylistExportService : IPlaylistExportService,
         _logger = logger;
     }
 
-    // Async handlers: schema refresh walks providers and (on Windows exe)
-    // could block the synchronous event bus during startup, hanging boot.
-    public Task HandleAsync(ApplicationStartedEvent message) => Task.Run(RefreshSchema);
-    public Task HandleAsync(ProviderAddedEvent<IImportList> message) => Task.Run(RefreshSchema);
-    public Task HandleAsync(ProviderUpdatedEvent<IImportList> message) => Task.Run(RefreshSchema);
+    // IHandleAsync: Lidarr's event bus dispatches these on its async workers
+    // (the interface returns void), so a slow schema refresh can't block the
+    // synchronous startup event path.
+    public void HandleAsync(ApplicationStartedEvent message) => RefreshSchema();
+    public void HandleAsync(ProviderAddedEvent<IImportList> message) => RefreshSchema();
+    public void HandleAsync(ProviderUpdatedEvent<IImportList> message) => RefreshSchema();
 
-    public Task HandleAsync(ProviderDeletedEvent<IImportList> message)
+    public void HandleAsync(ProviderDeletedEvent<IImportList> message)
     {
         Dictionary<int, PlaylistSnapshot> snapshots = GetSnapshots();
 
@@ -94,7 +95,6 @@ public sealed partial class PlaylistExportService : IPlaylistExportService,
         }
 
         RefreshSchema();
-        return Task.CompletedTask;
     }
 
     public void RefreshSchema()
