@@ -179,8 +179,15 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                     $"All {result.Failed.Count} files failed to enqueue: {string.Join("; ", result.Failed.Select(f => $"{Path.GetFileName(f.Filename)}: {f.Message}"))}");
 
             if (result.Failed.Count > 0)
+            {
                 _logger.Warn("{Failed} of {Total} files failed to enqueue for {Username}: {Messages}",
                     result.Failed.Count, files.Count, username, string.Join("; ", result.Failed.Select(f => f.Message).Distinct()));
+
+                // Rejected files never produce a transfer — exclude them from
+                // completion tracking so the item can still finish, import its
+                // partial content, and let Lidarr re-search for the gaps.
+                item.MarkEnqueueFailed(result.Failed.Select(f => f.Filename));
+            }
 
             item.BatchId = result.BatchId;
             if (destination != null && result.BatchId != null)
@@ -547,8 +554,9 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             return false;
 
         // Multi-disc: transfer state arrives per remote directory, so wait until
-        // every enqueued file has reported before declaring the album complete.
-        if (item.FileData.Count > 0 && states.Count < item.FileData.Count)
+        // every ACCEPTED file has reported before declaring the album complete
+        // (enqueue-rejected files never produce a transfer).
+        if (item.ExpectedFileCount > 0 && states.Count < item.ExpectedFileCount)
             return false;
 
         foreach (SlskdFileState state in states.Values)

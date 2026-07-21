@@ -30,7 +30,10 @@ public class BlockedTermTests
 
         Assert.NotEqual("Adele 25", rewritten);
         Assert.False(SlskdTextProcessor.ContainsBlockedTerms(rewritten));
-        Assert.EndsWith(" 25", rewritten);
+
+        // The rewrite must PRESERVE the artist term (accent-folded it is the
+        // original query), not delete or replace it.
+        Assert.Equal("Adele 25", SlskdTextProcessor.NormalizeSpecialCharacters(rewritten));
     }
 
     [Fact]
@@ -75,6 +78,8 @@ public class SlskdPathResolverTests
     [InlineData("/downloads", "/downloads/peer/Album", "peer/Album")]
     [InlineData("/downloads", "/elsewhere/Album", null)]
     [InlineData("/downloads", "/downloads", "")]
+    [InlineData("/downloads", "/downloads//../etc", null)]
+    [InlineData("/downloads", "/downloads/a/../../etc", null)]
     public void MakeRelativeToDownloads_handles_containment(string root, string path, string? expected)
     {
         Assert.Equal(expected, SlskdPathResolver.MakeRelativeToDownloads(root, path));

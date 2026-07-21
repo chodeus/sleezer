@@ -61,9 +61,18 @@ public static partial class SlskdPathResolver
         if (path.Equals(root, StringComparison.OrdinalIgnoreCase))
             return string.Empty;
 
-        return path.StartsWith(root + "/", StringComparison.OrdinalIgnoreCase)
-            ? path[(root.Length + 1)..]
-            : null;
+        if (!path.StartsWith(root + "/", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        string relative = path[(root.Length + 1)..];
+
+        // The event payload is not fully under our control — fail closed on
+        // relative segments ("root//../x" passes the prefix check above).
+        string[] segments = relative.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length == 0 || segments.Any(s => s is "." or ".."))
+            return null;
+
+        return string.Join('/', segments);
     }
 
     private static string Normalize(string path) => path.Replace('\\', '/');

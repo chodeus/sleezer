@@ -576,11 +576,18 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             if (titles.Count == 0)
                 return 0;
 
-            string haystack = NormalizeString(string.Join(" ", files
+            // Per-file containment: a concatenated haystack lets a multi-word
+            // title spuriously match across the boundary of two filenames.
+            List<string> normalizedNames = files
                 .Select(f => Path.GetFileNameWithoutExtension(f.Filename ?? string.Empty))
-                .Select(n => TrackNumberPrefixRegex().Replace(n, string.Empty))));
+                .Select(n => NormalizeString(TrackNumberPrefixRegex().Replace(n, string.Empty)))
+                .Where(n => n.Length > 0)
+                .ToList();
 
-            return titles.Count(haystack.Contains) / (double)titles.Count;
+            if (normalizedNames.Count == 0)
+                return 0;
+
+            return titles.Count(title => normalizedNames.Any(name => name.Contains(title))) / (double)titles.Count;
         }
 
         // Non-contiguous track numbers usually mean a partial rip or a mixed

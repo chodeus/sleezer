@@ -34,6 +34,7 @@ public class SlskdDownloadItem
     // aggregates them and exposes a merged view through SlskdDownloadDirectory.
     private readonly Dictionary<string, SlskdDownloadDirectory> _remoteDirectories = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _enqueuedFilenames;
+    private readonly HashSet<string> _enqueueFailedFilenames = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, SlskdFileState> _previousFileStates = [];
 
     public List<Task> PostProcessTasks { get; } = [];
@@ -80,6 +81,19 @@ public class SlskdDownloadItem
     /// <summary>True when this item enqueued the given remote file.</summary>
     public bool OwnsFile(string? remoteFilename) =>
         !string.IsNullOrEmpty(remoteFilename) && _enqueuedFilenames.Contains(remoteFilename);
+
+    /// <summary>
+    /// Records files slskd rejected at enqueue time. They will never produce a
+    /// transfer, so completion tracking must not wait for them.
+    /// </summary>
+    public void MarkEnqueueFailed(IEnumerable<string> filenames)
+    {
+        foreach (string filename in filenames)
+            _enqueueFailedFilenames.Add(filename);
+    }
+
+    /// <summary>Files that were actually accepted by slskd.</summary>
+    public int ExpectedFileCount => Math.Max(0, FileData.Count - _enqueueFailedFilenames.Count);
 
     /// <summary>True when this item tracks transfers for the given remote directory.</summary>
     public bool TracksRemoteDirectory(string? remoteDirectory) =>
@@ -215,8 +229,10 @@ public class SlskdDownloadItem
     {
         // slskd's own placement report (event localDirectoryName) or the
         // batch/pattern-derived prediction wins over leaf-name guessing.
+        // Peer/remote-influenced, so fail closed on any relative segment.
         string? knownSubdirectory = ConfirmedSubdirectory ?? DerivedSubdirectory;
-        if (!string.IsNullOrEmpty(knownSubdirectory))
+        if (!string.IsNullOrEmpty(knownSubdirectory) &&
+            !knownSubdirectory.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries).Any(s => s is "." or ".."))
             return new OsPath(Path.Combine(downloadPath.FullPath, knownSubdirectory.Replace('/', Path.DirectorySeparatorChar)));
 
         // Multi-disc: slskd downloads each remote disc directory into its own
