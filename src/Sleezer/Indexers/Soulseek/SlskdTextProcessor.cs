@@ -1,6 +1,7 @@
 ﻿using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
+using FuzzySharp;
 
 namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 {
@@ -329,6 +330,63 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 : directory;
         }
 
+        /// <summary>
+        /// Extracts the remix qualifier from a title: the remixer text when one
+        /// is named ("Never Say Never (Colyn Remix)" → "colyn"), an empty string
+        /// when the title is a generic remix release ("Lets Get Lost Remixes"),
+        /// or null when the title has no remix qualifier at all. Edition
+        /// qualifiers ("Deluxe Edition", "Remastered") are NOT remix qualifiers —
+        /// the word boundary in the keyword regex keeps "edit" from matching
+        /// "Edition".
+        /// </summary>
+        public static string? ExtractRemixSignature(string? title)
+        {
+            if (string.IsNullOrWhiteSpace(title) || !RemixKeywordRegex().IsMatch(title))
+                return null;
+
+            foreach (Match bracket in BracketedContentRegex().Matches(title))
+            {
+                string inner = bracket.Value[1..^1];
+                if (RemixKeywordRegex().IsMatch(inner))
+                    return NormalizeRemixerText(RemixKeywordRegex().Replace(inner, " "));
+            }
+
+            int dash = title.LastIndexOf(" - ", StringComparison.Ordinal);
+            if (dash >= 0)
+            {
+                string tail = title[(dash + 3)..];
+                if (RemixKeywordRegex().IsMatch(tail))
+                    return NormalizeRemixerText(RemixKeywordRegex().Replace(tail, " "));
+            }
+
+            return string.Empty;
+        }
+
+        /// <summary>
+        /// A remix qualifier marks a DIFFERENT release, not a variant of the same
+        /// one: "Never Say Never" must never match "Never Say Never (Colyn Remix)"
+        /// (PartialRatio scores that pair 100), and a search FOR a remix must not
+        /// settle for the original. Two named remixers conflict unless they agree.
+        /// A generic qualifier on both sides, or generic vs named, is allowed.
+        /// </summary>
+        public static bool RemixSignaturesConflict(string? searchAlbum, string? candidateName)
+        {
+            string? searchSignature = ExtractRemixSignature(searchAlbum);
+            string? candidateSignature = ExtractRemixSignature(candidateName);
+
+            if (searchSignature == null && candidateSignature == null)
+                return false;
+            if (searchSignature == null || candidateSignature == null)
+                return true;
+            if (searchSignature.Length == 0 || candidateSignature.Length == 0)
+                return false;
+
+            return Fuzz.TokenSetRatio(searchSignature, candidateSignature) < 60;
+        }
+
+        private static string NormalizeRemixerText(string text) =>
+            StripPunctuation(text).Trim().ToLowerInvariant();
+
         public static HashSet<string> ParseListContent(string content)
         {
             if (string.IsNullOrWhiteSpace(content))
@@ -349,5 +407,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
         [GeneratedRegex(@"[\(\[\{].*?[\)\]\}]", RegexOptions.Compiled)]
         private static partial Regex BracketedContentRegex();
+
+        [GeneratedRegex(@"\b(remix(es)?|rmx|re-?work(ed)?|bootleg|vip|flip|edit)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+        private static partial Regex RemixKeywordRegex();
     }
 }

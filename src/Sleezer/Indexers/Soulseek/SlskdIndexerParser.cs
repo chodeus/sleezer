@@ -14,6 +14,7 @@ using System.Text.Json;
 using NzbDrone.Plugin.Sleezer.Core.Model;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
+using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek.Models;
 
 namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 {
@@ -34,6 +35,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         private readonly object _rateLimitLock = new();
         private DateTime _rateLimitCacheTimestamp = DateTime.MinValue;
         private HashSet<string> _rateLimitedUsersCache = new(StringComparer.OrdinalIgnoreCase);
+        private DateTime _failedIdCacheTimestamp = DateTime.MinValue;
+        private HashSet<string> _failedIdCache = new(StringComparer.OrdinalIgnoreCase);
 
         private SlskdSettings Settings => _indexer.Settings;
 
@@ -67,10 +70,12 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 SlskdSearchData searchTextData = SlskdSearchData.FromJson(indexerResponse.HttpRequest.ContentSummary);
                 HashSet<string>? ignoredUsers = GetIgnoredUsers(Settings.IgnoreListPath);
                 HashSet<string> rateLimitedUsers = GetRateLimitedUsers();
+                HashSet<string> recentlyFailedIds = GetRecentlyFailedDownloadIds();
 
                 int totalResponses = searchResponse.Responses?.Count() ?? 0;
                 int droppedIgnored = 0;
                 int droppedRateLimited = 0;
+                int droppedRecentlyFailed = 0;
 
                 foreach (SlskdFolderData response in searchResponse.Responses ?? Enumerable.Empty<SlskdFolderData>())
                 {
@@ -132,13 +137,35 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                             }
                         }
 
+                        // Same content hash the download client will assign this
+                        // release: skip sources that already failed recently. The
+                        // blocklist rows Lidarr writes for Soulseek grabs carry no
+                        // protocol, so its own Blocklist spec never filters them
+                        // and a dead share re-surfaces at the same rank on the
+                        // very next search (verified live 2026-07-21: the same
+                        // "File not shared" release was re-grabbed twice within
+                        // a minute).
+                        // Interactive searches stay unfiltered: a manual re-grab
+                        // of a failed source is deliberate (and imports fine now
+                        // that retries get their own downloadId).
+                        if (!searchTextData.Interactive)
+                        {
+                            string prospectiveId = SlskdDownloadItem.GetStableMD5Id(finalGroup.Select(f => f.Filename));
+                            if (recentlyFailedIds.Contains(prospectiveId))
+                            {
+                                droppedRecentlyFailed++;
+                                _logger.Trace("Filtered (failed within 24h): {Directory}", directoryGroup.Key);
+                                continue;
+                            }
+                        }
+
                         AlbumData albumData = _itemsParser.CreateAlbumData(searchResponse.Id, finalGroup, searchTextData, folderData, Settings, searchTextData.TrackCount);
                         albumDatas.Add(albumData);
                     }
                 }
 
-                _logger.Debug("Slskd parse: {Total} response(s), {Albums} album(s) emitted, dropped {Ignored} ignored-user / {RateLimited} rate-limited",
-                    totalResponses, albumDatas.Count, droppedIgnored, droppedRateLimited);
+                _logger.Debug("Slskd parse: {Total} response(s), {Albums} album(s) emitted, dropped {Ignored} ignored-user / {RateLimited} rate-limited / {RecentlyFailed} recently-failed",
+                    totalResponses, albumDatas.Count, droppedIgnored, droppedRateLimited, droppedRecentlyFailed);
 
                 RemoveSearch(searchResponse.Id, albumDatas.Count != 0 && searchTextData.Interactive);
             }
@@ -264,6 +291,30 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 _rateLimitedUsersCache = blocked;
                 _rateLimitCacheTimestamp = DateTime.UtcNow;
                 return blocked;
+            }
+        }
+
+        private HashSet<string> GetRecentlyFailedDownloadIds()
+        {
+            lock (_rateLimitLock)
+            {
+                if (DateTime.UtcNow - _failedIdCacheTimestamp < TimeSpan.FromSeconds(15))
+                    return _failedIdCache;
+
+                HashSet<string> failed = new(StringComparer.OrdinalIgnoreCase);
+                foreach (EntityHistory history in _historyService.Since(DateTime.UtcNow.AddHours(-24), EntityHistoryEventType.DownloadFailed))
+                {
+                    if (string.IsNullOrWhiteSpace(history.DownloadId))
+                        continue;
+
+                    // Retry grabs record their failure under the suffixed id;
+                    // fold it back so the base release is skipped too.
+                    failed.Add(SlskdDownloadItem.StripRetrySuffix(history.DownloadId));
+                }
+
+                _failedIdCache = failed;
+                _failedIdCacheTimestamp = DateTime.UtcNow;
+                return failed;
             }
         }
 

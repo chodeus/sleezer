@@ -2,6 +2,7 @@ using NLog;
 using NzbDrone.Common.Disk;
 using NzbDrone.Common.Instrumentation;
 using NzbDrone.Core.Download;
+using NzbDrone.Core.Download.History;
 using NzbDrone.Core.Music;
 using NzbDrone.Core.Parser.Model;
 using System.Text.Json;
@@ -191,6 +192,48 @@ public class SlskdDownloadItem
         string combined = string.Join("|", filenames.Order());
         byte[] bytes = System.Text.Encoding.UTF8.GetBytes(combined);
         return BitConverter.ToString(System.Security.Cryptography.MD5.HashData(bytes)).Replace("-", "").ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// Picks the downloadId for a new grab. Lidarr's tracked-download cache is
+    /// keyed by downloadId and keeps returning the cached object once its state
+    /// leaves Downloading, so a re-grab after a download failure must NOT reuse
+    /// the failed attempt's id — the completed retry would be silently ignored
+    /// and never imported. Walks -r2..-r9 until it finds an id whose latest
+    /// download-history event is not DownloadFailed.
+    /// </summary>
+    public static string ResolveRetryId(string baseId, Func<string, DownloadHistoryEventType?> latestEventTypeFor)
+    {
+        string id = baseId;
+        for (int attempt = 2; attempt <= 9; attempt++)
+        {
+            if (latestEventTypeFor(id) != DownloadHistoryEventType.DownloadFailed)
+                return id;
+
+            id = $"{baseId}-r{attempt}";
+        }
+
+        return id;
+    }
+
+    /// <summary>
+    /// Strips the "-r&lt;n&gt;" suffix a retry grab gets (see ResolveRetryId),
+    /// recovering the stable content hash shared by every attempt at the same
+    /// release.
+    /// </summary>
+    public static string StripRetrySuffix(string id)
+    {
+        int marker = id.LastIndexOf("-r", StringComparison.Ordinal);
+        if (marker <= 0 || marker + 2 >= id.Length)
+            return id;
+
+        for (int i = marker + 2; i < id.Length; i++)
+        {
+            if (!char.IsAsciiDigit(id[i]))
+                return id;
+        }
+
+        return id[..marker];
     }
 
     private void CompareFileStates(SlskdDownloadDirectory? newDirectory)

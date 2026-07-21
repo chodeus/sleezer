@@ -246,12 +246,56 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             try
             {
                 await ExecuteCreateSearchWithRetryAsync(searchRequest, searchId);
-                await WaitOnSearchCompletionAsync(searchId, TimeSpan.FromSeconds(Settings.TimeoutInSeconds));
+                string finalState = await WaitOnSearchCompletionAsync(searchId, TimeSpan.FromSeconds(Settings.TimeoutInSeconds));
+
+                // slskd's SearchTimeout is an INACTIVITY window, so a search with
+                // a steady trickle of responses can outlive our client-side wait.
+                // The parser deletes the search record as soon as it has read the
+                // results, and deleting an in-flight search makes slskd's own
+                // finalize write hit a vanished row ("Failed to finalize search",
+                // DbUpdateConcurrencyException — verified live 2026-07-21, with
+                // the search's results silently lost). Cancel first so the record
+                // reaches a terminal state and the later delete is clean.
+                // "Unknown" (a run of failed polls) says nothing about whether
+                // the search still runs — if slskd was only transiently
+                // unreachable, skipping the cancel here reopens the same
+                // delete-in-flight race. A cancel against a truly vanished
+                // search is a harmless 404.
+                if (finalState.StartsWith("InProgress", StringComparison.OrdinalIgnoreCase) || finalState == "Unknown")
+                    await CancelInFlightSearchAsync(searchId);
             }
             finally
             {
                 gate.Release();
             }
+        }
+
+        private async Task CancelInFlightSearchAsync(string searchId)
+        {
+            try
+            {
+                HttpRequest cancelRequest = new HttpRequestBuilder($"{Settings.BaseUrl}/api/v0/searches/{searchId}")
+                    .SetHeader("X-API-KEY", Settings.ApiKey)
+                    .Build();
+                cancelRequest.Method = HttpMethod.Put;
+                await _client.ExecuteAsync(cancelRequest);
+            }
+            catch (HttpException ex)
+            {
+                _logger.Debug(ex, "Cancel request for in-flight search {SearchId} failed", searchId);
+                return;
+            }
+
+            for (int i = 0; i < 6; i++)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(1));
+                JsonNode? searchStatus = await GetSearchResultsAsync(searchId);
+                string state = searchStatus?["state"]?.GetValue<string>() ?? "Unknown";
+                if (!state.StartsWith("InProgress", StringComparison.OrdinalIgnoreCase))
+                    return;
+            }
+
+            _logger.Debug("Search {SearchId} still in progress 6s after cancel; proceeding anyway", searchId);
         }
 
         // Even with the gate held, a third party may be hitting the same slskd (e.g. the user has the slskd
@@ -319,12 +363,13 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             return request;
         }
 
-        private async Task WaitOnSearchCompletionAsync(string searchId, TimeSpan timeout)
+        private async Task<string> WaitOnSearchCompletionAsync(string searchId, TimeSpan timeout)
         {
             DateTime startTime = DateTime.UtcNow.AddSeconds(2);
             string state = "InProgress";
             int totalFilesFound = 0;
             bool hasTimedOut = false;
+            int consecutiveFailedPolls = 0;
             DateTime timeoutEndTime = DateTime.UtcNow;
 
             while (state == "InProgress")
@@ -343,6 +388,19 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
                 JsonNode? searchStatus = await GetSearchResultsAsync(searchId);
 
+                // A single failed poll is a transient worth riding out, but a
+                // run of them means the search record is gone — spinning on
+                // "InProgress" for the whole grace window just burns the gate.
+                if (searchStatus == null)
+                {
+                    if (++consecutiveFailedPolls >= 3)
+                        return "Unknown";
+                }
+                else
+                {
+                    consecutiveFailedPolls = 0;
+                }
+
                 state = searchStatus?["state"]?.GetValue<string>() ?? "InProgress";
                 int fileCount = searchStatus?["fileCount"]?.GetValue<int>() ?? 0;
 
@@ -356,6 +414,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 if (state != "InProgress")
                     break;
             }
+
+            return state;
         }
 
         private async Task<JsonNode?> GetSearchResultsAsync(string searchId)
