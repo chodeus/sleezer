@@ -1,4 +1,5 @@
 using System.Text;
+using FuzzySharp;
 using NLog;
 using NzbDrone.Common.Disk;
 using NzbDrone.Core.Datastore;
@@ -244,9 +245,85 @@ public class PreImportTagger : IPreImportTagger
             }
         }
 
+        // Album-level identification cannot pass for a single/EP pulled out of
+        // an album share — the file's album tag names the share's album. When
+        // everything above failed, fall back to per-track title matching
+        // against the target release (remix/variant qualifiers still conflict).
+        if (tagged == 0 && IsTitleFallbackEligible(album))
+        {
+            (int titleTagged, int titleErrored) = TryTitleDrivenTagging(localTracks, album, albumRelease, stripFeaturedArtists, sourceId, ct);
+            if (titleTagged > 0)
+            {
+                tagged += titleTagged;
+                skipped = Math.Max(0, skipped - titleTagged);
+            }
+
+            errored += titleErrored;
+        }
+
         _logger.Info("Pre-import tag: {SourceId} tagged={Tagged} skipped_weak_match={Skipped} tag_write_failed={TagWriteFailed}",
             sourceId, tagged, skipped, errored);
         return new TaggingResult(tagged, skipped, errored);
+    }
+
+    private static bool IsTitleFallbackEligible(Album album) =>
+        string.Equals(album.AlbumType, "Single", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(album.AlbumType, "EP", StringComparison.OrdinalIgnoreCase);
+
+    private (int Tagged, int Errored) TryTitleDrivenTagging(
+        List<LocalTrack> localTracks,
+        Album album,
+        AlbumRelease? albumRelease,
+        bool stripFeaturedArtists,
+        string sourceId,
+        CancellationToken ct)
+    {
+        AlbumRelease? release = albumRelease
+            ?? album.AlbumReleases?.Value?.FirstOrDefault(r => r.Monitored)
+            ?? album.AlbumReleases?.Value?.FirstOrDefault();
+        List<Track>? tracks = release?.Tracks?.Value;
+        if (release == null || tracks is not { Count: > 0 })
+            return (0, 0);
+
+        string? artistName = album.Artist?.Value?.Name;
+        List<string> localTitles = localTracks.Select(lt =>
+        {
+            // A present-but-foreign artist tag means a same-titled track by
+            // someone else — exclude it rather than tag across artists.
+            string? artistTag = lt.FileTrackInfo?.ArtistTitle;
+            if (!string.IsNullOrWhiteSpace(artistTag) && !string.IsNullOrWhiteSpace(artistName) &&
+                Fuzz.TokenSetRatio(artistTag.ToLowerInvariant(), artistName.ToLowerInvariant()) < 60)
+            {
+                return string.Empty;
+            }
+
+            string title = lt.FileTrackInfo?.Title ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(title))
+                title = TrackTitleMatcher.TitleFromFilename(Path.GetFileNameWithoutExtension(lt.Path));
+
+            return title;
+        }).ToList();
+
+        Dictionary<int, int> mapping = TrackTitleMatcher.Match(localTitles, tracks.Select(t => t.Title).ToList());
+        if (mapping.Count == 0)
+            return (0, 0);
+
+        _logger.Info("Pre-import tag: album-level match failed but {Matched}/{FileCount} track title(s) match release '{Release}' — tagging by title for {SourceId}",
+            mapping.Count, localTracks.Count, release.Title, sourceId);
+
+        int tagged = 0;
+        int errored = 0;
+        foreach ((int localIndex, int wantedIndex) in mapping)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            if (TryTagSingleFile(localTracks[localIndex], tracks[wantedIndex], album, release, stripFeaturedArtists))
+                tagged++;
+            else
+                errored++;
+        }
+
+        return (tagged, errored);
     }
 
     private bool TryTagSingleFile(LocalTrack localTrack, Track track, Album album, AlbumRelease? albumRelease, bool stripFeaturedArtists)
