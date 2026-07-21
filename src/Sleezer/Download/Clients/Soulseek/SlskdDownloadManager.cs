@@ -572,16 +572,13 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             i.OwnsFile(probeFile));
     }
 
-    // Transfers slskd reports after a Lidarr restart have no in-memory item to
-    // map to. The per-directory content hash finds plain single-folder grabs,
-    // but a retry grab lives under an -rN suffix and a multi-disc grab hashes
-    // every disc — for those, walk recent Soulseek grabs newest-first and match
-    // by enqueued-file membership, the same rule the live mapping uses. Without
-    // this, restart-orphaned downloads sat invisible to Lidarr until re-grabbed.
+    // Restart re-attach: -rN retry and multi-disc grab ids never equal the
+    // per-directory hash, so fall back to file-membership over recent grabs.
     private DownloadHistory? FindGrabOwningDirectory(string hash, SlskdDownloadDirectory dir)
     {
         DownloadHistory? direct = _downloadHistoryService.GetLatestGrab(hash);
-        if (direct != null)
+        if (direct?.Release != null &&
+            string.Equals(direct.Protocol, nameof(SoulseekDownloadProtocol), StringComparison.OrdinalIgnoreCase))
             return direct;
 
         string? probeFile = dir.Files?.FirstOrDefault()?.Filename;
