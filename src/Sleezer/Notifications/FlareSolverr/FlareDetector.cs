@@ -76,8 +76,10 @@ public static class FlareDetector
         }
         else
         {
-            Logger.Trace("Not a Cloudflare/DDoS-Guard server for {0}", url);
-            return false;
+            // Challenges are often served behind proxies that don't label
+            // themselves Cloudflare — fall through to body inspection instead
+            // of declaring no-challenge on the header alone.
+            Logger.Trace("No Cloudflare/DDoS-Guard server header for {0}, falling back to body inspection", url);
         }
 
         string responseText = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
@@ -90,13 +92,6 @@ public static class FlareDetector
             return false;
         }
 
-        // Check for Cloudflare error codes
-        if (responseText.TrimStart().StartsWith("error code:", StringComparison.OrdinalIgnoreCase))
-        {
-            Logger.Trace("Cloudflare error code detected in content for {0}", url);
-            return true;
-        }
-
         // Check for actual challenge indicators
         string? challengeIndicator = CloudflareChallengeIndicators.FirstOrDefault(indicator =>
             responseText.Contains(indicator, StringComparison.OrdinalIgnoreCase));
@@ -105,6 +100,21 @@ public static class FlareDetector
         {
             Logger.Trace("Challenge indicator '{0}' found in content for {1}", challengeIndicator, url);
             return true;
+        }
+
+        // Check for Cloudflare error codes
+        if (responseText.TrimStart().StartsWith("error code:", StringComparison.OrdinalIgnoreCase))
+        {
+            Logger.Trace("Cloudflare error code detected in content for {0}", url);
+            return true;
+        }
+
+        // Without a Cloudflare server header, only a definitive body indicator
+        // counts — avoids false positives on ordinary 403/503 responses.
+        if (!isCloudflareServer)
+        {
+            Logger.Trace("No definitive challenge indicator and no Cloudflare server header for {0}", url);
+            return false;
         }
 
         // Check for custom Cloudflare configurations (some Dutch torrent sites)

@@ -39,6 +39,10 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
 
         public int Priotity { get; set; }
         public bool MatchedSearchCriteria { get; set; }
+
+        // Detected media source ("WEB", "CD", "Vinyl", "SACD") — parsed by
+        // Lidarr's quality detection from the title suffix.
+        public string SourceTag { get; set; } = "WEB";
         public List<string>? ExtraInfo { get; set; }
 
         public string DownloadProtocol { get; set; } = downloadProtocol;
@@ -124,7 +128,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
             if (ExtraInfo?.Count > 0)
                 title += string.Concat(ExtraInfo.Where(info => !string.IsNullOrEmpty(info)).Select(info => $" [{info}]"));
 
-            title += " [WEB]";
+            title += $" [{SourceTag}]";
             return title;
         }
 

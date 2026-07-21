@@ -2,6 +2,7 @@ using NLog;
 using NzbDrone.Common.Disk;
 using NzbDrone.Common.Instrumentation;
 using NzbDrone.Core.Download;
+using NzbDrone.Core.Download.Clients;
 using NzbDrone.Core.Download.History;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Core.RemotePathMappings;
@@ -167,7 +168,35 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             string username = ExtractUsernameFromPath(remoteAlbum.Release.DownloadUrl);
             List<(string Filename, long Size)> files = ParseFilesFromSource(remoteAlbum.Release.Source);
 
-            await _apiClient.EnqueueDownloadAsync(settings, username, files);
+            // Multi-disc: ask slskd (batch endpoint) to land every file in one
+            // album-named destination folder, so no local merge is needed.
+            string? destination = item.IsMultiDirectory ? SanitizeFolderName(item.LocalAlbumFolderName()) : null;
+
+            SlskdEnqueueResult result = await _apiClient.EnqueueDownloadAsync(settings, username, files, externalId: item.ID, destination: destination);
+
+            if (result.AllFailed)
+                throw new DownloadClientException(
+                    $"All {result.Failed.Count} files failed to enqueue: {string.Join("; ", result.Failed.Select(f => $"{Path.GetFileName(f.Filename)}: {f.Message}"))}");
+
+            if (result.Failed.Count > 0)
+            {
+                _logger.Warn("{Failed} of {Total} files failed to enqueue for {Username}: {Messages}",
+                    result.Failed.Count, files.Count, username, string.Join("; ", result.Failed.Select(f => f.Message).Distinct()));
+
+                // Rejected files never produce a transfer — exclude them from
+                // completion tracking so the item can still finish, import its
+                // partial content, and let Lidarr re-search for the gaps.
+                item.MarkEnqueueFailed(result.Failed.Select(f => f.Filename));
+            }
+
+            item.BatchId = result.BatchId;
+            if (destination != null && result.BatchId != null)
+            {
+                // slskd honors the destination itself — no post-download merge.
+                item.DerivedSubdirectory = destination;
+                item.DiscFoldersMerged = true;
+            }
+
             item.Username = username;
             SubscribeStateChanges(item, definitionId);
             AddItem(definitionId, item);
@@ -451,7 +480,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             // transfers per remote directory — the per-directory hash never
             // matches, so fall back to matching by enqueued-file membership.
             SlskdDownloadItem? item = GetItem(definitionId, hash)
-                ?? FindItemOwningDirectory(definitionId, dir);
+                ?? FindItemOwningDirectory(definitionId, userTransfers.Username, dir);
             if (item == null)
             {
                 _logger.Trace("[def={DefinitionId}] Unknown item {Hash}: checking history", definitionId, hash);
@@ -476,6 +505,20 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             item.Username ??= userTransfers.Username;
             item.SlskdDownloadDirectory = dir;
 
+            // With a non-default subdirectory pattern, slskd places transfers
+            // somewhere the leaf-name guess can't predict — derive it.
+            if (item.DerivedSubdirectory == null && item.ConfirmedSubdirectory == null &&
+                settings.GetDestinationConfig() is { UsesDefaultPattern: false } destinationConfig &&
+                dir.Files?.FirstOrDefault()?.Filename is { Length: > 0 } firstFile)
+            {
+                item.DerivedSubdirectory = SlskdPathResolver.ResolveSubdirectory(
+                    destinationConfig,
+                    userTransfers.Username,
+                    firstFile,
+                    item.BatchId,
+                    item.BatchId != null ? item.ID : null);
+            }
+
             // Fallback trigger for post-process: if the transfer poll sees all
             // files completed before the event poll has caught up with the matching
             // DownloadDirectoryComplete event, enqueue here. Without this, Lidarr
@@ -486,13 +529,22 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }
     }
 
-    private SlskdDownloadItem? FindItemOwningDirectory(int definitionId, SlskdDownloadDirectory dir)
+    private SlskdDownloadItem? FindItemOwningDirectory(int definitionId, string username, SlskdDownloadDirectory dir)
     {
         string? probeFile = dir.Files?.FirstOrDefault()?.Filename;
         if (string.IsNullOrEmpty(probeFile))
             return null;
 
-        return GetItemsForDef(definitionId).FirstOrDefault(i => i.OwnsFile(probeFile));
+        return GetItemsForDef(definitionId).FirstOrDefault(i =>
+            (i.Username == null || string.Equals(i.Username, username, StringComparison.OrdinalIgnoreCase)) &&
+            i.OwnsFile(probeFile));
+    }
+
+    private static string SanitizeFolderName(string name)
+    {
+        foreach (char c in Path.GetInvalidFileNameChars())
+            name = name.Replace(c, '_');
+        return name;
     }
 
     private static bool AllFilesCompleted(SlskdDownloadItem item)
@@ -502,8 +554,9 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             return false;
 
         // Multi-disc: transfer state arrives per remote directory, so wait until
-        // every enqueued file has reported before declaring the album complete.
-        if (item.FileData.Count > 0 && states.Count < item.FileData.Count)
+        // every ACCEPTED file has reported before declaring the album complete
+        // (enqueue-rejected files never produce a transfer).
+        if (item.ExpectedFileCount > 0 && states.Count < item.ExpectedFileCount)
             return false;
 
         foreach (SlskdFileState state in states.Values)
@@ -544,6 +597,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             using JsonDocument doc = JsonDocument.Parse(record.Data);
             string remoteDir = doc.RootElement.TryGetProperty("remoteDirectoryName", out JsonElement rdn) ? rdn.GetString() ?? "" : "";
             string username = doc.RootElement.TryGetProperty("username", out JsonElement un) ? un.GetString() ?? "" : "";
+            string? localDir = doc.RootElement.TryGetProperty("localDirectoryName", out JsonElement ldn) ? ldn.GetString() : null;
 
             _logger.Trace("[def={DefinitionId}] Event DownloadDirectoryComplete: {RemoteDir} by {Username}: forcing refresh", definitionId, remoteDir, username);
 
@@ -561,6 +615,16 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
             if (item != null)
             {
+                // slskd tells us exactly where it put the files — ground truth
+                // for OutputPath, especially under custom subdirectory patterns
+                // or batch destinations. Single-directory items only: for
+                // multi-disc the per-disc local folder is not the album folder.
+                if (!item.IsMultiDirectory || item.BatchId != null)
+                {
+                    item.ConfirmedSubdirectory = SlskdPathResolver.MakeRelativeToDownloads(settings.DownloadPath, localDir)
+                        ?? item.ConfirmedSubdirectory;
+                }
+
                 // Multi-disc items get one DownloadDirectoryComplete per disc;
                 // only post-process once every enqueued file is done.
                 if (AllFilesCompleted(item))
@@ -902,15 +966,15 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
             try
             {
-                string relativePath = file.Filename;
-                if (relativePath.StartsWith(settings.DownloadPath, StringComparison.OrdinalIgnoreCase))
-                {
-                    relativePath = relativePath.Substring(settings.DownloadPath.Length).TrimStart('/', '\\');
-                }
-
-                string localFilePath = _remotePathMappingService
-                    .RemapRemoteToLocal(settings.Host, new OsPath(Path.Combine(settings.DownloadPath, relativePath)))
-                    .FullPath;
+                // file.Filename is the REMOTE path — only its basename exists
+                // locally, inside the item's resolved output folder. The old
+                // remote-path concatenation never matched a real local file.
+                string fileName = Path.GetFileName(file.Filename.Replace('\\', '/'));
+                string localFilePath = Path.Combine(
+                    _remotePathMappingService
+                        .RemapRemoteToLocal(settings.Host, item.GetFullFolderPath(new OsPath(settings.DownloadPath)))
+                        .FullPath,
+                    fileName);
 
                 if (_diskProvider.FileExists(localFilePath))
                 {

@@ -113,7 +113,14 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
         private IEnumerable<IndexerRequest> ExecuteSearch(SearchQuery query)
         {
-            string? searchText = query.SearchText ?? SlskdTextProcessor.BuildSearchText(query.Artist, query.Album);
+            string? searchText = query.SearchText;
+            if (string.IsNullOrWhiteSpace(searchText))
+            {
+                // Direct path (no pipeline query) still needs the server-blocked
+                // term rewrite the pipeline normally applies.
+                searchText = SlskdTextProcessor.RewriteRestrictedTerms(
+                    SlskdTextProcessor.BuildSearchText(query.Artist, query.Album));
+            }
 
             if (string.IsNullOrWhiteSpace(searchText))
                 return [];
@@ -149,9 +156,9 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             {
                 _logger.Debug("Search: {SearchText}", searchText);
 
-                dynamic searchData = CreateSearchData(searchText);
+                SlskdSearchRequestBody searchData = CreateSearchData(searchText);
                 string searchId = searchData.Id;
-                dynamic searchRequest = CreateSearchRequest(searchData);
+                HttpRequest searchRequest = CreateSearchRequest(searchData);
 
                 await ExecuteSearchAsync(searchRequest, searchId);
 
@@ -184,20 +191,20 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             }
         }
 
-        private dynamic CreateSearchData(string searchText) => new
+        private SlskdSearchRequestBody CreateSearchData(string searchText) => new()
         {
             Id = Guid.NewGuid().ToString(),
-            Settings.FileLimit,
+            FileLimit = Settings.FileLimit,
             FilterResponses = true,
-            Settings.MaximumPeerQueueLength,
-            Settings.MinimumPeerUploadSpeed,
-            Settings.MinimumResponseFileCount,
-            Settings.ResponseLimit,
+            MaximumPeerQueueLength = Settings.MaximumPeerQueueLength,
+            MinimumPeerUploadSpeed = Settings.MinimumPeerUploadSpeed,
+            MinimumResponseFileCount = Settings.MinimumResponseFileCount,
+            ResponseLimit = Settings.ResponseLimit,
             SearchText = searchText,
             SearchTimeout = (int)(Settings.TimeoutInSeconds * 1000),
         };
 
-        private HttpRequest CreateSearchRequest(dynamic searchData)
+        private HttpRequest CreateSearchRequest(SlskdSearchRequestBody searchData)
         {
             HttpRequest searchRequest = new HttpRequestBuilder($"{Settings.BaseUrl}/api/v0/searches")
                 .SetHeader("X-API-KEY", Settings.ApiKey)
@@ -299,16 +306,15 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 _ => null
             };
 
-            request.ContentSummary = new
-            {
-                Album = query.Album ?? "",
-                Artist = query.Artist,
-                Interactive = query.Interactive,
-                ExpandDirectory = query.ExpandDirectory,
-                MimimumFiles = minimumFiles,
-                MaximumFiles = maximumFiles,
-                TrackCount = query.TrackCount
-            }.ToJson();
+            request.ContentSummary = JsonSerializer.Serialize(new SlskdSearchData(
+                Artist: query.Artist,
+                Album: query.Album ?? "",
+                Interactive: query.Interactive,
+                ExpandDirectory: query.ExpandDirectory,
+                MinimumFiles: minimumFiles,
+                MaximumFiles: maximumFiles,
+                TrackCount: query.TrackCount,
+                Tracks: query.Tracks.Take(50).ToList()));
 
             return request;
         }
