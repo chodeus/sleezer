@@ -21,39 +21,37 @@ public static partial class TrackTitleMatcher
     /// </summary>
     public static Dictionary<int, int> Match(IReadOnlyList<string?> localTitles, IReadOnlyList<string?> wantedTitles, int threshold = DefaultThreshold)
     {
-        Dictionary<int, int> mapping = [];
-        HashSet<int> claimed = [];
-
+        // Score every viable pair first, then assign best-first: greedy
+        // in-array-order assignment let a mediocre earlier file claim the slot
+        // an exact later file should have won.
+        List<(int Local, int Wanted, int Score)> candidates = [];
         for (int i = 0; i < localTitles.Count; i++)
         {
             string local = Normalize(localTitles[i]);
             if (local.Length == 0)
                 continue;
 
-            int best = -1;
-            int bestScore = threshold - 1;
             for (int j = 0; j < wantedTitles.Count; j++)
             {
-                if (claimed.Contains(j))
-                    continue;
-
                 string wanted = Normalize(wantedTitles[j]);
                 if (wanted.Length == 0 || SlskdTextProcessor.RemixSignaturesConflict(wantedTitles[j], localTitles[i]))
                     continue;
 
                 int score = Fuzz.TokenSetRatio(local, wanted);
-                if (score > bestScore)
-                {
-                    bestScore = score;
-                    best = j;
-                }
+                if (score >= threshold)
+                    candidates.Add((i, j, score));
             }
+        }
 
-            if (best >= 0)
-            {
-                mapping[i] = best;
-                claimed.Add(best);
-            }
+        Dictionary<int, int> mapping = [];
+        HashSet<int> claimedWanted = [];
+        foreach ((int local, int wanted, _) in candidates.OrderByDescending(c => c.Score))
+        {
+            if (mapping.ContainsKey(local) || claimedWanted.Contains(wanted))
+                continue;
+
+            mapping[local] = wanted;
+            claimedWanted.Add(wanted);
         }
 
         return mapping;

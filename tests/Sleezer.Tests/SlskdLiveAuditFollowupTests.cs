@@ -136,6 +136,14 @@ public class TrackTitleMatcherTests
         Assert.Single(mapping);
     }
 
+    [Fact]
+    public void Match_prefers_the_best_score_regardless_of_file_order()
+    {
+        Dictionary<int, int> mapping = TrackTitleMatcher.Match(["scarred", "scared"], ["scared"]);
+        Assert.Single(mapping);
+        Assert.Equal(0, mapping[1]);
+    }
+
     [Theory]
     [InlineData("03. I Luv U", "I Luv U")]
     [InlineData("0101 - G‐Eazy - Me Myself and I", "Me Myself and I")]
