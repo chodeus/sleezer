@@ -256,7 +256,12 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 // DbUpdateConcurrencyException — verified live 2026-07-21, with
                 // the search's results silently lost). Cancel first so the record
                 // reaches a terminal state and the later delete is clean.
-                if (finalState.StartsWith("InProgress", StringComparison.OrdinalIgnoreCase))
+                // "Unknown" (a run of failed polls) says nothing about whether
+                // the search still runs — if slskd was only transiently
+                // unreachable, skipping the cancel here reopens the same
+                // delete-in-flight race. A cancel against a truly vanished
+                // search is a harmless 404.
+                if (finalState.StartsWith("InProgress", StringComparison.OrdinalIgnoreCase) || finalState == "Unknown")
                     await CancelInFlightSearchAsync(searchId);
             }
             finally
