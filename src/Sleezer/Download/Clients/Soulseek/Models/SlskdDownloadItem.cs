@@ -217,6 +217,18 @@ public class SlskdDownloadItem
     }
 
     /// <summary>
+    /// How long a failed release sits out automatic searches. Escalates with
+    /// the failure count so a transiently-busy source retries within the hour
+    /// while a repeatedly-dead share is suppressed for a full day.
+    /// </summary>
+    public static TimeSpan RetryBackoffWindow(int failureCount) => failureCount switch
+    {
+        <= 1 => TimeSpan.FromHours(1),
+        2 => TimeSpan.FromHours(6),
+        _ => TimeSpan.FromHours(24),
+    };
+
+    /// <summary>
     /// Strips the "-r&lt;n&gt;" suffix a retry grab gets (see ResolveRetryId),
     /// recovering the stable content hash shared by every attempt at the same
     /// release.

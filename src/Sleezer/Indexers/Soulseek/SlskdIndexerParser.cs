@@ -37,6 +37,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         private HashSet<string> _rateLimitedUsersCache = new(StringComparer.OrdinalIgnoreCase);
         private DateTime _failedIdCacheTimestamp = DateTime.MinValue;
         private HashSet<string> _failedIdCache = new(StringComparer.OrdinalIgnoreCase);
+        private Dictionary<string, int> _failedUserCache = new(StringComparer.OrdinalIgnoreCase);
 
         private SlskdSettings Settings => _indexer.Settings;
 
@@ -70,7 +71,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 SlskdSearchData searchTextData = SlskdSearchData.FromJson(indexerResponse.HttpRequest.ContentSummary);
                 HashSet<string>? ignoredUsers = GetIgnoredUsers(Settings.IgnoreListPath);
                 HashSet<string> rateLimitedUsers = GetRateLimitedUsers();
-                HashSet<string> recentlyFailedIds = GetRecentlyFailedDownloadIds();
+                (HashSet<string> recentlyFailedIds, Dictionary<string, int> recentlyFailedUsers) = GetRecentFailureState();
 
                 int totalResponses = searchResponse.Responses?.Count() ?? 0;
                 int droppedIgnored = 0;
@@ -106,7 +107,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                             LockedFiles = response.LockedFiles,
                             QueueLength = response.QueueLength,
                             Token = response.Token,
-                            FileCount = response.FileCount
+                            FileCount = response.FileCount,
+                            RecentUserFailures = recentlyFailedUsers.GetValueOrDefault(response.Username)
                         };
 
                         IGrouping<string, SlskdFileData> finalGroup = directoryGroup;
@@ -294,27 +296,44 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             }
         }
 
-        private HashSet<string> GetRecentlyFailedDownloadIds()
+        private (HashSet<string> FailedIds, Dictionary<string, int> FailedUsers) GetRecentFailureState()
         {
             lock (_rateLimitLock)
             {
                 if (DateTime.UtcNow - _failedIdCacheTimestamp < TimeSpan.FromSeconds(15))
-                    return _failedIdCache;
+                    return (_failedIdCache, _failedUserCache);
 
-                HashSet<string> failed = new(StringComparer.OrdinalIgnoreCase);
+                // Group by base release id: retry grabs record their failure
+                // under the -rN suffix, and the backoff escalates with the
+                // per-release failure count (1h → 6h → 24h) so a transiently
+                // busy source retries soon while a dead share sits out a day.
+                Dictionary<string, (int Count, DateTime Last)> perRelease = new(StringComparer.OrdinalIgnoreCase);
+                Dictionary<string, int> perUser = new(StringComparer.OrdinalIgnoreCase);
                 foreach (EntityHistory history in _historyService.Since(DateTime.UtcNow.AddHours(-24), EntityHistoryEventType.DownloadFailed))
                 {
                     if (string.IsNullOrWhiteSpace(history.DownloadId))
                         continue;
 
-                    // Retry grabs record their failure under the suffixed id;
-                    // fold it back so the base release is skipped too.
-                    failed.Add(SlskdDownloadItem.StripRetrySuffix(history.DownloadId));
+                    string baseId = SlskdDownloadItem.StripRetrySuffix(history.DownloadId);
+                    (int count, DateTime last) = perRelease.GetValueOrDefault(baseId);
+                    perRelease[baseId] = (count + 1, history.Date > last ? history.Date : last);
+
+                    string? username = ExtractUsernameFromUrl(_downloadHistoryService.GetLatestGrab(history.DownloadId)?.Release?.DownloadUrl);
+                    if (username != null)
+                        perUser[username] = perUser.GetValueOrDefault(username) + 1;
+                }
+
+                HashSet<string> failed = new(StringComparer.OrdinalIgnoreCase);
+                foreach ((string baseId, (int count, DateTime last)) in perRelease)
+                {
+                    if (DateTime.UtcNow - last < SlskdDownloadItem.RetryBackoffWindow(count))
+                        failed.Add(baseId);
                 }
 
                 _failedIdCache = failed;
+                _failedUserCache = perUser;
                 _failedIdCacheTimestamp = DateTime.UtcNow;
-                return failed;
+                return (failed, perUser);
             }
         }
 

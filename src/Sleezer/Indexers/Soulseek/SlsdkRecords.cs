@@ -63,7 +63,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         [property: JsonPropertyName("queueLength")] int QueueLength,
         [property: JsonPropertyName("token")] int Token,
         [property: JsonPropertyName("fileCount")] int FileCount,
-        [property: JsonPropertyName("files")] List<SlskdFileData> Files)
+        [property: JsonPropertyName("files")] List<SlskdFileData> Files,
+        int RecentUserFailures = 0)
     {
         public int CalculatePriority(int expectedTrackCount = 0)
         {
@@ -138,6 +139,13 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
             // ===== COLLECTION SIZE (0 to +300) =====
             score += Math.Min(300, (int)(Math.Log10(Math.Max(1, FileCount) + 1) * 150));
+
+            // ===== RECENT USER FAILURES (multiplicative downrank) =====
+            // A user whose downloads failed recently (remote cancel, offline,
+            // "File not shared.") gets ALL their releases downranked, not just
+            // the failed one — but never zeroed, so a sole source stays usable.
+            if (RecentUserFailures > 0)
+                score = (int)(score * Math.Pow(0.65, Math.Min(RecentUserFailures, 4)));
 
             return Math.Clamp(score, 0, 10000);
         }

@@ -156,3 +156,75 @@ public class TrackTitleMatcherTests
         Assert.Equal(expected, TrackTitleMatcher.TitleFromFilename(input));
     }
 }
+
+public class VariantProfileTests
+{
+    [Theory]
+    [InlineData("Definitely Maybe", "Oasis - Definitely Maybe (Live)", true)]
+    [InlineData("Nevermind", "Nirvana - Nevermind Live at the Paramount", true)]
+    [InlineData("Live Forever", "Oasis - Live Forever", false)]                    // 'live' as a title word, not a qualifier
+    [InlineData("Definitely Maybe (Live)", "Definitely Maybe (Live)", false)]
+    [InlineData("Album", "Album (Acoustic)", true)]
+    [InlineData("Album (Demos)", "Album", true)]
+    [InlineData("Song", "Song (Extended Mix)", true)]
+    [InlineData("Song (Radio Edit)", "Song (Extended Mix)", true)]
+    [InlineData("Album", "Album (Extended Edition)", false)]                       // edition, not a different recording
+    [InlineData("Album (Mono)", "Album (Stereo)", true)]
+    [InlineData("Album (Stereo)", "Album", false)]                                 // one-sided master tag stays lenient
+    [InlineData("Album", "Album (Remastered)", false)]
+    public void RemixSignaturesConflict_covers_variant_dimensions(string searchAlbum, string folder, bool expected)
+    {
+        Assert.Equal(expected, SlskdTextProcessor.RemixSignaturesConflict(searchAlbum, folder));
+    }
+
+    [Fact]
+    public void ExtractVariantProfile_reads_qualifier_zones_only()
+    {
+        SlskdTextProcessor.VariantProfile profile = SlskdTextProcessor.ExtractVariantProfile("Live Forever");
+        Assert.False(profile.Live);
+
+        profile = SlskdTextProcessor.ExtractVariantProfile("Definitely Maybe (Live at Knebworth) [FLAC]");
+        Assert.True(profile.Live);
+    }
+}
+
+public class RetryBackoffTests
+{
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(2, 6)]
+    [InlineData(3, 24)]
+    [InlineData(7, 24)]
+    public void RetryBackoffWindow_escalates_with_failure_count(int failures, int expectedHours)
+    {
+        Assert.Equal(TimeSpan.FromHours(expectedHours), SlskdDownloadItem.RetryBackoffWindow(failures));
+    }
+}
+
+public class UserFailurePenaltyTests
+{
+    private static SlskdFolderData Folder(int recentFailures) => new(
+        Path: @"@@x\Artist\Album",
+        Artist: "Artist",
+        Album: "Album",
+        Year: "2020",
+        Username: "user",
+        HasFreeUploadSlot: true,
+        UploadSpeed: 2_000_000,
+        LockedFileCount: 0,
+        LockedFiles: [],
+        QueueLength: 0,
+        Token: 1,
+        FileCount: 10,
+        Files: [],
+        RecentUserFailures: recentFailures);
+
+    [Fact]
+    public void CalculatePriority_downranks_users_with_recent_failures_without_zeroing()
+    {
+        int clean = Folder(0).CalculatePriority();
+        int flaky = Folder(2).CalculatePriority();
+        Assert.True(flaky < clean);
+        Assert.True(flaky > 0);
+    }
+}
