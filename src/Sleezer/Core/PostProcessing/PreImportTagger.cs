@@ -8,6 +8,7 @@ using NzbDrone.Core.MediaFiles.TrackImport.Identification;
 using NzbDrone.Core.Music;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Core.Qualities;
+using NzbDrone.Plugin.Sleezer.Indexers.Soulseek;
 
 namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing;
 
@@ -114,6 +115,19 @@ public class PreImportTagger : IPreImportTagger
         {
             _logger.Debug("Pre-import tag: no audio files found under {Folder}", folderPath);
             return new TaggingResult(0, 0, 0);
+        }
+
+        // A remix release is a different album, and writing the target album's
+        // tags onto remix audio launders it straight past Lidarr's import
+        // matching (verified live 2026-07-21: a "Marc Stout & Scott Svejda
+        // remix" download was tagged as the plain single and imported over the
+        // original). Fail closed: leave the raw tags for Lidarr to judge.
+        string folderLeaf = Path.GetFileName(folderPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        if (SlskdTextProcessor.RemixSignaturesConflict(album.Title, folderLeaf))
+        {
+            _logger.Info("Pre-import tag: remix qualifier mismatch between album '{Album}' and folder '{Folder}' — skipping tagging for {FileCount} files in \"{SourceId}\"",
+                album.Title, folderLeaf, audioFiles.Count, sourceId);
+            return new TaggingResult(0, audioFiles.Count, 0);
         }
 
         _logger.Debug("Pre-import tag: identifying {FileCount} audio file(s) for {Album} by {Artist} (sourceId={SourceId})",

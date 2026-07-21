@@ -130,6 +130,21 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 matchedSearchCriteria = isAlbumMatch;
             }
 
+            // Runs after every album-match route including track evidence: a
+            // remix single's filenames CONTAIN the base title, so evidence
+            // would otherwise force the false match right back.
+            if (isAlbumMatch && !string.IsNullOrEmpty(searchData.Album))
+            {
+                string[] pathComponents = SplitPathIntoComponents(directory.Key);
+                string candidateLeaf = pathComponents.Length > 0 ? pathComponents[^1] : directory.Key;
+                if (SlskdTextProcessor.RemixSignaturesConflict(searchData.Album, candidateLeaf))
+                {
+                    _logger.Trace("Remix qualifier mismatch: search '{Album}' vs folder '{Folder}'", searchData.Album, candidateLeaf);
+                    isAlbumMatch = false;
+                    matchedSearchCriteria = false;
+                }
+            }
+
             _logger.Debug("Match results - Artist: {ArtistMatch}, Album: {AlbumMatch}, TrackEvidence: {Evidence:P0}", isArtistMatch, isAlbumMatch, trackEvidence);
 
             // Determine final values for artist, album, year

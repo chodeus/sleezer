@@ -161,6 +161,22 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         {
             ResolvedAlbum = remoteAlbum.Albums?.FirstOrDefault()
         };
+
+        // Lidarr's TrackedDownloadService caches tracked downloads by downloadId
+        // and keeps returning the cached object once its state leaves Downloading.
+        // A re-grab of a failed release reuses the same stable content hash, hits
+        // the cached DownloadFailed entry, and a completed retry is then silently
+        // never imported (verified live 2026-07-21: grab → source fails → re-grab
+        // → download completes → no import until Lidarr restarts). Suffix retries
+        // so each attempt tracks under a fresh id; transfers still map back by
+        // enqueued-file membership regardless of the id.
+        string retryId = SlskdDownloadItem.ResolveRetryId(item.ID, id => _downloadHistoryService.GetLatestDownloadHistoryItem(id)?.EventType);
+        if (retryId != item.ID)
+        {
+            _logger.Debug("Release {Id} has failed download history; tracking this attempt as {RetryId}", item.ID, retryId);
+            item.ID = retryId;
+        }
+
         _logger.Trace("Download initiated: {Title} | Files: {FileCount}", remoteAlbum.Release.Title, item.FileData.Count);
 
         try
