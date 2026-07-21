@@ -63,9 +63,7 @@ public sealed partial class PlaylistExportService : IPlaylistExportService,
         _logger = logger;
     }
 
-    // IHandleAsync: Lidarr's event bus dispatches these on its async workers
-    // (the interface returns void), so a slow schema refresh can't block the
-    // synchronous startup event path.
+    // IHandleAsync is void by contract — the bus runs these on async workers.
     public void HandleAsync(ApplicationStartedEvent message) => RefreshSchema();
     public void HandleAsync(ProviderAddedEvent<IImportList> message) => RefreshSchema();
     public void HandleAsync(ProviderUpdatedEvent<IImportList> message) => RefreshSchema();
