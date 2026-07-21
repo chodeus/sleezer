@@ -127,6 +127,15 @@ Sleezer includes both the Slskd indexer and download client, so Lidarr can searc
 2. Select `Slskd` from the list.
 3. The download path is fetched from Slskd automatically; if it doesn't match the host view, use **Remote Path** mappings.
 
+#### Matching & Retry Behaviour
+
+A few Slskd behaviours worth knowing, all born from live-log audits of real-world failure modes:
+
+* **Remix/variant qualifiers are hard boundaries.** A folder named `Song (Colyn Remix)` will never match a search for the plain `Song`, and vice versa — same for `rework`, `bootleg`, `VIP`, `edit`, `instrumental`, `acapella`, and `karaoke`. Two remix releases only match each other when the remixer names agree. Deluxe/remastered editions are unaffected.
+* **Recently-failed sources sit out automatic searches for 24 hours.** When a download fails ("File not shared.", remote cancel), that release is excluded from automatic grabs for a day so Lidarr picks a different peer instead of hammering a dead share. Interactive search still shows everything — a manual re-grab is deliberate.
+* **Failed grabs retry cleanly.** A re-grab after a failure tracks under a fresh download id, so a completed retry imports instead of being silently ignored by Lidarr's tracked-download cache (which permanently remembers the failed id until a restart).
+* **Downloads survive Lidarr restarts.** In-flight and completed Slskd transfers re-attach to their grabs after a restart — including multi-disc and retried grabs — so nothing sits finished in Slskd, invisible to Lidarr.
+
 ---
 
 ### Web Clients 📻
@@ -240,6 +249,8 @@ Add the clients you want scanned — for example, just **Slskd** (where corrupt 
 Before Lidarr sees the finished folder, Sleezer reads each file's embedded tags, matches them to the intended Lidarr release via MusicBrainz metadata, and rewrites the file's tags to match. The goal is to make Lidarr's importer see exactly the album/track Lidarr asked for, not whatever the download source happened to name things.
 
 Same picker pattern — add the clients you want tagged.
+
+For **Single/EP** targets there's a title-driven fallback: Soulseek search results contain only the files that matched the query, so a single grabbed out of someone's album rip arrives wearing that album's tags and can never pass album-level identification. When that happens, Sleezer matches the files to the release by *track title* instead (best score first) and tags the matches. Remix/variant qualifiers still refuse to cross-match — a `(KETTAMA remix)` file never gets tagged as the original — and a file whose artist tag names someone else entirely is left untouched for Lidarr to judge.
 
 #### Strip Featured Artists
 
