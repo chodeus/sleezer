@@ -4,11 +4,13 @@ using NzbDrone.Common.Instrumentation;
 using NzbDrone.Core.Download;
 using NzbDrone.Core.Download.Clients;
 using NzbDrone.Core.Download.History;
+using NzbDrone.Core.History;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Core.RemotePathMappings;
 using System.Collections.Concurrent;
 using System.Text.Json;
 using NzbDrone.Core.Extras.Metadata;
+using NzbDrone.Core.Indexers;
 using NzbDrone.Core.Music;
 using NzbDrone.Plugin.Sleezer.Core.Model;
 using NzbDrone.Plugin.Sleezer.Core.PostProcessing;
@@ -40,6 +42,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
     private readonly ISlskdApiClient _apiClient;
     private readonly IDownloadHistoryService _downloadHistoryService;
+    private readonly IHistoryService _historyService;
     private readonly ISlskdItemsParser _slskdItemsParser;
     private readonly IRemotePathMappingService _remotePathMappingService;
     private readonly IDiskProvider _diskProvider;
@@ -64,6 +67,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     public SlskdDownloadManager(
         ISlskdApiClient apiClient,
         IDownloadHistoryService downloadHistoryService,
+        IHistoryService historyService,
         ISlskdItemsParser slskdItemsParser,
         IRemotePathMappingService remotePathMappingService,
         IDiskProvider diskProvider,
@@ -76,6 +80,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     {
         _apiClient = apiClient;
         _downloadHistoryService = downloadHistoryService;
+        _historyService = historyService;
         _slskdItemsParser = slskdItemsParser;
         _remotePathMappingService = remotePathMappingService;
         _diskProvider = diskProvider;
@@ -500,12 +505,23 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             if (item == null)
             {
                 _logger.Trace("[def={DefinitionId}] Unknown item {Hash}: checking history", definitionId, hash);
-                DownloadHistory? history = _downloadHistoryService.GetLatestGrab(hash);
+                DownloadHistory? history = FindGrabOwningDirectory(hash, dir);
 
                 if (history != null)
-                    item = new SlskdDownloadItem(history.Release);
+                {
+                    item = new SlskdDownloadItem(history.Release)
+                    {
+                        // The grab's id, not the recomputed content hash: a
+                        // retry grab carries an -rN suffix and a multi-disc
+                        // grab hashes ALL discs — Lidarr tracks both under
+                        // the id it was handed at grab time.
+                        ID = history.DownloadId
+                    };
+                }
                 else if (settings.Inclusive)
+                {
                     item = new SlskdDownloadItem(CreateReleaseInfoFromDirectory(userTransfers.Username, dir));
+                }
 
                 if (item == null)
                     continue;
@@ -554,6 +570,48 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         return GetItemsForDef(definitionId).FirstOrDefault(i =>
             (i.Username == null || string.Equals(i.Username, username, StringComparison.OrdinalIgnoreCase)) &&
             i.OwnsFile(probeFile));
+    }
+
+    // Transfers slskd reports after a Lidarr restart have no in-memory item to
+    // map to. The per-directory content hash finds plain single-folder grabs,
+    // but a retry grab lives under an -rN suffix and a multi-disc grab hashes
+    // every disc — for those, walk recent Soulseek grabs newest-first and match
+    // by enqueued-file membership, the same rule the live mapping uses. Without
+    // this, restart-orphaned downloads sat invisible to Lidarr until re-grabbed.
+    private DownloadHistory? FindGrabOwningDirectory(string hash, SlskdDownloadDirectory dir)
+    {
+        DownloadHistory? direct = _downloadHistoryService.GetLatestGrab(hash);
+        if (direct != null)
+            return direct;
+
+        string? probeFile = dir.Files?.FirstOrDefault()?.Filename;
+        if (string.IsNullOrEmpty(probeFile))
+            return null;
+
+        IEnumerable<string> recentGrabIds = _historyService.Since(DateTime.UtcNow.AddDays(-14), EntityHistoryEventType.Grabbed)
+            .OrderByDescending(h => h.Date)
+            .Select(h => h.DownloadId)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+
+        foreach (string downloadId in recentGrabIds)
+        {
+            DownloadHistory? grab = _downloadHistoryService.GetLatestGrab(downloadId);
+            if (grab?.Release == null || !string.Equals(grab.Protocol, nameof(SoulseekDownloadProtocol), StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            try
+            {
+                if (new SlskdDownloadItem(grab.Release).OwnsFile(probeFile))
+                    return grab;
+            }
+            catch (Exception ex)
+            {
+                _logger.Trace(ex, "Skipping grab {DownloadId} while probing ownership of {File}", downloadId, probeFile);
+            }
+        }
+
+        return null;
     }
 
     private static string SanitizeFolderName(string name)
