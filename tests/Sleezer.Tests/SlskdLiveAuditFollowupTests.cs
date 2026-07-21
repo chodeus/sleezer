@@ -1,4 +1,5 @@
 using NzbDrone.Core.Download.History;
+using NzbDrone.Plugin.Sleezer.Core.PostProcessing;
 using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
 using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek.Models;
 using NzbDrone.Plugin.Sleezer.Indexers.Soulseek;
@@ -22,6 +23,7 @@ public class RemixSignatureTests
     [InlineData("Nevermind (Remastered)", null)]
     [InlineData("Love Who You Love (Radio Edit)", "radio")]
     [InlineData("Album (VIP)", "")]
+    [InlineData("Album (Instrumental)", "")]
     [InlineData("Album (2014) [FLAC]", null)]
     public void ExtractRemixSignature_identifies_remix_qualifiers(string title, string? expected)
     {
@@ -95,5 +97,62 @@ public class RetryDownloadIdTests
     public void StripRetrySuffix_recovers_the_content_hash(string input, string expected)
     {
         Assert.Equal(expected, SlskdDownloadItem.StripRetrySuffix(input));
+    }
+}
+
+public class TrackTitleMatcherTests
+{
+    [Fact]
+    public void Match_maps_a_single_pulled_from_an_album_share()
+    {
+        Dictionary<int, int> mapping = TrackTitleMatcher.Match(["I Luv U"], ["I Luv U"]);
+        Assert.Equal(0, Assert.Single(mapping).Value);
+    }
+
+    [Fact]
+    public void Match_excludes_remix_files_but_keeps_the_original()
+    {
+        Dictionary<int, int> mapping = TrackTitleMatcher.Match(["solo", "solo (KETTAMA remix)"], ["solo"]);
+        Assert.Single(mapping);
+        Assert.Equal(0, mapping[0]);
+    }
+
+    [Fact]
+    public void Match_rejects_instrumental_variants_of_the_wanted_track()
+    {
+        Assert.Empty(TrackTitleMatcher.Match(["Me Myself and I Instrumental"], ["Me, Myself & I"]));
+    }
+
+    [Fact]
+    public void Match_rejects_unrelated_titles()
+    {
+        Assert.Empty(TrackTitleMatcher.Match(["Lethal Industry"], ["I Luv U"]));
+    }
+
+    [Fact]
+    public void Match_assigns_each_wanted_track_once()
+    {
+        Dictionary<int, int> mapping = TrackTitleMatcher.Match(["scared", "scared"], ["scared"]);
+        Assert.Single(mapping);
+    }
+
+    [Fact]
+    public void Match_prefers_the_best_score_regardless_of_file_order()
+    {
+        Dictionary<int, int> mapping = TrackTitleMatcher.Match(["scarred", "scared"], ["scared"]);
+        Assert.Single(mapping);
+        Assert.Equal(0, mapping[1]);
+    }
+
+    [Theory]
+    [InlineData("03. I Luv U", "I Luv U")]
+    [InlineData("0101 - G‐Eazy - Me Myself and I", "Me Myself and I")]
+    [InlineData("04 solo", "solo")]
+    [InlineData("01 - scared", "scared")]
+    [InlineData("Fred again.. - Victory Lap", "Victory Lap")]
+    [InlineData("", "")]
+    public void TitleFromFilename_strips_numbering_and_artist_prefixes(string input, string expected)
+    {
+        Assert.Equal(expected, TrackTitleMatcher.TitleFromFilename(input));
     }
 }

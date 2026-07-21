@@ -408,7 +408,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         [GeneratedRegex(@"[\(\[\{].*?[\)\]\}]", RegexOptions.Compiled)]
         private static partial Regex BracketedContentRegex();
 
-        [GeneratedRegex(@"\b(remix(es)?|rmx|re-?work(ed)?|bootleg|vip|flip|edit)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+        [GeneratedRegex(@"\b(remix(es)?|rmx|re-?work(ed)?|bootleg|vip|flip|edit|instrumental|acapella|karaoke)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
         private static partial Regex RemixKeywordRegex();
     }
 }
