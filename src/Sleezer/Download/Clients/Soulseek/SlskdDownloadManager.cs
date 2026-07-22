@@ -8,11 +8,13 @@ using NzbDrone.Core.History;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Core.RemotePathMappings;
 using System.Collections.Concurrent;
+using System.IO;
 using System.Text.Json;
 using NzbDrone.Core.Extras.Metadata;
 using NzbDrone.Core.Indexers;
 using NzbDrone.Core.Music;
 using NzbDrone.Plugin.Sleezer.Core.Model;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Core.PostProcessing;
 using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek.Models;
 using NzbDrone.Plugin.Sleezer.Indexers.Soulseek;
@@ -40,6 +42,8 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     // Empty-directory sweep bookkeeping per definition ID.
     private readonly ConcurrentDictionary<int, DateTime> _lastEmptyDirSweepTimes = new();
     private readonly ConcurrentDictionary<int, int> _lastActiveDownloadCounts = new();
+    private readonly ConcurrentDictionary<int, byte> _sweepInProgress = new();
+    private static readonly TimeSpan SweepQuietPeriod = TimeSpan.FromMinutes(15);
     // Latest settings snapshot per definition ID: used by event-triggered retry callbacks
     private readonly ConcurrentDictionary<int, SlskdProviderSettings> _settingsCache = new();
 
@@ -479,43 +483,80 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         if (!settings.CleanStaleDirectories)
             return;
 
+        // Single-flight per definition: exactly one sweep runs at a time even
+        // under concurrent polls (GetOrAdd/check/set alone is not atomic).
+        if (!_sweepInProgress.TryAdd(definitionId, 0))
+            return;
         _lastEmptyDirSweepTimes[definitionId] = now;
 
-        try
+        // Off the poll thread — a recursive scan + delete over every root child
+        // must not stall Lidarr's status polling (mirrors CleanStaleDirectoriesAsync).
+        _ = Task.Run(() =>
         {
-            string root = _remotePathMappingService
-                .RemapRemoteToLocal(settings.Host, new OsPath(settings.DownloadPath))
-                .FullPath
-                .TrimEnd('/', '\\');
+            try { PruneEmptyDownloadDirectories(definitionId, settings, now); }
+            catch (Exception ex) { _logger.Warn(ex, "[def={DefinitionId}] Empty download-directory sweep failed", definitionId); }
+            finally { _sweepInProgress.TryRemove(definitionId, out _); }
+        });
+    }
 
-            if (string.IsNullOrEmpty(root) || !_diskProvider.FolderExists(root))
-                return;
+    private void PruneEmptyDownloadDirectories(int definitionId, SlskdProviderSettings settings, DateTime now)
+    {
+        string root = _remotePathMappingService
+            .RemapRemoteToLocal(settings.Host, new OsPath(settings.DownloadPath))
+            .FullPath
+            .TrimEnd('/', '\\');
 
-            foreach (string dir in _diskProvider.GetDirectories(root))
+        if (string.IsNullOrEmpty(root) || !_diskProvider.FolderExists(root))
+            return;
+
+        // Never touch a folder a tracked item owns, even if momentarily empty.
+        HashSet<string> trackedLeaves = new(StringComparer.OrdinalIgnoreCase);
+        foreach (SlskdDownloadItem item in GetItemsForDef(definitionId))
+        {
+            string name = item.LocalAlbumFolderName();
+            if (!string.IsNullOrEmpty(name))
+                trackedLeaves.Add(name);
+            foreach (string leaf in item.RemoteDirectoryLeaves())
+                trackedLeaves.Add(leaf);
+        }
+
+        foreach (string dir in _diskProvider.GetDirectories(root))
+        {
+            string candidate = dir.TrimEnd('/', '\\');
+            try
             {
-                string candidate = dir.TrimEnd('/', '\\');
-
-                // Strict descendant of the root AND no files anywhere in its
-                // tree — an empty shell only. Never deletes a folder with data.
-                if (!IsStrictDescendantOfRoot(candidate, root) || _diskProvider.GetFiles(candidate, true).Any())
+                // Never delete or recurse through a symlink/reparse point — and
+                // re-confine the RESOLVED physical path, not just the string.
+                FileAttributes attrs = File.GetAttributes(candidate);
+                if (attrs.HasFlag(FileAttributes.ReparsePoint) || !IsStrictDescendantOfRoot(candidate, root))
                     continue;
 
-                try
-                {
-                    _logger.Debug("[def={DefinitionId}] Pruning empty stale download directory: {Dir}", definitionId, candidate);
-                    _diskProvider.DeleteFolder(candidate, true);
-                }
-                catch (Exception ex)
-                {
-                    _logger.Warn(ex, "Failed to prune empty download directory {Dir}", candidate);
-                }
+                if (trackedLeaves.Contains(Path.GetFileName(candidate)))
+                    continue;
+
+                // Quiet-period guard: a folder written to recently may be a
+                // just-created in-flight download or an in-progress disc merge
+                // (both write off the poll thread) — closes the check/delete race.
+                if (now - Directory.GetLastWriteTimeUtc(candidate) < SweepQuietPeriod)
+                    continue;
+
+                // True emptiness: enumerate WITHOUT the default hidden/system
+                // mask and WITHOUT ignoring inaccessible entries, so any file
+                // (incl. dotfiles) or unreadable subtree keeps the folder. Fail
+                // closed — any enumeration error is treated as non-empty.
+                if (!DirectoryEmptiness.IsTreeFileFree(candidate))
+                    continue;
+
+                _logger.Debug("[def={DefinitionId}] Pruning empty stale download directory: {Dir}", definitionId, candidate);
+                _diskProvider.DeleteFolder(candidate, true);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warn(ex, "Failed to prune empty download directory {Dir}", candidate);
             }
         }
-        catch (Exception ex)
-        {
-            _logger.Warn(ex, "[def={DefinitionId}] Empty download-directory sweep failed", definitionId);
-        }
     }
+
 
     private async Task PollTransfersAsync(int definitionId, SlskdProviderSettings settings, HashSet<string> activeUsernames)
     {
