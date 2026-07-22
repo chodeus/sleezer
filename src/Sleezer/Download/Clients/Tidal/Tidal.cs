@@ -47,30 +47,14 @@ namespace NzbDrone.Core.Download.Clients.Tidal
 
         // Independent, throttled sweep of empty download shells — the gap the
         // per-item RemoveItem cleanup misses (restart / untracked / importFailed).
-        // State lives in the shared sweeper (static) so it survives Lidarr's
-        // transient re-resolution of this client on every poll.
+        // Throttle, single-flight and pruning all live in the shared sweeper.
         private void MaybeSweepEmptyDownloadDirectories(IEnumerable<DownloadClientItem> queue)
         {
-            string? root = Settings.DownloadPath;
-            if (string.IsNullOrEmpty(root))
-                return;
-
-            HashSet<string> trackedLeaves = new(StringComparer.OrdinalIgnoreCase);
-            foreach (var item in queue)
-            {
-                string? leaf = item.OutputPath.IsEmpty ? null : EmptyDownloadDirectorySweeper.RootChildLeaf(root, item.OutputPath.FullPath);
-                if (!string.IsNullOrEmpty(leaf))
-                    trackedLeaves.Add(leaf);
-            }
-
-            EmptyDownloadDirectorySweeper.MaybePruneThrottled(
-                key: root,
-                root: root,
-                trackedLeaves: trackedLeaves,
-                quietPeriod: TimeSpan.FromMinutes(15),
-                throttle: TimeSpan.FromMinutes(30),
-                nowUtc: DateTime.UtcNow,
-                logger: _logger);
+            EmptyDownloadDirectorySweeper.MaybePruneForRoot(
+                Settings.DownloadPath,
+                queue.Where(i => !i.OutputPath.IsEmpty).Select(i => i.OutputPath.FullPath),
+                DateTime.UtcNow,
+                _logger);
         }
 
         public override void RemoveItem(DownloadClientItem item, bool deleteData)

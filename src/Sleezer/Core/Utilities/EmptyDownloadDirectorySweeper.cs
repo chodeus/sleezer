@@ -89,6 +89,28 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         private static readonly ConcurrentDictionary<string, byte> _inFlightByKey = new();
 
         /// <summary>
+        /// Convenience for direct-to-folder clients (Deezer/Tidal): builds the
+        /// tracked-leaf set from the active items' output paths and runs the
+        /// throttled sweep keyed by the download root. Keeps the client call
+        /// sites to a single line so they can't drift apart.
+        /// </summary>
+        public static void MaybePruneForRoot(string? root, IEnumerable<string?> trackedOutputPaths, DateTime nowUtc, Logger logger)
+        {
+            if (string.IsNullOrEmpty(root))
+                return;
+
+            HashSet<string> trackedLeaves = new(StringComparer.OrdinalIgnoreCase);
+            foreach (string? path in trackedOutputPaths)
+            {
+                string? leaf = RootChildLeaf(root, path);
+                if (!string.IsNullOrEmpty(leaf))
+                    trackedLeaves.Add(leaf);
+            }
+
+            MaybePruneThrottled(root, root, trackedLeaves, TimeSpan.FromMinutes(15), TimeSpan.FromMinutes(30), nowUtc, logger);
+        }
+
+        /// <summary>
         /// Throttled, single-flight, off-thread prune for clients whose state
         /// cannot live on the (transient) client instance. Safe to call on every
         /// poll — at most one sweep per <paramref name="throttle"/> per key runs.
