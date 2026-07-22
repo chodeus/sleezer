@@ -188,13 +188,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
             return new AlbumData("Slskd", nameof(SoulseekDownloadProtocol))
             {
-                // Per-peer + per-content identity: username keeps distinct
-                // peers distinct through IndexerBase's DistinctBy(Guid) (so
-                // same-album failover survives), while the file-set hash makes
-                // it granular per release. The old fallback was
-                // IndexerName-AlbumId-Codec-Bitrate-BitDepth where AlbumId is
-                // just the user endpoint, so every same-quality release from a
-                // user collapsed to one Guid — blocklisting one blocklisted all.
+                // username keeps peers distinct through DistinctBy(Guid) (album
+                // failover); the file-set hash makes the blocklist per-release.
                 Guid = $"Slskd-{folderData.Username}-{SlskdDownloadItem.GetStableMD5Id(filesToDownload.Select(f => f.Filename))}",
                 AlbumId = $"/api/v0/transfers/downloads/{folderData.Username}",
                 ArtistName = finalArtist,

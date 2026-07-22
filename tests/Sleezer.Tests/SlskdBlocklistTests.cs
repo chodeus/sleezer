@@ -58,21 +58,30 @@ public class SlskdBlocklistTests
         Data = data,
     };
 
-    [Fact]
-    public void GetBlocklist_reads_camelcase_keys_from_rehydrated_data()
+    private static NzbDrone.Core.Blocklisting.IBlocklistForProtocol MakeBlocklist(string kind, FakeRepo repo) => kind switch
+    {
+        "deezer" => new DeezerBlocklist(repo),
+        "tidal" => new TidalBlocklist(repo),
+        _ => new SoulseekBlocklist(repo),
+    };
+
+    [Theory]
+    [InlineData("deezer", "DeezerDownloadProtocol", "Deezer")]
+    [InlineData("tidal", "TidalDownloadProtocol", "Tidal")]
+    public void GetBlocklist_reads_camelcase_keys_from_rehydrated_data(string kind, string protocol, string indexer)
     {
         FakeRepo repo = new();
-        DeezerBlocklist bl = new(repo);
+        var bl = MakeBlocklist(kind, repo);
         Blocklist row = bl.GetBlocklist(FailedEvent("g", new()
         {
-            ["protocol"] = "DeezerDownloadProtocol",
-            ["indexer"] = "Deezer",
+            ["protocol"] = protocol,
+            ["indexer"] = indexer,
             ["guid"] = "36_Slskd-abc",
             ["size"] = "123",
         }));
 
-        Assert.Equal("DeezerDownloadProtocol", row.Protocol);
-        Assert.Equal("Deezer", row.Indexer);
+        Assert.Equal(protocol, row.Protocol);
+        Assert.Equal(indexer, row.Indexer);
         Assert.Equal("36_Slskd-abc", row.TorrentInfoHash);
         Assert.Equal(123, row.Size);
     }
@@ -131,6 +140,20 @@ public class SlskdBlocklistTests
 
         repo.Add(new Blocklist { ArtistId = 1, TorrentInfoHash = "36_Slskd-h1", Date = DateTime.UtcNow });
         Assert.True(bl.IsBlocklisted(1, new ReleaseInfo { Guid = "36_Slskd-h1" }));
+    }
+
+    [Theory]
+    [InlineData(-10, true)]   // 3 recent failures -> 24h tier, newest 10h ago -> still blocked
+    [InlineData(-25, false)]  // newest 25h ago -> past the 24h tier -> expired
+    public void Soulseek_block_covers_the_24h_tier(int newestHoursAgo, bool expected)
+    {
+        FakeRepo repo = new();
+        SoulseekBlocklist bl = new(repo);
+        ReleaseInfo release = new() { Guid = "36_Slskd-t24" };
+        repo.Add(new Blocklist { ArtistId = 1, TorrentInfoHash = "36_Slskd-t24", Date = DateTime.UtcNow.AddHours(newestHoursAgo - 20) });
+        repo.Add(new Blocklist { ArtistId = 1, TorrentInfoHash = "36_Slskd-t24", Date = DateTime.UtcNow.AddHours(newestHoursAgo - 10) });
+        repo.Add(new Blocklist { ArtistId = 1, TorrentInfoHash = "36_Slskd-t24", Date = DateTime.UtcNow.AddHours(newestHoursAgo) });
+        Assert.Equal(expected, bl.IsBlocklisted(1, release));
     }
 
     [Fact]
