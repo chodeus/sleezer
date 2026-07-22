@@ -116,4 +116,35 @@ public class SlskdBlocklistTests
         repo.Add(new Blocklist { ArtistId = 1, TorrentInfoHash = "36_Slskd-other", Date = DateTime.UtcNow });
         Assert.False(bl.IsBlocklisted(1, new ReleaseInfo { Guid = "36_Slskd-hash1" }));
     }
+
+    [Fact]
+    public void Soulseek_block_requires_the_prefixed_identity_on_both_sides()
+    {
+        // The queue mark-as-failed path stores TorrentInfoHash from InfoHash;
+        // if that were captured un-prefixed ("Slskd-h1") while the query Guid
+        // is prefixed ("36_Slskd-h1"), matching would silently fail. This is
+        // why SlskdIndexer.CleanupReleases mirrors the POST-prefix Guid.
+        FakeRepo repo = new();
+        SoulseekBlocklist bl = new(repo);
+        repo.Add(new Blocklist { ArtistId = 1, TorrentInfoHash = "Slskd-h1", Date = DateTime.UtcNow });
+        Assert.False(bl.IsBlocklisted(1, new ReleaseInfo { Guid = "36_Slskd-h1" }));
+
+        repo.Add(new Blocklist { ArtistId = 1, TorrentInfoHash = "36_Slskd-h1", Date = DateTime.UtcNow });
+        Assert.True(bl.IsBlocklisted(1, new ReleaseInfo { Guid = "36_Slskd-h1" }));
+    }
+
+    [Fact]
+    public void Soulseek_block_ages_out_stale_failures_from_the_escalation_count()
+    {
+        FakeRepo repo = new();
+        SoulseekBlocklist bl = new(repo);
+        ReleaseInfo release = new() { Guid = "36_Slskd-old" };
+
+        // Three failures but two are >30 days old: only the recent one counts,
+        // so the tier is 1h — and being 2h old, it has decayed.
+        repo.Add(new Blocklist { ArtistId = 1, TorrentInfoHash = "36_Slskd-old", Date = DateTime.UtcNow.AddDays(-90) });
+        repo.Add(new Blocklist { ArtistId = 1, TorrentInfoHash = "36_Slskd-old", Date = DateTime.UtcNow.AddDays(-60) });
+        repo.Add(new Blocklist { ArtistId = 1, TorrentInfoHash = "36_Slskd-old", Date = DateTime.UtcNow.AddHours(-2) });
+        Assert.False(bl.IsBlocklisted(1, release));
+    }
 }

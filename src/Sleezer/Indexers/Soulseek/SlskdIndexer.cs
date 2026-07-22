@@ -48,6 +48,12 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 if (release is not TorrentInfo slskd)
                     continue;
 
+                // Base has now applied the "{defId}_" Guid prefix; mirror the
+                // final Guid into InfoHash so the queue mark-as-failed path
+                // (BlocklistService.Block reads TorrentInfo.InfoHash) stores the
+                // same identity IsBlocklisted later queries with.
+                slskd.InfoHash = release.Guid;
+
                 int basePriority = release.IndexerPriority;
                 int score = Math.Clamp(slskd.Seeders ?? 0, 0, 10000);
                 release.IndexerPriority = basePriority + 12 - (int)Math.Round(score / 10000.0 * 24);
