@@ -8,11 +8,13 @@ using NzbDrone.Core.History;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Core.RemotePathMappings;
 using System.Collections.Concurrent;
+using System.IO;
 using System.Text.Json;
 using NzbDrone.Core.Extras.Metadata;
 using NzbDrone.Core.Indexers;
 using NzbDrone.Core.Music;
 using NzbDrone.Plugin.Sleezer.Core.Model;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Core.PostProcessing;
 using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek.Models;
 using NzbDrone.Plugin.Sleezer.Indexers.Soulseek;
@@ -37,6 +39,11 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     private readonly ConcurrentDictionary<int, DateTime> _lastEventPollTimes = new();
     // Last-seen event offset per definition ID for incremental polling
     private readonly ConcurrentDictionary<int, int> _lastEventOffsets = new();
+    // Empty-directory sweep bookkeeping per definition ID.
+    private readonly ConcurrentDictionary<int, DateTime> _lastEmptyDirSweepTimes = new();
+    private readonly ConcurrentDictionary<int, int> _lastActiveDownloadCounts = new();
+    private readonly ConcurrentDictionary<int, byte> _sweepInProgress = new();
+    private static readonly TimeSpan SweepQuietPeriod = TimeSpan.FromMinutes(15);
     // Latest settings snapshot per definition ID: used by event-triggered retry callbacks
     private readonly ConcurrentDictionary<int, SlskdProviderSettings> _settingsCache = new();
 
@@ -448,7 +455,101 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             await PollEventsAsync(definitionId, settings, offset);
             _lastEventPollTimes[definitionId] = DateTime.UtcNow;
         }
+
+        // Prune empty download shells when downloads have just DRAINED to idle
+        // (imports have moved files out, so folders may now be empty) — the
+        // natural trigger, not a blind timer. A daily backstop still runs for
+        // the startup backlog and for slskd's own file-retention, which empties
+        // folders while idle and fires no event sleezer can observe.
+        int prevActive = _lastActiveDownloadCounts.GetOrAdd(definitionId, -1);
+        _lastActiveDownloadCounts[definitionId] = activeUsernames.Count;
+        bool drainedToIdle = prevActive > 0 && activeUsernames.Count == 0;
+
+        // Seed the sweep clock on the FIRST poll after (re)start so the 24h
+        // backstop measures from startup, not the epoch — otherwise the very
+        // first poll would sweep before PollTransfersAsync has rehydrated the
+        // tracked-item set, racing a not-yet-retracked import. The drain
+        // trigger is unaffected (prevActive is -1 on the first poll anyway).
+        if (prevActive < 0)
+            _lastEmptyDirSweepTimes.TryAdd(definitionId, now);
+
+        MaybePruneEmptyDownloadDirectories(definitionId, settings, now, drainedToIdle);
     }
+
+    // Independent janitor for the gap neither slskd nor RemoveItem covers: slskd
+    // deletes stale FILES (retention.files) but never their empty parent
+    // directories, and RemoveItem only fires while an item is still tracked
+    // in-memory — so a restart, an slskd retention purge, or an importFailed
+    // item leaves an empty shell that accumulates forever. Prune recursively-
+    // empty directories under the download root; folders that still hold data
+    // are never touched (slskd's file-retention empties them first).
+    // Prunes empty download shells — the gap neither slskd (deletes files, not
+    // dirs) nor RemoveItem (fires only while an item is tracked) covers. The
+    // single-flight gate below makes BOTH the throttle decision and the sweep
+    // atomic per definition, so concurrent polls can't double-run.
+    private void MaybePruneEmptyDownloadDirectories(int definitionId, SlskdProviderSettings settings, DateTime now, bool drainedToIdle)
+    {
+        if (!settings.CleanStaleDirectories)
+            return;
+
+        if (!_sweepInProgress.TryAdd(definitionId, 0))
+            return;
+
+        bool started = false;
+        try
+        {
+            DateTime lastSweep = _lastEmptyDirSweepTimes.GetOrAdd(definitionId, DateTime.MinValue);
+            // Primary trigger: downloads just drained to idle (imports moved
+            // files out), with a 10-min floor against flapping. Backstop:
+            // daily, for the startup backlog and slskd's own idle file-retention.
+            bool due = (drainedToIdle && now - lastSweep >= TimeSpan.FromMinutes(10))
+                       || now - lastSweep >= TimeSpan.FromHours(24);
+            if (!due)
+                return;
+
+            _lastEmptyDirSweepTimes[definitionId] = now;
+            started = true;
+
+            // Off the poll thread — a recursive scan + delete over every root
+            // child must not stall Lidarr's status polling.
+            _ = Task.Run(() =>
+            {
+                try { PruneEmptyDownloadDirectories(definitionId, settings, now); }
+                catch (Exception ex) { _logger.Warn(ex, "[def={DefinitionId}] Empty download-directory sweep failed", definitionId); }
+                finally { _sweepInProgress.TryRemove(definitionId, out _); }
+            });
+        }
+        finally
+        {
+            if (!started)
+                _sweepInProgress.TryRemove(definitionId, out _);
+        }
+    }
+
+    private void PruneEmptyDownloadDirectories(int definitionId, SlskdProviderSettings settings, DateTime now)
+    {
+        string root = _remotePathMappingService
+            .RemapRemoteToLocal(settings.Host, new OsPath(settings.DownloadPath))
+            .FullPath
+            .TrimEnd('/', '\\');
+
+        if (string.IsNullOrEmpty(root) || !_diskProvider.FolderExists(root))
+            return;
+
+        // Never touch a folder a tracked item owns, even if momentarily empty.
+        HashSet<string> trackedLeaves = new(StringComparer.OrdinalIgnoreCase);
+        foreach (SlskdDownloadItem item in GetItemsForDef(definitionId))
+        {
+            string name = item.LocalAlbumFolderName();
+            if (!string.IsNullOrEmpty(name))
+                trackedLeaves.Add(name);
+            foreach (string leaf in item.RemoteDirectoryLeaves())
+                trackedLeaves.Add(leaf);
+        }
+
+        EmptyDownloadDirectorySweeper.Prune(root, trackedLeaves, SweepQuietPeriod, now, _logger);
+    }
+
 
     private async Task PollTransfersAsync(int definitionId, SlskdProviderSettings settings, HashSet<string> activeUsernames)
     {

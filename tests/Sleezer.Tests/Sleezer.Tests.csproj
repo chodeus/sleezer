@@ -58,6 +58,10 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Utilities\AudioFormat.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Core\Utilities\DirectoryEmptiness.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Core\Utilities\EmptyDownloadDirectorySweeper.cs"
+             LinkBase="SourceUnderTest" />
     <!-- Pure ffmpeg-release helpers (platform→asset map, version/tag parse, 24h
          throttle, SHA-256 verify). BCL-only, so it compiles standalone here. -->
     <Compile Include="..\..\src\Sleezer\Core\Model\FFmpegRelease.cs"

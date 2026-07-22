@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using FluentValidation.Results;
 using NLog;
@@ -13,6 +14,7 @@ using NzbDrone.Core.Localization;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Core.RemotePathMappings;
 using NzbDrone.Core.Validation;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Deezer;
 
 namespace NzbDrone.Core.Download.Clients.Deezer
@@ -45,7 +47,21 @@ namespace NzbDrone.Core.Download.Clients.Deezer
                 item.DownloadClientInfo = DownloadClientItemClientInfo.FromDownloadClient(this, false);
             }
 
+            MaybeSweepEmptyDownloadDirectories(queue);
             return queue;
+        }
+
+
+        // Independent, throttled sweep of empty download shells — the gap the
+        // per-item RemoveItem cleanup misses (restart / untracked / importFailed).
+        // Throttle, single-flight and pruning all live in the shared sweeper.
+        private void MaybeSweepEmptyDownloadDirectories(IEnumerable<DownloadClientItem> queue)
+        {
+            EmptyDownloadDirectorySweeper.MaybePruneForRoot(
+                Settings.DownloadPath,
+                queue.Where(i => !i.OutputPath.IsEmpty).Select(i => i.OutputPath.FullPath),
+                DateTime.UtcNow,
+                _logger);
         }
 
         public override void RemoveItem(DownloadClientItem item, bool deleteData)
