@@ -37,6 +37,8 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     private readonly ConcurrentDictionary<int, DateTime> _lastEventPollTimes = new();
     // Last-seen event offset per definition ID for incremental polling
     private readonly ConcurrentDictionary<int, int> _lastEventOffsets = new();
+    // Last empty-directory sweep per definition ID (hourly).
+    private readonly ConcurrentDictionary<int, DateTime> _lastEmptyDirSweepTimes = new();
     // Latest settings snapshot per definition ID: used by event-triggered retry callbacks
     private readonly ConcurrentDictionary<int, SlskdProviderSettings> _settingsCache = new();
 
@@ -447,6 +449,61 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             int offset = _lastEventOffsets.GetOrAdd(definitionId, 0);
             await PollEventsAsync(definitionId, settings, offset);
             _lastEventPollTimes[definitionId] = DateTime.UtcNow;
+        }
+
+        MaybePruneEmptyDownloadDirectories(definitionId, settings, now);
+    }
+
+    // Independent janitor for the gap neither slskd nor RemoveItem covers: slskd
+    // deletes stale FILES (retention.files) but never their empty parent
+    // directories, and RemoveItem only fires while an item is still tracked
+    // in-memory — so a restart, an slskd retention purge, or an importFailed
+    // item leaves an empty shell that accumulates forever. Prune recursively-
+    // empty directories under the download root; folders that still hold data
+    // are never touched (slskd's file-retention empties them first).
+    private void MaybePruneEmptyDownloadDirectories(int definitionId, SlskdProviderSettings settings, DateTime now)
+    {
+        if (!settings.CleanStaleDirectories)
+            return;
+
+        DateTime last = _lastEmptyDirSweepTimes.GetOrAdd(definitionId, DateTime.MinValue);
+        if (now - last < TimeSpan.FromHours(1))
+            return;
+        _lastEmptyDirSweepTimes[definitionId] = now;
+
+        try
+        {
+            string root = _remotePathMappingService
+                .RemapRemoteToLocal(settings.Host, new OsPath(settings.DownloadPath))
+                .FullPath
+                .TrimEnd('/', '\\');
+
+            if (string.IsNullOrEmpty(root) || !_diskProvider.FolderExists(root))
+                return;
+
+            foreach (string dir in _diskProvider.GetDirectories(root))
+            {
+                string candidate = dir.TrimEnd('/', '\\');
+
+                // Strict descendant of the root AND no files anywhere in its
+                // tree — an empty shell only. Never deletes a folder with data.
+                if (!IsStrictDescendantOfRoot(candidate, root) || _diskProvider.GetFiles(candidate, true).Any())
+                    continue;
+
+                try
+                {
+                    _logger.Debug("[def={DefinitionId}] Pruning empty stale download directory: {Dir}", definitionId, candidate);
+                    _diskProvider.DeleteFolder(candidate, true);
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warn(ex, "Failed to prune empty download directory {Dir}", candidate);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Warn(ex, "[def={DefinitionId}] Empty download-directory sweep failed", definitionId);
         }
     }
 
