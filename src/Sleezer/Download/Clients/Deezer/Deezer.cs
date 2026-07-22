@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using FluentValidation.Results;
 using NLog;
@@ -13,6 +14,7 @@ using NzbDrone.Core.Localization;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Core.RemotePathMappings;
 using NzbDrone.Core.Validation;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Deezer;
 
 namespace NzbDrone.Core.Download.Clients.Deezer
@@ -20,6 +22,8 @@ namespace NzbDrone.Core.Download.Clients.Deezer
     public class Deezer : DownloadClientBase<DeezerSettings>
     {
         private readonly IDeezerProxy _proxy;
+        private DateTime _lastSweepUtc = DateTime.MinValue;
+        private int _sweeping;
 
         public Deezer(IDeezerProxy proxy,
                       IConfigService configService,
@@ -45,7 +49,40 @@ namespace NzbDrone.Core.Download.Clients.Deezer
                 item.DownloadClientInfo = DownloadClientItemClientInfo.FromDownloadClient(this, false);
             }
 
+            MaybeSweepEmptyDownloadDirectories(queue);
             return queue;
+        }
+
+
+        // Independent, throttled sweep of empty download shells — the gap the
+        // per-item RemoveItem cleanup misses (restart / untracked / importFailed).
+        // Off-thread + single-flight; the sweeper's own guards (tracked leaf,
+        // 15-min quiet period, fail-closed emptiness, non-recursive delete) make
+        // it safe to run regardless of queue state.
+        private void MaybeSweepEmptyDownloadDirectories(IEnumerable<DownloadClientItem> queue)
+        {
+            DateTime now = DateTime.UtcNow;
+            if (now - _lastSweepUtc < TimeSpan.FromMinutes(30))
+                return;
+            if (Interlocked.CompareExchange(ref _sweeping, 1, 0) != 0)
+                return;
+            _lastSweepUtc = now;
+
+            string? root = Settings.DownloadPath;
+            HashSet<string> trackedLeaves = new(StringComparer.OrdinalIgnoreCase);
+            foreach (var item in queue)
+            {
+                string? leaf = item.OutputPath.IsEmpty ? null : EmptyDownloadDirectorySweeper.RootChildLeaf(root, item.OutputPath.FullPath);
+                if (!string.IsNullOrEmpty(leaf))
+                    trackedLeaves.Add(leaf);
+            }
+
+            _ = Task.Run(() =>
+            {
+                try { EmptyDownloadDirectorySweeper.Prune(root, trackedLeaves, TimeSpan.FromMinutes(15), now, _logger); }
+                catch (Exception ex) { _logger.Warn(ex, "Deezer empty download-directory sweep failed"); }
+                finally { Interlocked.Exchange(ref _sweeping, 0); }
+            });
         }
 
         public override void RemoveItem(DownloadClientItem item, bool deleteData)

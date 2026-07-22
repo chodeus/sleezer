@@ -526,22 +526,6 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }
     }
 
-    // Removes an empty directory tree bottom-up with recursive:false, which the
-    // OS refuses on any NON-empty directory — so a file that lands in the
-    // check→delete window is never wiped (no subtree-wide lock needed). Skips
-    // nested reparse points rather than following or deleting a link's target.
-    private static void DeleteEmptyTree(string dir)
-    {
-        foreach (string sub in Directory.EnumerateDirectories(dir))
-        {
-            if ((File.GetAttributes(sub) & FileAttributes.ReparsePoint) != 0)
-                continue;
-            DeleteEmptyTree(sub);
-        }
-
-        Directory.Delete(dir, false);
-    }
-
     private void PruneEmptyDownloadDirectories(int definitionId, SlskdProviderSettings settings, DateTime now)
     {
         string root = _remotePathMappingService
@@ -563,41 +547,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 trackedLeaves.Add(leaf);
         }
 
-        foreach (string dir in _diskProvider.GetDirectories(root))
-        {
-            string candidate = dir.TrimEnd('/', '\\');
-            try
-            {
-                // Never delete or recurse through a symlink/reparse point — and
-                // re-confine the RESOLVED physical path, not just the string.
-                FileAttributes attrs = File.GetAttributes(candidate);
-                if (attrs.HasFlag(FileAttributes.ReparsePoint) || !IsStrictDescendantOfRoot(candidate, root))
-                    continue;
-
-                if (trackedLeaves.Contains(Path.GetFileName(candidate)))
-                    continue;
-
-                // Quiet-period guard: a folder written to recently may be a
-                // just-created in-flight download or an in-progress disc merge
-                // (both write off the poll thread) — closes the check/delete race.
-                if (now - Directory.GetLastWriteTimeUtc(candidate) < SweepQuietPeriod)
-                    continue;
-
-                // True emptiness: enumerate WITHOUT the default hidden/system
-                // mask and WITHOUT ignoring inaccessible entries, so any file
-                // (incl. dotfiles) or unreadable subtree keeps the folder. Fail
-                // closed — any enumeration error is treated as non-empty.
-                if (!DirectoryEmptiness.IsTreeFileFree(candidate))
-                    continue;
-
-                _logger.Debug("[def={DefinitionId}] Pruning empty stale download directory: {Dir}", definitionId, candidate);
-                DeleteEmptyTree(candidate);
-            }
-            catch (Exception ex)
-            {
-                _logger.Warn(ex, "Failed to prune empty download directory {Dir}", candidate);
-            }
-        }
+        EmptyDownloadDirectorySweeper.Prune(root, trackedLeaves, SweepQuietPeriod, now, _logger);
     }
 
 
