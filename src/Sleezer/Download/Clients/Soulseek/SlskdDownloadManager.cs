@@ -464,11 +464,16 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         int prevActive = _lastActiveDownloadCounts.GetOrAdd(definitionId, -1);
         _lastActiveDownloadCounts[definitionId] = activeUsernames.Count;
         bool drainedToIdle = prevActive > 0 && activeUsernames.Count == 0;
-        DateTime lastSweep = _lastEmptyDirSweepTimes.GetOrAdd(definitionId, DateTime.MinValue);
-        bool backstopDue = now - lastSweep >= TimeSpan.FromHours(24);
-        // Floor of 10 min between sweeps so rapidly flapping downloads can't thrash it.
-        if ((drainedToIdle && now - lastSweep >= TimeSpan.FromMinutes(10)) || backstopDue)
-            MaybePruneEmptyDownloadDirectories(definitionId, settings, now);
+
+        // Seed the sweep clock on the FIRST poll after (re)start so the 24h
+        // backstop measures from startup, not the epoch — otherwise the very
+        // first poll would sweep before PollTransfersAsync has rehydrated the
+        // tracked-item set, racing a not-yet-retracked import. The drain
+        // trigger is unaffected (prevActive is -1 on the first poll anyway).
+        if (prevActive < 0)
+            _lastEmptyDirSweepTimes.TryAdd(definitionId, now);
+
+        MaybePruneEmptyDownloadDirectories(definitionId, settings, now, drainedToIdle);
     }
 
     // Independent janitor for the gap neither slskd nor RemoveItem covers: slskd
@@ -478,25 +483,63 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     // item leaves an empty shell that accumulates forever. Prune recursively-
     // empty directories under the download root; folders that still hold data
     // are never touched (slskd's file-retention empties them first).
-    private void MaybePruneEmptyDownloadDirectories(int definitionId, SlskdProviderSettings settings, DateTime now)
+    // Prunes empty download shells — the gap neither slskd (deletes files, not
+    // dirs) nor RemoveItem (fires only while an item is tracked) covers. The
+    // single-flight gate below makes BOTH the throttle decision and the sweep
+    // atomic per definition, so concurrent polls can't double-run.
+    private void MaybePruneEmptyDownloadDirectories(int definitionId, SlskdProviderSettings settings, DateTime now, bool drainedToIdle)
     {
         if (!settings.CleanStaleDirectories)
             return;
 
-        // Single-flight per definition: exactly one sweep runs at a time even
-        // under concurrent polls (GetOrAdd/check/set alone is not atomic).
         if (!_sweepInProgress.TryAdd(definitionId, 0))
             return;
-        _lastEmptyDirSweepTimes[definitionId] = now;
 
-        // Off the poll thread — a recursive scan + delete over every root child
-        // must not stall Lidarr's status polling (mirrors CleanStaleDirectoriesAsync).
-        _ = Task.Run(() =>
+        bool started = false;
+        try
         {
-            try { PruneEmptyDownloadDirectories(definitionId, settings, now); }
-            catch (Exception ex) { _logger.Warn(ex, "[def={DefinitionId}] Empty download-directory sweep failed", definitionId); }
-            finally { _sweepInProgress.TryRemove(definitionId, out _); }
-        });
+            DateTime lastSweep = _lastEmptyDirSweepTimes.GetOrAdd(definitionId, DateTime.MinValue);
+            // Primary trigger: downloads just drained to idle (imports moved
+            // files out), with a 10-min floor against flapping. Backstop:
+            // daily, for the startup backlog and slskd's own idle file-retention.
+            bool due = (drainedToIdle && now - lastSweep >= TimeSpan.FromMinutes(10))
+                       || now - lastSweep >= TimeSpan.FromHours(24);
+            if (!due)
+                return;
+
+            _lastEmptyDirSweepTimes[definitionId] = now;
+            started = true;
+
+            // Off the poll thread — a recursive scan + delete over every root
+            // child must not stall Lidarr's status polling.
+            _ = Task.Run(() =>
+            {
+                try { PruneEmptyDownloadDirectories(definitionId, settings, now); }
+                catch (Exception ex) { _logger.Warn(ex, "[def={DefinitionId}] Empty download-directory sweep failed", definitionId); }
+                finally { _sweepInProgress.TryRemove(definitionId, out _); }
+            });
+        }
+        finally
+        {
+            if (!started)
+                _sweepInProgress.TryRemove(definitionId, out _);
+        }
+    }
+
+    // Removes an empty directory tree bottom-up with recursive:false, which the
+    // OS refuses on any NON-empty directory — so a file that lands in the
+    // check→delete window is never wiped (no subtree-wide lock needed). Skips
+    // nested reparse points rather than following or deleting a link's target.
+    private static void DeleteEmptyTree(string dir)
+    {
+        foreach (string sub in Directory.EnumerateDirectories(dir))
+        {
+            if ((File.GetAttributes(sub) & FileAttributes.ReparsePoint) != 0)
+                continue;
+            DeleteEmptyTree(sub);
+        }
+
+        Directory.Delete(dir, false);
     }
 
     private void PruneEmptyDownloadDirectories(int definitionId, SlskdProviderSettings settings, DateTime now)
@@ -548,7 +591,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                     continue;
 
                 _logger.Debug("[def={DefinitionId}] Pruning empty stale download directory: {Dir}", definitionId, candidate);
-                _diskProvider.DeleteFolder(candidate, true);
+                DeleteEmptyTree(candidate);
             }
             catch (Exception ex)
             {
