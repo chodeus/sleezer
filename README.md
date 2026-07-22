@@ -135,6 +135,7 @@ A few Slskd behaviours worth knowing, all born from live-log audits of real-worl
 * **Recently-failed sources sit out automatic searches on an escalating clock.** When a download fails ("File not shared.", remote cancel), that release is excluded from automatic grabs — one hour after a first failure, six after a second, a full day from the third — so a transiently busy peer retries quickly while a dead share stops being hammered. Interactive search still shows everything — a manual re-grab is deliberate.
 * **Failed grabs retry cleanly.** A re-grab after a failure tracks under a fresh download id, so a completed retry imports instead of being silently ignored by Lidarr's tracked-download cache (which permanently remembers the failed id until a restart).
 * **Downloads survive Lidarr restarts.** In-flight and completed Slskd transfers re-attach to their grabs after a restart — including multi-disc and retried grabs — so nothing sits finished in Slskd, invisible to Lidarr.
+* **Empty download folders are pruned automatically.** Once an import moves the files out (or a download is abandoned), the leftover empty folder is swept away — the gap that neither Slskd's file-retention (which deletes files, never their empty parent directories) nor a missed per-item cleanup (a Lidarr restart, a failed import) covers. It only ever removes folders that are *provably* empty, so nothing holding data is touched. For Slskd this is gated on the **Clean Stale Directories** client option; **Deezer and Tidal do the same sweep** on their own download paths.
 
 ---
 
