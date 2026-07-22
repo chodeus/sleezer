@@ -262,7 +262,9 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 }
                 catch
                 {
-                    await CancelInFlightSearchAsync(searchId);
+                    // Cleanup must not mask the original poll/wait failure.
+                    try { await CancelInFlightSearchAsync(searchId); }
+                    catch (Exception cleanupEx) { _logger.Debug(cleanupEx, "Cancel during abnormal wait abort failed for {SearchId}", searchId); }
                     throw;
                 }
 
@@ -422,12 +424,14 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 {
                     searchStatus = await GetSearchResultsAsync(searchId);
                 }
-                catch (Exception ex) when (ex is HttpException or System.Net.WebException)
+                catch (Exception ex) when (IsTransientPollFailure(ex))
                 {
-                    // Lidarr's HttpClient THROWS on 5xx/timeouts — without this
-                    // catch the null-poll counter below never engages and a
-                    // single transient 502 aborts the whole tier chain.
-                    _logger.Debug(ex, "Search status poll failed for {SearchId}", searchId);
+                    // Lidarr's HttpClient THROWS on 5xx/timeouts — treat those as
+                    // failed polls so the counter engages instead of aborting the
+                    // tier chain. Auth/permission/permanent errors (401/403/etc.)
+                    // fall through and propagate: a bad API key must fail the
+                    // search, never read as "searched, nothing found".
+                    _logger.Debug(ex, "Search status poll failed transiently for {SearchId}", searchId);
                     searchStatus = null;
                 }
 
@@ -459,6 +463,22 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             }
 
             return state;
+        }
+
+        // Transient = worth a retry-poll (5xx, 408, 429, network/timeout).
+        // Everything else — notably 401/403/404 and other 4xx — is permanent
+        // and must propagate so the search fails hard instead of decaying to
+        // an empty result.
+        private static bool IsTransientPollFailure(Exception ex)
+        {
+            if (ex is System.Net.WebException)
+                return true;
+            if (ex is HttpException httpEx)
+            {
+                int code = (int)httpEx.Response.StatusCode;
+                return code >= 500 || code == 408 || code == 429;
+            }
+            return false;
         }
 
         private async Task<JsonNode?> GetSearchResultsAsync(string searchId)

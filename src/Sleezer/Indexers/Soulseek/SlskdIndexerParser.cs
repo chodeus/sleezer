@@ -15,6 +15,8 @@ using NzbDrone.Plugin.Sleezer.Core.Model;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
 using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek.Models;
+using System.Net;
+using System.Text.Json.Nodes;
 
 namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 {
@@ -238,9 +240,13 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 {
                     if (delay)
                     {
+                        int? indexerId = _indexer.Definition?.Id;
+                        if (indexerId == null)
+                            return;
+
                         string? staleId = null;
                         _interactiveResults.AddOrUpdate(
-                            _indexer.Definition.Id,
+                            indexerId.Value,
                             searchId,
                             (_, previous) => { staleId = previous; return searchId; });
                         if (staleId != null)
@@ -454,6 +460,30 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         {
             try
             {
+                // Never DELETE a search slskd is still running — that races its
+                // finalize write and loses the results (the exact failure the
+                // cancel path guards). Confirm terminal (or already-gone 404)
+                // first; if it is still InProgress, leave the record for a
+                // later pass rather than delete it in flight.
+                HttpRequest statusRequest = new HttpRequestBuilder($"{settings.BaseUrl}/api/v0/searches/{searchId}")
+                    .SetHeader("X-API-KEY", settings.ApiKey)
+                    .Build();
+                statusRequest.SuppressHttpError = true;
+                HttpResponse statusResponse = await _httpClient.ExecuteAsync(statusRequest);
+
+                if (statusResponse.StatusCode == HttpStatusCode.NotFound)
+                    return;
+
+                if (statusResponse.StatusCode == HttpStatusCode.OK)
+                {
+                    string? state = JsonSerializer.Deserialize<JsonNode>(statusResponse.Content)?["state"]?.GetValue<string>();
+                    if (state != null && state.StartsWith("InProgress", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _logger.Debug("Slskd search {SearchId} still in progress; deferring removal", searchId);
+                        return;
+                    }
+                }
+
                 HttpRequest request = new HttpRequestBuilder($"{settings.BaseUrl}/api/v0/searches/{searchId}")
                     .SetHeader("X-API-KEY", settings.ApiKey)
                     .Build();
