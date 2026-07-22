@@ -66,6 +66,10 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
             ShareInfo release = (ShareInfo)FillReleaseInfo(new ShareInfo());
             release.Seeders = Priotity;
             release.MatchedSearchCriteria = MatchedSearchCriteria;
+            // Core BlocklistService.Block reads InfoHash off a TorrentInfo when
+            // marking failed from the queue; mirror the Guid so that path and
+            // the download-failed-event path key on the same identity.
+            release.InfoHash = release.Guid;
             return release;
         }
 

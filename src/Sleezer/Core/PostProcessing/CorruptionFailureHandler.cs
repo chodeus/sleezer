@@ -98,9 +98,10 @@ public class CorruptionFailureHandler : ICorruptionFailureHandler
             // returns null, which used to leave DownloadClientInfo unpopulated
             // and NRE'd Lidarr's DownloadHistoryService.Handle(DownloadFailedEvent)
             // at line 230 (DownloadClientInfo.Type deref).
-            string downloadClientType = historyItem.Data.GetValueOrDefault("DownloadClient") ?? string.Empty;
-            string downloadClientName = historyItem.Data.GetValueOrDefault("DownloadClientName") ?? string.Empty;
-            string indexer = historyItem.Data.GetValueOrDefault("Indexer") ?? string.Empty;
+            Dictionary<string, string> data = new(historyItem.Data, StringComparer.OrdinalIgnoreCase);
+            string downloadClientType = data.GetValueOrDefault("DownloadClient") ?? string.Empty;
+            string downloadClientName = data.GetValueOrDefault("DownloadClientName") ?? string.Empty;
+            string indexer = data.GetValueOrDefault("Indexer") ?? string.Empty;
 
             TrackedDownload tracked = new()
             {

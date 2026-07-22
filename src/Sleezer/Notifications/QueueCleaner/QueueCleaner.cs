@@ -260,7 +260,7 @@ namespace NzbDrone.Plugin.Sleezer.Notifications.QueueCleaner
                 // EntityHistory.DOWNLOAD_CLIENT constant is lowercase. The dict is
                 // case-sensitive so the constant silently returns null. Read the
                 // actual stored key.
-                DownloadClient = historyItem.Data.GetValueOrDefault("DownloadClient"),
+                DownloadClient = new Dictionary<string, string>(historyItem.Data, StringComparer.OrdinalIgnoreCase).GetValueOrDefault("DownloadClient"),
                 DownloadId = historyItem.DownloadId,
                 Message = "Import failed: Item removed by Queue Cleaner.",
                 Data = historyItem.Data,
