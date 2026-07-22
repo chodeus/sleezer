@@ -75,7 +75,10 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 Tracks: tracks,
                 Settings: Settings,
                 ProcessedSearches: _processedSearches,
-                SearchCriteria: searchCriteria);
+                SearchCriteria: searchCriteria)
+            {
+                TargetVariantTypes = album?.SecondaryTypes?.Select(t => t.Name).ToList() ?? []
+            };
 
             return _searchPipeline.BuildChain(context, ExecuteSearch);
         }
@@ -106,7 +109,10 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 Tracks: tracks,
                 Settings: Settings,
                 ProcessedSearches: _processedSearches,
-                SearchCriteria: searchCriteria);
+                SearchCriteria: searchCriteria)
+            {
+                TargetVariantTypes = album?.SecondaryTypes?.Select(t => t.Name).ToList() ?? []
+            };
 
             return _searchPipeline.BuildChain(context, ExecuteSearch);
         }
@@ -221,7 +227,10 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             // Cap how long a search will sit in the queue waiting for slskd to free up. 2× the per-search
             // timeout balances "let bulk deletes drain at slskd's pace" against "don't tie up Lidarr's
             // search-task slot for an album that can be retried later".
-            TimeSpan acquireCap = TimeSpan.FromSeconds(Math.Max(60, Settings.TimeoutInSeconds * 2));
+            // Worst-case gate occupancy is Timeout + 2s head start + 20s grace
+            // + ~7s cancel-wait; size the queue-wait cap against that so a
+            // second queued search survives a slow first one.
+            TimeSpan acquireCap = TimeSpan.FromSeconds(Math.Max(90, (Settings.TimeoutInSeconds + 30) * 2));
             SemaphoreSlim gate = _searchGates.GetOrAdd(Settings.BaseUrl ?? string.Empty, _ => new SemaphoreSlim(1, 1));
 
             // CurrentCount is 1 when free, 0 when held — so "held by someone else" reads as 0 here.
@@ -246,7 +255,16 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             try
             {
                 await ExecuteCreateSearchWithRetryAsync(searchRequest, searchId);
-                string finalState = await WaitOnSearchCompletionAsync(searchId, TimeSpan.FromSeconds(Settings.TimeoutInSeconds));
+                string finalState;
+                try
+                {
+                    finalState = await WaitOnSearchCompletionAsync(searchId, TimeSpan.FromSeconds(Settings.TimeoutInSeconds));
+                }
+                catch
+                {
+                    await CancelInFlightSearchAsync(searchId);
+                    throw;
+                }
 
                 // slskd's SearchTimeout is an INACTIVITY window, so a search with
                 // a steady trickle of responses can outlive our client-side wait.
@@ -272,18 +290,30 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
         private async Task CancelInFlightSearchAsync(string searchId)
         {
-            try
+            for (int attempt = 0; attempt < 2; attempt++)
             {
-                HttpRequest cancelRequest = new HttpRequestBuilder($"{Settings.BaseUrl}/api/v0/searches/{searchId}")
-                    .SetHeader("X-API-KEY", Settings.ApiKey)
-                    .Build();
-                cancelRequest.Method = HttpMethod.Put;
-                await _client.ExecuteAsync(cancelRequest);
-            }
-            catch (HttpException ex)
-            {
-                _logger.Debug(ex, "Cancel request for in-flight search {SearchId} failed", searchId);
-                return;
+                try
+                {
+                    HttpRequest cancelRequest = new HttpRequestBuilder($"{Settings.BaseUrl}/api/v0/searches/{searchId}")
+                        .SetHeader("X-API-KEY", Settings.ApiKey)
+                        .Build();
+                    cancelRequest.Method = HttpMethod.Put;
+                    await _client.ExecuteAsync(cancelRequest);
+                    break;
+                }
+                catch (HttpException ex) when (ex.Response?.StatusCode == HttpStatusCode.NotFound)
+                {
+                    return;
+                }
+                catch (Exception ex) when (ex is HttpException or System.Net.WebException)
+                {
+                    // A transient cancel failure must not skip the terminal
+                    // wait below — proceeding straight to the parser's DELETE
+                    // is the exact finalize race this method exists to close.
+                    _logger.Debug(ex, "Cancel attempt {Attempt} for in-flight search {SearchId} failed", attempt + 1, searchId);
+                    if (attempt == 0)
+                        await Task.Delay(TimeSpan.FromSeconds(1));
+                }
             }
 
             for (int i = 0; i < 6; i++)
@@ -358,7 +388,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 MinimumFiles: minimumFiles,
                 MaximumFiles: maximumFiles,
                 TrackCount: query.TrackCount,
-                Tracks: query.Tracks.Take(50).ToList()));
+                Tracks: query.Tracks.Take(50).ToList(),
+                TargetVariantTypes: query.TargetVariantTypes.Count > 0 ? query.TargetVariantTypes.ToList() : null));
 
             return request;
         }
@@ -386,7 +417,19 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                     break;
                 }
 
-                JsonNode? searchStatus = await GetSearchResultsAsync(searchId);
+                JsonNode? searchStatus;
+                try
+                {
+                    searchStatus = await GetSearchResultsAsync(searchId);
+                }
+                catch (Exception ex) when (ex is HttpException or System.Net.WebException)
+                {
+                    // Lidarr's HttpClient THROWS on 5xx/timeouts — without this
+                    // catch the null-poll counter below never engages and a
+                    // single transient 502 aborts the whole tier chain.
+                    _logger.Debug(ex, "Search status poll failed for {SearchId}", searchId);
+                    searchStatus = null;
+                }
 
                 // A single failed poll is a transient worth riding out, but a
                 // run of them means the search record is gone — spinning on

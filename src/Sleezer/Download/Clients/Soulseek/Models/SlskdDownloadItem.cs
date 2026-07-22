@@ -205,9 +205,9 @@ public class SlskdDownloadItem
     public static string ResolveRetryId(string baseId, Func<string, DownloadHistoryEventType?> latestEventTypeFor)
     {
         string id = baseId;
-        for (int attempt = 2; attempt <= 9; attempt++)
+        for (int attempt = 2; attempt <= 99; attempt++)
         {
-            if (latestEventTypeFor(id) != DownloadHistoryEventType.DownloadFailed)
+            if (!IsPoisonedHistoryEvent(latestEventTypeFor(id)))
                 return id;
 
             id = $"{baseId}-r{attempt}";
@@ -215,6 +215,17 @@ public class SlskdDownloadItem
 
         return id;
     }
+
+    /// <summary>
+    /// Lidarr's tracked-download cache returns the cached object for ANY
+    /// terminal state, not just failure — a re-grab of an imported or ignored
+    /// id is equally import-dead. Grabbed/null are the only reusable states.
+    /// </summary>
+    public static bool IsPoisonedHistoryEvent(DownloadHistoryEventType? eventType) => eventType
+        is DownloadHistoryEventType.DownloadFailed
+        or DownloadHistoryEventType.DownloadIgnored
+        or DownloadHistoryEventType.DownloadImported
+        or DownloadHistoryEventType.DownloadImportIncomplete;
 
     /// <summary>
     /// How long a failed release sits out automatic searches. Escalates with

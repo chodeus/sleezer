@@ -359,6 +359,13 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                     return NormalizeRemixerText(RemixKeywordRegex().Replace(tail, " "));
             }
 
+            // "Artist - Album" leaves: a keyword confined to the artist prefix
+            // ("Lil Flip - Undaground Legend") is a NAME, not a qualifier —
+            // only the portion after the first " - " counts as title zone.
+            int firstDash = title.IndexOf(" - ", StringComparison.Ordinal);
+            if (firstDash >= 0 && !RemixKeywordRegex().IsMatch(title[(firstDash + 3)..]))
+                return null;
+
             return string.Empty;
         }
 
@@ -382,11 +389,16 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             string lowered = title.ToLowerInvariant();
             string qualifierZones = string.Join(" ", BracketedContentRegex().Matches(title).Select(m => m.Value[1..^1])).ToLowerInvariant();
 
+            // Trailing checks run with bracketed suffixes removed so
+            // "One More Light Live [FLAC]" still reads as trailing-live, and a
+            // whole-title variant word covers albums literally titled "Live".
+            string trailZone = BracketedContentRegex().Replace(lowered, " ").TrimEnd(' ', '-');
+
             bool live = LiveQualifierRegex().IsMatch(qualifierZones) ||
                         LiveVenueRegex().IsMatch(lowered) ||
-                        TrailingWordRegex("live", lowered);
-            bool acoustic = AcousticRegex().IsMatch(qualifierZones) || TrailingWordRegex("acoustic", lowered);
-            bool demo = DemoRegex().IsMatch(qualifierZones) || TrailingWordRegex("demos", lowered) || TrailingWordRegex("demo", lowered);
+                        TrailingWordRegex("live", trailZone) || trailZone == "live";
+            bool acoustic = AcousticRegex().IsMatch(qualifierZones) || TrailingWordRegex("acoustic", trailZone) || trailZone == "acoustic";
+            bool demo = DemoRegex().IsMatch(qualifierZones) || TrailingWordRegex("demos", trailZone) || TrailingWordRegex("demo", trailZone) || trailZone is "demo" or "demos";
             bool extended = ExtendedRegex().IsMatch(qualifierZones) || ExtendedPhraseRegex().IsMatch(lowered);
 
             string? monoStereo = MonoRegex().IsMatch(qualifierZones) ? "mono"
@@ -406,19 +418,37 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         /// Deluxe/remastered editions carry no variant qualifier and are
         /// unaffected.
         /// </summary>
-        public static bool RemixSignaturesConflict(string? searchAlbum, string? candidateName)
+        public static bool RemixSignaturesConflict(string? searchAlbum, string? candidateName) =>
+            RemixSignaturesConflict(searchAlbum, candidateName, null);
+
+        /// <summary>
+        /// Metadata-aware variant: MusicBrainz secondary types on the TARGET
+        /// album (Live, Demo, Remix) FORGIVE a candidate-side qualifier the
+        /// title string hides ("Apple Music Live: ..." + folder "(Live)"), but
+        /// never demand one — an undecorated exact-title folder still matches.
+        /// </summary>
+        public static bool RemixSignaturesConflict(string? searchAlbum, string? candidateName, IReadOnlyCollection<string>? targetSecondaryTypes)
         {
             VariantProfile search = ExtractVariantProfile(searchAlbum);
             VariantProfile candidate = ExtractVariantProfile(candidateName);
 
-            if (search.Live != candidate.Live || search.Acoustic != candidate.Acoustic ||
-                search.Demo != candidate.Demo || search.Extended != candidate.Extended)
+            bool metaLive = HasSecondaryType(targetSecondaryTypes, "Live");
+            bool metaDemo = HasSecondaryType(targetSecondaryTypes, "Demo");
+            bool metaRemix = HasSecondaryType(targetSecondaryTypes, "Remix");
+
+            if (search.Live ? !candidate.Live : (candidate.Live && !metaLive))
+                return true;
+            if (search.Demo ? !candidate.Demo : (candidate.Demo && !metaDemo))
+                return true;
+            if (search.Acoustic != candidate.Acoustic || search.Extended != candidate.Extended)
                 return true;
 
             if (search.MonoStereo != null && candidate.MonoStereo != null && search.MonoStereo != candidate.MonoStereo)
                 return true;
 
             string? searchSignature = search.RemixSignature;
+            if (searchSignature == null && metaRemix)
+                searchSignature = string.Empty;
             string? candidateSignature = candidate.RemixSignature;
 
             if (searchSignature == null && candidateSignature == null)
@@ -430,6 +460,9 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
             return Fuzz.TokenSetRatio(searchSignature, candidateSignature) < 60;
         }
+
+        private static bool HasSecondaryType(IReadOnlyCollection<string>? types, string name) =>
+            types != null && types.Any(t => string.Equals(t, name, StringComparison.OrdinalIgnoreCase));
 
         private static bool TrailingWordRegex(string word, string loweredTitle) =>
             loweredTitle.EndsWith(" " + word, StringComparison.Ordinal) || loweredTitle.EndsWith("-" + word, StringComparison.Ordinal);
@@ -458,7 +491,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         [GeneratedRegex(@"[\(\[\{].*?[\)\]\}]", RegexOptions.Compiled)]
         private static partial Regex BracketedContentRegex();
 
-        [GeneratedRegex(@"\b(remix(es)?|rmx|re-?work(ed)?|bootleg|vip|flip|edit|instrumental|acapella|karaoke)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+        [GeneratedRegex(@"\b(remix(es|ed)?|rmx|re-?work(ed)?|bootleg|vip|flip|edit|instrumentals?|a?\s?capp?ellas?|karaokes?|sped[\s-]?up|slowed|nightcore|daycore|reverb|8d|mashups?|cover(ed)?\s+by)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
         private static partial Regex RemixKeywordRegex();
 
         [GeneratedRegex(@"\blive\b", RegexOptions.Compiled)]

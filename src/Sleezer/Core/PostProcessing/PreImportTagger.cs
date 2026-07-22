@@ -124,7 +124,7 @@ public class PreImportTagger : IPreImportTagger
         // remix" download was tagged as the plain single and imported over the
         // original). Fail closed: leave the raw tags for Lidarr to judge.
         string folderLeaf = Path.GetFileName(folderPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-        if (SlskdTextProcessor.RemixSignaturesConflict(album.Title, folderLeaf))
+        if (SlskdTextProcessor.RemixSignaturesConflict(album.Title, folderLeaf, album.SecondaryTypes?.Select(t => t.Name).ToList()))
         {
             _logger.Info("Pre-import tag: remix qualifier mismatch between album '{Album}' and folder '{Folder}' — skipping tagging for {FileCount} files in \"{SourceId}\"",
                 album.Title, folderLeaf, audioFiles.Count, sourceId);
@@ -249,26 +249,31 @@ public class PreImportTagger : IPreImportTagger
         // an album share — the file's album tag names the share's album. When
         // everything above failed, fall back to per-track title matching
         // against the target release (remix/variant qualifiers still conflict).
+        int titleTagged = 0;
         if (tagged == 0 && IsTitleFallbackEligible(album))
         {
-            (int titleTagged, int titleErrored) = TryTitleDrivenTagging(localTracks, album, albumRelease, stripFeaturedArtists, sourceId, ct);
-            if (titleTagged > 0)
-            {
-                tagged += titleTagged;
-                skipped = Math.Max(0, skipped - titleTagged);
-            }
-
+            (titleTagged, int titleErrored) = TryTitleDrivenTagging(localTracks, album, albumRelease, stripFeaturedArtists, sourceId, ct);
+            tagged += titleTagged;
             errored += titleErrored;
         }
 
-        _logger.Info("Pre-import tag: {SourceId} tagged={Tagged} skipped_weak_match={Skipped} tag_write_failed={TagWriteFailed}",
-            sourceId, tagged, skipped, errored);
+        _logger.Info("Pre-import tag: {SourceId} tagged={Tagged} (title_fallback={TitleTagged}) skipped_weak_match={Skipped} tag_write_failed={TagWriteFailed}",
+            sourceId, tagged, titleTagged, skipped, errored);
         return new TaggingResult(tagged, skipped, errored);
     }
 
-    private static bool IsTitleFallbackEligible(Album album) =>
-        string.Equals(album.AlbumType, "Single", StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(album.AlbumType, "EP", StringComparison.OrdinalIgnoreCase);
+    private static bool IsTitleFallbackEligible(Album album)
+    {
+        bool smallRelease = string.Equals(album.AlbumType, "Single", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(album.AlbumType, "EP", StringComparison.OrdinalIgnoreCase);
+        if (!smallRelease)
+            return false;
+
+        // A Live/Remix/Demo single's MB TRACK titles are usually plain, so the
+        // per-pair variant guard has nothing to compare — a studio file would
+        // title-match the live cut. Fail closed for those albums.
+        return album.SecondaryTypes?.Any(t => t?.Name is "Live" or "Remix" or "Demo" or "Mixtape") != true;
+    }
 
     private (int Tagged, int Errored) TryTitleDrivenTagging(
         List<LocalTrack> localTracks,
@@ -289,11 +294,17 @@ public class PreImportTagger : IPreImportTagger
         List<string> localTitles = localTracks.Select(lt =>
         {
             // A present-but-foreign artist tag means a same-titled track by
-            // someone else — exclude it rather than tag across artists.
+            // someone else — exclude it rather than tag across artists. But
+            // ArtistTitle is AlbumArtist-first, and a compilation share tags
+            // AlbumArtist "Various Artists" while the track artist is right —
+            // VA never counts as foreign.
             string? artistTag = lt.FileTrackInfo?.ArtistTitle;
             if (!string.IsNullOrWhiteSpace(artistTag) && !string.IsNullOrWhiteSpace(artistName) &&
+                !SlskdTextProcessor.IsVariousArtists(artistTag) &&
                 Fuzz.TokenSetRatio(artistTag.ToLowerInvariant(), artistName.ToLowerInvariant()) < 60)
             {
+                _logger.Debug("Pre-import tag: excluding {File} from title matching — artist tag '{Tag}' does not match '{Artist}'",
+                    Path.GetFileName(lt.Path), artistTag, artistName);
                 return string.Empty;
             }
 
