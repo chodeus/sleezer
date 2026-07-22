@@ -62,16 +62,19 @@ public class SlskdBlocklistTests
     {
         "deezer" => new DeezerBlocklist(repo),
         "tidal" => new TidalBlocklist(repo),
-        _ => new SoulseekBlocklist(repo),
+        "soulseek" => new SoulseekBlocklist(repo),
+        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown blocklist kind"),
     };
 
     [Theory]
     [InlineData("deezer", "DeezerDownloadProtocol", "Deezer")]
     [InlineData("tidal", "TidalDownloadProtocol", "Tidal")]
+    [InlineData("soulseek", "SoulseekDownloadProtocol", "Soulseek")]
     public void GetBlocklist_reads_camelcase_keys_from_rehydrated_data(string kind, string protocol, string indexer)
     {
         FakeRepo repo = new();
         var bl = MakeBlocklist(kind, repo);
+        Assert.Equal(protocol, bl.Protocol);
         Blocklist row = bl.GetBlocklist(FailedEvent("g", new()
         {
             ["protocol"] = protocol,
