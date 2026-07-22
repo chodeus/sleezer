@@ -27,6 +27,7 @@ public sealed record SearchContext
     public SlskdSettings Settings { get; init; }
     public HashSet<string> ProcessedSearches { get; init; }
     public SearchCriteriaBase? SearchCriteria { get; init; }
+    public IReadOnlyList<string> TargetVariantTypes { get; init; } = [];
 
     public QueryType QueryType { get; init; } = QueryType.Normal;
     public string? NormalizedArtist { get; init; }
@@ -74,6 +75,7 @@ public sealed record SearchQuery
     public bool ExpandDirectory { get; init; }
     public int TrackCount { get; init; }
     public IReadOnlyList<string> Tracks { get; init; } = [];
+    public IReadOnlyList<string> TargetVariantTypes { get; init; } = [];
     public string? SearchText { get; init; }
 
     public static SearchQuery FromContext(SearchContext context) => new()
@@ -84,6 +86,7 @@ public sealed record SearchQuery
         ExpandDirectory = false,
         TrackCount = context.TrackCount,
         Tracks = context.Tracks,
+        TargetVariantTypes = context.TargetVariantTypes,
         SearchText = null
     };
 }

@@ -132,12 +132,16 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
             // Runs after every album-match route including track evidence: a
             // remix single's filenames CONTAIN the base title, so evidence
-            // would otherwise force the false match right back.
+            // would otherwise force the false match right back. Checks the
+            // parent component too — "Album (Live)\FLAC" layouts carry the
+            // qualifier one level up from the group key's leaf.
             if (isAlbumMatch && !string.IsNullOrEmpty(searchData.Album))
             {
                 string[] pathComponents = SplitPathIntoComponents(directory.Key);
                 string candidateLeaf = pathComponents.Length > 0 ? pathComponents[^1] : directory.Key;
-                if (SlskdTextProcessor.RemixSignaturesConflict(searchData.Album, candidateLeaf))
+                string? candidateParent = pathComponents.Length >= 2 ? pathComponents[^2] : null;
+                if (SlskdTextProcessor.RemixSignaturesConflict(searchData.Album, candidateLeaf, searchData.TargetVariantTypes) ||
+                    (candidateParent != null && SlskdTextProcessor.RemixSignaturesConflict(searchData.Album, candidateParent, searchData.TargetVariantTypes)))
                 {
                     _logger.Trace("Remix qualifier mismatch: search '{Album}' vs folder '{Folder}'", searchData.Album, candidateLeaf);
                     isAlbumMatch = false;

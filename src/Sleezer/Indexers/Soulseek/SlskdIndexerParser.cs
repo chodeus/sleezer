@@ -15,6 +15,8 @@ using NzbDrone.Plugin.Sleezer.Core.Model;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
 using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek.Models;
+using System.Net;
+using System.Text.Json.Nodes;
 
 namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 {
@@ -30,13 +32,16 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         private readonly IQueueService _queueService;
         private readonly ISlskdCorruptUserTracker _corruptUserTracker;
 
-        private static readonly Dictionary<int, string> _interactiveResults = [];
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, string> _interactiveResults = new();
         private static readonly Dictionary<string, (HashSet<string> IgnoredUsers, long LastFileSize)> _ignoreListCache = new();
         private readonly object _rateLimitLock = new();
         private DateTime _rateLimitCacheTimestamp = DateTime.MinValue;
         private HashSet<string> _rateLimitedUsersCache = new(StringComparer.OrdinalIgnoreCase);
-        private DateTime _failedIdCacheTimestamp = DateTime.MinValue;
-        private HashSet<string> _failedIdCache = new(StringComparer.OrdinalIgnoreCase);
+
+        // Static because Lidarr resolves indexers (and thus parsers) transiently
+        // per fetch — instance caches would re-walk 24h of history on every
+        // search command.
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, (DateTime Timestamp, HashSet<string> Ids, Dictionary<string, int> Users)> _failureStateCache = new();
 
         private SlskdSettings Settings => _indexer.Settings;
 
@@ -56,6 +61,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         public IList<ReleaseInfo> ParseResponse(IndexerResponse indexerResponse)
         {
             List<AlbumData> albumDatas = [];
+            string? searchIdForCleanup = null;
+            bool delayRemoval = false;
             try
             {
                 SlskdSearchResponse? searchResponse = JsonSerializer.Deserialize<SlskdSearchResponse>(indexerResponse.Content, IndexerParserHelper.StandardJsonOptions);
@@ -67,10 +74,11 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                     return [];
                 }
 
+                searchIdForCleanup = searchResponse.Id;
                 SlskdSearchData searchTextData = SlskdSearchData.FromJson(indexerResponse.HttpRequest.ContentSummary);
                 HashSet<string>? ignoredUsers = GetIgnoredUsers(Settings.IgnoreListPath);
                 HashSet<string> rateLimitedUsers = GetRateLimitedUsers();
-                HashSet<string> recentlyFailedIds = GetRecentlyFailedDownloadIds();
+                (HashSet<string> recentlyFailedIds, Dictionary<string, int> recentlyFailedUsers) = GetRecentFailureState();
 
                 int totalResponses = searchResponse.Responses?.Count() ?? 0;
                 int droppedIgnored = 0;
@@ -106,7 +114,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                             LockedFiles = response.LockedFiles,
                             QueueLength = response.QueueLength,
                             Token = response.Token,
-                            FileCount = response.FileCount
+                            FileCount = response.FileCount,
+                            RecentUserFailures = recentlyFailedUsers.GetValueOrDefault(response.Username)
                         };
 
                         IGrouping<string, SlskdFileData> finalGroup = directoryGroup;
@@ -167,11 +176,18 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 _logger.Debug("Slskd parse: {Total} response(s), {Albums} album(s) emitted, dropped {Ignored} ignored-user / {RateLimited} rate-limited / {RecentlyFailed} recently-failed",
                     totalResponses, albumDatas.Count, droppedIgnored, droppedRateLimited, droppedRecentlyFailed);
 
-                RemoveSearch(searchResponse.Id, albumDatas.Count != 0 && searchTextData.Interactive);
+                delayRemoval = albumDatas.Count != 0 && searchTextData.Interactive;
             }
             catch (Exception ex)
             {
                 _logger.Error(ex, "Failed to parse Slskd search response.");
+            }
+            finally
+            {
+                // The DELETE must run even when parsing throws, or slskd's
+                // search list grows unboundedly on transient parse failures.
+                if (searchIdForCleanup != null)
+                    RemoveSearch(searchIdForCleanup, delayRemoval);
             }
 
             return albumDatas.OrderByDescending(x => x.Priotity).Select(a => (ReleaseInfo)a.ToShareInfo()).ToList();
@@ -224,15 +240,22 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 {
                     if (delay)
                     {
-                        _interactiveResults.TryGetValue(_indexer.Definition.Id, out string? staleId);
-                        _interactiveResults[_indexer.Definition.Id] = searchId;
+                        int? indexerId = _indexer.Definition?.Id;
+                        if (indexerId == null)
+                            return;
+
+                        string? staleId = null;
+                        _interactiveResults.AddOrUpdate(
+                            indexerId.Value,
+                            searchId,
+                            (_, previous) => { staleId = previous; return searchId; });
                         if (staleId != null)
                             searchId = staleId;
                         else return;
                     }
                     await ExecuteRemovalAsync(Settings, searchId);
                 }
-                catch (HttpException ex)
+                catch (Exception ex)
                 {
                     _logger.Error(ex, "Failed to remove slskd search with ID: {SearchId}", searchId);
                 }
@@ -244,17 +267,16 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             if (!_interactiveResults.TryGetValue(message.Album.Release.IndexerId, out string? selectedId) || !message.Album.Release.InfoUrl.EndsWith(selectedId))
                 return;
             ExecuteRemovalAsync((SlskdSettings)_indexerFactory.Value.Get(message.Album.Release.IndexerId).Settings, selectedId).GetAwaiter().GetResult();
-            _interactiveResults.Remove(message.Album.Release.IndexerId);
+            _interactiveResults.TryRemove(message.Album.Release.IndexerId, out _);
         }
 
         public void Handle(ApplicationShutdownRequested message)
         {
             foreach (int indexerId in _interactiveResults.Keys.ToList())
             {
-                if (_interactiveResults.TryGetValue(indexerId, out string? selectedId))
+                if (_interactiveResults.TryRemove(indexerId, out string? selectedId))
                 {
                     ExecuteRemovalAsync((SlskdSettings)_indexerFactory.Value.Get(indexerId).Settings, selectedId).GetAwaiter().GetResult();
-                    _interactiveResults.Remove(indexerId);
                 }
             }
         }
@@ -294,28 +316,66 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             }
         }
 
-        private HashSet<string> GetRecentlyFailedDownloadIds()
+        private (HashSet<string> FailedIds, Dictionary<string, int> FailedUsers) GetRecentFailureState()
         {
-            lock (_rateLimitLock)
+            int cacheKey = _indexer.Definition?.Id ?? 0;
+            if (_failureStateCache.TryGetValue(cacheKey, out (DateTime Timestamp, HashSet<string> Ids, Dictionary<string, int> Users) cached) &&
+                DateTime.UtcNow - cached.Timestamp < TimeSpan.FromSeconds(15))
             {
-                if (DateTime.UtcNow - _failedIdCacheTimestamp < TimeSpan.FromSeconds(15))
-                    return _failedIdCache;
-
-                HashSet<string> failed = new(StringComparer.OrdinalIgnoreCase);
-                foreach (EntityHistory history in _historyService.Since(DateTime.UtcNow.AddHours(-24), EntityHistoryEventType.DownloadFailed))
-                {
-                    if (string.IsNullOrWhiteSpace(history.DownloadId))
-                        continue;
-
-                    // Retry grabs record their failure under the suffixed id;
-                    // fold it back so the base release is skipped too.
-                    failed.Add(SlskdDownloadItem.StripRetrySuffix(history.DownloadId));
-                }
-
-                _failedIdCache = failed;
-                _failedIdCacheTimestamp = DateTime.UtcNow;
-                return failed;
+                return (cached.Ids, cached.Users);
             }
+
+            // Lookback is 2x the max backoff tier: with a 24h lookback the
+            // escalated count decays as older failures age out and a dead
+            // share resurfaces ~18h early. A multi-album failure writes one
+            // row per album sharing the DownloadId — dedupe first.
+            Dictionary<string, DateTime> rowsById = new(StringComparer.OrdinalIgnoreCase);
+            foreach (EntityHistory history in _historyService.Since(DateTime.UtcNow.AddHours(-48), EntityHistoryEventType.DownloadFailed))
+            {
+                if (string.IsNullOrWhiteSpace(history.DownloadId))
+                    continue;
+
+                DateTime seen = rowsById.GetValueOrDefault(history.DownloadId);
+                if (history.Date > seen)
+                    rowsById[history.DownloadId] = history.Date;
+            }
+
+            // Group by base release id: retry grabs record their failure under
+            // the -rN suffix, and the backoff escalates with the per-release
+            // attempt count (1h → 6h → 24h). Users are charged per bad
+            // RELEASE, not per retry of the same one.
+            Dictionary<string, (int Count, DateTime Last)> perRelease = new(StringComparer.OrdinalIgnoreCase);
+            Dictionary<string, int> perUser = new(StringComparer.OrdinalIgnoreCase);
+            HashSet<string> chargedUserReleases = new(StringComparer.OrdinalIgnoreCase);
+            int? indexerId = _indexer.Definition?.Id;
+            foreach ((string downloadId, DateTime date) in rowsById)
+            {
+                // Same scoping as GetGrabCounts: a torrent failure's
+                // DownloadUrl would otherwise contribute a junk "username".
+                DownloadHistory? grab = _downloadHistoryService.GetLatestGrab(downloadId);
+                if (grab == null || !string.Equals(grab.Protocol, nameof(SoulseekDownloadProtocol), StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (indexerId.HasValue && grab.IndexerId != indexerId.Value)
+                    continue;
+
+                string baseId = SlskdDownloadItem.StripRetrySuffix(downloadId);
+                (int count, DateTime last) = perRelease.GetValueOrDefault(baseId);
+                perRelease[baseId] = (count + 1, date > last ? date : last);
+
+                string? username = ExtractUsernameFromUrl(grab.Release?.DownloadUrl);
+                if (username != null && chargedUserReleases.Add(username + "|" + baseId))
+                    perUser[username] = perUser.GetValueOrDefault(username) + 1;
+            }
+
+            HashSet<string> failed = new(StringComparer.OrdinalIgnoreCase);
+            foreach ((string baseId, (int count, DateTime last)) in perRelease)
+            {
+                if (DateTime.UtcNow - last < SlskdDownloadItem.RetryBackoffWindow(count))
+                    failed.Add(baseId);
+            }
+
+            _failureStateCache[cacheKey] = (DateTime.UtcNow, failed, perUser);
+            return (failed, perUser);
         }
 
         private Dictionary<string, int> GetGrabCounts()
@@ -400,6 +460,30 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         {
             try
             {
+                // Never DELETE a search slskd is still running — that races its
+                // finalize write and loses the results (the exact failure the
+                // cancel path guards). Confirm terminal (or already-gone 404)
+                // first; if it is still InProgress, leave the record for a
+                // later pass rather than delete it in flight.
+                HttpRequest statusRequest = new HttpRequestBuilder($"{settings.BaseUrl}/api/v0/searches/{searchId}")
+                    .SetHeader("X-API-KEY", settings.ApiKey)
+                    .Build();
+                statusRequest.SuppressHttpError = true;
+                HttpResponse statusResponse = await _httpClient.ExecuteAsync(statusRequest);
+
+                if (statusResponse.StatusCode == HttpStatusCode.NotFound)
+                    return;
+
+                if (statusResponse.StatusCode == HttpStatusCode.OK)
+                {
+                    string? state = JsonSerializer.Deserialize<JsonNode>(statusResponse.Content)?["state"]?.GetValue<string>();
+                    if (state != null && state.StartsWith("InProgress", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _logger.Debug("Slskd search {SearchId} still in progress; deferring removal", searchId);
+                        return;
+                    }
+                }
+
                 HttpRequest request = new HttpRequestBuilder($"{settings.BaseUrl}/api/v0/searches/{searchId}")
                     .SetHeader("X-API-KEY", settings.ApiKey)
                     .Build();

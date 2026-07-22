@@ -359,20 +359,97 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                     return NormalizeRemixerText(RemixKeywordRegex().Replace(tail, " "));
             }
 
+            // "Artist - Album" leaves: a keyword confined to the artist prefix
+            // ("Lil Flip - Undaground Legend") is a NAME, not a qualifier —
+            // only the portion after the first " - " counts as title zone.
+            int firstDash = title.IndexOf(" - ", StringComparison.Ordinal);
+            if (firstDash >= 0 && !RemixKeywordRegex().IsMatch(title[(firstDash + 3)..]))
+                return null;
+
             return string.Empty;
         }
 
         /// <summary>
-        /// A remix qualifier marks a DIFFERENT release, not a variant of the same
-        /// one: "Never Say Never" must never match "Never Say Never (Colyn Remix)"
-        /// (PartialRatio scores that pair 100), and a search FOR a remix must not
-        /// settle for the original. Two named remixers conflict unless they agree.
-        /// A generic qualifier on both sides, or generic vs named, is allowed.
+        /// Structured variant qualifiers for a title. Every dimension marks a
+        /// DIFFERENT recording of nominally the same music: live, acoustic and
+        /// demo cuts, extended mixes, mono/stereo masters, and the remix family
+        /// (which also covers instrumental/acapella/karaoke via the keyword
+        /// regex). Live/acoustic/demo detection is restricted to qualifier
+        /// zones — bracketed segments, a "live at/in/from" phrase, or a
+        /// trailing word — so titles that merely CONTAIN the word ("Live
+        /// Forever") never trip it.
         /// </summary>
-        public static bool RemixSignaturesConflict(string? searchAlbum, string? candidateName)
+        public sealed record VariantProfile(bool Live, bool Acoustic, bool Demo, bool Extended, string? MonoStereo, string? RemixSignature);
+
+        public static VariantProfile ExtractVariantProfile(string? title)
         {
-            string? searchSignature = ExtractRemixSignature(searchAlbum);
-            string? candidateSignature = ExtractRemixSignature(candidateName);
+            if (string.IsNullOrWhiteSpace(title))
+                return new VariantProfile(false, false, false, false, null, null);
+
+            string lowered = title.ToLowerInvariant();
+            string qualifierZones = string.Join(" ", BracketedContentRegex().Matches(title).Select(m => m.Value[1..^1])).ToLowerInvariant();
+
+            // Trailing checks run with bracketed suffixes removed so
+            // "One More Light Live [FLAC]" still reads as trailing-live, and a
+            // whole-title variant word covers albums literally titled "Live".
+            string trailZone = BracketedContentRegex().Replace(lowered, " ").TrimEnd(' ', '-');
+
+            bool live = LiveQualifierRegex().IsMatch(qualifierZones) ||
+                        LiveVenueRegex().IsMatch(lowered) ||
+                        TrailingWordRegex("live", trailZone) || trailZone == "live";
+            bool acoustic = AcousticRegex().IsMatch(qualifierZones) || TrailingWordRegex("acoustic", trailZone) || trailZone == "acoustic";
+            bool demo = DemoRegex().IsMatch(qualifierZones) || TrailingWordRegex("demos", trailZone) || TrailingWordRegex("demo", trailZone) || trailZone is "demo" or "demos";
+            bool extended = ExtendedRegex().IsMatch(qualifierZones) || ExtendedPhraseRegex().IsMatch(lowered);
+
+            string? monoStereo = MonoRegex().IsMatch(qualifierZones) ? "mono"
+                : StereoRegex().IsMatch(qualifierZones) ? "stereo"
+                : null;
+
+            return new VariantProfile(live, acoustic, demo, extended, monoStereo, ExtractRemixSignature(title));
+        }
+
+        /// <summary>
+        /// A variant qualifier marks a DIFFERENT release, not an edition of the
+        /// same one: "Never Say Never" must never match "Never Say Never (Colyn
+        /// Remix)", a studio album must never match its "(Live)" cut, and vice
+        /// versa. One-sided live/acoustic/demo/extended qualifiers conflict, a
+        /// mono master conflicts with a stereo one, and two NAMED remixers
+        /// conflict unless they agree (generic vs named is allowed).
+        /// Deluxe/remastered editions carry no variant qualifier and are
+        /// unaffected.
+        /// </summary>
+        public static bool RemixSignaturesConflict(string? searchAlbum, string? candidateName) =>
+            RemixSignaturesConflict(searchAlbum, candidateName, null);
+
+        /// <summary>
+        /// Metadata-aware variant: MusicBrainz secondary types on the TARGET
+        /// album (Live, Demo, Remix) FORGIVE a candidate-side qualifier the
+        /// title string hides ("Apple Music Live: ..." + folder "(Live)"), but
+        /// never demand one — an undecorated exact-title folder still matches.
+        /// </summary>
+        public static bool RemixSignaturesConflict(string? searchAlbum, string? candidateName, IReadOnlyCollection<string>? targetSecondaryTypes)
+        {
+            VariantProfile search = ExtractVariantProfile(searchAlbum);
+            VariantProfile candidate = ExtractVariantProfile(candidateName);
+
+            bool metaLive = HasSecondaryType(targetSecondaryTypes, "Live");
+            bool metaDemo = HasSecondaryType(targetSecondaryTypes, "Demo");
+            bool metaRemix = HasSecondaryType(targetSecondaryTypes, "Remix");
+
+            if (search.Live ? !candidate.Live : (candidate.Live && !metaLive))
+                return true;
+            if (search.Demo ? !candidate.Demo : (candidate.Demo && !metaDemo))
+                return true;
+            if (search.Acoustic != candidate.Acoustic || search.Extended != candidate.Extended)
+                return true;
+
+            if (search.MonoStereo != null && candidate.MonoStereo != null && search.MonoStereo != candidate.MonoStereo)
+                return true;
+
+            string? searchSignature = search.RemixSignature;
+            if (searchSignature == null && metaRemix)
+                searchSignature = string.Empty;
+            string? candidateSignature = candidate.RemixSignature;
 
             if (searchSignature == null && candidateSignature == null)
                 return false;
@@ -383,6 +460,12 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
             return Fuzz.TokenSetRatio(searchSignature, candidateSignature) < 60;
         }
+
+        private static bool HasSecondaryType(IReadOnlyCollection<string>? types, string name) =>
+            types != null && types.Any(t => string.Equals(t, name, StringComparison.OrdinalIgnoreCase));
+
+        private static bool TrailingWordRegex(string word, string loweredTitle) =>
+            loweredTitle.EndsWith(" " + word, StringComparison.Ordinal) || loweredTitle.EndsWith("-" + word, StringComparison.Ordinal);
 
         private static string NormalizeRemixerText(string text) =>
             StripPunctuation(text).Trim().ToLowerInvariant();
@@ -408,7 +491,31 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         [GeneratedRegex(@"[\(\[\{].*?[\)\]\}]", RegexOptions.Compiled)]
         private static partial Regex BracketedContentRegex();
 
-        [GeneratedRegex(@"\b(remix(es)?|rmx|re-?work(ed)?|bootleg|vip|flip|edit|instrumental|acapella|karaoke)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+        [GeneratedRegex(@"\b(remix(es|ed)?|rmx|re-?work(ed)?|bootleg|vip|flip|edit|instrumentals?|a?\s?capp?ellas?|karaokes?|sped[\s-]?up|slowed|nightcore|daycore|reverb|8d|mashups?|cover(ed)?\s+by)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
         private static partial Regex RemixKeywordRegex();
+
+        [GeneratedRegex(@"\blive\b", RegexOptions.Compiled)]
+        private static partial Regex LiveQualifierRegex();
+
+        [GeneratedRegex(@"\blive\s+(at|in|from)\b", RegexOptions.Compiled)]
+        private static partial Regex LiveVenueRegex();
+
+        [GeneratedRegex(@"\bacoustic\b", RegexOptions.Compiled)]
+        private static partial Regex AcousticRegex();
+
+        [GeneratedRegex(@"\bdemos?\b", RegexOptions.Compiled)]
+        private static partial Regex DemoRegex();
+
+        [GeneratedRegex(@"\bextended\b(?!\s+(edition|play|liner))", RegexOptions.Compiled)]
+        private static partial Regex ExtendedRegex();
+
+        [GeneratedRegex(@"\bextended\s+(mix|version|edit)\b", RegexOptions.Compiled)]
+        private static partial Regex ExtendedPhraseRegex();
+
+        [GeneratedRegex(@"\bmono\b", RegexOptions.Compiled)]
+        private static partial Regex MonoRegex();
+
+        [GeneratedRegex(@"\bstereo\b", RegexOptions.Compiled)]
+        private static partial Regex StereoRegex();
     }
 }

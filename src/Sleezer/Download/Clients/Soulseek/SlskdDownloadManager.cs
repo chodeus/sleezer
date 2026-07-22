@@ -178,8 +178,21 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         string retryId = SlskdDownloadItem.ResolveRetryId(item.ID, id => _downloadHistoryService.GetLatestDownloadHistoryItem(id)?.EventType);
         if (retryId != item.ID)
         {
-            _logger.Debug("Release {Id} has failed download history; tracking this attempt as {RetryId}", item.ID, retryId);
+            _logger.Debug("Release {Id} has terminal download history; tracking this attempt as {RetryId}", item.ID, retryId);
             item.ID = retryId;
+
+            // A stale earlier attempt still in the dict would swallow all
+            // transfer state for these files (its per-directory hash matches
+            // first) and starve this retry — evict it from tracking only.
+            string? probeFile = item.FileData.FirstOrDefault(f => !string.IsNullOrEmpty(f.Filename))?.Filename;
+            if (probeFile != null)
+            {
+                foreach (SlskdDownloadItem stale in GetItemsForDef(definitionId).Where(i => i.ID != retryId && i.OwnsFile(probeFile)).ToList())
+                {
+                    _logger.Debug("Evicting stale tracked attempt {StaleId} superseded by {RetryId}", stale.ID, retryId);
+                    RemoveItemFromDict(definitionId, stale.ID);
+                }
+            }
         }
 
         _logger.Trace("Download initiated: {Title} | Files: {FileCount}", remoteAlbum.Release.Title, item.FileData.Count);
@@ -576,9 +589,14 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     // per-directory hash, so fall back to file-membership over recent grabs.
     private DownloadHistory? FindGrabOwningDirectory(string hash, SlskdDownloadDirectory dir)
     {
+        // A direct hit on a POISONED id (its latest history event is terminal)
+        // would re-attach a completed retry under the failed first attempt —
+        // the exact wedge ResolveRetryId exists to avoid. Fall through to the
+        // newest-first probe, which finds the -rN retry grab instead.
         DownloadHistory? direct = _downloadHistoryService.GetLatestGrab(hash);
         if (direct?.Release != null &&
-            string.Equals(direct.Protocol, nameof(SoulseekDownloadProtocol), StringComparison.OrdinalIgnoreCase))
+            string.Equals(direct.Protocol, nameof(SoulseekDownloadProtocol), StringComparison.OrdinalIgnoreCase) &&
+            !SlskdDownloadItem.IsPoisonedHistoryEvent(_downloadHistoryService.GetLatestDownloadHistoryItem(direct.DownloadId)?.EventType))
             return direct;
 
         string? probeFile = dir.Files?.FirstOrDefault()?.Filename;
@@ -591,6 +609,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             .Where(id => !string.IsNullOrWhiteSpace(id))
             .Distinct(StringComparer.OrdinalIgnoreCase);
 
+        DownloadHistory? poisonedFallback = null;
         foreach (string downloadId in recentGrabIds)
         {
             DownloadHistory? grab = _downloadHistoryService.GetLatestGrab(downloadId);
@@ -599,8 +618,13 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
             try
             {
-                if (new SlskdDownloadItem(grab.Release).OwnsFile(probeFile))
+                if (!new SlskdDownloadItem(grab.Release).OwnsFile(probeFile))
+                    continue;
+
+                if (!SlskdDownloadItem.IsPoisonedHistoryEvent(_downloadHistoryService.GetLatestDownloadHistoryItem(grab.DownloadId)?.EventType))
                     return grab;
+
+                poisonedFallback ??= grab;
             }
             catch (Exception ex)
             {
@@ -608,7 +632,9 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             }
         }
 
-        return null;
+        // Visibility beats limbo: a poisoned re-attach at least surfaces the
+        // transfer in the queue instead of leaving it orphaned in slskd.
+        return poisonedFallback;
     }
 
     private static string SanitizeFolderName(string name)
