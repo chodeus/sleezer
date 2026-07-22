@@ -66,6 +66,11 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
             ShareInfo release = (ShareInfo)FillReleaseInfo(new ShareInfo());
             release.Seeders = Priotity;
             release.MatchedSearchCriteria = MatchedSearchCriteria;
+            // NB: InfoHash is deliberately NOT set here. Core prepends the
+            // "{defId}_" prefix to Guid in IndexerBase.CleanupReleases AFTER
+            // this runs, so mirroring Guid now would capture the un-prefixed
+            // value while every stored/queried Guid is prefixed — a guaranteed
+            // mismatch. SlskdIndexer.CleanupReleases sets InfoHash post-prefix.
             return release;
         }
 

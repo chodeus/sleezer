@@ -27,10 +27,10 @@ namespace NzbDrone.Core.Blocklisting
 
         public Blocklist GetBlocklist(DownloadFailedEvent message)
         {
-            // EntityHistory.Data uses PascalCase keys ("Indexer", "Protocol", "Guid",
-            // "PublishedDate", "Size"). Lowercase reads silently returned null which
-            // fed DateTime.Parse("") → FormatException, crashing the blocklist write.
-            // TryParse is defensive even with the case fix in place.
+            // EntityHistory.Data round-trips through a CamelCase DictionaryKeyPolicy,
+            // so rehydrated keys are camelCase; read case-insensitively so either
+            // casing resolves. TryParse stays defensive against absent keys.
+            Dictionary<string, string> data = new(message.Data, StringComparer.OrdinalIgnoreCase);
             return new Blocklist
             {
                 ArtistId = message.ArtistId,
@@ -38,12 +38,12 @@ namespace NzbDrone.Core.Blocklisting
                 SourceTitle = message.SourceTitle,
                 Quality = message.Quality,
                 Date = DateTime.UtcNow,
-                PublishedDate = DateTime.TryParse(message.Data.GetValueOrDefault("PublishedDate") ?? string.Empty, out DateTime publishedDate) ? publishedDate : null,
-                Size = long.TryParse(message.Data.GetValueOrDefault("Size", "0"), out long size) ? size : 0,
-                Indexer = message.Data.GetValueOrDefault("Indexer"),
-                Protocol = message.Data.GetValueOrDefault("Protocol"),
+                PublishedDate = DateTime.TryParse(data.GetValueOrDefault("PublishedDate") ?? string.Empty, out DateTime publishedDate) ? publishedDate : null,
+                Size = long.TryParse(data.GetValueOrDefault("Size", "0"), out long size) ? size : 0,
+                Indexer = data.GetValueOrDefault("Indexer"),
+                Protocol = data.GetValueOrDefault("Protocol"),
                 Message = message.Message,
-                TorrentInfoHash = message.Data.GetValueOrDefault("Guid")
+                TorrentInfoHash = data.GetValueOrDefault("Guid")
             };
         }
 

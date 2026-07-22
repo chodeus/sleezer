@@ -6,6 +6,7 @@ using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
 using NzbDrone.Plugin.Sleezer.Core.Model;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
+using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek.Models;
 
 namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 {
@@ -187,6 +188,9 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
             return new AlbumData("Slskd", nameof(SoulseekDownloadProtocol))
             {
+                // username keeps peers distinct through DistinctBy(Guid) (album
+                // failover); the file-set hash makes the blocklist per-release.
+                Guid = $"Slskd-{folderData.Username}-{SlskdDownloadItem.GetStableMD5Id(filesToDownload.Select(f => f.Filename))}",
                 AlbumId = $"/api/v0/transfers/downloads/{folderData.Username}",
                 ArtistName = finalArtist,
                 AlbumName = finalAlbum,
