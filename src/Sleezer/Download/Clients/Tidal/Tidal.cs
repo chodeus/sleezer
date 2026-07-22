@@ -19,8 +19,6 @@ namespace NzbDrone.Core.Download.Clients.Tidal
     public class Tidal : DownloadClientBase<TidalSettings>
     {
         private readonly ITidalProxy _proxy;
-        private DateTime _lastSweepUtc = DateTime.MinValue;
-        private int _sweeping;
 
         public Tidal(ITidalProxy proxy,
                      IConfigService configService,
@@ -49,19 +47,14 @@ namespace NzbDrone.Core.Download.Clients.Tidal
 
         // Independent, throttled sweep of empty download shells — the gap the
         // per-item RemoveItem cleanup misses (restart / untracked / importFailed).
-        // Off-thread + single-flight; the sweeper's own guards (tracked leaf,
-        // 15-min quiet period, fail-closed emptiness, non-recursive delete) make
-        // it safe to run regardless of queue state.
+        // State lives in the shared sweeper (static) so it survives Lidarr's
+        // transient re-resolution of this client on every poll.
         private void MaybeSweepEmptyDownloadDirectories(IEnumerable<DownloadClientItem> queue)
         {
-            DateTime now = DateTime.UtcNow;
-            if (now - _lastSweepUtc < TimeSpan.FromMinutes(30))
-                return;
-            if (Interlocked.CompareExchange(ref _sweeping, 1, 0) != 0)
-                return;
-            _lastSweepUtc = now;
-
             string? root = Settings.DownloadPath;
+            if (string.IsNullOrEmpty(root))
+                return;
+
             HashSet<string> trackedLeaves = new(StringComparer.OrdinalIgnoreCase);
             foreach (var item in queue)
             {
@@ -70,12 +63,14 @@ namespace NzbDrone.Core.Download.Clients.Tidal
                     trackedLeaves.Add(leaf);
             }
 
-            _ = Task.Run(() =>
-            {
-                try { EmptyDownloadDirectorySweeper.Prune(root, trackedLeaves, TimeSpan.FromMinutes(15), now, _logger); }
-                catch (Exception ex) { _logger.Warn(ex, "Tidal empty download-directory sweep failed"); }
-                finally { Interlocked.Exchange(ref _sweeping, 0); }
-            });
+            EmptyDownloadDirectorySweeper.MaybePruneThrottled(
+                key: root,
+                root: root,
+                trackedLeaves: trackedLeaves,
+                quietPeriod: TimeSpan.FromMinutes(15),
+                throttle: TimeSpan.FromMinutes(30),
+                nowUtc: DateTime.UtcNow,
+                logger: _logger);
         }
 
         public override void RemoveItem(DownloadClientItem item, bool deleteData)

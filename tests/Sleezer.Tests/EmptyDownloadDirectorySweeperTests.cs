@@ -96,6 +96,22 @@ public class EmptyDownloadDirectorySweeperTests : IDisposable
     }
 
     [Fact]
+    public void MaybePruneThrottled_schedules_once_then_throttles_within_the_window()
+    {
+        // Simulates Lidarr resolving a fresh client each poll: the static state
+        // in the sweeper must throttle regardless of instance churn.
+        string key = "throttle-key-" + Guid.NewGuid().ToString("N");
+        DateTime now = DateTime.UtcNow;
+        var empty = new HashSet<string>();
+
+        // First poll schedules; a second poll 5 min later (within the 30-min
+        // throttle) must NOT schedule again — the guarantee that broke when the
+        // state lived on the transient client instance.
+        Assert.True(EmptyDownloadDirectorySweeper.MaybePruneThrottled(key, _root, empty, TimeSpan.FromMinutes(15), TimeSpan.FromMinutes(30), now, Log));
+        Assert.False(EmptyDownloadDirectorySweeper.MaybePruneThrottled(key, _root, empty, TimeSpan.FromMinutes(15), TimeSpan.FromMinutes(30), now.AddMinutes(5), Log));
+    }
+
+    [Fact]
     public void Missing_root_is_a_noop()
     {
         Assert.Equal(0, EmptyDownloadDirectorySweeper.Prune(Path.Combine(_root, "nope"), new HashSet<string>(), TimeSpan.FromMinutes(15), _now, Log));

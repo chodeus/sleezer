@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using NLog;
 
 namespace NzbDrone.Plugin.Sleezer.Core.Utilities
@@ -40,6 +41,10 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
                 return 0;
             }
 
+            HashSet<string> tracked = trackedLeaves as HashSet<string> is { } h && ReferenceEquals(h.Comparer, StringComparer.OrdinalIgnoreCase)
+                ? h
+                : new HashSet<string>(trackedLeaves, StringComparer.OrdinalIgnoreCase);
+
             int pruned = 0;
             foreach (string dir in children)
             {
@@ -50,7 +55,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
                         continue;
                     if (!IsStrictDescendant(candidate, normalizedRoot))
                         continue;
-                    if (trackedLeaves.Contains(Path.GetFileName(candidate)))
+                    if (tracked.Contains(Path.GetFileName(candidate)))
                         continue;
                     if (nowUtc - Directory.GetLastWriteTimeUtc(candidate) < quietPeriod)
                         continue;
@@ -76,6 +81,37 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         /// client mark the root-child that owns an active download so it is
         /// never pruned.
         /// </summary>
+        // Static so throttle + single-flight survive Lidarr's transient download-
+        // client instances (a fresh client is resolved per poll; instance fields
+        // would reset every time, defeating both). Keyed by a stable per-client
+        // key (the download root).
+        private static readonly ConcurrentDictionary<string, DateTime> _lastSweepByKey = new();
+        private static readonly ConcurrentDictionary<string, byte> _inFlightByKey = new();
+
+        /// <summary>
+        /// Throttled, single-flight, off-thread prune for clients whose state
+        /// cannot live on the (transient) client instance. Safe to call on every
+        /// poll — at most one sweep per <paramref name="throttle"/> per key runs.
+        /// </summary>
+        public static bool MaybePruneThrottled(string key, string? root, IReadOnlyCollection<string> trackedLeaves, TimeSpan quietPeriod, TimeSpan throttle, DateTime nowUtc, Logger logger)
+        {
+            if (string.IsNullOrEmpty(key) || string.IsNullOrEmpty(root))
+                return false;
+            if (nowUtc - _lastSweepByKey.GetOrAdd(key, DateTime.MinValue) < throttle)
+                return false;
+            if (!_inFlightByKey.TryAdd(key, 0))
+                return false;
+            _lastSweepByKey[key] = nowUtc;
+
+            _ = Task.Run(() =>
+            {
+                try { Prune(root, trackedLeaves, quietPeriod, nowUtc, logger); }
+                catch (Exception ex) { logger.Warn(ex, "Empty download-directory sweep failed for {Key}", key); }
+                finally { _inFlightByKey.TryRemove(key, out _); }
+            });
+            return true;
+        }
+
         public static string? RootChildLeaf(string? root, string? path)
         {
             if (string.IsNullOrEmpty(root) || string.IsNullOrEmpty(path))
