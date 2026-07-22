@@ -37,8 +37,9 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     private readonly ConcurrentDictionary<int, DateTime> _lastEventPollTimes = new();
     // Last-seen event offset per definition ID for incremental polling
     private readonly ConcurrentDictionary<int, int> _lastEventOffsets = new();
-    // Last empty-directory sweep per definition ID (hourly).
+    // Empty-directory sweep bookkeeping per definition ID.
     private readonly ConcurrentDictionary<int, DateTime> _lastEmptyDirSweepTimes = new();
+    private readonly ConcurrentDictionary<int, int> _lastActiveDownloadCounts = new();
     // Latest settings snapshot per definition ID: used by event-triggered retry callbacks
     private readonly ConcurrentDictionary<int, SlskdProviderSettings> _settingsCache = new();
 
@@ -451,7 +452,19 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             _lastEventPollTimes[definitionId] = DateTime.UtcNow;
         }
 
-        MaybePruneEmptyDownloadDirectories(definitionId, settings, now);
+        // Prune empty download shells when downloads have just DRAINED to idle
+        // (imports have moved files out, so folders may now be empty) — the
+        // natural trigger, not a blind timer. A daily backstop still runs for
+        // the startup backlog and for slskd's own file-retention, which empties
+        // folders while idle and fires no event sleezer can observe.
+        int prevActive = _lastActiveDownloadCounts.GetOrAdd(definitionId, -1);
+        _lastActiveDownloadCounts[definitionId] = activeUsernames.Count;
+        bool drainedToIdle = prevActive > 0 && activeUsernames.Count == 0;
+        DateTime lastSweep = _lastEmptyDirSweepTimes.GetOrAdd(definitionId, DateTime.MinValue);
+        bool backstopDue = now - lastSweep >= TimeSpan.FromHours(24);
+        // Floor of 10 min between sweeps so rapidly flapping downloads can't thrash it.
+        if ((drainedToIdle && now - lastSweep >= TimeSpan.FromMinutes(10)) || backstopDue)
+            MaybePruneEmptyDownloadDirectories(definitionId, settings, now);
     }
 
     // Independent janitor for the gap neither slskd nor RemoveItem covers: slskd
@@ -466,9 +479,6 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         if (!settings.CleanStaleDirectories)
             return;
 
-        DateTime last = _lastEmptyDirSweepTimes.GetOrAdd(definitionId, DateTime.MinValue);
-        if (now - last < TimeSpan.FromHours(1))
-            return;
         _lastEmptyDirSweepTimes[definitionId] = now;
 
         try
