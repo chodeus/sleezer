@@ -183,6 +183,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         // so each attempt tracks under a fresh id; transfers still map back by
         // enqueued-file membership regardless of the id.
         string retryId = SlskdDownloadItem.ResolveRetryId(item.ID, id => _downloadHistoryService.GetLatestDownloadHistoryItem(id)?.EventType);
+        List<SlskdDownloadItem> supersededAttempts = [];
         if (retryId != item.ID)
         {
             _logger.Debug("Release {Id} has terminal download history; tracking this attempt as {RetryId}", item.ID, retryId);
@@ -190,7 +191,9 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
             // A stale earlier attempt still in the dict would swallow all
             // transfer state for these files (its per-directory hash matches
-            // first) and starve this retry — evict it from tracking only.
+            // first) and starve this retry — evict it from tracking now. Its
+            // partial files are deleted only AFTER a successful enqueue (below), so
+            // a failed enqueue never destroys content with no retry in flight.
             string? probeFile = item.FileData.FirstOrDefault(f => !string.IsNullOrEmpty(f.Filename))?.Filename;
             if (probeFile != null)
             {
@@ -198,6 +201,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 {
                     _logger.Debug("Evicting stale tracked attempt {StaleId} superseded by {RetryId}", stale.ID, retryId);
                     RemoveItemFromDict(definitionId, stale.ID);
+                    supersededAttempts.Add(stale);
                 }
             }
         }
@@ -241,6 +245,16 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             item.Username = username;
             SubscribeStateChanges(item, definitionId);
             AddItem(definitionId, item);
+
+            // Now that the retry is enqueued and tracked, delete the superseded
+            // attempts' partial files. slskd keys the local folder by the remote
+            // folder NAME (no username), so a failed attempt and this retry can
+            // share a folder — leaving stale leftovers interleaves sources (mixed
+            // editions / duplicate track numbers). Deferred to here so a failed
+            // enqueue (which throws above) never destroys content with no retry in
+            // flight; bounded so a slow slskd can't stall the grab.
+            if (supersededAttempts.Count > 0)
+                await CleanupSupersededAttemptsAsync(supersededAttempts, settings);
 
             return item.ID;
         }
@@ -955,7 +969,9 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                         folderPath,
                         TagConfidenceThreshold,
                         sharedSettings?.StripFeaturedArtists ?? false,
-                        cts.Token);
+                        cts.Token,
+                        verifyAllWithFingerprint: settings.VerifyImportsWithFingerprint,
+                        fingerprintTitleFallback: true);
                 }
             }
             catch (OperationCanceledException)
@@ -1142,6 +1158,22 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             if (_settingsCache.TryGetValue(definitionId, out SlskdProviderSettings? s))
                 _retryHandler.OnFileStateChanged(sender as SlskdDownloadItem, fileState, s);
         };
+    }
+
+    private async Task CleanupSupersededAttemptsAsync(List<SlskdDownloadItem> stale, SlskdProviderSettings settings)
+    {
+        // Bound the whole cleanup: RemoveItemFilesAsync issues remote slskd
+        // DELETEs (default 100s each) — a hung slskd must not stall the grab.
+        // WaitAsync unblocks us on timeout; any in-flight deletes drain detached.
+        using CancellationTokenSource cts = new(TimeSpan.FromSeconds(20));
+        try
+        {
+            await Task.WhenAll(stale.Select(s => RemoveItemFilesAsync(s, settings))).WaitAsync(cts.Token);
+        }
+        catch (Exception ex)
+        {
+            _logger.Warn(ex, "Cleanup of {Count} superseded attempt(s) did not fully complete within the time bound", stale.Count);
+        }
     }
 
     private async Task RemoveItemFilesAsync(SlskdDownloadItem item, SlskdProviderSettings settings)

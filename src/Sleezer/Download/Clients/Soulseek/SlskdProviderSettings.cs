@@ -93,6 +93,9 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek
         [FieldDefinition(12, Label = "Post-Processing Timeout", Type = FieldType.Number, Unit = "minutes", HelpText = "Maximum wall time for the corruption scan + pre-import tagger to finish per album. Raise for very large albums on slow disks.", Advanced = true)]
         public int PostProcessingTimeoutMinutes { get; set; } = 30;
 
+        [FieldDefinition(13, Label = "Verify Imports With Fingerprint", Type = FieldType.Checkbox, HelpText = "Acoustically fingerprint EVERY completed download (not just album-extracted singles) and refuse to tag a file whose audio is a different MusicBrainz recording than the wanted track. Slower (~3s/file) on full albums; needs fpcalc + AcoustID. Files AcoustID can't identify are left to normal matching (fail-safe). Album-extracted singles are always fingerprint-checked regardless of this setting.", Advanced = true)]
+        public bool VerifyImportsWithFingerprint { get; set; }
+
         [FieldDefinition(98, Label = "Is Fetched remote", Type = FieldType.Checkbox, Hidden = HiddenType.Hidden)]
         public bool IsRemotePath { get; set; }
 
