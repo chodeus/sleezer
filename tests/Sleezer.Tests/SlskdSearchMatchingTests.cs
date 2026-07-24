@@ -242,6 +242,26 @@ public class SlskdSingleSourceTests
     }
 
     [Fact]
+    public void Audio_files_are_recognized_when_extension_metadata_is_empty()
+    {
+        // Empty Extension must fall back to the filename, else a valid .flac is
+        // treated as non-audio and the (album-matching) source gets rejected.
+        const string dir = @"@@u\Van Halen\Dreams";
+        IGrouping<string, SlskdFileData> group = new[]
+        {
+            F(dir + @"\01 - Dreams.flac", ""),
+            F(dir + @"\02 - Panama.flac", ""),
+            F(dir + @"\03 - Jump.flac", ""),
+        }.GroupBy(_ => dir).Single();
+        SlskdFolderData folder = Parser.ParseFolderName(dir) with { Username = "user", HasFreeUploadSlot = true, FileCount = 3 };
+        SlskdSearchData search = new("Van Halen", "Dreams", false, false, 1, null, TrackCount: 1, Tracks: new() { "Dreams" });
+        AlbumData a = Parser.CreateAlbumData("s", group, search, folder, null, 1);
+
+        Assert.True(a.MatchedSearchCriteria);         // recognized as audio via filename fallback
+        Assert.Equal(1, FlacCount(a.CustomString));   // and the Dreams track is plucked
+    }
+
+    [Fact]
     public void Single_target_pluck_ignores_a_same_named_non_audio_file()
     {
         // A .cue sharing the track's basename must not be claimed ahead of the .flac.

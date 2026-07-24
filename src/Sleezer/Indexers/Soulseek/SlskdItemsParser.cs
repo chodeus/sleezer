@@ -656,8 +656,14 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         private const int PartialSourcePenalty = 1200;  // source holds only some (would stitch)
         private const int AlbumExtractionPenalty = 800; // source is a full album we pluck from
 
-        private static bool IsAudioFile(SlskdFileData f) =>
-            AudioFormatHelper.GetAudioCodecFromExtension(f.Extension ?? Path.GetExtension(f.Filename) ?? "") != AudioFormat.Unknown;
+        private static bool IsAudioFile(SlskdFileData f)
+        {
+            // Fall back to the filename when Extension is null OR empty (?? only
+            // catches null), matching GetMostCommonExtension — else an empty
+            // Extension drops a valid track.flac.
+            string? ext = string.IsNullOrEmpty(f.Extension) ? Path.GetExtension(f.Filename) : f.Extension;
+            return AudioFormatHelper.GetAudioCodecFromExtension(ext ?? string.Empty) != AudioFormat.Unknown;
+        }
 
         /// <summary>
         /// Maps wanted track titles onto the folder's files. Returns the files
