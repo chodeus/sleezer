@@ -7,6 +7,7 @@ using NzbDrone.Core.MediaFiles;
 using NzbDrone.Core.MediaFiles.TrackImport;
 using NzbDrone.Core.MediaFiles.TrackImport.Identification;
 using NzbDrone.Core.Music;
+using NzbDrone.Core.Parser;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Core.Qualities;
 using NzbDrone.Plugin.Sleezer.Indexers.Soulseek;
@@ -23,7 +24,9 @@ public interface IPreImportTagger
         string completedFolderPath,
         double confidenceThreshold,
         bool stripFeaturedArtists,
-        CancellationToken ct);
+        CancellationToken ct,
+        bool verifyAllWithFingerprint = false,
+        bool fingerprintTitleFallback = false);
 }
 
 public class PreImportTagger : IPreImportTagger
@@ -37,19 +40,70 @@ public class PreImportTagger : IPreImportTagger
 
     private readonly IIdentificationService _identificationService;
     private readonly IAudioTagService _audioTagService;
+    private readonly IFingerprintingService _fingerprintingService;
     private readonly IDiskProvider _diskProvider;
     private readonly Logger _logger;
 
     public PreImportTagger(
         IIdentificationService identificationService,
         IAudioTagService audioTagService,
+        IFingerprintingService fingerprintingService,
         IDiskProvider diskProvider,
         Logger logger)
     {
         _identificationService = identificationService;
         _audioTagService = audioTagService;
+        _fingerprintingService = fingerprintingService;
         _diskProvider = diskProvider;
         _logger = logger;
+    }
+
+    // Unverifiable (no fpcalc / AcoustID down / not indexed) is distinct from
+    // Mismatch: the caller falls back on Unverifiable, rejects only on Mismatch, so
+    // a blip can't block every import.
+    private enum FingerprintVerdict { Verified, Mismatch, Unverifiable }
+
+    private FingerprintVerdict VerifyRecording(string filePath, Track wantedTrack, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        try
+        {
+            if (!_fingerprintingService.IsSetup())
+                return FingerprintVerdict.Unverifiable;
+
+            string? targetRecordingId = wantedTrack.ForeignRecordingId;
+            if (string.IsNullOrWhiteSpace(targetRecordingId))
+                return FingerprintVerdict.Unverifiable;
+
+            LocalTrack probe = new() { Path = filePath };
+            // Lookup isn't cancellation-aware (Lidarr core); run it off-thread and stop
+            // waiting if ct trips (bounded by fpcalc + AcoustID's own timeouts).
+            Task.Run(() => _fingerprintingService.Lookup(new List<LocalTrack> { probe }, 0.5)).WaitAsync(ct).GetAwaiter().GetResult();
+
+            List<string>? recordingIds = probe.AcoustIdResults;
+            if (recordingIds == null || recordingIds.Count == 0)
+                return FingerprintVerdict.Unverifiable;
+
+            if (recordingIds.Contains(targetRecordingId, StringComparer.OrdinalIgnoreCase))
+                return FingerprintVerdict.Verified;
+
+            // AcoustID lags MB recording merges, so a correct file often resolves to
+            // the old id — accept those too (as Lidarr's own scorer does).
+            List<string>? oldIds = wantedTrack.OldForeignRecordingIds;
+            if (oldIds is { Count: > 0 } && recordingIds.Intersect(oldIds, StringComparer.OrdinalIgnoreCase).Any())
+                return FingerprintVerdict.Verified;
+
+            return FingerprintVerdict.Mismatch;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.Warn(ex, "Pre-import tag: fingerprint verification errored for {Path}; treating as unverifiable", filePath);
+            return FingerprintVerdict.Unverifiable;
+        }
     }
 
     // Tagged              — track was identified and Lidarr's tag writer succeeded.
@@ -67,11 +121,13 @@ public class PreImportTagger : IPreImportTagger
         string completedFolderPath,
         double confidenceThreshold,
         bool stripFeaturedArtists,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool verifyAllWithFingerprint = false,
+        bool fingerprintTitleFallback = false)
     {
         try
         {
-            TaggingResult result = TagInternal(album, artist, albumRelease, sourceId, completedFolderPath, confidenceThreshold, stripFeaturedArtists, ct);
+            TaggingResult result = TagInternal(album, artist, albumRelease, sourceId, completedFolderPath, confidenceThreshold, stripFeaturedArtists, verifyAllWithFingerprint, fingerprintTitleFallback, ct);
             return Task.FromResult(result);
         }
         catch (Exception ex)
@@ -89,6 +145,8 @@ public class PreImportTagger : IPreImportTagger
         string folderPath,
         double confidenceThreshold,
         bool stripFeaturedArtists,
+        bool verifyAllWithFingerprint,
+        bool fingerprintTitleFallback,
         CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
@@ -234,6 +292,14 @@ public class PreImportTagger : IPreImportTagger
                     continue;
                 }
 
+                if (verifyAllWithFingerprint && VerifyRecording(localTrack.Path, track, ct) == FingerprintVerdict.Mismatch)
+                {
+                    skipped++;
+                    _logger.Info("Pre-import tag: fingerprint says {File} is a different recording than '{Title}' — skipping (verify-all imports)",
+                        Path.GetFileName(localTrack.Path), track.Title);
+                    continue;
+                }
+
                 if (TryTagSingleFile(localTrack, track, album, release.AlbumRelease, stripFeaturedArtists))
                 {
                     tagged++;
@@ -252,9 +318,10 @@ public class PreImportTagger : IPreImportTagger
         int titleTagged = 0;
         if (tagged == 0 && IsTitleFallbackEligible(album))
         {
-            (titleTagged, int titleErrored) = TryTitleDrivenTagging(localTracks, album, albumRelease, stripFeaturedArtists, sourceId, ct);
+            (titleTagged, int titleErrored, int titleSkipped) = TryTitleDrivenTagging(localTracks, album, albumRelease, stripFeaturedArtists, fingerprintTitleFallback, sourceId, ct);
             tagged += titleTagged;
             errored += titleErrored;
+            skipped += titleSkipped;
         }
 
         _logger.Info("Pre-import tag: {SourceId} tagged={Tagged} (title_fallback={TitleTagged}) skipped_weak_match={Skipped} tag_write_failed={TagWriteFailed}",
@@ -275,11 +342,12 @@ public class PreImportTagger : IPreImportTagger
         return album.SecondaryTypes?.Any(t => t?.Name is "Live" or "Remix" or "Demo" or "Mixtape") != true;
     }
 
-    private (int Tagged, int Errored) TryTitleDrivenTagging(
+    private (int Tagged, int Errored, int Skipped) TryTitleDrivenTagging(
         List<LocalTrack> localTracks,
         Album album,
         AlbumRelease? albumRelease,
         bool stripFeaturedArtists,
+        bool fingerprintVerify,
         string sourceId,
         CancellationToken ct)
     {
@@ -288,7 +356,7 @@ public class PreImportTagger : IPreImportTagger
             ?? album.AlbumReleases?.Value?.FirstOrDefault();
         List<Track>? tracks = release?.Tracks?.Value;
         if (release == null || tracks is not { Count: > 0 })
-            return (0, 0);
+            return (0, 0, 0);
 
         string? artistName = album.Artist?.Value?.Name;
         List<string> localTitles = localTracks.Select(lt =>
@@ -317,24 +385,38 @@ public class PreImportTagger : IPreImportTagger
 
         Dictionary<int, int> mapping = TrackTitleMatcher.Match(localTitles, tracks.Select(t => t.Title).ToList());
         if (mapping.Count == 0)
-            return (0, 0);
+            return (0, 0, 0);
 
         _logger.Info("Pre-import tag: album-level match failed but {Matched}/{FileCount} track title(s) match release '{Release}' — tagging by title for {SourceId}",
             mapping.Count, localTracks.Count, release.Title, sourceId);
 
         int tagged = 0;
         int errored = 0;
+        int skipped = 0;
         foreach ((int localIndex, int wantedIndex) in mapping)
         {
             ct.ThrowIfCancellationRequested();
 
-            if (TryTagSingleFile(localTracks[localIndex], tracks[wantedIndex], album, release, stripFeaturedArtists))
+            Track wantedTrack = tracks[wantedIndex];
+
+            // Title-only matching is the highest-risk laundering path, so untrusted
+            // sources (slskd) fingerprint-gate it — reject only a definite
+            // different-recording. Trusted API sources (Deezer/Tidal) skip it.
+            if (fingerprintVerify && VerifyRecording(localTracks[localIndex].Path, wantedTrack, ct) == FingerprintVerdict.Mismatch)
+            {
+                skipped++;
+                _logger.Info("Pre-import tag: fingerprint says {File} is a different recording than '{Title}' — refusing title match for {SourceId}",
+                    Path.GetFileName(localTracks[localIndex].Path), wantedTrack.Title, sourceId);
+                continue;
+            }
+
+            if (TryTagSingleFile(localTracks[localIndex], wantedTrack, album, release, stripFeaturedArtists))
                 tagged++;
             else
                 errored++;
         }
 
-        return (tagged, errored);
+        return (tagged, errored, skipped);
     }
 
     private bool TryTagSingleFile(LocalTrack localTrack, Track track, Album album, AlbumRelease? albumRelease, bool stripFeaturedArtists)

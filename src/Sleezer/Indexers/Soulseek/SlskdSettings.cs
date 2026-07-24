@@ -186,6 +186,9 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         [FieldDefinition(25, Type = FieldType.Select, SelectOptions = typeof(MatchStrictnessType), Label = "Match Strictness", HelpText = "How aggressively to fuzzy-match peer folder names against the queried artist/album. Strict = fewer false positives; Loose = more candidates from messy metadata.", Advanced = true)]
         public int MatchStrictness { get; set; } = (int)MatchStrictnessType.Normal;
 
+        [FieldDefinition(26, Type = FieldType.Checkbox, Label = "Require Coherent Single Source", HelpText = "For a multi-track single or EP, reject sources that hold only SOME of the wanted tracks. Stops a single being stitched together from different albums — but a single that exists only scattered across albums won't be assembled at all. When off, coherent sources are still preferred; partial ones are just downranked.", Advanced = true)]
+        public bool RequireCoherentSingleSource { get; set; }
+
         public NzbDroneValidationResult Validate() => new(Validator.Validate(this));
     }
 

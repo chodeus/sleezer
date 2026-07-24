@@ -146,20 +146,16 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                             }
                         }
 
-                        // Same content hash the download client will assign this
-                        // release: skip sources that already failed recently. The
-                        // blocklist rows Lidarr writes for Soulseek grabs carry no
-                        // protocol, so its own Blocklist spec never filters them
-                        // and a dead share re-surfaces at the same rank on the
-                        // very next search (verified live 2026-07-21: the same
-                        // "File not shared" release was re-grabbed twice within
-                        // a minute).
-                        // Interactive searches stay unfiltered: a manual re-grab
-                        // of a failed source is deliberate (and imports fine now
-                        // that retries get their own downloadId).
+                        AlbumData albumData = _itemsParser.CreateAlbumData(searchResponse.Id, finalGroup, searchTextData, folderData, Settings, searchTextData.TrackCount);
+
+                        // Skip recently-failed sources (Lidarr's blocklist can't — no
+                        // protocol on its Soulseek rows). Hash the ACTUAL download set
+                        // (CustomString may be a plucked subset), not finalGroup, so the
+                        // id matches the real downloadId. Interactive = deliberate re-grab.
                         if (!searchTextData.Interactive)
                         {
-                            string prospectiveId = SlskdDownloadItem.GetStableMD5Id(finalGroup.Select(f => f.Filename));
+                            List<SlskdFileData> downloadFiles = JsonSerializer.Deserialize<List<SlskdFileData>>(albumData.CustomString, IndexerParserHelper.StandardJsonOptions) ?? [];
+                            string prospectiveId = SlskdDownloadItem.GetStableMD5Id(downloadFiles.Select(f => f.Filename));
                             if (recentlyFailedIds.Contains(prospectiveId))
                             {
                                 droppedRecentlyFailed++;
@@ -168,7 +164,6 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                             }
                         }
 
-                        AlbumData albumData = _itemsParser.CreateAlbumData(searchResponse.Id, finalGroup, searchTextData, folderData, Settings, searchTextData.TrackCount);
                         albumDatas.Add(albumData);
                     }
                 }

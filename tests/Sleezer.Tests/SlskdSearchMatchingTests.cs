@@ -177,3 +177,204 @@ public class ShareInfoTests
         Assert.True(release.MatchedSearchCriteria);
     }
 }
+
+// Single/EP-target handling: pluck only the wanted track(s) from an album share
+// (don't haul the whole album), reject a source that holds none of them, and
+// prefer a coherent source over a partial one for a multi-track single/EP.
+public class SlskdSingleSourceTests
+{
+    private static readonly SlskdItemsParser Parser = new(LogManager.GetCurrentClassLogger());
+
+    private static SlskdFileData F(string filename, string ext) => new(
+        Filename: filename, BitRate: 900, BitDepth: 16, Size: 1000, Length: 200,
+        Extension: ext, SampleRate: 44100, Code: 1, IsLocked: false);
+
+    private static SlskdFileData Audio(string filename) => F(filename, "flac");
+
+    private static AlbumData Build(string dirKey, string[] files, string artist, string album,
+        string[] tracks, int expectedTrackCount, SlskdSettings? settings = null)
+    {
+        IGrouping<string, SlskdFileData> group = files.Select(Audio).GroupBy(_ => dirKey).Single();
+        SlskdFolderData folder = Parser.ParseFolderName(dirKey) with
+        {
+            Username = "user",
+            HasFreeUploadSlot = true,
+            FileCount = files.Length
+        };
+        SlskdSearchData search = new(artist, album, false, false, 1, null,
+            TrackCount: expectedTrackCount, Tracks: tracks.ToList());
+        return Parser.CreateAlbumData("search1", group, search, folder, settings, expectedTrackCount);
+    }
+
+    private static int FlacCount(string customString) => customString.Split(".flac").Length - 1;
+
+    [Fact]
+    public void Single_target_plucks_only_the_matched_track_from_an_album_source()
+    {
+        const string dir = @"@@u\Van Halen\5150 (Expanded Edition)";
+        AlbumData a = Build(dir,
+            new[]
+            {
+                dir + @"\01 - Good Enough.flac",
+                dir + @"\04 - Dreams.flac",
+                dir + @"\05 - Summer Nights.flac",
+                dir + @"\06 - Best of Both Worlds.flac",
+            },
+            artist: "Van Halen", album: "Dreams", tracks: new[] { "Dreams" }, expectedTrackCount: 1);
+
+        Assert.True(a.MatchedSearchCriteria);
+        Assert.Equal(1, FlacCount(a.CustomString));           // only the wanted track downloads
+        Assert.Contains("Dreams", a.CustomString);
+        Assert.DoesNotContain("Best of Both Worlds", a.CustomString);
+    }
+
+    [Fact]
+    public void Single_target_source_that_matches_by_name_but_holds_no_wanted_track_is_rejected()
+    {
+        // Folder name matches the single (passes the album-name gate) but no file
+        // title-matches the wanted track — rejected even at equal size.
+        const string dir = @"@@u\Control Alt Delete\Blackout";
+        AlbumData a = Build(dir,
+            new[] { dir + @"\01 - Intro Theme.flac" },
+            artist: "Control Alt Delete", album: "Blackout", tracks: new[] { "Blackout" }, expectedTrackCount: 1);
+
+        Assert.False(a.MatchedSearchCriteria);
+    }
+
+    [Fact]
+    public void Audio_files_are_recognized_when_extension_metadata_is_empty()
+    {
+        // Empty Extension must fall back to the filename, else a valid .flac is
+        // treated as non-audio and the (album-matching) source gets rejected.
+        const string dir = @"@@u\Van Halen\Dreams";
+        IGrouping<string, SlskdFileData> group = new[]
+        {
+            F(dir + @"\01 - Dreams.flac", ""),
+            F(dir + @"\02 - Panama.flac", ""),
+            F(dir + @"\03 - Jump.flac", ""),
+        }.GroupBy(_ => dir).Single();
+        SlskdFolderData folder = Parser.ParseFolderName(dir) with { Username = "user", HasFreeUploadSlot = true, FileCount = 3 };
+        SlskdSearchData search = new("Van Halen", "Dreams", false, false, 1, null, TrackCount: 1, Tracks: new() { "Dreams" });
+        AlbumData a = Parser.CreateAlbumData("s", group, search, folder, null, 1);
+
+        Assert.True(a.MatchedSearchCriteria);         // recognized as audio via filename fallback
+        Assert.Equal(1, FlacCount(a.CustomString));   // and the Dreams track is plucked
+    }
+
+    [Fact]
+    public void Single_target_pluck_ignores_a_same_named_non_audio_file()
+    {
+        // A .cue sharing the track's basename must not be claimed ahead of the .flac.
+        const string dir = @"@@u\Artist\5150";
+        IGrouping<string, SlskdFileData> group = new[]
+        {
+            F(dir + @"\04 - Dreams.cue", "cue"),
+            F(dir + @"\04 - Dreams.flac", "flac"),
+            F(dir + @"\01 - Panama.flac", "flac"),
+            F(dir + @"\02 - Jump.flac", "flac"),
+        }.GroupBy(_ => dir).Single();
+        SlskdFolderData folder = Parser.ParseFolderName(dir) with { Username = "user", HasFreeUploadSlot = true, FileCount = 4 };
+        SlskdSearchData search = new("Artist", "Dreams", false, false, 1, null, TrackCount: 1, Tracks: new() { "Dreams" });
+        AlbumData a = Parser.CreateAlbumData("s", group, search, folder, null, 1);
+
+        Assert.True(a.MatchedSearchCriteria);
+        Assert.Equal(1, FlacCount(a.CustomString));   // the flac, not the cue, is plucked
+        Assert.DoesNotContain(".cue", a.CustomString);
+    }
+
+    [Fact]
+    public void Multitrack_single_with_overlapping_titles_needs_a_distinct_file_per_title()
+    {
+        // "Falling" is a substring of "Falling Slowly": a lone "Falling Slowly" file
+        // must not satisfy both titles and pass as a complete source.
+        string[] tracks = { "Falling", "Falling Slowly" };
+        SlskdSettings strict = new() { RequireCoherentSingleSource = true };
+
+        const string dir = @"@@u\Artist\Comp";
+        AlbumData a = Build(dir,
+            new[] { dir + @"\01 - Falling Slowly.flac", dir + @"\02 - Other Song.flac" },
+            artist: "Artist", album: "Falling", tracks: tracks, expectedTrackCount: 2, settings: strict);
+
+        Assert.False(a.MatchedSearchCriteria);   // only 1 of 2 titles has a distinct file → partial → rejected
+    }
+
+    [Fact]
+    public void Multitrack_single_prefers_a_coherent_source_over_a_partial_one()
+    {
+        string[] tracks = { "Reborn", "God In You", "I Want My Freedom" };
+
+        const string coh = @"@@u\Tinlicker\Reborn";
+        AlbumData coherent = Build(coh,
+            new[] { coh + @"\01 - Reborn.flac", coh + @"\02 - God In You.flac", coh + @"\03 - I Want My Freedom.flac" },
+            artist: "Tinlicker", album: "Reborn", tracks: tracks, expectedTrackCount: 3);
+
+        const string par = @"@@v\VA\Some Compilation";
+        AlbumData partial = Build(par,
+            new[] { par + @"\07 - Reborn.flac", par + @"\08 - God In You.flac", par + @"\09 - Unrelated Song.flac" },
+            artist: "Tinlicker", album: "Reborn", tracks: tracks, expectedTrackCount: 3);
+
+        Assert.True(coherent.MatchedSearchCriteria);
+        Assert.True(partial.MatchedSearchCriteria);           // partial still allowed by default…
+        Assert.True(coherent.Priotity > partial.Priotity);    // …but ranked below the coherent source
+    }
+
+    [Fact]
+    public void Multitrack_single_rejects_a_partial_source_when_require_coherent_is_on()
+    {
+        string[] tracks = { "Reborn", "God In You", "I Want My Freedom" };
+        SlskdSettings strict = new() { RequireCoherentSingleSource = true };
+
+        const string par = @"@@v\VA\Some Compilation";
+        AlbumData partial = Build(par,
+            new[] { par + @"\07 - Reborn.flac", par + @"\08 - God In You.flac", par + @"\09 - Unrelated Song.flac" },
+            artist: "Tinlicker", album: "Reborn", tracks: tracks, expectedTrackCount: 3, settings: strict);
+
+        Assert.False(partial.MatchedSearchCriteria);
+    }
+
+    [Fact]
+    public void Album_target_larger_than_the_single_ceiling_is_not_narrowed()
+    {
+        const string dir = @"@@u\Artist\Big Album";
+        string[] files =
+        {
+            dir + @"\01 - Dreams.flac", dir + @"\02 - Panama.flac", dir + @"\03 - Jump.flac",
+            dir + @"\04 - Eruption.flac", dir + @"\05 - Fair Warning.flac", dir + @"\06 - Unchained.flac",
+            dir + @"\07 - Mean Street.flac",
+        };
+        AlbumData a = Build(dir, files, artist: "Artist", album: "Big Album",
+            tracks: new[] { "Dreams", "Panama", "Jump", "Eruption", "Fair Warning", "Unchained", "Mean Street" },
+            expectedTrackCount: 7);                            // > SmallTargetTrackCeiling → whole album kept
+
+        Assert.Equal(7, FlacCount(a.CustomString));
+    }
+
+    // Regression: a track whose title normalizes below the 4-char floor
+    // ("The End" -> stop-word stripped -> "end") can't be title-matched, so a
+    // COMPLETE source must NOT be plucked-incomplete or treated as partial.
+    [Fact]
+    public void Exact_ep_with_an_unmatchable_track_title_is_not_plucked_incomplete()
+    {
+        const string dir = @"@@u\Artist\Twilight EP";
+        AlbumData a = Build(dir,
+            new[] { dir + @"\01 - Dawn.flac", dir + @"\02 - Nightfall.flac", dir + @"\03 - The End.flac" },
+            artist: "Artist", album: "Twilight EP",
+            tracks: new[] { "Dawn", "Nightfall", "The End" }, expectedTrackCount: 3);
+
+        Assert.True(a.MatchedSearchCriteria);
+        Assert.Equal(3, FlacCount(a.CustomString));           // all three kept, incl. the unmatchable track
+    }
+
+    [Fact]
+    public void Complete_ep_with_an_unmatchable_track_is_not_rejected_under_require_coherent()
+    {
+        const string dir = @"@@u\Artist\Twilight EP";
+        SlskdSettings strict = new() { RequireCoherentSingleSource = true };
+        AlbumData a = Build(dir,
+            new[] { dir + @"\01 - Dawn.flac", dir + @"\02 - Nightfall.flac", dir + @"\03 - The End.flac" },
+            artist: "Artist", album: "Twilight EP",
+            tracks: new[] { "Dawn", "Nightfall", "The End" }, expectedTrackCount: 3, settings: strict);
+
+        Assert.True(a.MatchedSearchCriteria);                  // covers every MATCHABLE title → coherent, not rejected
+    }
+}
