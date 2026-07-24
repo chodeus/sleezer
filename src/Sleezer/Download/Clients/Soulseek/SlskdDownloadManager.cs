@@ -254,7 +254,9 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                     .Select(f => Path.GetFileName((f.Filename ?? string.Empty).Replace('\\', '/')))
                     .Where(n => !string.IsNullOrEmpty(n))
                     .ToHashSet(StringComparer.OrdinalIgnoreCase);
-                await CleanupSupersededAttemptsAsync(supersededAttempts, settings, retryBasenames);
+                // Fire-and-forget: it self-bounds, protects retry files, and handles
+                // its own errors, so it needn't delay the grab return.
+                _ = CleanupSupersededAttemptsAsync(supersededAttempts, settings, retryBasenames);
             }
 
             return item.ID;
@@ -1201,7 +1203,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             {
                 // file.Filename is remote; only its basename exists locally, in the
                 // item's resolved output folder.
-                string fileName = Path.GetFileName(file.Filename.Replace('\\', '/'));
+                string fileName = Path.GetFileName((file.Filename ?? string.Empty).Replace('\\', '/'));
 
                 // Never delete a basename the active retry shares in this folder.
                 if (protectBasenames?.Contains(fileName) == true)
