@@ -63,8 +63,9 @@ public class PreImportTagger : IPreImportTagger
     // a blip can't block every import.
     private enum FingerprintVerdict { Verified, Mismatch, Unverifiable }
 
-    private FingerprintVerdict VerifyRecording(string filePath, Track wantedTrack)
+    private FingerprintVerdict VerifyRecording(string filePath, Track wantedTrack, CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
         try
         {
             if (!_fingerprintingService.IsSetup())
@@ -75,7 +76,9 @@ public class PreImportTagger : IPreImportTagger
                 return FingerprintVerdict.Unverifiable;
 
             LocalTrack probe = new() { Path = filePath };
-            _fingerprintingService.Lookup(new List<LocalTrack> { probe }, 0.5);
+            // Lookup isn't cancellation-aware (Lidarr core); run it off-thread and stop
+            // waiting if ct trips (bounded by fpcalc + AcoustID's own timeouts).
+            Task.Run(() => _fingerprintingService.Lookup(new List<LocalTrack> { probe }, 0.5)).WaitAsync(ct).GetAwaiter().GetResult();
 
             List<string>? recordingIds = probe.AcoustIdResults;
             if (recordingIds == null || recordingIds.Count == 0)
@@ -91,6 +94,10 @@ public class PreImportTagger : IPreImportTagger
                 return FingerprintVerdict.Verified;
 
             return FingerprintVerdict.Mismatch;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -285,7 +292,7 @@ public class PreImportTagger : IPreImportTagger
                     continue;
                 }
 
-                if (verifyAllWithFingerprint && VerifyRecording(localTrack.Path, track) == FingerprintVerdict.Mismatch)
+                if (verifyAllWithFingerprint && VerifyRecording(localTrack.Path, track, ct) == FingerprintVerdict.Mismatch)
                 {
                     skipped++;
                     _logger.Info("Pre-import tag: fingerprint says {File} is a different recording than '{Title}' — skipping (verify-all imports)",
@@ -395,7 +402,7 @@ public class PreImportTagger : IPreImportTagger
             // Title-only matching is the highest-risk laundering path, so untrusted
             // sources (slskd) fingerprint-gate it — reject only a definite
             // different-recording. Trusted API sources (Deezer/Tidal) skip it.
-            if (fingerprintVerify && VerifyRecording(localTracks[localIndex].Path, wantedTrack) == FingerprintVerdict.Mismatch)
+            if (fingerprintVerify && VerifyRecording(localTracks[localIndex].Path, wantedTrack, ct) == FingerprintVerdict.Mismatch)
             {
                 skipped++;
                 _logger.Info("Pre-import tag: fingerprint says {File} is a different recording than '{Title}' — refusing title match for {SourceId}",

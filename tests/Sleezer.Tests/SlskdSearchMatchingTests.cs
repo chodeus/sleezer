@@ -185,9 +185,11 @@ public class SlskdSingleSourceTests
 {
     private static readonly SlskdItemsParser Parser = new(LogManager.GetCurrentClassLogger());
 
-    private static SlskdFileData Audio(string filename) => new(
+    private static SlskdFileData F(string filename, string ext) => new(
         Filename: filename, BitRate: 900, BitDepth: 16, Size: 1000, Length: 200,
-        Extension: "flac", SampleRate: 44100, Code: 1, IsLocked: false);
+        Extension: ext, SampleRate: 44100, Code: 1, IsLocked: false);
+
+    private static SlskdFileData Audio(string filename) => F(filename, "flac");
 
     private static AlbumData Build(string dirKey, string[] files, string artist, string album,
         string[] tracks, int expectedTrackCount, SlskdSettings? settings = null)
@@ -237,6 +239,27 @@ public class SlskdSingleSourceTests
             artist: "Control Alt Delete", album: "Blackout", tracks: new[] { "Blackout" }, expectedTrackCount: 1);
 
         Assert.False(a.MatchedSearchCriteria);
+    }
+
+    [Fact]
+    public void Single_target_pluck_ignores_a_same_named_non_audio_file()
+    {
+        // A .cue sharing the track's basename must not be claimed ahead of the .flac.
+        const string dir = @"@@u\Artist\5150";
+        IGrouping<string, SlskdFileData> group = new[]
+        {
+            F(dir + @"\04 - Dreams.cue", "cue"),
+            F(dir + @"\04 - Dreams.flac", "flac"),
+            F(dir + @"\01 - Panama.flac", "flac"),
+            F(dir + @"\02 - Jump.flac", "flac"),
+        }.GroupBy(_ => dir).Single();
+        SlskdFolderData folder = Parser.ParseFolderName(dir) with { Username = "user", HasFreeUploadSlot = true, FileCount = 4 };
+        SlskdSearchData search = new("Artist", "Dreams", false, false, 1, null, TrackCount: 1, Tracks: new() { "Dreams" });
+        AlbumData a = Parser.CreateAlbumData("s", group, search, folder, null, 1);
+
+        Assert.True(a.MatchedSearchCriteria);
+        Assert.Equal(1, FlacCount(a.CustomString));   // the flac, not the cue, is plucked
+        Assert.DoesNotContain(".cue", a.CustomString);
     }
 
     [Fact]

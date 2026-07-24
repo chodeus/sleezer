@@ -242,7 +242,11 @@ public class SlskdApiClient(IHttpClient httpClient, Logger logger) : ISlskdApiCl
     {
         string endpoint = $"/api/v0/transfers/downloads/{Uri.EscapeDataString(username)}/{fileId}"
             + (remove ? "?remove=true" : "");
-        await httpClient.ExecuteAsync(BuildRequest(settings, endpoint, HttpMethod.Delete));
+        HttpRequest request = BuildRequest(settings, endpoint, HttpMethod.Delete);
+        // Bound each delete (default is 100s) so a hung slskd can't leave detached
+        // cleanup deletes running long past the caller's own time bound.
+        request.RequestTimeout = TimeSpan.FromSeconds(15);
+        await httpClient.ExecuteAsync(request);
     }
 
     public async Task DeleteAllCompletedAsync(SlskdProviderSettings settings) =>

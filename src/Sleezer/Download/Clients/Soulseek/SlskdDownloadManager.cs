@@ -1163,17 +1163,19 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
     private async Task CleanupSupersededAttemptsAsync(List<SlskdDownloadItem> stale, SlskdProviderSettings settings, HashSet<string> protectBasenames)
     {
-        // Time-bounded so a hung slskd can't stall the grab. protectBasenames keeps
-        // this from deleting files the retry shares in the same folder, so the
-        // detached deletes that outlive the timeout stay safe.
-        using CancellationTokenSource cts = new(TimeSpan.FromSeconds(20));
+        // Bounded so a hung slskd can't stall the grab; protectBasenames keeps any
+        // delete that outlives the bound from touching the retry's own files.
         try
         {
-            await Task.WhenAll(stale.Select(s => RemoveItemFilesAsync(s, settings, protectBasenames))).WaitAsync(cts.Token);
+            await Task.WhenAll(stale.Select(s => RemoveItemFilesAsync(s, settings, protectBasenames))).WaitAsync(TimeSpan.FromSeconds(20));
+        }
+        catch (TimeoutException)
+        {
+            _logger.Warn("Superseded cleanup of {Count} attempt(s) did not finish in time; retry files are protected", stale.Count);
         }
         catch (Exception ex)
         {
-            _logger.Warn(ex, "Cleanup of {Count} superseded attempt(s) did not fully complete within the time bound", stale.Count);
+            _logger.Warn(ex, "Superseded cleanup of {Count} attempt(s) failed", stale.Count);
         }
     }
 

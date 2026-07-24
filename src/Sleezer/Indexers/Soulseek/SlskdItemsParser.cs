@@ -676,10 +676,10 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             if (titles.Count == 0)
                 return (matched, 0, 0);
 
-            // Per-file basename only: slskd filenames are backslash-delimited, which
-            // Path.* does NOT split on Linux — normalize separators first so the
-            // folder name (often == the single title) can't leak into the haystack.
+            // Audio files only (a same-named .cue/.nfo must not outrank the track);
+            // basename after normalizing backslashes (Path.* won't split them on Linux).
             List<(SlskdFileData File, string Name)> named = files
+                .Where(IsAudioFile)
                 .Select(f => (File: f, Name: NormalizeString(TrackNumberPrefixRegex().Replace(Path.GetFileNameWithoutExtension((f.Filename ?? string.Empty).Replace('\\', '/')), string.Empty))))
                 .Where(x => x.Name.Length > 0)
                 .ToList();
