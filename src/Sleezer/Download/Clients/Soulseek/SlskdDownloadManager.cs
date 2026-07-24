@@ -189,11 +189,9 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             _logger.Debug("Release {Id} has terminal download history; tracking this attempt as {RetryId}", item.ID, retryId);
             item.ID = retryId;
 
-            // A stale earlier attempt still in the dict would swallow all
-            // transfer state for these files (its per-directory hash matches
-            // first) and starve this retry — evict it from tracking now. Its
-            // partial files are deleted only AFTER a successful enqueue (below), so
-            // a failed enqueue never destroys content with no retry in flight.
+            // Evict a stale attempt from tracking (its per-directory hash matches
+            // first and would starve this retry). Its files are deleted only after a
+            // successful enqueue (below), so a failed enqueue can't strand content.
             string? probeFile = item.FileData.FirstOrDefault(f => !string.IsNullOrEmpty(f.Filename))?.Filename;
             if (probeFile != null)
             {
@@ -246,15 +244,18 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             SubscribeStateChanges(item, definitionId);
             AddItem(definitionId, item);
 
-            // Now that the retry is enqueued and tracked, delete the superseded
-            // attempts' partial files. slskd keys the local folder by the remote
-            // folder NAME (no username), so a failed attempt and this retry can
-            // share a folder — leaving stale leftovers interleaves sources (mixed
-            // editions / duplicate track numbers). Deferred to here so a failed
-            // enqueue (which throws above) never destroys content with no retry in
-            // flight; bounded so a slow slskd can't stall the grab.
+            // Delete superseded attempts' leftovers only after a successful enqueue
+            // (slskd keys the local folder by remote NAME, so a failed attempt and
+            // this retry can share one — stale leftovers interleave sources). Protect
+            // the retry's own basenames so a shared file is never deleted.
             if (supersededAttempts.Count > 0)
-                await CleanupSupersededAttemptsAsync(supersededAttempts, settings);
+            {
+                HashSet<string> retryBasenames = item.FileData
+                    .Select(f => Path.GetFileName((f.Filename ?? string.Empty).Replace('\\', '/')))
+                    .Where(n => !string.IsNullOrEmpty(n))
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                await CleanupSupersededAttemptsAsync(supersededAttempts, settings, retryBasenames);
+            }
 
             return item.ID;
         }
@@ -1160,15 +1161,15 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         };
     }
 
-    private async Task CleanupSupersededAttemptsAsync(List<SlskdDownloadItem> stale, SlskdProviderSettings settings)
+    private async Task CleanupSupersededAttemptsAsync(List<SlskdDownloadItem> stale, SlskdProviderSettings settings, HashSet<string> protectBasenames)
     {
-        // Bound the whole cleanup: RemoveItemFilesAsync issues remote slskd
-        // DELETEs (default 100s each) — a hung slskd must not stall the grab.
-        // WaitAsync unblocks us on timeout; any in-flight deletes drain detached.
+        // Time-bounded so a hung slskd can't stall the grab. protectBasenames keeps
+        // this from deleting files the retry shares in the same folder, so the
+        // detached deletes that outlive the timeout stay safe.
         using CancellationTokenSource cts = new(TimeSpan.FromSeconds(20));
         try
         {
-            await Task.WhenAll(stale.Select(s => RemoveItemFilesAsync(s, settings))).WaitAsync(cts.Token);
+            await Task.WhenAll(stale.Select(s => RemoveItemFilesAsync(s, settings, protectBasenames))).WaitAsync(cts.Token);
         }
         catch (Exception ex)
         {
@@ -1176,7 +1177,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }
     }
 
-    private async Task RemoveItemFilesAsync(SlskdDownloadItem item, SlskdProviderSettings settings)
+    private async Task RemoveItemFilesAsync(SlskdDownloadItem item, SlskdProviderSettings settings, HashSet<string>? protectBasenames = null)
     {
         List<SlskdDownloadFile> files = item.SlskdDownloadDirectory?.Files ?? [];
         if (files.Count == 0 || item.Username == null)
@@ -1196,24 +1197,32 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
             try
             {
-                // file.Filename is the REMOTE path — only its basename exists
-                // locally, inside the item's resolved output folder. The old
-                // remote-path concatenation never matched a real local file.
+                // file.Filename is remote; only its basename exists locally, in the
+                // item's resolved output folder.
                 string fileName = Path.GetFileName(file.Filename.Replace('\\', '/'));
-                string localFilePath = Path.Combine(
-                    _remotePathMappingService
-                        .RemapRemoteToLocal(settings.Host, item.GetFullFolderPath(new OsPath(settings.DownloadPath)))
-                        .FullPath,
-                    fileName);
 
-                if (_diskProvider.FileExists(localFilePath))
+                // Never delete a basename the active retry shares in this folder.
+                if (protectBasenames?.Contains(fileName) == true)
                 {
-                    _diskProvider.DeleteFile(localFilePath);
-                    _logger.Debug("Deleted local file: {Path}", localFilePath);
+                    _logger.Trace("Keeping local file {Filename} — shared with the active retry", fileName);
                 }
                 else
                 {
-                    _logger.Trace("Local file not found or path not accessible, skipping deletion: {Filename}", Path.GetFileName(file.Filename));
+                    string localFilePath = Path.Combine(
+                        _remotePathMappingService
+                            .RemapRemoteToLocal(settings.Host, item.GetFullFolderPath(new OsPath(settings.DownloadPath)))
+                            .FullPath,
+                        fileName);
+
+                    if (_diskProvider.FileExists(localFilePath))
+                    {
+                        _diskProvider.DeleteFile(localFilePath);
+                        _logger.Debug("Deleted local file: {Path}", localFilePath);
+                    }
+                    else
+                    {
+                        _logger.Trace("Local file not found or path not accessible, skipping deletion: {Filename}", Path.GetFileName(file.Filename));
+                    }
                 }
             }
             catch (Exception ex)

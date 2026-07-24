@@ -148,19 +148,10 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
                         AlbumData albumData = _itemsParser.CreateAlbumData(searchResponse.Id, finalGroup, searchTextData, folderData, Settings, searchTextData.TrackCount);
 
-                        // Skip sources that already failed recently, hashing the SAME
-                        // file set the download client will assign this release. The
-                        // blocklist rows Lidarr writes for Soulseek grabs carry no
-                        // protocol, so its own Blocklist spec never filters them and a
-                        // dead share re-surfaces at the same rank on the very next
-                        // search (verified live 2026-07-21: the same "File not shared"
-                        // release was re-grabbed twice within a minute). CreateAlbumData
-                        // may pluck a subset of the folder for a single/EP, so this must
-                        // hash albumData's actual download set (CustomString), not the
-                        // whole finalGroup, or the id won't match the real downloadId.
-                        // Interactive searches stay unfiltered: a manual re-grab of a
-                        // failed source is deliberate (and imports fine now that retries
-                        // get their own downloadId).
+                        // Skip recently-failed sources (Lidarr's blocklist can't — no
+                        // protocol on its Soulseek rows). Hash the ACTUAL download set
+                        // (CustomString may be a plucked subset), not finalGroup, so the
+                        // id matches the real downloadId. Interactive = deliberate re-grab.
                         if (!searchTextData.Interactive)
                         {
                             List<SlskdFileData> downloadFiles = JsonSerializer.Deserialize<List<SlskdFileData>>(albumData.CustomString, IndexerParserHelper.StandardJsonOptions) ?? [];

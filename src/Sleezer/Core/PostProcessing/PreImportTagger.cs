@@ -58,11 +58,9 @@ public class PreImportTagger : IPreImportTagger
         _logger = logger;
     }
 
-    // A file's audio identity relative to a wanted MusicBrainz recording.
-    // Unverifiable is deliberately distinct from Mismatch: fpcalc missing, an
-    // AcoustID outage / rate-limit, or a track AcoustID simply hasn't indexed all
-    // return Unverifiable, and the caller must fall back to metadata/title logic —
-    // NEVER reject — so a network blip can't block every import.
+    // Unverifiable (no fpcalc / AcoustID down / not indexed) is distinct from
+    // Mismatch: the caller falls back on Unverifiable, rejects only on Mismatch, so
+    // a blip can't block every import.
     private enum FingerprintVerdict { Verified, Mismatch, Unverifiable }
 
     private FingerprintVerdict VerifyRecording(string filePath, Track wantedTrack)
@@ -86,10 +84,8 @@ public class PreImportTagger : IPreImportTagger
             if (recordingIds.Contains(targetRecordingId, StringComparer.OrdinalIgnoreCase))
                 return FingerprintVerdict.Verified;
 
-            // AcoustID's recording↔fingerprint links lag MusicBrainz recording
-            // merges, so a genuinely-correct file often resolves to the pre-merge
-            // (old) recording id. Mirror Lidarr's own scorer (DistanceCalculator
-            // recording_id) and accept those before declaring a mismatch.
+            // AcoustID lags MB recording merges, so a correct file often resolves to
+            // the old id — accept those too (as Lidarr's own scorer does).
             List<string>? oldIds = wantedTrack.OldForeignRecordingIds;
             if (oldIds is { Count: > 0 } && recordingIds.Intersect(oldIds, StringComparer.OrdinalIgnoreCase).Any())
                 return FingerprintVerdict.Verified;
@@ -396,12 +392,9 @@ public class PreImportTagger : IPreImportTagger
 
             Track wantedTrack = tracks[wantedIndex];
 
-            // Title-only matching is the highest-risk laundering path — a wrong
-            // file whose filename/tag title happens to match. For untrusted sources
-            // (slskd) fingerprint-gate it: reject ONLY a definite different-recording;
-            // a file AcoustID can't identify (or an outage / no fpcalc) falls through
-            // to the title match rather than being blocked. Skipped for trusted API
-            // sources (Deezer/Tidal), which don't carry the same risk.
+            // Title-only matching is the highest-risk laundering path, so untrusted
+            // sources (slskd) fingerprint-gate it — reject only a definite
+            // different-recording. Trusted API sources (Deezer/Tidal) skip it.
             if (fingerprintVerify && VerifyRecording(localTracks[localIndex].Path, wantedTrack) == FingerprintVerdict.Mismatch)
             {
                 skipped++;

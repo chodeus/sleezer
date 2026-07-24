@@ -227,14 +227,32 @@ public class SlskdSingleSourceTests
     }
 
     [Fact]
-    public void Single_target_source_with_none_of_the_wanted_tracks_is_not_a_match()
+    public void Single_target_source_that_matches_by_name_but_holds_no_wanted_track_is_rejected()
     {
-        const string dir = @"@@u\Van Halen\5150";
+        // Folder name matches the single (passes the album-name gate) but no file
+        // title-matches the wanted track — rejected even at equal size.
+        const string dir = @"@@u\Control Alt Delete\Blackout";
         AlbumData a = Build(dir,
-            new[] { dir + @"\01 - Good Enough.flac", dir + @"\02 - Summer Nights.flac", dir + @"\03 - Panama.flac" },
-            artist: "Van Halen", album: "Jump", tracks: new[] { "Jump" }, expectedTrackCount: 1);
+            new[] { dir + @"\01 - Intro Theme.flac" },
+            artist: "Control Alt Delete", album: "Blackout", tracks: new[] { "Blackout" }, expectedTrackCount: 1);
 
         Assert.False(a.MatchedSearchCriteria);
+    }
+
+    [Fact]
+    public void Multitrack_single_with_overlapping_titles_needs_a_distinct_file_per_title()
+    {
+        // "Falling" is a substring of "Falling Slowly": a lone "Falling Slowly" file
+        // must not satisfy both titles and pass as a complete source.
+        string[] tracks = { "Falling", "Falling Slowly" };
+        SlskdSettings strict = new() { RequireCoherentSingleSource = true };
+
+        const string dir = @"@@u\Artist\Comp";
+        AlbumData a = Build(dir,
+            new[] { dir + @"\01 - Falling Slowly.flac", dir + @"\02 - Other Song.flac" },
+            artist: "Artist", album: "Falling", tracks: tracks, expectedTrackCount: 2, settings: strict);
+
+        Assert.False(a.MatchedSearchCriteria);   // only 1 of 2 titles has a distinct file → partial → rejected
     }
 
     [Fact]

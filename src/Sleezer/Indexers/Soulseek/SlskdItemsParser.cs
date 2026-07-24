@@ -157,40 +157,30 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             // into their parent), so every file in the group belongs to this release.
             List<SlskdFileData> filesToDownload = directory.ToList();
 
-            // Single/EP handling. For a small monitored release, an album share
-            // that merely CONTAINS the wanted track(s) shouldn't drag the whole
-            // album in (the extras only fail to import); a source carrying NONE of
-            // them isn't a real match; and for a MULTI-track single/EP a source
-            // missing some tracks would stitch the release across different albums.
-            // Track-count ranking is done from `directory` because folderData.Files
-            // is empty at this point (see CalculatePriority).
+            // Single/EP handling: pluck the wanted track(s) from a bigger album
+            // instead of hauling it whole, reject a source with none of them, and
+            // rank coherent sources over partial ones. Coverage is measured against
+            // wantedTrackTitleCount (titles that survived the >=4-char floor), NOT
+            // the raw expectedTrackCount — else a stop-word title ("The End"->"end")
+            // makes a complete source look partial. Ranking uses `directory`
+            // (folderData.Files is empty here — see CalculatePriority).
             int audioFileCount = directory.Count(IsAudioFile);
             bool isSmallTarget = expectedTrackCount is > 0 and <= SmallTargetTrackCeiling;
-
-            // Coverage is judged against wantedTrackTitleCount (the wanted titles
-            // that survived normalization, i.e. are >= 4 chars), NOT the raw
-            // expectedTrackCount: a track whose title collapses below the floor
-            // ("The End" -> stop-word stripped -> "end") can never be matched, so
-            // comparing to the raw count would make full coverage unreachable and
-            // wrongly treat a complete source as partial.
             bool everyTargetTrackMatchable = wantedTrackTitleCount == expectedTrackCount;
             bool coveredEveryMatchableTrack = wantedTrackTitleCount > 0 && coveredTrackCount >= wantedTrackTitleCount;
             int coherencePriorityDelta = 0;
             if (isSmallTarget && wantedTrackTitleCount > 0 && matchedSearchCriteria)
             {
-                if (coveredTrackCount == 0 && audioFileCount > expectedTrackCount)
+                if (coveredTrackCount == 0)
                 {
                     matchedSearchCriteria = false;
                     _logger.Debug("Single/EP target '{Album}': source '{Dir}' holds none of the wanted tracks — rejecting", searchData.Album, directory.Key);
                 }
                 else if (coveredTrackCount > 0)
                 {
-                    // Pluck only out of a genuinely LARGER album share, and only when
-                    // every target track is matchable AND matched — otherwise an
-                    // unmatchable track (short/stop-word title) would be silently
-                    // dropped and the release imported incomplete. Exact-sized and
-                    // partially-matchable sources download whole and let the tagger
-                    // sort them out.
+                    // Pluck only from a genuinely larger source, and only when every
+                    // target track is matchable AND matched — else an unmatchable
+                    // (short/stop-word) title would be dropped and imported incomplete.
                     if (audioFileCount > expectedTrackCount
                         && everyTargetTrackMatchable
                         && coveredEveryMatchableTrack
@@ -659,9 +649,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
         private const double TrackEvidenceThreshold = 0.35;
 
-        // Single/EP-target tuning. A "small target" is a monitored release with at
-        // most this many tracks (singles and short EPs); the album-extraction and
-        // source-coherence handling in CreateAlbumData only apply to these.
+        // Album-extraction/coherence handling applies only to targets with <= this
+        // many tracks (singles + short EPs).
         private const int SmallTargetTrackCeiling = 6;
         private const int CoherentSourceBoost = 1500;   // source holds every wanted track
         private const int PartialSourcePenalty = 1200;  // source holds only some (would stitch)
@@ -687,30 +676,36 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             if (titles.Count == 0)
                 return (matched, 0, 0);
 
-            // Per-file containment: a concatenated haystack lets a multi-word
-            // title spuriously match across the boundary of two filenames.
+            // Per-file basename only: slskd filenames are backslash-delimited, which
+            // Path.* does NOT split on Linux — normalize separators first so the
+            // folder name (often == the single title) can't leak into the haystack.
             List<(SlskdFileData File, string Name)> named = files
-                .Select(f => (File: f, Name: NormalizeString(TrackNumberPrefixRegex().Replace(Path.GetFileNameWithoutExtension(f.Filename ?? string.Empty), string.Empty))))
+                .Select(f => (File: f, Name: NormalizeString(TrackNumberPrefixRegex().Replace(Path.GetFileNameWithoutExtension((f.Filename ?? string.Empty).Replace('\\', '/')), string.Empty))))
                 .Where(x => x.Name.Length > 0)
                 .ToList();
             if (named.Count == 0)
                 return (matched, 0, titles.Count);
 
-            HashSet<string> coveredTitles = new(StringComparer.Ordinal);
-            HashSet<string> matchedPaths = new(StringComparer.Ordinal);
-            foreach (string title in titles)
+            // One-to-one: each title claims a DISTINCT file, longest title first,
+            // so one filename can't satisfy overlapping titles ("Falling" vs
+            // "Falling Slowly") and make an incomplete source look complete.
+            HashSet<int> claimed = [];
+            int covered = 0;
+            foreach (string title in titles.OrderByDescending(t => t.Length))
             {
-                foreach ((SlskdFileData file, string name) in named)
+                for (int i = 0; i < named.Count; i++)
                 {
-                    if (!name.Contains(title))
+                    if (claimed.Contains(i) || !named[i].Name.Contains(title))
                         continue;
-                    coveredTitles.Add(title);
-                    if (file.Filename != null && matchedPaths.Add(file.Filename))
-                        matched.Add(file);
+                    claimed.Add(i);
+                    covered++;
+                    if (named[i].File.Filename != null)
+                        matched.Add(named[i].File);
+                    break;
                 }
             }
 
-            return (matched, coveredTitles.Count, titles.Count);
+            return (matched, covered, titles.Count);
         }
 
         // Non-contiguous track numbers usually mean a partial rip or a mixed
