@@ -25,7 +25,7 @@
     <!-- NzbDroneLogger's static initializer needs this at runtime (same version
          as Lidarr.Common); without it any type that logs via NzbDroneLogger
          throws TypeInitializationException under the test host. -->
-    <PackageReference Include="NLog.Layouts.ClefJsonLayout" Version="1.0.4" />
+    <PackageReference Include="NLog.Layouts.ClefJsonLayout" Version="1.0.5" />
   </ItemGroup>
 
   <ItemGroup>
