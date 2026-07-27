@@ -165,7 +165,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             // makes a complete source look partial. Ranking uses `directory`
             // (folderData.Files is empty here — see CalculatePriority).
             int audioFileCount = directory.Count(IsAudioFile);
-            bool isSmallTarget = expectedTrackCount is > 0 and <= SmallTargetTrackCeiling;
+            bool isSmallTarget = IsSingleOrEpTarget(searchData.AlbumType, expectedTrackCount);
             bool everyTargetTrackMatchable = wantedTrackTitleCount == expectedTrackCount;
             bool coveredEveryMatchableTrack = wantedTrackTitleCount > 0 && coveredTrackCount >= wantedTrackTitleCount;
             int coherencePriorityDelta = 0;
@@ -649,9 +649,28 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
         private const double TrackEvidenceThreshold = 0.35;
 
-        // Album-extraction/coherence handling applies only to targets with <= this
-        // many tracks (singles + short EPs).
+        // Fallback ceiling for the single/EP gate when the search carries no
+        // AlbumType (searches queued by an older build).
         private const int SmallTargetTrackCeiling = 6;
+
+        /// <summary>
+        /// Album-extraction/coherence handling applies only to single/EP targets.
+        /// Prefer MusicBrainz's primary type; a real 6-track album should not get
+        /// single handling just because it is short.
+        /// </summary>
+        private static bool IsSingleOrEpTarget(string? albumType, int expectedTrackCount)
+        {
+            if (expectedTrackCount <= 0)
+                return false;
+
+            if (!string.IsNullOrWhiteSpace(albumType))
+            {
+                return albumType.Equals("Single", StringComparison.OrdinalIgnoreCase)
+                    || albumType.Equals("EP", StringComparison.OrdinalIgnoreCase);
+            }
+
+            return expectedTrackCount <= SmallTargetTrackCeiling;
+        }
         private const int CoherentSourceBoost = 1500;   // source holds every wanted track
         private const int PartialSourcePenalty = 1200;  // source holds only some (would stitch)
         private const int AlbumExtractionPenalty = 800; // source is a full album we pluck from

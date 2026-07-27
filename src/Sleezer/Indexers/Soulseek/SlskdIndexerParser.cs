@@ -84,6 +84,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 int droppedIgnored = 0;
                 int droppedRateLimited = 0;
                 int droppedRecentlyFailed = 0;
+                int plucked = 0;
+                int unmatched = 0;
 
                 foreach (SlskdFolderData response in searchResponse.Responses ?? Enumerable.Empty<SlskdFolderData>())
                 {
@@ -147,6 +149,16 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                         }
 
                         AlbumData albumData = _itemsParser.CreateAlbumData(searchResponse.Id, finalGroup, searchTextData, folderData, Settings, searchTextData.TrackCount);
+                        List<SlskdFileData> downloadFiles = JsonSerializer.Deserialize<List<SlskdFileData>>(albumData.CustomString, IndexerParserHelper.StandardJsonOptions) ?? [];
+
+                        // Per-directory single/EP decisions log at Debug (far too many to
+                        // surface individually), so tally them for the Info summary — the
+                        // only place an operator can see the matcher actually working.
+                        int groupAudioCount = finalGroup.Count(f => AudioFormatHelper.GetAudioCodecFromExtension(f.Extension ?? Path.GetExtension(f.Filename) ?? "") != AudioFormat.Unknown);
+                        if (downloadFiles.Count > 0 && downloadFiles.Count < groupAudioCount)
+                            plucked++;
+                        if (!albumData.MatchedSearchCriteria)
+                            unmatched++;
 
                         // Skip recently-failed sources (Lidarr's blocklist can't — no
                         // protocol on its Soulseek rows). Hash the ACTUAL download set
@@ -154,7 +166,6 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                         // id matches the real downloadId. Interactive = deliberate re-grab.
                         if (!searchTextData.Interactive)
                         {
-                            List<SlskdFileData> downloadFiles = JsonSerializer.Deserialize<List<SlskdFileData>>(albumData.CustomString, IndexerParserHelper.StandardJsonOptions) ?? [];
                             string prospectiveId = SlskdDownloadItem.GetStableMD5Id(downloadFiles.Select(f => f.Filename));
                             if (recentlyFailedIds.Contains(prospectiveId))
                             {
@@ -168,8 +179,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                     }
                 }
 
-                _logger.Debug("Slskd parse: {Total} response(s), {Albums} album(s) emitted, dropped {Ignored} ignored-user / {RateLimited} rate-limited / {RecentlyFailed} recently-failed",
-                    totalResponses, albumDatas.Count, droppedIgnored, droppedRateLimited, droppedRecentlyFailed);
+                _logger.Info("Slskd parse: {Total} response(s), {Albums} album(s) emitted ({Plucked} narrowed to matched track(s), {Unmatched} unmatched), dropped {Ignored} ignored-user / {RateLimited} rate-limited / {RecentlyFailed} recently-failed",
+                    totalResponses, albumDatas.Count, plucked, unmatched, droppedIgnored, droppedRateLimited, droppedRecentlyFailed);
 
                 delayRemoval = albumDatas.Count != 0 && searchTextData.Interactive;
             }

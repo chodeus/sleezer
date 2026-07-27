@@ -192,7 +192,7 @@ public class SlskdSingleSourceTests
     private static SlskdFileData Audio(string filename) => F(filename, "flac");
 
     private static AlbumData Build(string dirKey, string[] files, string artist, string album,
-        string[] tracks, int expectedTrackCount, SlskdSettings? settings = null)
+        string[] tracks, int expectedTrackCount, SlskdSettings? settings = null, string? albumType = null)
     {
         IGrouping<string, SlskdFileData> group = files.Select(Audio).GroupBy(_ => dirKey).Single();
         SlskdFolderData folder = Parser.ParseFolderName(dirKey) with
@@ -202,7 +202,7 @@ public class SlskdSingleSourceTests
             FileCount = files.Length
         };
         SlskdSearchData search = new(artist, album, false, false, 1, null,
-            TrackCount: expectedTrackCount, Tracks: tracks.ToList());
+            TrackCount: expectedTrackCount, Tracks: tracks.ToList(), AlbumType: albumType);
         return Parser.CreateAlbumData("search1", group, search, folder, settings, expectedTrackCount);
     }
 
@@ -347,6 +347,38 @@ public class SlskdSingleSourceTests
             expectedTrackCount: 7);                            // > SmallTargetTrackCeiling → whole album kept
 
         Assert.Equal(7, FlacCount(a.CustomString));
+    }
+
+    // A short ALBUM must not get single/EP handling just because it has few
+    // tracks — MusicBrainz's primary type decides when the search carries it.
+    [Fact]
+    public void Short_album_target_is_not_treated_as_a_single()
+    {
+        const string dir = @"@@u\Artist\Tiny Album";
+        string[] files =
+        {
+            dir + @"\01 - Dreams.flac", dir + @"\02 - Panama.flac",
+            dir + @"\03 - Jump.flac", dir + @"\04 - Eruption.flac",
+        };
+        AlbumData a = Build(dir, files, artist: "Artist", album: "Tiny Album",
+            tracks: new[] { "Dreams" }, expectedTrackCount: 4, albumType: "Album");
+
+        Assert.Equal(4, FlacCount(a.CustomString));   // whole album kept, nothing plucked
+    }
+
+    [Fact]
+    public void Ep_album_type_still_gets_single_handling()
+    {
+        const string dir = @"@@u\Artist\Big Comp";
+        string[] files =
+        {
+            dir + @"\01 - Dreams.flac", dir + @"\02 - Panama.flac",
+            dir + @"\03 - Jump.flac", dir + @"\04 - Eruption.flac",
+        };
+        AlbumData a = Build(dir, files, artist: "Artist", album: "Dreams",
+            tracks: new[] { "Dreams" }, expectedTrackCount: 1, albumType: "Single");
+
+        Assert.Equal(1, FlacCount(a.CustomString));   // plucked
     }
 
     // Regression: a track whose title normalizes below the 4-char floor
