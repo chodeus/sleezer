@@ -40,17 +40,9 @@ public static class RecordingVerdict
             acoustIdRecordingIds.Intersect(wantedOldRecordingIds, StringComparer.OrdinalIgnoreCase).Any())
             return FingerprintVerdict.Verified;
 
-        // A bare id comparison over-rejects: AcoustID routinely answers with a
-        // DIFFERENT MusicBrainz recording of the same song (per-release entities,
-        // "(feat. X)" credit splits), and Lidarr's metadata can even hold a wanted id
-        // that no longer resolves upstream — neither can ever match by id. Resolve the
-        // returned ids against the artist's own catalogue and judge by title instead.
-        // A DIFFERENT title is a real wrong-file signal; the SAME title is only
-        // ambiguous (duplicate MB entity, or a distinct same-named cut such as
-        // "Voices" with two different collaborators), so it defers rather than
-        // green-lighting the file. Version qualifiers survive normalization — only
-        // bracketed "(feat. X)" is stripped — so "(Taylor's Version)" reads as
-        // different, not the same.
+        // Id equality alone over-rejects: AcoustID often names a different MB
+        // recording of the same song, and a wanted id can even 404 upstream. Judge by
+        // title instead — different = wrong file, same = ambiguous so defer.
         if (knownRecordings is not { Count: > 0 })
             return FingerprintVerdict.Unverifiable;
 
