@@ -68,17 +68,18 @@ public class PreImportTagger : IPreImportTagger
     /// each LocalTrack.AcoustIdResults in place). Per-file lookups would serialize
     /// against AcoustID's ~1-per-3s rate limit — minutes on a full album.
     /// </summary>
-    private void PrefetchFingerprints(List<LocalTrack> localTracks, CancellationToken ct)
+    private async Task PrefetchFingerprintsAsync(List<LocalTrack> localTracks, CancellationToken ct)
     {
         if (localTracks.Count == 0 || !_fingerprintingService.IsSetup())
             return;
 
         try
         {
-            // Lookup isn't cancellation-aware (Lidarr core); run it off-thread and stop
-            // waiting if ct trips (bounded by fpcalc + AcoustID's own timeouts).
-            Task.Run(() => _fingerprintingService.Lookup(localTracks, FingerprintScoreThreshold))
-                .WaitAsync(ct).GetAwaiter().GetResult();
+            // Lookup is synchronous and has no CancellationToken (Lidarr core), so it
+            // must run off-thread to stay cancellable; awaiting keeps the caller's
+            // thread free rather than blocking a second one.
+            await Task.Run(() => _fingerprintingService.Lookup(localTracks, FingerprintScoreThreshold))
+                .WaitAsync(ct);
         }
         catch (OperationCanceledException)
         {
@@ -128,7 +129,7 @@ public class PreImportTagger : IPreImportTagger
     //                       corruption is detected later, in the post-process scanner.
     public record TaggingResult(int Tagged, int SkippedWeakMatch, int TagWriteFailed);
 
-    public Task<TaggingResult> TagCompletedDownloadAsync(
+    public async Task<TaggingResult> TagCompletedDownloadAsync(
         Album album,
         Artist artist,
         AlbumRelease? albumRelease,
@@ -142,17 +143,16 @@ public class PreImportTagger : IPreImportTagger
     {
         try
         {
-            TaggingResult result = TagInternal(album, artist, albumRelease, sourceId, completedFolderPath, confidenceThreshold, stripFeaturedArtists, verifyAllWithFingerprint, fingerprintTitleFallback, ct);
-            return Task.FromResult(result);
+            return await TagInternalAsync(album, artist, albumRelease, sourceId, completedFolderPath, confidenceThreshold, stripFeaturedArtists, verifyAllWithFingerprint, fingerprintTitleFallback, ct);
         }
         catch (Exception ex)
         {
             _logger.Error(ex, "Pre-import tagging failed for {SourceId}", sourceId);
-            return Task.FromResult(new TaggingResult(0, 0, 1));
+            return new TaggingResult(0, 0, 1);
         }
     }
 
-    private TaggingResult TagInternal(
+    private async Task<TaggingResult> TagInternalAsync(
         Album album,
         Artist artist,
         AlbumRelease? albumRelease,
@@ -276,7 +276,7 @@ public class PreImportTagger : IPreImportTagger
         Dictionary<string, string>? knownRecordings = null;
         if (verifyAllWithFingerprint)
         {
-            PrefetchFingerprints(localTracks, ct);
+            await PrefetchFingerprintsAsync(localTracks, ct);
             knownRecordings = GetArtistRecordingTitles(artist);
         }
 
@@ -341,7 +341,7 @@ public class PreImportTagger : IPreImportTagger
         int titleTagged = 0;
         if (tagged == 0 && IsTitleFallbackEligible(album))
         {
-            (titleTagged, int titleErrored, int titleSkipped) = TryTitleDrivenTagging(localTracks, album, artist, albumRelease, stripFeaturedArtists, fingerprintTitleFallback, knownRecordings, sourceId, ct);
+            (titleTagged, int titleErrored, int titleSkipped) = await TryTitleDrivenTaggingAsync(localTracks, album, artist, albumRelease, stripFeaturedArtists, fingerprintTitleFallback, knownRecordings, sourceId, ct);
             tagged += titleTagged;
             errored += titleErrored;
             skipped += titleSkipped;
@@ -365,7 +365,7 @@ public class PreImportTagger : IPreImportTagger
         return album.SecondaryTypes?.Any(t => t?.Name is "Live" or "Remix" or "Demo" or "Mixtape") != true;
     }
 
-    private (int Tagged, int Errored, int Skipped) TryTitleDrivenTagging(
+    private async Task<(int Tagged, int Errored, int Skipped)> TryTitleDrivenTaggingAsync(
         List<LocalTrack> localTracks,
         Album album,
         Artist artist,
@@ -423,7 +423,7 @@ public class PreImportTagger : IPreImportTagger
                 .Select(i => localTracks[i])
                 .Where(lt => lt.AcoustIdResults == null)
                 .ToList();
-            PrefetchFingerprints(pending, ct);
+            await PrefetchFingerprintsAsync(pending, ct);
             knownRecordings ??= GetArtistRecordingTitles(artist);
         }
 
