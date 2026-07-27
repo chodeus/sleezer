@@ -151,9 +151,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                         AlbumData albumData = _itemsParser.CreateAlbumData(searchResponse.Id, finalGroup, searchTextData, folderData, Settings, searchTextData.TrackCount);
                         List<SlskdFileData> downloadFiles = JsonSerializer.Deserialize<List<SlskdFileData>>(albumData.CustomString, IndexerParserHelper.StandardJsonOptions) ?? [];
 
-                        // Per-directory single/EP decisions log at Debug (far too many to
-                        // surface individually), so tally them for the Info summary — the
-                        // only place an operator can see the matcher actually working.
+                        // Per-directory single/EP decisions log at Debug (too many to surface
+                        // individually), so tally them for the Info summary below.
                         int groupAudioCount = finalGroup.Count(f => AudioFormatHelper.GetAudioCodecFromExtension(f.Extension ?? Path.GetExtension(f.Filename) ?? "") != AudioFormat.Unknown);
                         if (downloadFiles.Count > 0 && downloadFiles.Count < groupAudioCount)
                             plucked++;
