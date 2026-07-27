@@ -663,7 +663,9 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             if (expectedTrackCount <= 0)
                 return false;
 
-            if (!string.IsNullOrWhiteSpace(albumType))
+            // Only a NULL AlbumType means the search predates the field; an empty
+            // one is a real value and must not re-enable the track-count guess.
+            if (albumType is not null)
             {
                 return albumType.Equals("Single", StringComparison.OrdinalIgnoreCase)
                     || albumType.Equals("EP", StringComparison.OrdinalIgnoreCase);

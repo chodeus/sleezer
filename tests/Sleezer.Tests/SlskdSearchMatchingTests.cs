@@ -366,8 +366,11 @@ public class SlskdSingleSourceTests
         Assert.Equal(4, FlacCount(a.CustomString));   // whole album kept, nothing plucked
     }
 
-    [Fact]
-    public void Ep_album_type_still_gets_single_handling()
+    [Theory]
+    [InlineData("Single")]
+    [InlineData("EP")]
+    [InlineData("single")]   // MusicBrainz casing varies
+    public void Single_and_ep_album_types_still_get_single_handling(string albumType)
     {
         const string dir = @"@@u\Artist\Big Comp";
         string[] files =
@@ -376,9 +379,43 @@ public class SlskdSingleSourceTests
             dir + @"\03 - Jump.flac", dir + @"\04 - Eruption.flac",
         };
         AlbumData a = Build(dir, files, artist: "Artist", album: "Dreams",
-            tracks: new[] { "Dreams" }, expectedTrackCount: 1, albumType: "Single");
+            tracks: new[] { "Dreams" }, expectedTrackCount: 1, albumType: albumType);
 
         Assert.Equal(1, FlacCount(a.CustomString));   // plucked
+    }
+
+    // An empty AlbumType is a real value, not a missing one — it must not fall
+    // back to the track-count guess and narrow a short album.
+    [Fact]
+    public void Empty_album_type_does_not_fall_back_to_the_track_count_guess()
+    {
+        const string dir = @"@@u\Artist\Tiny Album";
+        string[] files =
+        {
+            dir + @"\01 - Dreams.flac", dir + @"\02 - Panama.flac",
+            dir + @"\03 - Jump.flac", dir + @"\04 - Eruption.flac",
+        };
+        AlbumData a = Build(dir, files, artist: "Artist", album: "Tiny Album",
+            tracks: new[] { "Dreams" }, expectedTrackCount: 4, albumType: "");
+
+        Assert.Equal(4, FlacCount(a.CustomString));   // whole album kept
+    }
+
+    // A search queued before AlbumType existed carries null — the track-count
+    // heuristic is the intended fallback there.
+    [Fact]
+    public void Null_album_type_still_uses_the_track_count_fallback()
+    {
+        const string dir = @"@@u\Artist\Big Comp";
+        string[] files =
+        {
+            dir + @"\01 - Dreams.flac", dir + @"\02 - Panama.flac",
+            dir + @"\03 - Jump.flac", dir + @"\04 - Eruption.flac",
+        };
+        AlbumData a = Build(dir, files, artist: "Artist", album: "Dreams",
+            tracks: new[] { "Dreams" }, expectedTrackCount: 1, albumType: null);
+
+        Assert.Equal(1, FlacCount(a.CustomString));   // plucked via the fallback
     }
 
     // Regression: a track whose title normalizes below the 4-char floor
