@@ -38,9 +38,12 @@ public class PreImportTagger : IPreImportTagger
         ".alac", ".m4b", ".m4p", ".mp2", ".mpc", ".dsf", ".dff"
     ];
 
+    private const double FingerprintScoreThreshold = 0.5;
+
     private readonly IIdentificationService _identificationService;
     private readonly IAudioTagService _audioTagService;
     private readonly IFingerprintingService _fingerprintingService;
+    private readonly ITrackService _trackService;
     private readonly IDiskProvider _diskProvider;
     private readonly Logger _logger;
 
@@ -48,52 +51,35 @@ public class PreImportTagger : IPreImportTagger
         IIdentificationService identificationService,
         IAudioTagService audioTagService,
         IFingerprintingService fingerprintingService,
+        ITrackService trackService,
         IDiskProvider diskProvider,
         Logger logger)
     {
         _identificationService = identificationService;
         _audioTagService = audioTagService;
         _fingerprintingService = fingerprintingService;
+        _trackService = trackService;
         _diskProvider = diskProvider;
         _logger = logger;
     }
 
-    // Unverifiable (no fpcalc / AcoustID down / not indexed) is distinct from
-    // Mismatch: the caller falls back on Unverifiable, rejects only on Mismatch, so
-    // a blip can't block every import.
-    private enum FingerprintVerdict { Verified, Mismatch, Unverifiable }
-
-    private FingerprintVerdict VerifyRecording(string filePath, Track wantedTrack, CancellationToken ct)
+    /// <summary>
+    /// Fingerprints every file in ONE batched AcoustID request (Lookup populates
+    /// each LocalTrack.AcoustIdResults in place). Per-file lookups would serialize
+    /// against AcoustID's ~1-per-3s rate limit — minutes on a full album.
+    /// </summary>
+    private async Task PrefetchFingerprintsAsync(List<LocalTrack> localTracks, CancellationToken ct)
     {
-        ct.ThrowIfCancellationRequested();
+        if (localTracks.Count == 0 || !_fingerprintingService.IsSetup())
+            return;
+
         try
         {
-            if (!_fingerprintingService.IsSetup())
-                return FingerprintVerdict.Unverifiable;
-
-            string? targetRecordingId = wantedTrack.ForeignRecordingId;
-            if (string.IsNullOrWhiteSpace(targetRecordingId))
-                return FingerprintVerdict.Unverifiable;
-
-            LocalTrack probe = new() { Path = filePath };
-            // Lookup isn't cancellation-aware (Lidarr core); run it off-thread and stop
-            // waiting if ct trips (bounded by fpcalc + AcoustID's own timeouts).
-            Task.Run(() => _fingerprintingService.Lookup(new List<LocalTrack> { probe }, 0.5)).WaitAsync(ct).GetAwaiter().GetResult();
-
-            List<string>? recordingIds = probe.AcoustIdResults;
-            if (recordingIds == null || recordingIds.Count == 0)
-                return FingerprintVerdict.Unverifiable;
-
-            if (recordingIds.Contains(targetRecordingId, StringComparer.OrdinalIgnoreCase))
-                return FingerprintVerdict.Verified;
-
-            // AcoustID lags MB recording merges, so a correct file often resolves to
-            // the old id — accept those too (as Lidarr's own scorer does).
-            List<string>? oldIds = wantedTrack.OldForeignRecordingIds;
-            if (oldIds is { Count: > 0 } && recordingIds.Intersect(oldIds, StringComparer.OrdinalIgnoreCase).Any())
-                return FingerprintVerdict.Verified;
-
-            return FingerprintVerdict.Mismatch;
+            // Lookup is synchronous and has no CancellationToken (Lidarr core), so it
+            // must run off-thread to stay cancellable; awaiting keeps the caller's
+            // thread free rather than blocking a second one.
+            await Task.Run(() => _fingerprintingService.Lookup(localTracks, FingerprintScoreThreshold))
+                .WaitAsync(ct);
         }
         catch (OperationCanceledException)
         {
@@ -101,9 +87,39 @@ public class PreImportTagger : IPreImportTagger
         }
         catch (Exception ex)
         {
-            _logger.Warn(ex, "Pre-import tag: fingerprint verification errored for {Path}; treating as unverifiable", filePath);
-            return FingerprintVerdict.Unverifiable;
+            _logger.Warn(ex, "Pre-import tag: fingerprint lookup failed for {Count} file(s); treating as unverifiable", localTracks.Count);
         }
+    }
+
+    private FingerprintVerdict VerifyRecording(LocalTrack local, Track wantedTrack, Artist artist, Dictionary<string, string>? knownRecordings) =>
+        RecordingVerdict.Resolve(
+            local.AcoustIdResults,
+            wantedTrack.ForeignRecordingId,
+            wantedTrack.OldForeignRecordingIds,
+            wantedTrack.Title,
+            knownRecordings ?? GetArtistRecordingTitles(artist));
+
+    /// <summary>
+    /// recordingId → track title for everything Lidarr knows by this artist, so an
+    /// AcoustID answer naming another of the artist's releases can be judged locally.
+    /// </summary>
+    private Dictionary<string, string> GetArtistRecordingTitles(Artist artist)
+    {
+        Dictionary<string, string> map = new(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            foreach (Track track in _trackService.GetTracksByArtist(artist.Id))
+            {
+                if (!string.IsNullOrWhiteSpace(track.ForeignRecordingId) && !string.IsNullOrWhiteSpace(track.Title))
+                    map.TryAdd(track.ForeignRecordingId, track.Title);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Warn(ex, "Pre-import tag: could not load recordings for {Artist}; fingerprint mismatches stay unverifiable", artist.Name);
+        }
+
+        return map;
     }
 
     // Tagged              — track was identified and Lidarr's tag writer succeeded.
@@ -113,7 +129,7 @@ public class PreImportTagger : IPreImportTagger
     //                       corruption is detected later, in the post-process scanner.
     public record TaggingResult(int Tagged, int SkippedWeakMatch, int TagWriteFailed);
 
-    public Task<TaggingResult> TagCompletedDownloadAsync(
+    public async Task<TaggingResult> TagCompletedDownloadAsync(
         Album album,
         Artist artist,
         AlbumRelease? albumRelease,
@@ -127,17 +143,16 @@ public class PreImportTagger : IPreImportTagger
     {
         try
         {
-            TaggingResult result = TagInternal(album, artist, albumRelease, sourceId, completedFolderPath, confidenceThreshold, stripFeaturedArtists, verifyAllWithFingerprint, fingerprintTitleFallback, ct);
-            return Task.FromResult(result);
+            return await TagInternalAsync(album, artist, albumRelease, sourceId, completedFolderPath, confidenceThreshold, stripFeaturedArtists, verifyAllWithFingerprint, fingerprintTitleFallback, ct);
         }
         catch (Exception ex)
         {
             _logger.Error(ex, "Pre-import tagging failed for {SourceId}", sourceId);
-            return Task.FromResult(new TaggingResult(0, 0, 1));
+            return new TaggingResult(0, 0, 1);
         }
     }
 
-    private TaggingResult TagInternal(
+    private async Task<TaggingResult> TagInternalAsync(
         Album album,
         Artist artist,
         AlbumRelease? albumRelease,
@@ -257,6 +272,14 @@ public class PreImportTagger : IPreImportTagger
             }
         }
 
+        // One batched AcoustID round trip up front rather than one per file.
+        Dictionary<string, string>? knownRecordings = null;
+        if (verifyAllWithFingerprint)
+        {
+            await PrefetchFingerprintsAsync(localTracks, ct);
+            knownRecordings = GetArtistRecordingTitles(artist);
+        }
+
         int tagged = 0;
         int skipped = 0;
         int errored = 0;
@@ -292,7 +315,7 @@ public class PreImportTagger : IPreImportTagger
                     continue;
                 }
 
-                if (verifyAllWithFingerprint && VerifyRecording(localTrack.Path, track, ct) == FingerprintVerdict.Mismatch)
+                if (verifyAllWithFingerprint && VerifyRecording(localTrack, track, artist, knownRecordings) == FingerprintVerdict.Mismatch)
                 {
                     skipped++;
                     _logger.Info("Pre-import tag: fingerprint says {File} is a different recording than '{Title}' — skipping (verify-all imports)",
@@ -318,7 +341,7 @@ public class PreImportTagger : IPreImportTagger
         int titleTagged = 0;
         if (tagged == 0 && IsTitleFallbackEligible(album))
         {
-            (titleTagged, int titleErrored, int titleSkipped) = TryTitleDrivenTagging(localTracks, album, albumRelease, stripFeaturedArtists, fingerprintTitleFallback, sourceId, ct);
+            (titleTagged, int titleErrored, int titleSkipped) = await TryTitleDrivenTaggingAsync(localTracks, album, artist, albumRelease, stripFeaturedArtists, fingerprintTitleFallback, knownRecordings, sourceId, ct);
             tagged += titleTagged;
             errored += titleErrored;
             skipped += titleSkipped;
@@ -342,12 +365,14 @@ public class PreImportTagger : IPreImportTagger
         return album.SecondaryTypes?.Any(t => t?.Name is "Live" or "Remix" or "Demo" or "Mixtape") != true;
     }
 
-    private (int Tagged, int Errored, int Skipped) TryTitleDrivenTagging(
+    private async Task<(int Tagged, int Errored, int Skipped)> TryTitleDrivenTaggingAsync(
         List<LocalTrack> localTracks,
         Album album,
+        Artist artist,
         AlbumRelease? albumRelease,
         bool stripFeaturedArtists,
         bool fingerprintVerify,
+        Dictionary<string, string>? knownRecordings,
         string sourceId,
         CancellationToken ct)
     {
@@ -390,6 +415,18 @@ public class PreImportTagger : IPreImportTagger
         _logger.Info("Pre-import tag: album-level match failed but {Matched}/{FileCount} track title(s) match release '{Release}' — tagging by title for {SourceId}",
             mapping.Count, localTracks.Count, release.Title, sourceId);
 
+        if (fingerprintVerify)
+        {
+            // Only the mapped files matter here, and any already fingerprinted by the
+            // verify-all pass carry their results already.
+            List<LocalTrack> pending = mapping.Keys
+                .Select(i => localTracks[i])
+                .Where(lt => lt.AcoustIdResults == null)
+                .ToList();
+            await PrefetchFingerprintsAsync(pending, ct);
+            knownRecordings ??= GetArtistRecordingTitles(artist);
+        }
+
         int tagged = 0;
         int errored = 0;
         int skipped = 0;
@@ -402,7 +439,7 @@ public class PreImportTagger : IPreImportTagger
             // Title-only matching is the highest-risk laundering path, so untrusted
             // sources (slskd) fingerprint-gate it — reject only a definite
             // different-recording. Trusted API sources (Deezer/Tidal) skip it.
-            if (fingerprintVerify && VerifyRecording(localTracks[localIndex].Path, wantedTrack, ct) == FingerprintVerdict.Mismatch)
+            if (fingerprintVerify && VerifyRecording(localTracks[localIndex], wantedTrack, artist, knownRecordings) == FingerprintVerdict.Mismatch)
             {
                 skipped++;
                 _logger.Info("Pre-import tag: fingerprint says {File} is a different recording than '{Title}' — refusing title match for {SourceId}",
