@@ -29,6 +29,10 @@ public sealed record SearchContext
     public SearchCriteriaBase? SearchCriteria { get; init; }
     public IReadOnlyList<string> TargetVariantTypes { get; init; } = [];
 
+    // MusicBrainz primary type ("Single"/"EP"/"Album"). Lets the parser gate
+    // single/EP handling on the real type instead of guessing from TrackCount.
+    public string? AlbumType { get; init; }
+
     public QueryType QueryType { get; init; } = QueryType.Normal;
     public string? NormalizedArtist { get; init; }
     public string? NormalizedAlbum { get; init; }
@@ -76,6 +80,7 @@ public sealed record SearchQuery
     public int TrackCount { get; init; }
     public IReadOnlyList<string> Tracks { get; init; } = [];
     public IReadOnlyList<string> TargetVariantTypes { get; init; } = [];
+    public string? AlbumType { get; init; }
     public string? SearchText { get; init; }
 
     public static SearchQuery FromContext(SearchContext context) => new()
@@ -87,6 +92,7 @@ public sealed record SearchQuery
         TrackCount = context.TrackCount,
         Tracks = context.Tracks,
         TargetVariantTypes = context.TargetVariantTypes,
+        AlbumType = context.AlbumType,
         SearchText = null
     };
 }

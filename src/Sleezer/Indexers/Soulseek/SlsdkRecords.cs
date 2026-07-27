@@ -160,7 +160,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         [property: JsonPropertyName("maximumFiles")] int? MaximumFiles,
         [property: JsonPropertyName("trackCount")] int TrackCount = 0,
         [property: JsonPropertyName("tracks")] List<string>? Tracks = null,
-        [property: JsonPropertyName("variantTypes")] List<string>? TargetVariantTypes = null)
+        [property: JsonPropertyName("variantTypes")] List<string>? TargetVariantTypes = null,
+        [property: JsonPropertyName("albumType")] string? AlbumType = null)
     {
         private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
         public static SlskdSearchData FromJson(string jsonString) => JsonSerializer.Deserialize<SlskdSearchData>(jsonString, _jsonOptions)!;

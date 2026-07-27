@@ -77,7 +77,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 ProcessedSearches: _processedSearches,
                 SearchCriteria: searchCriteria)
             {
-                TargetVariantTypes = album?.SecondaryTypes?.Select(t => t.Name).ToList() ?? []
+                TargetVariantTypes = album?.SecondaryTypes?.Select(t => t.Name).ToList() ?? [],
+                AlbumType = album?.AlbumType
             };
 
             return _searchPipeline.BuildChain(context, ExecuteSearch);
@@ -111,7 +112,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 ProcessedSearches: _processedSearches,
                 SearchCriteria: searchCriteria)
             {
-                TargetVariantTypes = album?.SecondaryTypes?.Select(t => t.Name).ToList() ?? []
+                TargetVariantTypes = album?.SecondaryTypes?.Select(t => t.Name).ToList() ?? [],
+                AlbumType = album?.AlbumType
             };
 
             return _searchPipeline.BuildChain(context, ExecuteSearch);
@@ -391,7 +393,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 MaximumFiles: maximumFiles,
                 TrackCount: query.TrackCount,
                 Tracks: query.Tracks.Take(50).ToList(),
-                TargetVariantTypes: query.TargetVariantTypes.Count > 0 ? query.TargetVariantTypes.ToList() : null));
+                TargetVariantTypes: query.TargetVariantTypes.Count > 0 ? query.TargetVariantTypes.ToList() : null,
+                AlbumType: query.AlbumType));
 
             return request;
         }

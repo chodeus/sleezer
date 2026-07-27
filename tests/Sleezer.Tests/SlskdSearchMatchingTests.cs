@@ -192,7 +192,7 @@ public class SlskdSingleSourceTests
     private static SlskdFileData Audio(string filename) => F(filename, "flac");
 
     private static AlbumData Build(string dirKey, string[] files, string artist, string album,
-        string[] tracks, int expectedTrackCount, SlskdSettings? settings = null)
+        string[] tracks, int expectedTrackCount, SlskdSettings? settings = null, string? albumType = null)
     {
         IGrouping<string, SlskdFileData> group = files.Select(Audio).GroupBy(_ => dirKey).Single();
         SlskdFolderData folder = Parser.ParseFolderName(dirKey) with
@@ -202,7 +202,7 @@ public class SlskdSingleSourceTests
             FileCount = files.Length
         };
         SlskdSearchData search = new(artist, album, false, false, 1, null,
-            TrackCount: expectedTrackCount, Tracks: tracks.ToList());
+            TrackCount: expectedTrackCount, Tracks: tracks.ToList(), AlbumType: albumType);
         return Parser.CreateAlbumData("search1", group, search, folder, settings, expectedTrackCount);
     }
 
@@ -347,6 +347,103 @@ public class SlskdSingleSourceTests
             expectedTrackCount: 7);                            // > SmallTargetTrackCeiling → whole album kept
 
         Assert.Equal(7, FlacCount(a.CustomString));
+    }
+
+    // Fixture for the AlbumType gate: the source is deliberately LARGER than the
+    // target and every wanted title is matchable, so track-count-only logic WOULD
+    // narrow it. Only consulting AlbumType keeps the album whole — a fixture sized
+    // at the target would pass either way and prove nothing.
+    private const string ShortAlbumDir = @"@@u\Artist\Tiny Album";
+    private static readonly string[] ShortAlbumFiles =
+    {
+        ShortAlbumDir + @"\01 - Dreams.flac",   ShortAlbumDir + @"\02 - Panama.flac",
+        ShortAlbumDir + @"\03 - Jump.flac",     ShortAlbumDir + @"\04 - Eruption.flac",
+        ShortAlbumDir + @"\05 - Bonus Cut.flac", ShortAlbumDir + @"\06 - Outtake.flac",
+    };
+    private static readonly string[] ShortAlbumTracks = { "Dreams", "Panama", "Jump", "Eruption" };
+
+    private static AlbumData BuildShortAlbum(string? albumType) =>
+        Build(ShortAlbumDir, ShortAlbumFiles, artist: "Artist", album: "Tiny Album",
+            tracks: ShortAlbumTracks, expectedTrackCount: 4, albumType: albumType);
+
+    [Theory]
+    [InlineData("Album")]
+    [InlineData("Broadcast")]
+    [InlineData("")]        // empty is a real value, not a missing field
+    public void Non_single_album_types_are_never_narrowed(string albumType)
+    {
+        AlbumData a = BuildShortAlbum(albumType);
+
+        Assert.Equal(6, FlacCount(a.CustomString));          // whole source kept
+        Assert.Contains("Bonus Cut", a.CustomString);        // extras retained, not stripped
+    }
+
+    // A search queued before AlbumType existed carries null — the track-count
+    // heuristic is the intended fallback, and on this fixture it DOES narrow.
+    [Fact]
+    public void Null_album_type_falls_back_to_the_track_count_guess()
+    {
+        AlbumData a = BuildShortAlbum(null);
+
+        Assert.Equal(4, FlacCount(a.CustomString));
+        Assert.Contains("Dreams", a.CustomString);
+        Assert.DoesNotContain("Bonus Cut", a.CustomString);
+    }
+
+    [Theory]
+    [InlineData("Single")]
+    [InlineData("EP")]
+    [InlineData("single")]   // MusicBrainz casing varies
+    public void Single_and_ep_album_types_still_get_single_handling(string albumType)
+    {
+        const string dir = @"@@u\Artist\Big Comp";
+        string[] files =
+        {
+            dir + @"\01 - Dreams.flac", dir + @"\02 - Panama.flac",
+            dir + @"\03 - Jump.flac", dir + @"\04 - Eruption.flac",
+        };
+        AlbumData a = Build(dir, files, artist: "Artist", album: "Dreams",
+            tracks: new[] { "Dreams" }, expectedTrackCount: 1, albumType: albumType);
+
+        Assert.Equal(1, FlacCount(a.CustomString));
+        Assert.Contains("Dreams", a.CustomString);
+        Assert.DoesNotContain("Eruption", a.CustomString);
+    }
+
+    // The discriminating EP case: 8 tracks is ABOVE SmallTargetTrackCeiling, so
+    // track-count-only logic would leave all 10 files. Narrowing proves the gate
+    // consulted AlbumType.
+    [Fact]
+    public void Ep_type_narrows_even_above_the_track_count_ceiling()
+    {
+        const string dir = @"@@u\Artist\Long EP";
+        string[] titles = { "Dreams", "Panama", "Jump", "Eruption", "Unchained", "Atomic Punk", "Little Guitars", "Mean Street" };
+        List<string> files = titles.Select((t, i) => $@"{dir}\{i + 1:D2} - {t}.flac").ToList();
+        files.Add(dir + @"\09 - Bonus Cut.flac");
+        files.Add(dir + @"\10 - Outtake.flac");
+
+        AlbumData a = Build(dir, files.ToArray(), artist: "Artist", album: "Long EP",
+            tracks: titles, expectedTrackCount: 8, albumType: "EP");
+
+        Assert.Equal(8, FlacCount(a.CustomString));
+        Assert.DoesNotContain("Bonus Cut", a.CustomString);
+    }
+
+    // A search queued before AlbumType existed carries null — the track-count
+    // heuristic is the intended fallback there.
+    [Fact]
+    public void Null_album_type_still_uses_the_track_count_fallback()
+    {
+        const string dir = @"@@u\Artist\Big Comp";
+        string[] files =
+        {
+            dir + @"\01 - Dreams.flac", dir + @"\02 - Panama.flac",
+            dir + @"\03 - Jump.flac", dir + @"\04 - Eruption.flac",
+        };
+        AlbumData a = Build(dir, files, artist: "Artist", album: "Dreams",
+            tracks: new[] { "Dreams" }, expectedTrackCount: 1, albumType: null);
+
+        Assert.Equal(1, FlacCount(a.CustomString));   // plucked via the fallback
     }
 
     // Regression: a track whose title normalizes below the 4-char floor
