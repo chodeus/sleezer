@@ -468,6 +468,45 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     }
 
     /// <summary>
+    /// Finds the root child actually holding the item's files. The batch
+    /// destination lives only in memory, so a restart mid-download leaves
+    /// GetFullFolderPath guessing the peer's source-directory name — this
+    /// recovers the real folder by basename+size, the same ownership test the
+    /// delete guards use. Best match wins: two peers can share a basename, but
+    /// only the true folder matches most of the batch.
+    /// </summary>
+    private string? FindFolderOwningItemFiles(SlskdDownloadItem item, string root)
+    {
+        Dictionary<string, long> ownedFileSizes = OwnedFileSizes(item);
+        if (ownedFileSizes.Count == 0 || !_diskProvider.FolderExists(root))
+            return null;
+
+        string? best = null;
+        int bestMatches = 0;
+
+        foreach (string candidate in _diskProvider.GetDirectories(root))
+        {
+            try
+            {
+                int matches = _diskProvider.GetFiles(candidate, recursive: true)
+                    .Count(f => IsAudioExtension(f) && IsConclusivelyOwned(f, ownedFileSizes));
+
+                if (matches > bestMatches)
+                {
+                    best = candidate;
+                    bestMatches = matches;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Trace(ex, "[{ItemId}] Skipping '{Folder}' while locating download files", item.ID, candidate);
+            }
+        }
+
+        return best;
+    }
+
+    /// <summary>
     /// Removes the per-disc local folders of a multi-disc item that was
     /// cancelled or failed before the post-completion merge ran.
     /// </summary>
@@ -750,6 +789,19 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             item.Username ??= userTransfers.Username;
             item.SlskdDownloadDirectory = dir;
 
+            // slskd echoes the batch id on every transfer — the only copy that
+            // survives a restart. A batch always carried a destination, so slskd
+            // placed the discs pre-merged: restoring both stops a needless merge
+            // from moving a same-named root folder belonging to another download,
+            // and lets the ConfirmedSubdirectory gate in HandleEventAsync trust a
+            // multi-disc completion.
+            if (item.BatchId == null &&
+                dir.Files?.Select(f => f.BatchId).FirstOrDefault(id => !string.IsNullOrEmpty(id)) is { } recoveredBatchId)
+            {
+                item.BatchId = recoveredBatchId;
+                item.DiscFoldersMerged = true;
+            }
+
             // With a non-default subdirectory pattern, slskd places transfers
             // somewhere the leaf-name guess can't predict — derive it.
             if (item.DerivedSubdirectory == null && item.ConfirmedSubdirectory == null &&
@@ -876,6 +928,25 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 if (hasAudio)
                 {
                     item.CompletedFolderMissingSince = null;
+                    item.CompletedFolderFailureLogged = false;
+                    return resolved;
+                }
+
+                // Missing folder is far more often a wrong guess than lost data
+                // — relocate before condemning the release. Only until the
+                // failure is reported: the scan walks every root child, and a
+                // genuinely deleted download would repeat it forever.
+                if (!item.CompletedFolderFailureLogged &&
+                    FindFolderOwningItemFiles(item, root) is { } actualFolder &&
+                    SlskdPathResolver.MakeRelativeToDownloads(root, actualFolder) is { Length: > 0 } relative)
+                {
+                    _logger.Info("[{ItemId}] Files are in '{Actual}', not '{Expected}' — correcting the output path",
+                        item.ID, actualFolder, folder);
+                    // GetItems reads OutputPath from GetFullFolderPath after this
+                    // returns, so the corrected path lands on the same poll.
+                    item.ConfirmedSubdirectory = relative;
+                    item.CompletedFolderMissingSince = null;
+                    item.CompletedFolderFailureLogged = false;
                     return resolved;
                 }
 
@@ -890,7 +961,16 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             if (latest is DownloadHistoryEventType.DownloadImported or DownloadHistoryEventType.DownloadImportIncomplete)
                 return resolved;
 
-            _logger.Warn("[{ItemId}] Completed download has no audio left in '{Folder}' — reporting failure so the release is retried", item.ID, folder);
+            if (!item.CompletedFolderFailureLogged)
+            {
+                item.CompletedFolderFailureLogged = true;
+                _logger.Warn("[{ItemId}] Completed download has no audio left in '{Folder}' — reporting failure so the release is retried", item.ID, folder);
+            }
+            else
+            {
+                _logger.Trace("[{ItemId}] Still no audio in '{Folder}' — keeping the failed status", item.ID, folder);
+            }
+
             return resolved with
             {
                 Status = DownloadItemStatus.Failed,
