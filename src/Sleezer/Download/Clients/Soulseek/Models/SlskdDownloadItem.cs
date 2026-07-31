@@ -42,6 +42,12 @@ public class SlskdDownloadItem
     public DownloadItemStatus? LastReportedStatus { get; set; }
     public bool DiscFoldersMerged { get; set; }
 
+    /// <summary>
+    /// When a Completed item's resolved folder first turned up with no audio
+    /// in it — grace-period anchor before the item is failed as vanished.
+    /// </summary>
+    public DateTime? CompletedFolderMissingSince { get; set; }
+
     /// <summary>Batch id when the batch enqueue endpoint accepted the download.</summary>
     public string? BatchId { get; set; }
 
@@ -149,6 +155,30 @@ public class SlskdDownloadItem
         int idx = trimmed.LastIndexOf('/');
         string leaf = idx >= 0 ? trimmed[(idx + 1)..] : trimmed;
         return leaf is "." or ".." ? "" : leaf;
+    }
+
+    /// <summary>
+    /// Local destination folder for the batch enqueue: release metadata when
+    /// available — peer-independent, so generically-named shares from two
+    /// peers ("_Unknown Album") can never collide — else the share-derived
+    /// album folder name.
+    /// </summary>
+    public string PreferredDestinationFolderName()
+    {
+        string? artist = ResolvedAlbum?.Artist?.Value?.Name;
+        string? title = ResolvedAlbum?.Title;
+        string name = !string.IsNullOrWhiteSpace(artist) && !string.IsNullOrWhiteSpace(title)
+            ? $"{artist} - {title}"
+            : LocalAlbumFolderName();
+
+        // Single folder level only: slskd treats slashes in a destination as
+        // nested directories.
+        name = name.Replace('/', '_').Replace('\\', '_');
+        foreach (char c in Path.GetInvalidFileNameChars())
+            name = name.Replace(c, '_');
+
+        name = name.Trim();
+        return name.Length == 0 ? ID : name;
     }
 
     private void AddOrUpdateDirectory(SlskdDownloadDirectory? directory)

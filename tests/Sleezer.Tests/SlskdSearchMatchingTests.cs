@@ -51,6 +51,20 @@ public class QueryBuilderTests
     {
         Assert.Equal(expected, QueryBuilder.StripEditionSuffixes(input));
     }
+
+    // Live 2026-07-31: length-ranked selection kept the remixer credit and lost
+    // the title — "Wait So Long (Agents of Time remix)" searched as
+    // "Wait Agents remix", a guaranteed zero on Soulseek.
+    [Theory]
+    [InlineData("Wait So Long (Agents of Time remix)", "Wait Long")]         // title words only, credit dropped
+    [InlineData("Happiness Is So Sad (extended mix)", "Happiness Sad")]      // variant words never selected
+    [InlineData("Finally (extended mix)", null)]                             // too little left → skip the tier
+    [InlineData("Everything Everything Everything (remixes)", null)]         // equals the stripped base EditionStripped already searches
+    [InlineData("A State of Trance Year Mix", "State Trance")]               // no brackets: prior selection shape kept
+    public void BuildPartial_selects_title_words_not_remix_credit(string input, string? expected)
+    {
+        Assert.Equal(expected, QueryBuilder.BuildPartial(input));
+    }
 }
 
 public class SlskdTextProcessorTests
@@ -155,6 +169,62 @@ public class SlskdDownloadItemMultiDiscTests
         SlskdDownloadItem item = NewItem(@"@@x\Artist\Album\CD1\01.flac", @"@@x\Artist\Album\CD2\01.flac");
         Assert.True(item.OwnsFile(@"@@x\Artist\Album\CD2\01.flac"));
         Assert.False(item.OwnsFile(@"@@x\Artist\Other\01.flac"));
+    }
+}
+
+// Live 2026-07-28: two Alix Perez singles from different peers both landed in
+// downloads/_Unknown Album (slskd keys the local folder by the PEER'S directory
+// name); the first import's cleanup deleted the second's un-imported file.
+// Release-derived destinations make the local folder peer-independent.
+public class SlskdDestinationFolderTests
+{
+    private static SlskdDownloadItem NewItem(params string[] filenames)
+    {
+        string source = "[" + string.Join(",", filenames.Select(f =>
+            $"{{\"Filename\":{System.Text.Json.JsonSerializer.Serialize(f)},\"Size\":1000}}")) + "]";
+        return new SlskdDownloadItem(new ReleaseInfo { Source = source, Title = "t", DownloadUrl = "u" });
+    }
+
+    private static NzbDrone.Core.Music.Album Album(string artist, string title) => new()
+    {
+        Title = title,
+        Artist = new NzbDrone.Core.Music.Artist { Name = artist }
+    };
+
+    [Fact]
+    public void Release_metadata_names_the_destination()
+    {
+        SlskdDownloadItem item = NewItem(@"@@x\shared\_Untagged\Alix Perez_Unknown Artist\_Unknown Album\01 - Cape Reinga.flac");
+        item.ResolvedAlbum = Album("Alix Perez", "Cape Reinga");
+        Assert.Equal("Alix Perez - Cape Reinga", item.PreferredDestinationFolderName());
+    }
+
+    [Fact]
+    public void Share_leaf_is_the_fallback_without_metadata()
+    {
+        SlskdDownloadItem item = NewItem(@"@@x\Artist\Album\01.flac");
+        Assert.Equal("Album", item.PreferredDestinationFolderName());
+    }
+
+    [Fact]
+    public void Destination_never_nests_or_carries_invalid_chars()
+    {
+        SlskdDownloadItem item = NewItem(@"@@x\a\b\01.flac");
+        item.ResolvedAlbum = Album("AC/DC", "Fear / Loathing");
+        Assert.Equal("AC_DC - Fear _ Loathing", item.PreferredDestinationFolderName());
+    }
+
+    [Fact]
+    public void Two_peers_generic_folders_get_distinct_destinations()
+    {
+        SlskdDownloadItem a = NewItem(@"@@x\shared\_Untagged\Alix Perez_Unknown Artist\_Unknown Album\01 - Cape Reinga.flac");
+        a.ResolvedAlbum = Album("Alix Perez", "Cape Reinga");
+        SlskdDownloadItem b = NewItem(@"@@y\music\_Unknown Album\01 - Mother Cell.flac");
+        b.ResolvedAlbum = Album("Alix Perez", "Mother Cell");
+
+        Assert.Equal("_Unknown Album", a.LocalAlbumFolderName());     // the collision the destinations avoid
+        Assert.Equal("_Unknown Album", b.LocalAlbumFolderName());
+        Assert.NotEqual(a.PreferredDestinationFolderName(), b.PreferredDestinationFolderName());
     }
 }
 
