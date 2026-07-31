@@ -449,11 +449,11 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             string? searchSignature = search.RemixSignature;
             string? candidateSignature = candidate.RemixSignature;
 
-            // A Remix secondary type only FORGIVES candidate-side remix text; it
-            // must never conflict with a plain-titled candidate (the album's own
-            // verbatim folder name).
+            // A Remix secondary type only FORGIVES candidate-side remix-family
+            // text; it must never conflict with a plain-titled candidate, and
+            // it must not admit non-remix variants (Instrumental, Radio Edit).
             if (searchSignature == null && metaRemix)
-                return false;
+                return candidateSignature != null && !HasGenuineRemixQualifier(candidateName);
 
             if (searchSignature == null && candidateSignature == null)
                 return false;
@@ -467,6 +467,24 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
         private static bool HasSecondaryType(IReadOnlyCollection<string>? types, string name) =>
             types != null && types.Any(t => string.Equals(t, name, StringComparison.OrdinalIgnoreCase));
+
+        // Qualifier zones mirror ExtractRemixSignature: bracketed segments, or
+        // text after the first " - " (keywords in an artist prefix don't count).
+        private static bool HasGenuineRemixQualifier(string? title)
+        {
+            if (string.IsNullOrWhiteSpace(title))
+                return false;
+
+            foreach (Match bracket in BracketedContentRegex().Matches(title))
+            {
+                if (GenuineRemixKeywordRegex().IsMatch(bracket.Value[1..^1]))
+                    return true;
+            }
+
+            int firstDash = title.IndexOf(" - ", StringComparison.Ordinal);
+            string zone = firstDash >= 0 ? title[(firstDash + 3)..] : title;
+            return GenuineRemixKeywordRegex().IsMatch(BracketedContentRegex().Replace(zone, " "));
+        }
 
         private static bool TrailingWordRegex(string word, string loweredTitle) =>
             loweredTitle.EndsWith(" " + word, StringComparison.Ordinal) || loweredTitle.EndsWith("-" + word, StringComparison.Ordinal);
@@ -497,6 +515,9 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
         [GeneratedRegex(@"\b(remix(es|ed)?|rmx|re-?work(ed)?|bootleg|vip|flip|edit|instrumentals?|a?\s?capp?ellas?|karaokes?|sped[\s-]?up|slowed|nightcore|daycore|reverb|8d|mashups?|cover(ed)?\s+by)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
         private static partial Regex RemixKeywordRegex();
+
+        [GeneratedRegex(@"\b(remix(es|ed)?|rmx|re-?work(ed)?|bootleg|vip|flip|mashups?)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+        private static partial Regex GenuineRemixKeywordRegex();
 
         [GeneratedRegex(@"\blive\b", RegexOptions.Compiled)]
         private static partial Regex LiveQualifierRegex();

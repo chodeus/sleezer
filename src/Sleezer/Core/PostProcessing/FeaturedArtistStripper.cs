@@ -29,11 +29,9 @@ public static class FeaturedArtistStripper
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     /// <summary>
-    /// Strips comma/semicolon/bare-feat guest credits when the value starts
-    /// with the known primary artist ("T &amp; Sugah, Grace Barton" → "T &amp;
-    /// Sugah"). The anchor makes the bare-text form safe here, unlike
-    /// <see cref="Strip"/>. Anything not prefixed by the artist is returned
-    /// unchanged.
+    /// Strips comma/semicolon/bare-feat guest credits only when the value
+    /// starts with the known primary artist — the anchor is what makes the
+    /// bare-text form safe here, unlike <see cref="Strip"/>.
     /// </summary>
     public static string? StripGuestCredits(string? input, string? primaryArtist)
     {

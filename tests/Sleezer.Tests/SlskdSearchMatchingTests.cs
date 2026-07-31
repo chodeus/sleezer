@@ -61,6 +61,7 @@ public class QueryBuilderTests
     [InlineData("Finally (extended mix)", null)]                             // too little left → skip the tier
     [InlineData("Everything Everything Everything (remixes)", null)]         // equals the stripped base EditionStripped already searches
     [InlineData("A State of Trance Year Mix", "State Trance")]               // no brackets: prior selection shape kept
+    [InlineData("Ultimate Collection Deluxe!", "Ultimate Collection")]       // variant word filtered despite attached punctuation
     public void BuildPartial_selects_title_words_not_remix_credit(string input, string? expected)
     {
         Assert.Equal(expected, QueryBuilder.BuildPartial(input));

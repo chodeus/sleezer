@@ -48,6 +48,9 @@ public class SlskdDownloadItem
     /// </summary>
     public DateTime? CompletedFolderMissingSince { get; set; }
 
+    /// <summary>Last vanished-files disk check — throttles the poll-path scan.</summary>
+    public DateTime? CompletedFolderCheckedAtUtc { get; set; }
+
     /// <summary>Batch id when the batch enqueue endpoint accepted the download.</summary>
     public string? BatchId { get; set; }
 

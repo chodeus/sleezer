@@ -58,6 +58,11 @@ public class RemixSignatureTests
     [InlineData("Bass, Beats & Melody Reloaded!", "Brooklyn Bounce - Bass, Beats & Melody Reloaded", new[] { "Remix" }, false)]  // live FP 2026-07-31: Remix type + plain folder must not conflict
     [InlineData("Canda! (The Darkside Returns)", "Brooklyn Bounce - Canda! {The Darkside Returns} [4040217013451]", new[] { "Remix" }, false)]
     [InlineData("Some Album", "Some Album (Remixes)", new[] { "Remix" }, false)]                                // Remix type still forgives remix text
+    [InlineData("Some Album", "Some Album (Marc Stout Remix)", new[] { "Remix" }, false)]                       // named remixer forgiven too
+    [InlineData("Some Album", "Some Album (VIP)", new[] { "Remix" }, false)]                                    // VIP is remix-family
+    [InlineData("Some Album", "Some Album (Instrumental)", new[] { "Remix" }, true)]                            // Remix type must not admit other variants
+    [InlineData("Some Album", "Some Album (Radio Edit)", new[] { "Remix" }, true)]
+    [InlineData("Some Album", "Some Album (Sped Up)", new[] { "Remix" }, true)]
     [InlineData("Some Album", "Some Album (Remixes)", new string[0], true)]                                     // no metadata: remix candidate stays refused
     public void RemixSignaturesConflict_uses_secondary_types_asymmetrically(string searchAlbum, string folder, string[] types, bool expected)
     {
