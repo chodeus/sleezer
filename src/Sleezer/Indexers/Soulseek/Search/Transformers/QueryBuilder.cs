@@ -78,10 +78,17 @@ public static partial class QueryBuilder
         if (string.IsNullOrWhiteSpace(text) || text.Length < MinAlbumLengthForPartial)
             return null;
 
-        string[] words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        // Select from the bracket-stripped base with variant words dropped:
+        // length-ranked selection would otherwise keep the remixer credit and
+        // lose the title ("Wait So Long (Agents of Time remix)" → "Wait Agents remix").
+        string basis = ParenthesesRegex().Replace(text, " ");
+
+        string[] words = basis.Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
         // Get significant words (non-stopwords)
-        List<string> significant = words.Where(w => !StopWords.Contains(w) && w.Length > 1).ToList();
+        List<string> significant = words
+            .Where(w => !StopWords.Contains(w) && w.Length > 1 && !VariantWordRegex().IsMatch(w))
+            .ToList();
 
         if (significant.Count < MinSignificantWordsForPartial)
             return null;
@@ -98,8 +105,11 @@ public static partial class QueryBuilder
 
         string partial = string.Join(" ", result);
 
-        // Don't return if it's the same as input or too short
-        if (partial.Equals(text, StringComparison.OrdinalIgnoreCase) || partial.Length < 5)
+        // Don't return if it's the same as the input (or its bracket-stripped
+        // base, which EditionStrippedStrategy already searches) or too short
+        if (partial.Equals(text, StringComparison.OrdinalIgnoreCase) ||
+            partial.Equals(string.Join(" ", words), StringComparison.OrdinalIgnoreCase) ||
+            partial.Length < 5)
             return null;
 
         return partial;
@@ -217,8 +227,10 @@ public static partial class QueryBuilder
         return number;
     }
 
-    [GeneratedRegex(@"\([^)]*\)|\[[^\]]*\]", RegexOptions.Compiled)]
+    [GeneratedRegex(@"\([^)]*\)|\[[^\]]*\]|\{[^}]*\}", RegexOptions.Compiled)]
     private static partial Regex ParenthesesRegex();
+    [GeneratedRegex(@"(?<![\p{L}\p{N}])(?:remix(?:es|ed)?|rmx|mix(?:es)?|edit(?:s|ed)?|versions?|extended|instrumentals?|remaster(?:ed)?|deluxe|edition|vip|bootleg)(?![\p{L}\p{N}])", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+    private static partial Regex VariantWordRegex();
     [GeneratedRegex(@"\s[-–]\s*(?:\d{4}\s+)?(?:deluxe|expanded|extended|anniversary|special|limited|collector'?s|remaster(?:ed)?|remix(?:es)?|mono|stereo|instrumental|acoustic|live)\b.*$", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
     private static partial Regex EditionTailRegex();
     [GeneratedRegex(@"\b([IVXLCDM]{1,4})\b", RegexOptions.Compiled)]

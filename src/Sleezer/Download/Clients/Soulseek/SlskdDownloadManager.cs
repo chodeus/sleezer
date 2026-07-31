@@ -211,9 +211,11 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             string username = ExtractUsernameFromPath(remoteAlbum.Release.DownloadUrl);
             List<(string Filename, long Size)> files = ParseFilesFromSource(remoteAlbum.Release.Source);
 
-            // Multi-disc: ask slskd (batch endpoint) to land every file in one
-            // album-named destination folder, so no local merge is needed.
-            string? destination = item.IsMultiDirectory ? SanitizeFolderName(item.LocalAlbumFolderName()) : null;
+            // Always pin a release-derived destination: slskd otherwise keys the
+            // local folder by the PEER'S directory name, so two peers sharing a
+            // generic name ("_Unknown Album") collide and interleave sources.
+            // Multi-disc additionally lands pre-merged, skipping the local move.
+            string? destination = item.PreferredDestinationFolderName();
 
             SlskdEnqueueResult result = await _apiClient.EnqueueDownloadAsync(settings, username, files, externalId: item.ID, destination: destination);
 
@@ -290,6 +292,8 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             try
             {
                 SlskdStatusResolver.DownloadStatus resolved = SlskdStatusResolver.Resolve(item, timeout, now);
+                if (resolved.Status == DownloadItemStatus.Completed)
+                    resolved = FailWhenCompletedFilesVanished(item, settings, resolved, now);
                 clientItem = new()
                 {
                     DownloadId = item.ID,
@@ -326,6 +330,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             return;
 
         string? directory = item.SlskdDownloadDirectory?.Directory;
+        Dictionary<string, long> ownedFileSizes = OwnedFileSizes(item);
 
         // Run synchronously so Lidarr sees failures in its own log rather than
         // silently fire-and-forgetting the work behind its back.
@@ -338,16 +343,16 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             _logger.Warn(ex, "[def={DefinitionId}] Failed to remove slskd transfers / files for {Title}", definitionId, clientItem.Title);
         }
 
-        TryDeleteOutputFolder(clientItem, settings);
+        TryDeleteOutputFolder(clientItem, ownedFileSizes, settings);
         TryDeleteUnmergedDiscFolders(item, settings);
 
         RemoveItemFromDict(definitionId, clientItem.DownloadId);
 
         if (settings.CleanStaleDirectories && !string.IsNullOrEmpty(directory))
-            _ = CleanStaleDirectoriesAsync(directory, settings);
+            _ = CleanStaleDirectoriesAsync(directory, ownedFileSizes, settings);
     }
 
-    private void TryDeleteOutputFolder(DownloadClientItem clientItem, SlskdProviderSettings settings)
+    private void TryDeleteOutputFolder(DownloadClientItem clientItem, Dictionary<string, long> ownedFileSizes, SlskdProviderSettings settings)
     {
         if (clientItem.OutputPath.IsEmpty)
         {
@@ -377,7 +382,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             if (_diskProvider.FolderExists(folder))
             {
                 _logger.Debug("[{Title}] Deleting folder '{Folder}'", clientItem.Title, folder);
-                _diskProvider.DeleteFolder(folder, true);
+                DeleteFolderGuardedByOwnership(folder, ownedFileSizes, clientItem.Title);
             }
             else if (_diskProvider.FileExists(folder))
             {
@@ -395,6 +400,73 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }
     }
 
+    /// <summary>Expected size per local basename of the item's enqueued files.</summary>
+    private static Dictionary<string, long> OwnedFileSizes(SlskdDownloadItem item) =>
+        item.FileData
+            .Where(f => !string.IsNullOrEmpty(f.Filename))
+            .GroupBy(f => Path.GetFileName(f.Filename!.Replace('\\', '/')), StringComparer.OrdinalIgnoreCase)
+            .Where(g => !string.IsNullOrEmpty(g.Key))
+            .ToDictionary(g => g.Key, g => g.First().Size, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Deletes the folder only when every audio file in it is conclusively this
+    /// item's (basename AND size match — a same-named file another download
+    /// overwrote in a shared folder fails the size check). Otherwise only the
+    /// conclusively-owned files are deleted; ambiguity always retains data.
+    /// </summary>
+    private void DeleteFolderGuardedByOwnership(string folder, Dictionary<string, long> ownedFileSizes, string context)
+    {
+        List<string> files = _diskProvider.GetFiles(folder, recursive: true).ToList();
+        List<string> ownedOnDisk = new();
+        int foreignAudio = 0;
+
+        foreach (string file in files)
+        {
+            if (!IsAudioExtension(file))
+                continue;
+
+            if (IsConclusivelyOwned(file, ownedFileSizes))
+                ownedOnDisk.Add(file);
+            else
+                foreignAudio++;
+        }
+
+        if (foreignAudio == 0)
+        {
+            _diskProvider.DeleteFolder(folder, true);
+            return;
+        }
+
+        _logger.Warn("[{Context}] '{Folder}' holds {Count} audio file(s) not conclusively this download's — deleting only this item's own files", context, folder, foreignAudio);
+        foreach (string file in ownedOnDisk)
+        {
+            try
+            {
+                _diskProvider.DeleteFile(file);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warn(ex, "[{Context}] Failed to delete '{File}'", context, file);
+            }
+        }
+    }
+
+    private bool IsConclusivelyOwned(string file, Dictionary<string, long> ownedFileSizes)
+    {
+        if (!ownedFileSizes.TryGetValue(Path.GetFileName(file), out long expectedSize))
+            return false;
+
+        try
+        {
+            return _diskProvider.GetFileSize(file) == expectedSize;
+        }
+        catch (Exception)
+        {
+            // Unreadable size = unprovable ownership = keep the file.
+            return false;
+        }
+    }
+
     /// <summary>
     /// Removes the per-disc local folders of a multi-disc item that was
     /// cancelled or failed before the post-completion merge ran.
@@ -405,6 +477,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             return;
 
         string localRoot = GetRemoteDownloadPath(settings).FullPath.TrimEnd('/', '\\');
+        Dictionary<string, long> ownedFileSizes = OwnedFileSizes(item);
 
         foreach (string leaf in item.RemoteDirectoryLeaves())
         {
@@ -415,7 +488,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             try
             {
                 _logger.Debug("[{ItemId}] Deleting unmerged disc folder '{Folder}'", item.ID, folder);
-                _diskProvider.DeleteFolder(folder, true);
+                DeleteFolderGuardedByOwnership(folder, ownedFileSizes, item.ID);
             }
             catch (Exception ex)
             {
@@ -562,6 +635,15 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 trackedLeaves.Add(name);
             foreach (string leaf in item.RemoteDirectoryLeaves())
                 trackedLeaves.Add(leaf);
+
+            // Batch destinations / pattern-derived folders live under their own
+            // names — protect their root-child segment too.
+            foreach (string? sub in new[] { item.ConfirmedSubdirectory, item.DerivedSubdirectory })
+            {
+                string? first = sub?.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+                if (!string.IsNullOrEmpty(first))
+                    trackedLeaves.Add(first);
+            }
         }
 
         EmptyDownloadDirectorySweeper.Prune(root, trackedLeaves, SweepQuietPeriod, now, _logger);
@@ -755,11 +837,71 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         return poisonedFallback;
     }
 
-    private static string SanitizeFolderName(string name)
+    private static readonly TimeSpan CompletedFolderGracePeriod = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan CompletedFolderCheckInterval = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// A Completed item whose files are gone (slskd retention, a shared-folder
+    /// cleanup, manual deletion) would otherwise sit in Lidarr's queue forever
+    /// with nothing to import — fail it so the release is blocklisted and
+    /// re-searched. The grace period rides out slskd's incomplete→downloads
+    /// move and Lidarr's own import-then-remove window; anything already
+    /// imported is left alone.
+    /// </summary>
+    private SlskdStatusResolver.DownloadStatus FailWhenCompletedFilesVanished(
+        SlskdDownloadItem item,
+        SlskdProviderSettings settings,
+        SlskdStatusResolver.DownloadStatus resolved,
+        DateTime utcNow)
     {
-        foreach (char c in Path.GetInvalidFileNameChars())
-            name = name.Replace(c, '_');
-        return name;
+        try
+        {
+            string root = GetRemoteDownloadPath(settings).FullPath.TrimEnd('/', '\\');
+            string folder = item.GetFullFolderPath(new OsPath(root)).FullPath.TrimEnd('/', '\\');
+
+            // Bare-root output means the item never resolved a folder — not judgeable.
+            if (!IsStrictDescendantOfRoot(folder, root))
+                return resolved;
+
+            // Throttle the disk scan off the status-polling hot path; between
+            // scans the cached missing-since state carries the decision.
+            bool scanDue = item.CompletedFolderCheckedAtUtc is not { } lastChecked ||
+                           utcNow - lastChecked >= CompletedFolderCheckInterval;
+            if (scanDue)
+            {
+                item.CompletedFolderCheckedAtUtc = utcNow;
+
+                bool hasAudio = _diskProvider.FolderExists(folder) &&
+                                _diskProvider.GetFiles(folder, recursive: true).Any(IsAudioExtension);
+                if (hasAudio)
+                {
+                    item.CompletedFolderMissingSince = null;
+                    return resolved;
+                }
+
+                item.CompletedFolderMissingSince ??= utcNow;
+            }
+
+            if (item.CompletedFolderMissingSince is not { } missingSince ||
+                utcNow - missingSince < CompletedFolderGracePeriod)
+                return resolved;
+
+            DownloadHistoryEventType? latest = _downloadHistoryService.GetLatestDownloadHistoryItem(item.ID)?.EventType;
+            if (latest is DownloadHistoryEventType.DownloadImported or DownloadHistoryEventType.DownloadImportIncomplete)
+                return resolved;
+
+            _logger.Warn("[{ItemId}] Completed download has no audio left in '{Folder}' — reporting failure so the release is retried", item.ID, folder);
+            return resolved with
+            {
+                Status = DownloadItemStatus.Failed,
+                Message = $"Downloaded files are no longer present in '{folder}'"
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.Debug(ex, "Could not verify completed files for {ItemId}; leaving status as-is", item.ID);
+            return resolved;
+        }
     }
 
     private static bool AllFilesCompleted(SlskdDownloadItem item)
@@ -1238,7 +1380,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }));
     }
 
-    private async Task CleanStaleDirectoriesAsync(string directoryPath, SlskdProviderSettings settings)
+    private async Task CleanStaleDirectoriesAsync(string directoryPath, Dictionary<string, long> ownedFileSizes, SlskdProviderSettings settings)
     {
         try
         {
@@ -1276,7 +1418,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             if (_diskProvider.FolderExists(localPath))
             {
                 _logger.Debug("Removing stale directory: {Path}", localPath);
-                _diskProvider.DeleteFolder(localPath, true);
+                DeleteFolderGuardedByOwnership(localPath, ownedFileSizes, directoryPath);
 
                 string? parent = Path.GetDirectoryName(localPath);
                 if (!string.IsNullOrEmpty(parent) && _diskProvider.FolderExists(parent) && _diskProvider.FolderEmpty(parent))

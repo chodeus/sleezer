@@ -42,6 +42,15 @@ public class SlskdDownloadItem
     public DownloadItemStatus? LastReportedStatus { get; set; }
     public bool DiscFoldersMerged { get; set; }
 
+    /// <summary>
+    /// When a Completed item's resolved folder first turned up with no audio
+    /// in it — grace-period anchor before the item is failed as vanished.
+    /// </summary>
+    public DateTime? CompletedFolderMissingSince { get; set; }
+
+    /// <summary>Last vanished-files disk check — throttles the poll-path scan.</summary>
+    public DateTime? CompletedFolderCheckedAtUtc { get; set; }
+
     /// <summary>Batch id when the batch enqueue endpoint accepted the download.</summary>
     public string? BatchId { get; set; }
 
@@ -150,6 +159,35 @@ public class SlskdDownloadItem
         string leaf = idx >= 0 ? trimmed[(idx + 1)..] : trimmed;
         return leaf is "." or ".." ? "" : leaf;
     }
+
+    /// <summary>
+    /// Local destination folder for the batch enqueue: release metadata when
+    /// available — peer-independent, so generically-named shares from two
+    /// peers ("_Unknown Album") can never collide — else the share-derived
+    /// album folder name.
+    /// </summary>
+    public string PreferredDestinationFolderName()
+    {
+        string? artist = ResolvedAlbum?.Artist?.Value?.Name;
+        string? title = ResolvedAlbum?.Title;
+        string name = !string.IsNullOrWhiteSpace(artist) && !string.IsNullOrWhiteSpace(title)
+            ? $"{artist} - {title}"
+            : LocalAlbumFolderName();
+
+        // Single folder level only, and Windows-superset invalid chars — the
+        // destination is interpreted by slskd, whose host OS may differ.
+        char[] chars = name.ToCharArray();
+        for (int i = 0; i < chars.Length; i++)
+        {
+            if (chars[i] < ' ' || Array.IndexOf(DestinationInvalidChars, chars[i]) >= 0)
+                chars[i] = '_';
+        }
+
+        name = new string(chars).Trim();
+        return name.Length == 0 ? ID : name;
+    }
+
+    private static readonly char[] DestinationInvalidChars = ['"', '*', '/', ':', '<', '>', '?', '\\', '|'];
 
     private void AddOrUpdateDirectory(SlskdDownloadDirectory? directory)
     {

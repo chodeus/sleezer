@@ -210,6 +210,11 @@ public class PreImportTagger : IPreImportTagger
         List<LocalTrack> localTracks = audioFiles.Select(path =>
         {
             ParsedTrackInfo info = SafeReadTags(path);
+
+            // Comma-joined guest credits drag Lidarr's artist distance below
+            // the import cutoff; identification-only, tags on disk untouched.
+            info.ArtistTitle = FeaturedArtistStripper.StripGuestCredits(info.ArtistTitle, artist.Name) ?? info.ArtistTitle;
+
             if (stripFeaturedArtists)
             {
                 // Pre-clean the tag-derived title before Identify so a tag like
@@ -323,7 +328,7 @@ public class PreImportTagger : IPreImportTagger
                     continue;
                 }
 
-                if (TryTagSingleFile(localTrack, track, album, release.AlbumRelease, stripFeaturedArtists))
+                if (TryTagSingleFile(localTrack, track, album, release.AlbumRelease, stripFeaturedArtists, artist.Name))
                 {
                     tagged++;
                     _logger.Trace("Pre-import tag: tagged {File} → '{Title}' (track {TrackNum}, distance {Distance:F3})",
@@ -447,7 +452,7 @@ public class PreImportTagger : IPreImportTagger
                 continue;
             }
 
-            if (TryTagSingleFile(localTracks[localIndex], wantedTrack, album, release, stripFeaturedArtists))
+            if (TryTagSingleFile(localTracks[localIndex], wantedTrack, album, release, stripFeaturedArtists, artist.Name))
                 tagged++;
             else
                 errored++;
@@ -456,7 +461,7 @@ public class PreImportTagger : IPreImportTagger
         return (tagged, errored, skipped);
     }
 
-    private bool TryTagSingleFile(LocalTrack localTrack, Track track, Album album, AlbumRelease? albumRelease, bool stripFeaturedArtists)
+    private bool TryTagSingleFile(LocalTrack localTrack, Track track, Album album, AlbumRelease? albumRelease, bool stripFeaturedArtists, string? artistName)
     {
         try
         {
@@ -477,7 +482,7 @@ public class PreImportTagger : IPreImportTagger
             _audioTagService.WriteTags(transient, newDownload: true, force: true);
 
             if (stripFeaturedArtists)
-                ApplyFeaturedArtistCleanup(transient, track);
+                ApplyFeaturedArtistCleanup(transient, track, artistName);
 
             return true;
         }
@@ -495,7 +500,7 @@ public class PreImportTagger : IPreImportTagger
     /// the clean basename. Best-effort: any failure is logged and swallowed
     /// so the parent tag-write still counts as a success.
     /// </summary>
-    private void ApplyFeaturedArtistCleanup(TrackFile transient, Track track)
+    private void ApplyFeaturedArtistCleanup(TrackFile transient, Track track, string? artistName)
     {
         string path = transient.Path;
         try
@@ -503,8 +508,12 @@ public class PreImportTagger : IPreImportTagger
             using (TagLib.File file = TagLib.File.Create(path))
             {
                 file.Tag.Title = FeaturedArtistStripper.Strip(file.Tag.Title);
-                file.Tag.Performers = file.Tag.Performers.Select(p => FeaturedArtistStripper.Strip(p)).ToArray();
-                file.Tag.AlbumArtists = file.Tag.AlbumArtists.Select(a => FeaturedArtistStripper.Strip(a)).ToArray();
+                file.Tag.Performers = file.Tag.Performers
+                    .Select(p => FeaturedArtistStripper.Strip(FeaturedArtistStripper.StripGuestCredits(p, artistName)))
+                    .ToArray();
+                file.Tag.AlbumArtists = file.Tag.AlbumArtists
+                    .Select(a => FeaturedArtistStripper.Strip(FeaturedArtistStripper.StripGuestCredits(a, artistName)))
+                    .ToArray();
                 file.Save();
             }
         }
