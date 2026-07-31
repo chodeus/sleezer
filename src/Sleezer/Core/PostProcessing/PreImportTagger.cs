@@ -210,6 +210,13 @@ public class PreImportTagger : IPreImportTagger
         List<LocalTrack> localTracks = audioFiles.Select(path =>
         {
             ParsedTrackInfo info = SafeReadTags(path);
+
+            // A comma-joined guest credit ("T & Sugah, Grace Barton") drags
+            // Lidarr's artist distance below the import cutoff on the artist's
+            // own single (live 2026-07-31: 77.9% vs 80%). Identification-only —
+            // tags on disk are untouched here.
+            info.ArtistTitle = FeaturedArtistStripper.StripGuestCredits(info.ArtistTitle, artist.Name) ?? info.ArtistTitle;
+
             if (stripFeaturedArtists)
             {
                 // Pre-clean the tag-derived title before Identify so a tag like
@@ -500,11 +507,16 @@ public class PreImportTagger : IPreImportTagger
         string path = transient.Path;
         try
         {
+            string? artistName = transient.Artist?.Value?.Name;
             using (TagLib.File file = TagLib.File.Create(path))
             {
                 file.Tag.Title = FeaturedArtistStripper.Strip(file.Tag.Title);
-                file.Tag.Performers = file.Tag.Performers.Select(p => FeaturedArtistStripper.Strip(p)).ToArray();
-                file.Tag.AlbumArtists = file.Tag.AlbumArtists.Select(a => FeaturedArtistStripper.Strip(a)).ToArray();
+                file.Tag.Performers = file.Tag.Performers
+                    .Select(p => FeaturedArtistStripper.Strip(FeaturedArtistStripper.StripGuestCredits(p, artistName)))
+                    .ToArray();
+                file.Tag.AlbumArtists = file.Tag.AlbumArtists
+                    .Select(a => FeaturedArtistStripper.Strip(FeaturedArtistStripper.StripGuestCredits(a, artistName)))
+                    .ToArray();
                 file.Save();
             }
         }
