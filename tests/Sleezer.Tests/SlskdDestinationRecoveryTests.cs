@@ -91,6 +91,61 @@ public class SlskdDestinationRecoveryTests
             item.GetFullFolderPath(new NzbDrone.Common.Disk.OsPath("/downloads")).FullPath);
     }
 
+    [Fact]
+    public void A_lone_coincidental_match_never_wins_the_relocation()
+    {
+        (string, int)[] candidates = [("/downloads/Someone Elses Album", 1), ("/downloads/Unrelated", 0)];
+
+        Assert.Null(SlskdPathResolver.SelectOwningFolder(candidates, 12));
+    }
+
+    [Fact]
+    public void The_folder_holding_most_of_the_batch_wins()
+    {
+        (string, int)[] candidates =
+        [
+            ("/downloads/FLAC (24bit-96kHz)", 2),
+            ("/downloads/Pantera - Reinventing the Steel", 10),
+            ("/downloads/Unrelated", 0)
+        ];
+
+        Assert.Equal("/downloads/Pantera - Reinventing the Steel",
+            SlskdPathResolver.SelectOwningFolder(candidates, 12));
+    }
+
+    [Theory]
+    [InlineData(6, 12, "/downloads/Album")]   // exactly half still counts
+    [InlineData(5, 12, null)]                 // one short of half does not
+    [InlineData(1, 1, "/downloads/Album")]    // single-track release
+    [InlineData(0, 0, null)]                  // nothing owned: never relocate
+    public void Relocation_requires_most_of_the_batch(int matches, int owned, string? expected)
+    {
+        Assert.Equal(expected, SlskdPathResolver.SelectOwningFolder([("/downloads/Album", matches)], owned));
+    }
+
+    [Fact]
+    public void An_unmerged_multi_disc_item_is_not_relocatable()
+    {
+        SlskdDownloadItem item = NewItem(
+            @"@@x\media\Pantera\Album\CD 01\01 - Hellbound.flac",
+            @"@@x\media\Pantera\Album\CD 02\01 - Avoid the Light.flac");
+
+        Assert.True(item.IsMultiDirectory);
+        Assert.True(item.AwaitingDiscMerge);
+
+        // slskd pre-merged it via a batch destination, or the merge has run.
+        item.DiscFoldersMerged = true;
+        Assert.False(item.AwaitingDiscMerge);
+    }
+
+    [Fact]
+    public void A_single_directory_item_never_awaits_a_disc_merge()
+    {
+        SlskdDownloadItem item = NewItem(@"@@x\media\Artist\Album\01 - One.flac");
+
+        Assert.False(item.AwaitingDiscMerge);
+    }
+
     [Theory]
     [InlineData("/data/downloads", "/data/downloads/Pantera - Reinventing the Steel", "Pantera - Reinventing the Steel")]
     [InlineData("/data/downloads/", "/data/downloads/Album/CD 1", "Album/CD 1")]

@@ -472,8 +472,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     /// destination lives only in memory, so a restart mid-download leaves
     /// GetFullFolderPath guessing the peer's source-directory name — this
     /// recovers the real folder by basename+size, the same ownership test the
-    /// delete guards use. Best match wins: two peers can share a basename, but
-    /// only the true folder matches most of the batch.
+    /// delete guards use. SelectOwningFolder applies the majority rule.
     /// </summary>
     private string? FindFolderOwningItemFiles(SlskdDownloadItem item, string root)
     {
@@ -481,21 +480,14 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         if (ownedFileSizes.Count == 0 || !_diskProvider.FolderExists(root))
             return null;
 
-        string? best = null;
-        int bestMatches = 0;
+        List<(string Folder, int Matches)> candidates = new();
 
         foreach (string candidate in _diskProvider.GetDirectories(root))
         {
             try
             {
-                int matches = _diskProvider.GetFiles(candidate, recursive: true)
-                    .Count(f => IsAudioExtension(f) && IsConclusivelyOwned(f, ownedFileSizes));
-
-                if (matches > bestMatches)
-                {
-                    best = candidate;
-                    bestMatches = matches;
-                }
+                candidates.Add((candidate, _diskProvider.GetFiles(candidate, recursive: true)
+                    .Count(f => IsAudioExtension(f) && IsConclusivelyOwned(f, ownedFileSizes))));
             }
             catch (Exception ex)
             {
@@ -503,7 +495,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             }
         }
 
-        return best;
+        return SlskdPathResolver.SelectOwningFolder(candidates, ownedFileSizes.Count);
     }
 
     /// <summary>
@@ -935,8 +927,11 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 // Missing folder is far more often a wrong guess than lost data
                 // — relocate before condemning the release. Only until the
                 // failure is reported: the scan walks every root child, and a
-                // genuinely deleted download would repeat it forever.
+                // genuinely deleted download would repeat it forever. Skipped
+                // while discs are unmerged: matching one disc folder would pin
+                // ConfirmedSubdirectory to it and strand the rest.
                 if (!item.CompletedFolderFailureLogged &&
+                    !item.AwaitingDiscMerge &&
                     FindFolderOwningItemFiles(item, root) is { } actualFolder &&
                     SlskdPathResolver.MakeRelativeToDownloads(root, actualFolder) is { Length: > 0 } relative)
                 {

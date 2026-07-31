@@ -62,6 +62,13 @@ public class SlskdDownloadItem
     public string? BatchId { get; set; }
 
     /// <summary>
+    /// Discs still sit in their own local folders, so no single folder holds the
+    /// album — folder identity is ambiguous until TryMergeDiscFolders runs (or
+    /// slskd pre-merged via a batch destination).
+    /// </summary>
+    public bool AwaitingDiscMerge => IsMultiDirectory && !DiscFoldersMerged;
+
+    /// <summary>
     /// Local subfolder (relative to the downloads directory) slskd reported via
     /// a DownloadDirectoryComplete event — ground truth when present.
     /// </summary>
