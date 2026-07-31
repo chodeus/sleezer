@@ -447,9 +447,13 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 return true;
 
             string? searchSignature = search.RemixSignature;
-            if (searchSignature == null && metaRemix)
-                searchSignature = string.Empty;
             string? candidateSignature = candidate.RemixSignature;
+
+            // A Remix secondary type only FORGIVES candidate-side remix text; it
+            // must never conflict with a plain-titled candidate (the album's own
+            // verbatim folder name).
+            if (searchSignature == null && metaRemix)
+                return false;
 
             if (searchSignature == null && candidateSignature == null)
                 return false;
