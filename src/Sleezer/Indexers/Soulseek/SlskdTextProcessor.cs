@@ -451,9 +451,10 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
             // A Remix secondary type only FORGIVES candidate-side remix-family
             // text; it must never conflict with a plain-titled candidate, and
-            // it must not admit non-remix variants (Instrumental, Radio Edit).
+            // it must not admit non-remix variants (Instrumental, Radio Edit) —
+            // not even mixed with a remix term ("Remix Radio Edit").
             if (searchSignature == null && metaRemix)
-                return candidateSignature != null && !HasGenuineRemixQualifier(candidateName);
+                return candidateSignature != null && !HasOnlyRemixFamilyQualifiers(candidateName);
 
             if (searchSignature == null && candidateSignature == null)
                 return false;
@@ -470,20 +471,25 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
         // Qualifier zones mirror ExtractRemixSignature: bracketed segments, or
         // text after the first " - " (keywords in an artist prefix don't count).
-        private static bool HasGenuineRemixQualifier(string? title)
+        private static bool HasOnlyRemixFamilyQualifiers(string? title)
         {
             if (string.IsNullOrWhiteSpace(title))
                 return false;
 
+            List<string> zones = new();
             foreach (Match bracket in BracketedContentRegex().Matches(title))
-            {
-                if (GenuineRemixKeywordRegex().IsMatch(bracket.Value[1..^1]))
-                    return true;
-            }
+                zones.Add(bracket.Value[1..^1]);
 
             int firstDash = title.IndexOf(" - ", StringComparison.Ordinal);
-            string zone = firstDash >= 0 ? title[(firstDash + 3)..] : title;
-            return GenuineRemixKeywordRegex().IsMatch(BracketedContentRegex().Replace(zone, " "));
+            zones.Add(BracketedContentRegex().Replace(firstDash >= 0 ? title[(firstDash + 3)..] : title, " "));
+
+            string joined = string.Join(" ", zones);
+            if (!GenuineRemixKeywordRegex().IsMatch(joined))
+                return false;
+
+            // Any variant keyword left after removing remix-family terms is a
+            // mixed qualifier ("Remix Radio Edit") — still a different recording.
+            return !RemixKeywordRegex().IsMatch(GenuineRemixKeywordRegex().Replace(joined, " "));
         }
 
         private static bool TrailingWordRegex(string word, string loweredTitle) =>

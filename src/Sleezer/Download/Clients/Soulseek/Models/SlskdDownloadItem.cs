@@ -174,15 +174,20 @@ public class SlskdDownloadItem
             ? $"{artist} - {title}"
             : LocalAlbumFolderName();
 
-        // Single folder level only: slskd treats slashes in a destination as
-        // nested directories.
-        name = name.Replace('/', '_').Replace('\\', '_');
-        foreach (char c in Path.GetInvalidFileNameChars())
-            name = name.Replace(c, '_');
+        // Single folder level only, and Windows-superset invalid chars — the
+        // destination is interpreted by slskd, whose host OS may differ.
+        char[] chars = name.ToCharArray();
+        for (int i = 0; i < chars.Length; i++)
+        {
+            if (chars[i] < ' ' || Array.IndexOf(DestinationInvalidChars, chars[i]) >= 0)
+                chars[i] = '_';
+        }
 
-        name = name.Trim();
+        name = new string(chars).Trim();
         return name.Length == 0 ? ID : name;
     }
+
+    private static readonly char[] DestinationInvalidChars = ['"', '*', '/', ':', '<', '>', '?', '\\', '|'];
 
     private void AddOrUpdateDirectory(SlskdDownloadDirectory? directory)
     {

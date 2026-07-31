@@ -227,7 +227,7 @@ public static partial class QueryBuilder
         return number;
     }
 
-    [GeneratedRegex(@"\([^)]*\)|\[[^\]]*\]", RegexOptions.Compiled)]
+    [GeneratedRegex(@"\([^)]*\)|\[[^\]]*\]|\{[^}]*\}", RegexOptions.Compiled)]
     private static partial Regex ParenthesesRegex();
     [GeneratedRegex(@"(?<![\p{L}\p{N}])(?:remix(?:es|ed)?|rmx|mix(?:es)?|edit(?:s|ed)?|versions?|extended|instrumentals?|remaster(?:ed)?|deluxe|edition|vip|bootleg)(?![\p{L}\p{N}])", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
     private static partial Regex VariantWordRegex();

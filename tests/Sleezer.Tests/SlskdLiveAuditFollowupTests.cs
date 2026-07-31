@@ -63,6 +63,8 @@ public class RemixSignatureTests
     [InlineData("Some Album", "Some Album (Instrumental)", new[] { "Remix" }, true)]                            // Remix type must not admit other variants
     [InlineData("Some Album", "Some Album (Radio Edit)", new[] { "Remix" }, true)]
     [InlineData("Some Album", "Some Album (Sped Up)", new[] { "Remix" }, true)]
+    [InlineData("Some Album", "Some Album (Remix Radio Edit)", new[] { "Remix" }, true)]                        // mixed qualifiers stay conflicting
+    [InlineData("Some Album", "Some Album (VIP Instrumental)", new[] { "Remix" }, true)]
     [InlineData("Some Album", "Some Album (Remixes)", new string[0], true)]                                     // no metadata: remix candidate stays refused
     public void RemixSignaturesConflict_uses_secondary_types_asymmetrically(string searchAlbum, string folder, string[] types, bool expected)
     {

@@ -46,6 +46,7 @@ public class QueryBuilderTests
     [Theory]
     [InlineData("Superstylin (remixes)", "Superstylin")]
     [InlineData("OK Computer (Deluxe Edition)", "OK Computer")]
+    [InlineData("Canda! {The Darkside Returns}", "Canda!")]   // curly-braced metadata strips too
     [InlineData("Lateralus", null)]                           // nothing to strip
     public void StripEditionSuffixes_removes_bracketed_tails(string input, string? expected)
     {
@@ -57,6 +58,7 @@ public class QueryBuilderTests
     // "Wait Agents remix", a guaranteed zero on Soulseek.
     [Theory]
     [InlineData("Wait So Long (Agents of Time remix)", "Wait Long")]         // title words only, credit dropped
+    [InlineData("Wait So Long {Agents of Time remix}", "Wait Long")]         // curly-braced credit dropped too
     [InlineData("Happiness Is So Sad (extended mix)", "Happiness Sad")]      // variant words never selected
     [InlineData("Finally (extended mix)", null)]                             // too little left → skip the tier
     [InlineData("Everything Everything Everything (remixes)", null)]         // equals the stripped base EditionStripped already searches
@@ -213,6 +215,14 @@ public class SlskdDestinationFolderTests
         SlskdDownloadItem item = NewItem(@"@@x\a\b\01.flac");
         item.ResolvedAlbum = Album("AC/DC", "Fear / Loathing");
         Assert.Equal("AC_DC - Fear _ Loathing", item.PreferredDestinationFolderName());
+    }
+
+    [Fact]
+    public void Destination_sanitizes_windows_invalid_chars_even_on_linux()
+    {
+        SlskdDownloadItem item = NewItem(@"@@x\a\b\01.flac");
+        item.ResolvedAlbum = Album("Front: 242", "Wait * See");
+        Assert.Equal("Front_ 242 - Wait _ See", item.PreferredDestinationFolderName());
     }
 
     [Fact]
