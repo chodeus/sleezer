@@ -51,8 +51,22 @@ public class SlskdDownloadItem
     /// <summary>Last vanished-files disk check — throttles the poll-path scan.</summary>
     public DateTime? CompletedFolderCheckedAtUtc { get; set; }
 
+    /// <summary>
+    /// Vanished-files failure already reported. The status is re-derived every
+    /// poll for as long as the item lives in slskd's transfer list, so without
+    /// this the warning repeats forever on an already-handled failure.
+    /// </summary>
+    public bool CompletedFolderFailureLogged { get; set; }
+
     /// <summary>Batch id when the batch enqueue endpoint accepted the download.</summary>
     public string? BatchId { get; set; }
+
+    /// <summary>
+    /// Discs still sit in their own local folders, so no single folder holds the
+    /// album — folder identity is ambiguous until TryMergeDiscFolders runs (or
+    /// slskd pre-merged via a batch destination).
+    /// </summary>
+    public bool AwaitingDiscMerge => IsMultiDirectory && !DiscFoldersMerged;
 
     /// <summary>
     /// Local subfolder (relative to the downloads directory) slskd reported via

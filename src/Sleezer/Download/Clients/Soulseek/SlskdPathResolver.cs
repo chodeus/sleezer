@@ -10,6 +10,32 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
 /// </summary>
 public static partial class SlskdPathResolver
 {
+    /// <summary>
+    /// Picks the folder holding a download from candidates scored by how many
+    /// of the item's files they conclusively own. Requires a strict majority —
+    /// a lone coincidental basename+size hit, or a 50/50 split with no unique
+    /// owner, must never redirect an item onto someone else's content.
+    /// </summary>
+    public static string? SelectOwningFolder(IEnumerable<(string Folder, int Matches)> candidates, int ownedFileCount)
+    {
+        if (ownedFileCount <= 0)
+            return null;
+
+        string? best = null;
+        int bestMatches = 0;
+
+        foreach ((string folder, int matches) in candidates)
+        {
+            if (matches > bestMatches)
+            {
+                best = folder;
+                bestMatches = matches;
+            }
+        }
+
+        return bestMatches * 2 > ownedFileCount ? best : null;
+    }
+
     public static string? ResolveSubdirectory(
         SlskdDestinationConfig config, string username, string remoteFilename, string? batchId = null, string? externalId = null)
     {
