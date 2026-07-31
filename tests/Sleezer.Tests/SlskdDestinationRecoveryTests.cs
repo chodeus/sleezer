@@ -114,8 +114,9 @@ public class SlskdDestinationRecoveryTests
     }
 
     [Theory]
-    [InlineData(6, 12, "/downloads/Album")]   // exactly half still counts
-    [InlineData(5, 12, null)]                 // one short of half does not
+    [InlineData(7, 12, "/downloads/Album")]   // a strict majority relocates
+    [InlineData(6, 12, null)]                 // a 50/50 split has no unique owner
+    [InlineData(5, 12, null)]
     [InlineData(1, 1, "/downloads/Album")]    // single-track release
     [InlineData(0, 0, null)]                  // nothing owned: never relocate
     public void Relocation_requires_most_of_the_batch(int matches, int owned, string? expected)
@@ -123,8 +124,10 @@ public class SlskdDestinationRecoveryTests
         Assert.Equal(expected, SlskdPathResolver.SelectOwningFolder([("/downloads/Album", matches)], owned));
     }
 
+    // Covers the AwaitingDiscMerge property only — the manager guard that reads
+    // it lives behind IDiskProvider, which this project has no mocking for.
     [Fact]
-    public void An_unmerged_multi_disc_item_is_not_relocatable()
+    public void A_multi_disc_item_reports_awaiting_disc_merge_until_merged()
     {
         SlskdDownloadItem item = NewItem(
             @"@@x\media\Pantera\Album\CD 01\01 - Hellbound.flac",

@@ -12,9 +12,9 @@ public static partial class SlskdPathResolver
 {
     /// <summary>
     /// Picks the folder holding a download from candidates scored by how many
-    /// of the item's files they conclusively own. Requires most of the batch:
-    /// a lone coincidental basename+size hit in an unrelated folder must never
-    /// redirect an item onto someone else's content.
+    /// of the item's files they conclusively own. Requires a strict majority —
+    /// a lone coincidental basename+size hit, or a 50/50 split with no unique
+    /// owner, must never redirect an item onto someone else's content.
     /// </summary>
     public static string? SelectOwningFolder(IEnumerable<(string Folder, int Matches)> candidates, int ownedFileCount)
     {
@@ -33,7 +33,7 @@ public static partial class SlskdPathResolver
             }
         }
 
-        return bestMatches * 2 >= ownedFileCount ? best : null;
+        return bestMatches * 2 > ownedFileCount ? best : null;
     }
 
     public static string? ResolveSubdirectory(
