@@ -49,7 +49,7 @@ jobs:
       package_name: ${{ steps.package.outputs.package_name }}
     steps:
       - name: Checkout with submodules
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           submodules: 'recursive'
           fetch-depth: 0
@@ -470,7 +470,7 @@ jobs:
           EOL
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
         with:
           tag_name: ${{ needs.build.outputs.tag_ref }}
           name: "🚀 Release ${{ needs.build.outputs.package_version }}"
