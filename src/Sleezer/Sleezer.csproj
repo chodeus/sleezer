@@ -36,7 +36,7 @@
 		<PackageReference Include="Xabe.FFmpeg" Version="6.0.2" />
 
 		<!-- From Deezer plugin -->
-		<PackageReference Include="AngleSharp" Version="1.6.0" />
+		<PackageReference Include="AngleSharp" Version="1.7.0" />
 		<PackageReference Include="AngleSharp.XPath" Version="2.0.6" />
 		<PackageReference Include="DeezNET" Version="1.2.2" />
 		<PackageReference Include="SkiaSharp" Version="4.151.0" />
