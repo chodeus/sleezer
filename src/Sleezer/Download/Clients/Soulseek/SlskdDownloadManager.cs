@@ -944,11 +944,8 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 utcNow - missingSince < CompletedFolderGracePeriod)
                 return resolved;
 
-            // Anything Lidarr already resolved — imported, pending-incomplete,
-            // failed, ignored — must not be re-failed: a corruption-failed item
-            // rehydrated from slskd's 24h transfer retention otherwise re-fires
-            // this failure after every restart (live 2026-08-06, and the folder
-            // guess can even name another album's folder).
+            // Poisoned = Lidarr already resolved it (incl. pending ImportIncomplete
+            // — spared here since v1.11.4); re-failing would only re-fire ghosts.
             DownloadHistoryEventType? latest = _downloadHistoryService.GetLatestDownloadHistoryItem(item.ID)?.EventType;
             if (SlskdDownloadItem.IsPoisonedHistoryEvent(latest))
                 return resolved;
@@ -1101,11 +1098,8 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         if (!_postProcessed.TryAdd(item.ID, 0))
             return;
 
-        // A rehydrated ghost of a finished download (slskd retains succeeded
-        // transfers ~24h; restart re-attaches them for queue visibility) has
-        // nothing left to scan or tag — its folder was imported or cleaned up.
-        // Running anyway spams "Folder missing after DownloadDirectoryComplete"
-        // on every event replay after a restart.
+        // Terminal rehydrated ghosts (slskd retains transfers ~24h) have nothing
+        // left to scan or tag — their folders are legitimately gone.
         DownloadHistoryEventType? latest = _downloadHistoryService.GetLatestDownloadHistoryItem(item.ID)?.EventType;
         if (SlskdDownloadItem.IsTerminalDownloadEvent(latest))
         {
@@ -1202,10 +1196,8 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                         verifyAllWithFingerprint: settings.VerifyImportsWithFingerprint,
                         fingerprintTitleFallback: true);
 
-                    // Tag writes change size (and feat-strip renames), breaking
-                    // the basename+size ownership test — re-learn each tagged
-                    // file's identity or the delete guard retains it and the
-                    // leftover poisons every retry sharing the pinned folder.
+                    // Refresh ownership identities after tagging — see
+                    // SlskdDownloadItem._taggedFileSizes.
                     RecordTaggedFileIdentities(item, tagResult.TaggedFiles);
                 }
             }

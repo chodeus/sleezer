@@ -127,11 +127,8 @@ public class PreImportTagger : IPreImportTagger
     // TagWriteFailed      — identification matched, but the tag-write step itself threw
     //                       (TagLib/IAudioTagService failure). Distinct from corruption:
     //                       corruption is detected later, in the post-process scanner.
-    // TaggedFiles         — per-file outcome of every successful tag write. A tag
-    //                       write changes the on-disk size, and feat-strip may
-    //                       rename — callers tracking files by basename+size
-    //                       (the slskd ownership guard) must re-learn both or the
-    //                       tagged file becomes unclaimable and is retained forever.
+    // TaggedFiles         — original + final path of every successful tag write, for
+    //                       callers tracking files by basename+size (ownership guard).
     public record TaggedFile(string OriginalPath, string FinalPath);
     public record TaggingResult(int Tagged, int SkippedWeakMatch, int TagWriteFailed, IReadOnlyList<TaggedFile>? TaggedFiles = null);
 

@@ -159,13 +159,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                             plucked++;
                         if (!albumData.MatchedSearchCriteria)
                         {
-                            // MatchedSearchCriteria=false only steered tier-stop
-                            // counting; the release still reached Lidarr's decision
-                            // engine and could WIN once quality/date specs killed
-                            // the matched sources (live 2026-08-06: a rejected
-                            // partial single grabbed twice). Automatic searches
-                            // must not grab a source the parser itself rejected;
-                            // interactive keeps everything for the operator.
+                            // Unmatched releases: kept for interactive searches,
+                            // dropped for automatic ones (else they can win the grab).
                             if (!searchTextData.Interactive)
                             {
                                 droppedUnmatched++;

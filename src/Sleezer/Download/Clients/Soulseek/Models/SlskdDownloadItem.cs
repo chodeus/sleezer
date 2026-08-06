@@ -82,11 +82,8 @@ public class SlskdDownloadItem
 
     public IReadOnlyDictionary<string, SlskdFileState> FileStates => _previousFileStates;
 
-    // Post-tag identities (current local basename → current size). A tag write
-    // grows the file (padding/artwork) and feat-strip may rename it, so the
-    // enqueued basename+size no longer matches disk and the ownership guard
-    // would retain the file forever (live 2026-08-06: the leftover then
-    // poisoned every retry of the same album via its pinned destination).
+    // Post-tag identities (local basename → size): tag writes change size and
+    // feat-strip renames, so the enqueued identity alone can't claim the file.
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, long> _taggedFileSizes = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Records a file's post-tagging identity so ownership checks can still claim it.</summary>
@@ -312,11 +309,8 @@ public class SlskdDownloadItem
         or DownloadHistoryEventType.DownloadImportIncomplete;
 
     /// <summary>
-    /// Hard-terminal download states: Lidarr fully resolved this download and
-    /// will never act on it again. Rehydrated items in these states (slskd
-    /// keeps succeeded transfers ~24h) must not post-process or re-fail —
-    /// their folders are legitimately gone. ImportIncomplete is NOT terminal:
-    /// those stay pending in the queue.
+    /// Hard-terminal states — Lidarr will never act on the download again.
+    /// ImportIncomplete is deliberately NOT terminal (stays pending in the queue).
     /// </summary>
     public static bool IsTerminalDownloadEvent(DownloadHistoryEventType? eventType) => eventType
         is DownloadHistoryEventType.DownloadFailed
