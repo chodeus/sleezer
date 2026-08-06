@@ -330,7 +330,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             return;
 
         string? directory = item.SlskdDownloadDirectory?.Directory;
-        Dictionary<string, long> ownedFileSizes = OwnedFileSizes(item);
+        Dictionary<string, long> ownedFileSizes = item.BuildOwnedFileSizes();
 
         // Run synchronously so Lidarr sees failures in its own log rather than
         // silently fire-and-forgetting the work behind its back.
@@ -400,14 +400,6 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }
     }
 
-    /// <summary>Expected size per local basename of the item's enqueued files.</summary>
-    private static Dictionary<string, long> OwnedFileSizes(SlskdDownloadItem item) =>
-        item.FileData
-            .Where(f => !string.IsNullOrEmpty(f.Filename))
-            .GroupBy(f => Path.GetFileName(f.Filename!.Replace('\\', '/')), StringComparer.OrdinalIgnoreCase)
-            .Where(g => !string.IsNullOrEmpty(g.Key))
-            .ToDictionary(g => g.Key, g => g.First().Size, StringComparer.OrdinalIgnoreCase);
-
     /// <summary>
     /// Deletes the folder only when every audio file in it is conclusively this
     /// item's (basename AND size match — a same-named file another download
@@ -476,7 +468,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     /// </summary>
     private string? FindFolderOwningItemFiles(SlskdDownloadItem item, string root)
     {
-        Dictionary<string, long> ownedFileSizes = OwnedFileSizes(item);
+        Dictionary<string, long> ownedFileSizes = item.BuildOwnedFileSizes();
         if (ownedFileSizes.Count == 0 || !_diskProvider.FolderExists(root))
             return null;
 
@@ -508,7 +500,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             return;
 
         string localRoot = GetRemoteDownloadPath(settings).FullPath.TrimEnd('/', '\\');
-        Dictionary<string, long> ownedFileSizes = OwnedFileSizes(item);
+        Dictionary<string, long> ownedFileSizes = item.BuildOwnedFileSizes();
 
         foreach (string leaf in item.RemoteDirectoryLeaves())
         {
@@ -952,8 +944,13 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 utcNow - missingSince < CompletedFolderGracePeriod)
                 return resolved;
 
+            // Anything Lidarr already resolved — imported, pending-incomplete,
+            // failed, ignored — must not be re-failed: a corruption-failed item
+            // rehydrated from slskd's 24h transfer retention otherwise re-fires
+            // this failure after every restart (live 2026-08-06, and the folder
+            // guess can even name another album's folder).
             DownloadHistoryEventType? latest = _downloadHistoryService.GetLatestDownloadHistoryItem(item.ID)?.EventType;
-            if (latest is DownloadHistoryEventType.DownloadImported or DownloadHistoryEventType.DownloadImportIncomplete)
+            if (SlskdDownloadItem.IsPoisonedHistoryEvent(latest))
                 return resolved;
 
             if (!item.CompletedFolderFailureLogged)
@@ -1104,6 +1101,18 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         if (!_postProcessed.TryAdd(item.ID, 0))
             return;
 
+        // A rehydrated ghost of a finished download (slskd retains succeeded
+        // transfers ~24h; restart re-attaches them for queue visibility) has
+        // nothing left to scan or tag — its folder was imported or cleaned up.
+        // Running anyway spams "Folder missing after DownloadDirectoryComplete"
+        // on every event replay after a restart.
+        DownloadHistoryEventType? latest = _downloadHistoryService.GetLatestDownloadHistoryItem(item.ID)?.EventType;
+        if (SlskdDownloadItem.IsTerminalDownloadEvent(latest))
+        {
+            _logger.Debug("[post-process] Skipping {ItemId}: download history is terminal ({Event})", item.ID, latest);
+            return;
+        }
+
         FFmpegSettings? sharedSettings = GetSharedPostProcessingSettings();
         bool scanEnabled = sharedSettings?.CorruptionScanClients?.Contains((int)PostProcessClient.Slskd) ?? false;
         bool tagEnabled = sharedSettings?.PreImportTaggingClients?.Contains((int)PostProcessClient.Slskd) ?? false;
@@ -1181,7 +1190,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                     // distance — forcing the monitored release here was the
                     // cause of "missing tracks" import failures when the
                     // download is a different edition than the monitored one.
-                    await _preImportTagger.TagCompletedDownloadAsync(
+                    PreImportTagger.TaggingResult tagResult = await _preImportTagger.TagCompletedDownloadAsync(
                         album,
                         artist,
                         albumRelease: null,
@@ -1192,6 +1201,12 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                         cts.Token,
                         verifyAllWithFingerprint: settings.VerifyImportsWithFingerprint,
                         fingerprintTitleFallback: true);
+
+                    // Tag writes change size (and feat-strip renames), breaking
+                    // the basename+size ownership test — re-learn each tagged
+                    // file's identity or the delete guard retains it and the
+                    // leftover poisons every retry sharing the pinned folder.
+                    RecordTaggedFileIdentities(item, tagResult.TaggedFiles);
                 }
             }
             catch (OperationCanceledException)
@@ -1205,6 +1220,25 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         });
 
         item.PostProcessTasks.Add(task);
+    }
+
+    private void RecordTaggedFileIdentities(SlskdDownloadItem item, IReadOnlyList<PreImportTagger.TaggedFile>? taggedFiles)
+    {
+        if (taggedFiles == null)
+            return;
+
+        foreach (PreImportTagger.TaggedFile tagged in taggedFiles)
+        {
+            try
+            {
+                item.RecordTaggedFile(Path.GetFileName(tagged.FinalPath), _diskProvider.GetFileSize(tagged.FinalPath));
+            }
+            catch (Exception ex)
+            {
+                // Unrecorded = the old fail-closed behavior (file retained).
+                _logger.Debug(ex, "[post-process] Could not record tagged identity for {Path}", tagged.FinalPath);
+            }
+        }
     }
 
     /// <summary>

@@ -82,6 +82,38 @@ public class SlskdDownloadItem
 
     public IReadOnlyDictionary<string, SlskdFileState> FileStates => _previousFileStates;
 
+    // Post-tag identities (current local basename → current size). A tag write
+    // grows the file (padding/artwork) and feat-strip may rename it, so the
+    // enqueued basename+size no longer matches disk and the ownership guard
+    // would retain the file forever (live 2026-08-06: the leftover then
+    // poisoned every retry of the same album via its pinned destination).
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, long> _taggedFileSizes = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Records a file's post-tagging identity so ownership checks can still claim it.</summary>
+    public void RecordTaggedFile(string basename, long size)
+    {
+        if (!string.IsNullOrEmpty(basename))
+            _taggedFileSizes[basename] = size;
+    }
+
+    /// <summary>
+    /// Expected size per local basename of this item's files: the enqueued
+    /// identities plus any post-tagging identities recorded on top.
+    /// </summary>
+    public Dictionary<string, long> BuildOwnedFileSizes()
+    {
+        Dictionary<string, long> owned = FileData
+            .Where(f => !string.IsNullOrEmpty(f.Filename))
+            .GroupBy(f => Path.GetFileName(f.Filename!.Replace('\\', '/')), StringComparer.OrdinalIgnoreCase)
+            .Where(g => !string.IsNullOrEmpty(g.Key))
+            .ToDictionary(g => g.Key, g => g.First().Size, StringComparer.OrdinalIgnoreCase);
+
+        foreach (KeyValuePair<string, long> tagged in _taggedFileSizes)
+            owned[tagged.Key] = tagged.Value;
+
+        return owned;
+    }
+
     public SlskdDownloadDirectory? SlskdDownloadDirectory
     {
         get => BuildMergedDirectory();
@@ -278,6 +310,18 @@ public class SlskdDownloadItem
         or DownloadHistoryEventType.DownloadIgnored
         or DownloadHistoryEventType.DownloadImported
         or DownloadHistoryEventType.DownloadImportIncomplete;
+
+    /// <summary>
+    /// Hard-terminal download states: Lidarr fully resolved this download and
+    /// will never act on it again. Rehydrated items in these states (slskd
+    /// keeps succeeded transfers ~24h) must not post-process or re-fail —
+    /// their folders are legitimately gone. ImportIncomplete is NOT terminal:
+    /// those stay pending in the queue.
+    /// </summary>
+    public static bool IsTerminalDownloadEvent(DownloadHistoryEventType? eventType) => eventType
+        is DownloadHistoryEventType.DownloadFailed
+        or DownloadHistoryEventType.DownloadIgnored
+        or DownloadHistoryEventType.DownloadImported;
 
     /// <summary>
     /// How long a failed release sits out automatic searches. Escalates with

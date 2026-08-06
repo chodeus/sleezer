@@ -127,7 +127,13 @@ public class PreImportTagger : IPreImportTagger
     // TagWriteFailed      — identification matched, but the tag-write step itself threw
     //                       (TagLib/IAudioTagService failure). Distinct from corruption:
     //                       corruption is detected later, in the post-process scanner.
-    public record TaggingResult(int Tagged, int SkippedWeakMatch, int TagWriteFailed);
+    // TaggedFiles         — per-file outcome of every successful tag write. A tag
+    //                       write changes the on-disk size, and feat-strip may
+    //                       rename — callers tracking files by basename+size
+    //                       (the slskd ownership guard) must re-learn both or the
+    //                       tagged file becomes unclaimable and is retained forever.
+    public record TaggedFile(string OriginalPath, string FinalPath);
+    public record TaggingResult(int Tagged, int SkippedWeakMatch, int TagWriteFailed, IReadOnlyList<TaggedFile>? TaggedFiles = null);
 
     public async Task<TaggingResult> TagCompletedDownloadAsync(
         Album album,
@@ -288,6 +294,7 @@ public class PreImportTagger : IPreImportTagger
         int tagged = 0;
         int skipped = 0;
         int errored = 0;
+        List<TaggedFile> taggedFiles = [];
 
         foreach (LocalAlbumRelease release in releases)
         {
@@ -328,9 +335,10 @@ public class PreImportTagger : IPreImportTagger
                     continue;
                 }
 
-                if (TryTagSingleFile(localTrack, track, album, release.AlbumRelease, stripFeaturedArtists, artist.Name))
+                if (TryTagSingleFile(localTrack, track, album, release.AlbumRelease, stripFeaturedArtists, artist.Name) is { } finalPath)
                 {
                     tagged++;
+                    taggedFiles.Add(new TaggedFile(localTrack.Path, finalPath));
                     _logger.Trace("Pre-import tag: tagged {File} → '{Title}' (track {TrackNum}, distance {Distance:F3})",
                         Path.GetFileName(localTrack.Path), track.Title, track.AbsoluteTrackNumber, trackDistance);
                 }
@@ -346,7 +354,7 @@ public class PreImportTagger : IPreImportTagger
         int titleTagged = 0;
         if (tagged == 0 && IsTitleFallbackEligible(album))
         {
-            (titleTagged, int titleErrored, int titleSkipped) = await TryTitleDrivenTaggingAsync(localTracks, album, artist, albumRelease, stripFeaturedArtists, fingerprintTitleFallback, knownRecordings, sourceId, ct);
+            (titleTagged, int titleErrored, int titleSkipped) = await TryTitleDrivenTaggingAsync(localTracks, album, artist, albumRelease, stripFeaturedArtists, fingerprintTitleFallback, knownRecordings, sourceId, taggedFiles, ct);
             tagged += titleTagged;
             errored += titleErrored;
             skipped += titleSkipped;
@@ -354,7 +362,7 @@ public class PreImportTagger : IPreImportTagger
 
         _logger.Info("Pre-import tag: {SourceId} tagged={Tagged} (title_fallback={TitleTagged}) skipped_weak_match={Skipped} tag_write_failed={TagWriteFailed}",
             sourceId, tagged, titleTagged, skipped, errored);
-        return new TaggingResult(tagged, skipped, errored);
+        return new TaggingResult(tagged, skipped, errored, taggedFiles);
     }
 
     private static bool IsTitleFallbackEligible(Album album)
@@ -379,6 +387,7 @@ public class PreImportTagger : IPreImportTagger
         bool fingerprintVerify,
         Dictionary<string, string>? knownRecordings,
         string sourceId,
+        List<TaggedFile> taggedFiles,
         CancellationToken ct)
     {
         AlbumRelease? release = albumRelease
@@ -452,8 +461,11 @@ public class PreImportTagger : IPreImportTagger
                 continue;
             }
 
-            if (TryTagSingleFile(localTracks[localIndex], wantedTrack, album, release, stripFeaturedArtists, artist.Name))
+            if (TryTagSingleFile(localTracks[localIndex], wantedTrack, album, release, stripFeaturedArtists, artist.Name) is { } finalPath)
+            {
                 tagged++;
+                taggedFiles.Add(new TaggedFile(localTracks[localIndex].Path, finalPath));
+            }
             else
                 errored++;
         }
@@ -461,7 +473,9 @@ public class PreImportTagger : IPreImportTagger
         return (tagged, errored, skipped);
     }
 
-    private bool TryTagSingleFile(LocalTrack localTrack, Track track, Album album, AlbumRelease? albumRelease, bool stripFeaturedArtists, string? artistName)
+    /// <summary>Tags one file. Returns its final on-disk path (feat-strip may
+    /// rename), or null when the tag write failed.</summary>
+    private string? TryTagSingleFile(LocalTrack localTrack, Track track, Album album, AlbumRelease? albumRelease, bool stripFeaturedArtists, string? artistName)
     {
         try
         {
@@ -484,12 +498,12 @@ public class PreImportTagger : IPreImportTagger
             if (stripFeaturedArtists)
                 ApplyFeaturedArtistCleanup(transient, track, artistName);
 
-            return true;
+            return transient.Path;
         }
         catch (Exception ex)
         {
             _logger.Warn(ex, "Pre-import tag: write failed for {Path}", localTrack.Path);
-            return false;
+            return null;
         }
     }
 
