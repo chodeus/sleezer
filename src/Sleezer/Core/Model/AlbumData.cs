@@ -81,7 +81,15 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
             release.Album = AlbumName;
             release.DownloadUrl = AlbumId;
             release.InfoUrl = InfoUrl;
-            release.PublishDate = ReleaseDateTime == DateTime.MinValue ? DateTime.UtcNow : ReleaseDateTime;
+            // PublishDate is when the REPORT surfaced, not when the album was
+            // released. A year/month-precision date is synthesized (Jan-1 /
+            // day-1), and Lidarr's EarlyReleaseSpecification permanently
+            // rejects any report "published" before the album's release date —
+            // killing every well-named "(2017)" folder for a mid-2017 album.
+            // Only a true day-precision date carries publish semantics.
+            release.PublishDate = ReleaseDatePrecision == "day" && ReleaseDateTime != DateTime.MinValue
+                ? ReleaseDateTime
+                : DateTime.UtcNow;
             release.DownloadProtocol = DownloadProtocol;
             release.Title = ConstructTitle();
             release.Codec = Codec.ToString();
