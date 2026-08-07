@@ -84,6 +84,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 int droppedIgnored = 0;
                 int droppedRateLimited = 0;
                 int droppedRecentlyFailed = 0;
+                int droppedUnmatched = 0;
                 int plucked = 0;
                 int unmatched = 0;
 
@@ -157,7 +158,18 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                         if (downloadFiles.Count > 0 && downloadFiles.Count < groupAudioCount)
                             plucked++;
                         if (!albumData.MatchedSearchCriteria)
+                        {
+                            // Unmatched releases: kept for interactive searches,
+                            // dropped for automatic ones (else they can win the grab).
+                            if (!searchTextData.Interactive)
+                            {
+                                droppedUnmatched++;
+                                _logger.Trace("Filtered (unmatched, automatic search): {Directory}", directoryGroup.Key);
+                                continue;
+                            }
+
                             unmatched++;
+                        }
 
                         // Skip recently-failed sources (Lidarr's blocklist can't — no
                         // protocol on its Soulseek rows). Hash the ACTUAL download set
@@ -178,8 +190,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                     }
                 }
 
-                _logger.Info("Slskd parse: {Total} response(s), {Albums} album(s) emitted ({Plucked} narrowed to matched track(s), {Unmatched} unmatched), dropped {Ignored} ignored-user / {RateLimited} rate-limited / {RecentlyFailed} recently-failed",
-                    totalResponses, albumDatas.Count, plucked, unmatched, droppedIgnored, droppedRateLimited, droppedRecentlyFailed);
+                _logger.Info("Slskd parse: {Total} response(s), {Albums} album(s) emitted ({Plucked} narrowed to matched track(s), {Unmatched} unmatched), dropped {Ignored} ignored-user / {RateLimited} rate-limited / {RecentlyFailed} recently-failed / {UnmatchedDropped} unmatched",
+                    totalResponses, albumDatas.Count, plucked, unmatched, droppedIgnored, droppedRateLimited, droppedRecentlyFailed, droppedUnmatched);
 
                 delayRemoval = albumDatas.Count != 0 && searchTextData.Interactive;
             }

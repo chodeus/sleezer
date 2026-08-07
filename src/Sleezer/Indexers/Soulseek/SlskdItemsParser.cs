@@ -256,6 +256,9 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 MatchedSearchCriteria = matchedSearchCriteria,
                 SourceTag = DetectSourceTag(folderData.Path),
                 ReleaseDate = finalYear,
+                // Folder years are year-precision only — never a publish date
+                // (see AlbumData.FillReleaseInfo). Keeps the "(YYYY)" title tag.
+                ReleaseDatePrecision = "year",
                 ReleaseDateTime = string.IsNullOrEmpty(finalYear) || !int.TryParse(finalYear, out int yearInt)
                     ? DateTime.MinValue
                     : new DateTime(yearInt, 1, 1),

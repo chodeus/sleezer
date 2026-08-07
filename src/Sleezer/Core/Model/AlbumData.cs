@@ -81,7 +81,11 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
             release.Album = AlbumName;
             release.DownloadUrl = AlbumId;
             release.InfoUrl = InfoUrl;
-            release.PublishDate = ReleaseDateTime == DateTime.MinValue ? DateTime.UtcNow : ReleaseDateTime;
+            // Only day-precision dates populate PublishDate; year/month are
+            // synthesized and would trip EarlyReleaseSpecification — use discovery time.
+            release.PublishDate = ReleaseDatePrecision == "day" && ReleaseDateTime != DateTime.MinValue
+                ? ReleaseDateTime
+                : DateTime.UtcNow;
             release.DownloadProtocol = DownloadProtocol;
             release.Title = ConstructTitle();
             release.Codec = Codec.ToString();
