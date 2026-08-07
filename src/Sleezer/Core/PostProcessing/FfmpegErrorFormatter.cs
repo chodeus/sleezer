@@ -48,7 +48,22 @@ public static class FfmpegErrorFormatter
         "Error reading comment frame",
         "Error reading lyrics",
         "Error reading frame",
+        // Cover-art block, not audio (libavformat/flac_picture.c). Without
+        // AV_EF_EXPLODE the demuxer skips the picture and decodes normally.
+        "Could not read mimetype from an attached picture",
+        "Error parsing attached picture",
     };
+
+    /// <summary>
+    /// True when ffmpeg failed while parsing an embedded cover-art block. Under
+    /// `-err_detect explode` this aborts INPUT OPEN, before `-map 0:a` can limit
+    /// the scan to audio — so the audio is never actually judged. The caller must
+    /// re-verify without explode rather than trust this verdict.
+    /// </summary>
+    public static bool IsAttachedPictureFailure(string stderr) =>
+        !string.IsNullOrWhiteSpace(stderr) &&
+        (stderr.Contains("Could not read mimetype from an attached picture", System.StringComparison.Ordinal) ||
+         stderr.Contains("Error parsing attached picture", System.StringComparison.Ordinal));
 
     /// <summary>
     /// True if an ffmpeg stderr line is an ID3 tag-parse error the demuxer recovered

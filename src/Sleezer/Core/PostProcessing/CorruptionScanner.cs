@@ -94,6 +94,14 @@ public class CorruptionScanner : ICorruptionScanner
 
             if (exitCode != 0)
             {
+                // A malformed cover-art block aborts INPUT OPEN under -err_detect
+                // explode, before -map 0:a limits the scan to audio \u2014 the audio was
+                // never judged. Re-verify without explode so the demuxer skips the
+                // picture; that pass is the authority (verified: decoded audio is
+                // byte-identical to a clean file).
+                if (FfmpegErrorFormatter.IsAttachedPictureFailure(stderr))
+                    return await ReverifyPastAttachedPictureAsync(path, timeoutSeconds, sw, ct);
+
                 string reason = FfmpegErrorFormatter.CleanFfmpegErrors(stderr);
                 _logger.Debug("Corruption scan {Path}: ffmpeg verdict corrupt (exit={ExitCode}) \u2014 {Reason}", path, exitCode, reason);
                 return new Result(true, reason);
@@ -136,6 +144,35 @@ public class CorruptionScanner : ICorruptionScanner
             _logger.Error(ex, "Unexpected error scanning {Path} — treating as corrupt to force re-search", path);
             return new Result(true, $"scanner crashed: {ex.GetType().Name}: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Second decode pass for a file whose cover-art block killed the first one.
+    /// Runs without AV_EF_EXPLODE so the demuxer skips the picture and the AUDIO
+    /// is judged on its own; stays fail-closed — any real decoder error in this
+    /// pass (which exits 0 on recoverable errors, hence the stderr check) is still
+    /// corruption.
+    /// </summary>
+    private async Task<Result> ReverifyPastAttachedPictureAsync(string path, int timeoutSeconds, Stopwatch sw, CancellationToken ct)
+    {
+        (int exitCode, string stderr) = await RunFfmpegDecodeAsync(path, timeoutSeconds, ct, explodeOnError: false);
+
+        if (exitCode == -1)
+        {
+            _logger.Debug("Corruption scan {Path}: art-skipping decode timed out after {Timeout}s", path, timeoutSeconds);
+            return new Result(true, $"Decode timed out (>{timeoutSeconds}s)");
+        }
+
+        string significant = FfmpegErrorFormatter.StripBenignMetadataNoise(stderr);
+        if (exitCode != 0 || !string.IsNullOrWhiteSpace(significant))
+        {
+            string reason = FfmpegErrorFormatter.CleanFfmpegErrors(string.IsNullOrWhiteSpace(significant) ? stderr : significant);
+            _logger.Debug("Corruption scan {Path}: corrupt beyond the attached picture (exit={ExitCode}) — {Reason}", path, exitCode, reason);
+            return new Result(true, reason);
+        }
+
+        _logger.Info("Corruption scan {Path}: embedded cover art is malformed but the audio decoded clean in {ElapsedMs}ms — keeping the file", path, sw.ElapsedMilliseconds);
+        return new Result(false, null);
     }
 
     /// <summary>
@@ -202,7 +239,7 @@ public class CorruptionScanner : ICorruptionScanner
         }
     }
 
-    private static async Task<(int exitCode, string stderr)> RunFfmpegDecodeAsync(string path, int timeoutSeconds, CancellationToken ct)
+    private static async Task<(int exitCode, string stderr)> RunFfmpegDecodeAsync(string path, int timeoutSeconds, CancellationToken ct, bool explodeOnError = true)
     {
         string ffmpegPath = ResolveFfmpegPath();
 
@@ -224,8 +261,14 @@ public class CorruptionScanner : ICorruptionScanner
         // decoder aborts instead of silently skipping bad frames — combined
         // with `-xerror`, that finally turns "Invalid data found" into a
         // non-zero exit. Without this, a clean scan is meaningless.
-        psi.ArgumentList.Add("-err_detect");
-        psi.ArgumentList.Add("explode");
+        // explodeOnError:false is the cover-art re-verify pass — it also stops
+        // the DEMUXER exploding, so callers must judge that pass on stderr.
+        if (explodeOnError)
+        {
+            psi.ArgumentList.Add("-err_detect");
+            psi.ArgumentList.Add("explode");
+        }
+
         psi.ArgumentList.Add("-xerror");
         psi.ArgumentList.Add("-nostdin");
         psi.ArgumentList.Add("-i");
