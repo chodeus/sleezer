@@ -207,21 +207,6 @@ public class RadioEditTrackMatchingTests
             "Unchained", "Unchained (live at the Tokyo Dome June 21, 2013)", null));
     }
 
-    // DOCUMENTS A PRE-EXISTING DEFECT (not introduced here, not fixed here):
-    // the parser treats the leaf AND the parent as independent conflict sources,
-    // so an album whose own title carries a variant word is rejected whenever the
-    // parent folder is generic. Flip these asserts when that is fixed.
-    [Fact]
-    public void Parent_folder_conflict_is_a_known_false_negative()
-    {
-        // leaf reconciles fine...
-        Assert.False(SlskdTextProcessor.RemixSignaturesConflict(
-            "Tokyo Dome Live", "Van Halen - Tokyo Dome Live", ["Live"]));
-        // ...but the generic parent alone reports a conflict, and the parser ORs them.
-        Assert.True(SlskdTextProcessor.RemixSignaturesConflict("Tokyo Dome Live", "Music", ["Live"]));
-        Assert.True(SlskdTextProcessor.RemixSignaturesConflict("Live at Wembley", "Music", null));
-    }
-
     // A mixed source (one plain track, one radio edit) is partial, not complete.
     [Fact]
     public void A_partly_radio_edit_source_is_only_partially_covered()
@@ -237,5 +222,97 @@ public class RadioEditTrackMatchingTests
             expectedTrackCount: 2);
 
         Assert.False(album.MatchedSearchCriteria);
+    }
+
+    // A component judged ALONE still conflicts — the union is what fixes it.
+    [Fact]
+    public void A_generic_parent_alone_still_reports_a_conflict()
+    {
+        Assert.True(SlskdTextProcessor.RemixSignaturesConflict("Tokyo Dome Live", "Music", ["Live"]));
+        Assert.True(SlskdTextProcessor.RemixSignaturesConflict("Live at Wembley", "Music", null));
+    }
+}
+
+// The qualifier can sit in any path component, so leaf and parent are judged as
+// one candidate. Judging them separately and rejecting on either was wrong both
+// ways: a generic parent vetoed an album whose own title was qualified (live
+// albums were unmatchable under "Music\"), and the intended
+// "Album (Live)\FLAC" rescue never actually worked — the leaf's own conflict
+// rejected it first.
+public class FolderVariantComponentTests
+{
+    private static readonly SlskdItemsParser Parser = new(LogManager.GetLogger("tests"));
+
+    private static IGrouping<string, SlskdFileData> Group(params string[] filenames) =>
+        filenames
+            .Select(f => new SlskdFileData(f, null, 16, 30_000_000, 300, ".flac", 44100, 0, false))
+            .GroupBy(f => SlskdTextProcessor.GetMergedDirectoryKey(f.Filename))
+            .Single();
+
+    private static SlskdFolderData Folder(string path) =>
+        new(path, "", "", "", "peer", true, 1_000_000, 0, [], 0, 0, 0, [], 0);
+
+    private static bool Matches(string album, string folder, string file, List<string>? variantTypes = null)
+    {
+        AlbumData data = Parser.CreateAlbumData(
+            "s1",
+            Group($@"{folder}\{file}"),
+            new SlskdSearchData("Some Artist", album, Interactive: false, ExpandDirectory: false,
+                MinimumFiles: 1, MaximumFiles: 40, TrackCount: 1, Tracks: ["Only Track"],
+                TargetVariantTypes: variantTypes, AlbumType: "Album"),
+            Folder(folder),
+            new SlskdSettings(),
+            expectedTrackCount: 1);
+        return data.MatchedSearchCriteria;
+    }
+
+    // The reported bug: album title carries the qualifier, parent is generic.
+    [Fact]
+    public void A_live_titled_album_matches_under_a_generic_parent()
+    {
+        Assert.True(Matches("Tokyo Dome Live", @"Music\Some Artist - Tokyo Dome Live", "01 - Only Track.flac"));
+        Assert.True(Matches("Live at Wembley", @"Music\Some Artist - Live at Wembley", "01 - Only Track.flac"));
+    }
+
+    // The rescue the old comment claimed but never delivered: the qualifier is
+    // one level up because the leaf is a quality subfolder.
+    [Fact]
+    public void A_qualifier_one_level_up_reconciles_a_generic_leaf()
+    {
+        Assert.True(Matches("Some Album (Live)", @"Some Artist - Some Album (Live)\FLAC", "01 - Only Track.flac"));
+    }
+
+    // Protection preserved: a qualifier the search never asked for is still a
+    // different release, and no plain sibling component may excuse it.
+    [Fact]
+    public void An_unwanted_qualifier_is_still_rejected_whichever_component_holds_it()
+    {
+        Assert.False(Matches("Some Album", @"Music\Some Album (Live)", "01 - Only Track.flac"));
+        Assert.False(Matches("Some Album", @"Some Album (Live)\FLAC", "01 - Only Track.flac"));
+        Assert.False(Matches("Some Song", @"Music\Some Song (Colyn Remix)", "01 - Only Track.flac"));
+    }
+
+    [Fact]
+    public void Plain_albums_in_plain_folders_are_unaffected()
+    {
+        Assert.True(Matches("Some Album", @"Music\Some Artist - Some Album", "01 - Only Track.flac"));
+    }
+
+    // MusicBrainz secondary types keep forgiving candidate-side qualifiers.
+    [Fact]
+    public void A_live_typed_release_still_accepts_a_live_folder()
+    {
+        Assert.True(Matches("Some Album", @"Music\Some Album (Live)", "01 - Only Track.flac", variantTypes: ["Live"]));
+    }
+
+    [Fact]
+    public void The_union_only_adds_qualifiers_it_never_cancels_one()
+    {
+        // parent plain, leaf qualified -> union stays qualified (conflict vs plain search)
+        Assert.True(SlskdTextProcessor.RemixSignaturesConflict("Some Album", ["Some Album (Live)", "Music"], null));
+        // leaf plain, parent qualified -> union still qualified
+        Assert.True(SlskdTextProcessor.RemixSignaturesConflict("Some Album", ["FLAC", "Some Album (Live)"], null));
+        // both plain -> no conflict
+        Assert.False(SlskdTextProcessor.RemixSignaturesConflict("Some Album", ["Some Album", "Music"], null));
     }
 }
