@@ -737,11 +737,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                     if (claimed.Contains(i) || !named[i].Name.Contains(title.Norm))
                         continue;
 
-                    // A wanted "Proposition" is CONTAINED in "Proposition (Radio
-                    // Edit)" — a different recording that the import gate later
-                    // rejects on track length. Only pairs where one side is
-                    // decorated pay for the check; MB secondary types forgive a
-                    // live/remix album whose track titles are plain.
+                    // A wanted title is contained in its own variant ("Proposition"
+                    // in "Proposition (Radio Edit)"); target types forgive valid ones.
                     if ((title.Qualified || named[i].Qualified) &&
                         SlskdTextProcessor.RemixSignaturesConflict(title.Raw, named[i].Raw, targetVariantTypes))
                         continue;

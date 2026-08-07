@@ -177,6 +177,25 @@ public class RadioEditTrackMatchingTests
         Assert.True(album.MatchedSearchCriteria);
     }
 
+    // Same case as a coherence-gated single, where coverage is the ONLY route to
+    // a match — no album-name fallback can carry it.
+    [Fact]
+    public void A_live_single_with_plain_track_titles_still_covers_its_live_files()
+    {
+        AlbumData album = Parser.CreateAlbumData(
+            "s1",
+            Group(
+                @"Music\Van Halen - Tokyo Dome\01. Unchained (live at the Tokyo Dome June 21, 2013).flac",
+                @"Music\Van Halen - Tokyo Dome\02. Somebody Get Me a Doctor (live at the Tokyo Dome June 21, 2013).flac"),
+            Search(["Unchained", "Somebody Get Me a Doctor"], album: "Tokyo Dome",
+                variantTypes: ["Live"], albumType: "Single"),
+            Folder(@"Music\Van Halen - Tokyo Dome"),
+            new SlskdSettings { RequireCoherentSingleSource = true },
+            expectedTrackCount: 2);
+
+        Assert.True(album.MatchedSearchCriteria);
+    }
+
     // Per-file check in isolation: the live files are accepted for plain wanted
     // titles because the RELEASE is marked Live (metaLive forgives them).
     [Fact]
