@@ -466,6 +466,18 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             return Fuzz.TokenSetRatio(searchSignature, candidateSignature) < 60;
         }
 
+        /// <summary>
+        /// True when a title carries ANY variant qualifier. Cheap pre-filter so
+        /// callers only pay for <see cref="RemixSignaturesConflict(string?, string?, IReadOnlyCollection{string}?)"/>
+        /// on pairs where one side is decorated — plain-vs-plain can never conflict.
+        /// </summary>
+        public static bool HasVariantQualifier(string? title)
+        {
+            VariantProfile profile = ExtractVariantProfile(title);
+            return profile.Live || profile.Acoustic || profile.Demo || profile.Extended ||
+                   profile.MonoStereo != null || profile.RemixSignature != null;
+        }
+
         private static bool HasSecondaryType(IReadOnlyCollection<string>? types, string name) =>
             types != null && types.Any(t => string.Equals(t, name, StringComparison.OrdinalIgnoreCase));
 

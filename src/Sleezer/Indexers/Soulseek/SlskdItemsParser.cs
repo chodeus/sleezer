@@ -115,7 +115,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             // in the folder's filenames, the folder IS the album regardless of
             // how it is named. Essential for server-blocked artists whose name
             // never appears in the query or the path.
-            (List<SlskdFileData> matchedTrackFiles, int coveredTrackCount, int wantedTrackTitleCount) = MatchWantedTrackFiles(directory, searchData.Tracks);
+            (List<SlskdFileData> matchedTrackFiles, int coveredTrackCount, int wantedTrackTitleCount) = MatchWantedTrackFiles(directory, searchData.Tracks, searchData.TargetVariantTypes);
             double trackEvidence = wantedTrackTitleCount > 0 ? coveredTrackCount / (double)wantedTrackTitleCount : 0;
             if (trackEvidence >= TrackEvidenceThreshold)
                 isAlbumMatch = true;
@@ -696,21 +696,30 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         /// titles long enough to match on (the track-evidence denominator).
         /// </summary>
         private static (List<SlskdFileData> MatchedFiles, int CoveredTracks, int WantedTitles) MatchWantedTrackFiles(
-            IEnumerable<SlskdFileData> files, List<string>? expectedTracks)
+            IEnumerable<SlskdFileData> files, List<string>? expectedTracks, IReadOnlyCollection<string>? targetVariantTypes = null)
         {
             List<SlskdFileData> matched = [];
             if (expectedTracks == null || expectedTracks.Count == 0)
                 return (matched, 0, 0);
 
-            List<string> titles = expectedTracks.Select(NormalizeString).Where(t => t.Length >= 4).ToList();
+            // Raw title kept alongside the normalized one: normalization strips the
+            // brackets a variant qualifier lives in ("(Radio Edit)").
+            List<(string Raw, string Norm, bool Qualified)> titles = expectedTracks
+                .Select(t => (Raw: t, Norm: NormalizeString(t), Qualified: SlskdTextProcessor.HasVariantQualifier(t)))
+                .Where(t => t.Norm.Length >= 4)
+                .ToList();
             if (titles.Count == 0)
                 return (matched, 0, 0);
 
             // Audio files only (a same-named .cue/.nfo must not outrank the track);
             // basename after normalizing backslashes (Path.* won't split them on Linux).
-            List<(SlskdFileData File, string Name)> named = files
+            List<(SlskdFileData File, string Name, string Raw, bool Qualified)> named = files
                 .Where(IsAudioFile)
-                .Select(f => (File: f, Name: NormalizeString(TrackNumberPrefixRegex().Replace(Path.GetFileNameWithoutExtension((f.Filename ?? string.Empty).Replace('\\', '/')), string.Empty))))
+                .Select(f =>
+                {
+                    string raw = TrackNumberPrefixRegex().Replace(Path.GetFileNameWithoutExtension((f.Filename ?? string.Empty).Replace('\\', '/')), string.Empty);
+                    return (File: f, Name: NormalizeString(raw), Raw: raw, Qualified: SlskdTextProcessor.HasVariantQualifier(raw));
+                })
                 .Where(x => x.Name.Length > 0)
                 .ToList();
             if (named.Count == 0)
@@ -721,12 +730,22 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             // "Falling Slowly") and make an incomplete source look complete.
             HashSet<int> claimed = [];
             int covered = 0;
-            foreach (string title in titles.OrderByDescending(t => t.Length))
+            foreach ((string Raw, string Norm, bool Qualified) title in titles.OrderByDescending(t => t.Norm.Length))
             {
                 for (int i = 0; i < named.Count; i++)
                 {
-                    if (claimed.Contains(i) || !named[i].Name.Contains(title))
+                    if (claimed.Contains(i) || !named[i].Name.Contains(title.Norm))
                         continue;
+
+                    // A wanted "Proposition" is CONTAINED in "Proposition (Radio
+                    // Edit)" — a different recording that the import gate later
+                    // rejects on track length. Only pairs where one side is
+                    // decorated pay for the check; MB secondary types forgive a
+                    // live/remix album whose track titles are plain.
+                    if ((title.Qualified || named[i].Qualified) &&
+                        SlskdTextProcessor.RemixSignaturesConflict(title.Raw, named[i].Raw, targetVariantTypes))
+                        continue;
+
                     claimed.Add(i);
                     covered++;
                     if (named[i].File.Filename != null)
