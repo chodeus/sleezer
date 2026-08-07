@@ -427,10 +427,23 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         /// title string hides ("Apple Music Live: ..." + folder "(Live)"), but
         /// never demand one — an undecorated exact-title folder still matches.
         /// </summary>
-        public static bool RemixSignaturesConflict(string? searchAlbum, string? candidateName, IReadOnlyCollection<string>? targetSecondaryTypes)
+        public static bool RemixSignaturesConflict(string? searchAlbum, string? candidateName, IReadOnlyCollection<string>? targetSecondaryTypes) =>
+            RemixSignaturesConflict(searchAlbum, [candidateName], targetSecondaryTypes);
+
+        /// <summary>
+        /// Path-aware variant: a folder's qualifier may sit in ANY component
+        /// ("Album (Live)\FLAC" carries it one level up), so the candidate's
+        /// profile is the UNION over the components and is judged once. Testing
+        /// components separately and rejecting on any conflict is wrong in both
+        /// directions — a generic parent ("Music") reports a phantom conflict for
+        /// an album whose own title is qualified, while a plain sibling would
+        /// excuse a qualifier the search never asked for.
+        /// </summary>
+        public static bool RemixSignaturesConflict(string? searchAlbum, IReadOnlyList<string?> candidateComponents, IReadOnlyCollection<string>? targetSecondaryTypes)
         {
             VariantProfile search = ExtractVariantProfile(searchAlbum);
-            VariantProfile candidate = ExtractVariantProfile(candidateName);
+            VariantProfile candidate = UnionVariantProfiles(candidateComponents);
+            string candidateName = string.Join(" ", candidateComponents.Where(c => !string.IsNullOrWhiteSpace(c)));
 
             bool metaLive = HasSecondaryType(targetSecondaryTypes, "Live");
             bool metaDemo = HasSecondaryType(targetSecondaryTypes, "Demo");
@@ -464,6 +477,48 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 return false;
 
             return Fuzz.TokenSetRatio(searchSignature, candidateSignature) < 60;
+        }
+
+        /// <summary>
+        /// Candidate profile across path components: a qualifier present in any
+        /// component counts as present. Deliberately one-way — it can only ADD a
+        /// qualifier, never cancel one a sibling component carries.
+        /// </summary>
+        private static VariantProfile UnionVariantProfiles(IReadOnlyList<string?> components)
+        {
+            if (components.Count == 1)
+                return ExtractVariantProfile(components[0]);
+
+            bool live = false, acoustic = false, demo = false, extended = false;
+            string? monoStereo = null;
+            string? remixSignature = null;
+
+            // Leaf first (components are ordered leaf-to-parent), so the nearest
+            // component wins for the single-valued dimensions.
+            foreach (string? component in components)
+            {
+                VariantProfile profile = ExtractVariantProfile(component);
+                live |= profile.Live;
+                acoustic |= profile.Acoustic;
+                demo |= profile.Demo;
+                extended |= profile.Extended;
+                monoStereo ??= profile.MonoStereo;
+                remixSignature ??= profile.RemixSignature;
+            }
+
+            return new VariantProfile(live, acoustic, demo, extended, monoStereo, remixSignature);
+        }
+
+        /// <summary>
+        /// True when a title carries ANY variant qualifier. Cheap pre-filter so
+        /// callers only pay for <see cref="RemixSignaturesConflict(string?, string?, IReadOnlyCollection{string}?)"/>
+        /// on pairs where one side is decorated — plain-vs-plain can never conflict.
+        /// </summary>
+        public static bool HasVariantQualifier(string? title)
+        {
+            VariantProfile profile = ExtractVariantProfile(title);
+            return profile.Live || profile.Acoustic || profile.Demo || profile.Extended ||
+                   profile.MonoStereo != null || profile.RemixSignature != null;
         }
 
         private static bool HasSecondaryType(IReadOnlyCollection<string>? types, string name) =>
