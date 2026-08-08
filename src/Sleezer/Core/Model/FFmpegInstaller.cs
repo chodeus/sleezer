@@ -57,8 +57,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
             await _gate.WaitAsync(ct).ConfigureAwait(false);
             try
             {
-                FFmpegRelease.LatestRelease release = await FetchLatestReleaseAsync(ct).ConfigureAwait(false)
-                    ?? throw new InvalidOperationException($"Could not resolve the latest {FFmpegRelease.Repo} release.");
+                FFmpegRelease.LatestRelease release = await ResolveReleaseAsync(asset, ct).ConfigureAwait(false)
+                    ?? throw new InvalidOperationException($"No {FFmpegRelease.Repo} release publishes {asset.FfmpegAsset}.");
                 await DownloadBothAsync(release, asset, targetDir, logger, ct).ConfigureAwait(false);
                 logger.Info("Installed ffmpeg {Tag} ({Asset}) to {Dir} from {Repo}.", release.Tag, asset.FfmpegAsset, targetDir, FFmpegRelease.Repo);
             }
@@ -104,11 +104,11 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
                 // Stamp up front so a transient failure doesn't re-hammer GitHub for 24h.
                 TouchStamp(stamp);
 
-                FFmpegRelease.LatestRelease? release = await FetchLatestReleaseAsync(deadline.Token).ConfigureAwait(false);
+                FFmpegRelease.LatestRelease? release = await ResolveReleaseAsync(asset, deadline.Token).ConfigureAwait(false);
                 Version? latest = FFmpegRelease.ParseTag(release?.Tag);
                 if (release is null || latest is null)
                 {
-                    logger.Debug("FFmpeg update check: could not resolve a latest {Repo} version; keeping current binary.", FFmpegRelease.Repo);
+                    logger.Debug("FFmpeg update check: no {Repo} release publishes {Asset}; keeping current binary.", FFmpegRelease.Repo, asset.FfmpegAsset);
                     return;
                 }
 
@@ -146,10 +146,14 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
             await DownloadVerifiedAsync(release, asset.FfprobeAsset, asset.LocalFfprobeName, targetDir, sums, ct).ConfigureAwait(false);
         }
 
-        private static async Task<FFmpegRelease.LatestRelease?> FetchLatestReleaseAsync(CancellationToken ct)
+        /// <summary>
+        /// Newest release that actually publishes <paramref name="asset"/>, which is not
+        /// always the newest release — see <see cref="FFmpegRelease.ReleasesApiUrl"/>.
+        /// </summary>
+        private static async Task<FFmpegRelease.LatestRelease?> ResolveReleaseAsync(FFmpegRelease.PlatformAsset asset, CancellationToken ct)
         {
-            string json = await _http.GetStringAsync(FFmpegRelease.LatestReleaseApiUrl, ct).ConfigureAwait(false);
-            return FFmpegRelease.ParseLatestRelease(json);
+            string json = await _http.GetStringAsync(FFmpegRelease.ReleasesApiUrl, ct).ConfigureAwait(false);
+            return FFmpegRelease.SelectForAsset(FFmpegRelease.ParseReleases(json), asset);
         }
 
         private static async Task<string> GetSumsAsync(FFmpegRelease.LatestRelease release, CancellationToken ct)

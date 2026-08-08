@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
@@ -155,5 +156,146 @@ public class FFmpegReleaseTests
     {
         Assert.Null(FFmpegRelease.ParseLatestRelease("{ \"assets\": [] }"));
         Assert.Null(FFmpegRelease.ParseLatestRelease(""));
+    }
+
+    // A new FFmpeg major ships Linux-first, because the Windows mirror trails
+    // upstream by weeks. n9.0 below is exactly that shape: newest, Linux-only.
+    private const string ReleaseFeed = """
+    [
+      {
+        "tag_name": "n9.0", "draft": false, "prerelease": false,
+        "assets": [
+          { "name": "ffmpeg-linux64",  "browser_download_url": "https://example/9/ffmpeg-linux64" },
+          { "name": "ffprobe-linux64", "browser_download_url": "https://example/9/ffprobe-linux64" },
+          { "name": "SHA256SUMS",      "browser_download_url": "https://example/9/SHA256SUMS" }
+        ]
+      },
+      {
+        "tag_name": "n8.1.2", "draft": false, "prerelease": false,
+        "assets": [
+          { "name": "ffmpeg-linux64",     "browser_download_url": "https://example/8/ffmpeg-linux64" },
+          { "name": "ffprobe-linux64",    "browser_download_url": "https://example/8/ffprobe-linux64" },
+          { "name": "ffmpeg-win64.exe",   "browser_download_url": "https://example/8/ffmpeg-win64.exe" },
+          { "name": "ffprobe-win64.exe",  "browser_download_url": "https://example/8/ffprobe-win64.exe" },
+          { "name": "SHA256SUMS",         "browser_download_url": "https://example/8/SHA256SUMS" }
+        ]
+      }
+    ]
+    """;
+
+    [Fact]
+    public void SelectForAsset_linux_takes_the_newest_release()
+    {
+        FFmpegRelease.LatestRelease? rel = FFmpegRelease.SelectForAsset(
+            FFmpegRelease.ParseReleases(ReleaseFeed),
+            FFmpegRelease.ForPlatform(OSPlatform.Linux, Architecture.X64));
+
+        Assert.Equal("n9.0", rel!.Tag);
+    }
+
+    [Fact]
+    public void SelectForAsset_windows_falls_back_past_a_linux_only_release()
+    {
+        FFmpegRelease.LatestRelease? rel = FFmpegRelease.SelectForAsset(
+            FFmpegRelease.ParseReleases(ReleaseFeed),
+            FFmpegRelease.ForPlatform(OSPlatform.Windows, Architecture.X64));
+
+        Assert.Equal("n8.1.2", rel!.Tag);
+        Assert.Equal("https://example/8/ffmpeg-win64.exe", rel.AssetUrls["ffmpeg-win64.exe"]);
+    }
+
+    [Fact]
+    public void SelectForAsset_null_when_no_release_has_the_asset()
+    {
+        // winarm64 appears in neither release.
+        Assert.Null(FFmpegRelease.SelectForAsset(
+            FFmpegRelease.ParseReleases(ReleaseFeed),
+            FFmpegRelease.ForPlatform(OSPlatform.Windows, Architecture.Arm64)));
+    }
+
+    [Fact]
+    public void SelectForAsset_requires_SHA256SUMS()
+    {
+        // Both binaries present but no manifest — the download can't be verified.
+        string json = """
+        [{ "tag_name": "n9.0", "draft": false, "prerelease": false,
+           "assets": [
+             { "name": "ffmpeg-linux64",  "browser_download_url": "https://example/ffmpeg-linux64" },
+             { "name": "ffprobe-linux64", "browser_download_url": "https://example/ffprobe-linux64" }
+           ] }]
+        """;
+        Assert.Null(FFmpegRelease.SelectForAsset(
+            FFmpegRelease.ParseReleases(json),
+            FFmpegRelease.ForPlatform(OSPlatform.Linux, Architecture.X64)));
+    }
+
+    [Fact]
+    public void SelectForAsset_requires_both_binaries()
+    {
+        // ffprobe missing — installing only half is worse than falling back.
+        string json = """
+        [{ "tag_name": "n9.0", "draft": false, "prerelease": false,
+           "assets": [
+             { "name": "ffmpeg-linux64", "browser_download_url": "https://example/ffmpeg-linux64" },
+             { "name": "SHA256SUMS",     "browser_download_url": "https://example/SHA256SUMS" }
+           ] }]
+        """;
+        Assert.Null(FFmpegRelease.SelectForAsset(
+            FFmpegRelease.ParseReleases(json),
+            FFmpegRelease.ForPlatform(OSPlatform.Linux, Architecture.X64)));
+    }
+
+    [Fact]
+    public void ParseReleases_skips_drafts_and_prereleases()
+    {
+        string json = """
+        [
+          { "tag_name": "n9.9", "draft": true,  "prerelease": false, "assets": [] },
+          { "tag_name": "n9.8", "draft": false, "prerelease": true,  "assets": [] },
+          { "tag_name": "n8.1.2", "draft": false, "prerelease": false, "assets": [] }
+        ]
+        """;
+        IReadOnlyList<FFmpegRelease.LatestRelease> rel = FFmpegRelease.ParseReleases(json);
+        Assert.Single(rel);
+        Assert.Equal("n8.1.2", rel[0].Tag);
+    }
+
+    [Fact]
+    public void SelectForAsset_ignores_list_order()
+    {
+        // GitHub orders by creation date; selection must go by version.
+        string json = """
+        [
+          { "tag_name": "n8.1.1", "draft": false, "prerelease": false,
+            "assets": [ { "name": "ffmpeg-linux64", "browser_download_url": "https://example/a" },
+                        { "name": "ffprobe-linux64", "browser_download_url": "https://example/b" },
+                        { "name": "SHA256SUMS", "browser_download_url": "https://example/c" } ] },
+          { "tag_name": "n9.0", "draft": false, "prerelease": false,
+            "assets": [ { "name": "ffmpeg-linux64", "browser_download_url": "https://example/d" },
+                        { "name": "ffprobe-linux64", "browser_download_url": "https://example/e" },
+                        { "name": "SHA256SUMS", "browser_download_url": "https://example/f" } ] }
+        ]
+        """;
+        FFmpegRelease.LatestRelease? rel = FFmpegRelease.SelectForAsset(
+            FFmpegRelease.ParseReleases(json),
+            FFmpegRelease.ForPlatform(OSPlatform.Linux, Architecture.X64));
+
+        Assert.Equal("n9.0", rel!.Tag);
+    }
+
+    [Fact]
+    public void ParseReleases_throws_on_invalid_feed()
+    {
+        // A GitHub error object is valid JSON — mapping it to "no releases" would be
+        // indistinguishable from a genuinely empty feed and suppress the next check.
+        Assert.Throws<InvalidOperationException>(
+            () => FFmpegRelease.ParseReleases("{ \"message\": \"API rate limit exceeded\" }"));
+        Assert.Throws<InvalidOperationException>(() => FFmpegRelease.ParseReleases(""));
+    }
+
+    [Fact]
+    public void ParseReleases_allows_a_genuinely_empty_feed()
+    {
+        Assert.Empty(FFmpegRelease.ParseReleases("[]"));
     }
 }
