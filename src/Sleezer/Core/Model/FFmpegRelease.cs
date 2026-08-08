@@ -19,7 +19,15 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
         /// <summary>The single source of truth both sleezer and beatscheck consume.</summary>
         public const string Repo = "chodeus/ffmpeg-static";
 
-        public const string LatestReleaseApiUrl = "https://api.github.com/repos/chodeus/ffmpeg-static/releases/latest";
+        /// <summary>
+        /// The release list, not <c>/releases/latest</c>. A release only carries the
+        /// platforms that could be built when it was cut — a new FFmpeg major ships
+        /// Linux-first, because the Windows mirror trails upstream by weeks — so the
+        /// newest release can legitimately have no Windows binaries. Resolving against
+        /// the list lets each platform fall back to the newest release that has its
+        /// assets instead of failing on one that doesn't.
+        /// </summary>
+        public const string ReleasesApiUrl = "https://api.github.com/repos/chodeus/ffmpeg-static/releases?per_page=30";
 
         /// <summary>How often the runtime re-checks the feed for a newer ffmpeg.</summary>
         public static readonly TimeSpan UpdateInterval = TimeSpan.FromHours(24);
@@ -190,6 +198,73 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
             }
 
             return new LatestRelease(tag, assets);
+        }
+
+        /// <summary>
+        /// Parse a GitHub "list releases" payload, dropping drafts and prereleases —
+        /// <c>/releases/latest</c> excluded those implicitly and this replaces it.
+        /// Unparseable entries are skipped rather than failing the whole list.
+        /// </summary>
+        public static IReadOnlyList<LatestRelease> ParseReleases(string json)
+        {
+            List<LatestRelease> releases = new();
+            if (string.IsNullOrWhiteSpace(json))
+                return releases;
+
+            using JsonDocument doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array)
+                return releases;
+
+            foreach (JsonElement el in doc.RootElement.EnumerateArray())
+            {
+                if (el.ValueKind != JsonValueKind.Object)
+                    continue;
+                if (el.TryGetProperty("draft", out JsonElement d) && d.ValueKind == JsonValueKind.True)
+                    continue;
+                if (el.TryGetProperty("prerelease", out JsonElement p) && p.ValueKind == JsonValueKind.True)
+                    continue;
+
+                LatestRelease? rel = ParseLatestRelease(el.GetRawText());
+                if (rel is not null)
+                    releases.Add(rel);
+            }
+
+            return releases;
+        }
+
+        /// <summary>
+        /// The newest release carrying every asset needed to install
+        /// <paramref name="asset"/>: both binaries plus <c>SHA256SUMS</c>, since the
+        /// download is verified against it. Ordered by parsed tag rather than by list
+        /// position so it does not depend on GitHub's ordering; releases with an
+        /// unparseable tag are skipped. <c>null</c> when no release qualifies.
+        /// </summary>
+        public static LatestRelease? SelectForAsset(IEnumerable<LatestRelease>? releases, PlatformAsset? asset)
+        {
+            if (releases is null || asset is null)
+                return null;
+
+            LatestRelease? best = null;
+            Version? bestVersion = null;
+
+            foreach (LatestRelease r in releases)
+            {
+                Version? v = ParseTag(r.Tag);
+                if (v is null)
+                    continue;
+                if (!r.AssetUrls.ContainsKey(asset.FfmpegAsset)
+                    || !r.AssetUrls.ContainsKey(asset.FfprobeAsset)
+                    || !r.AssetUrls.ContainsKey("SHA256SUMS"))
+                    continue;
+
+                if (bestVersion is null || v > bestVersion)
+                {
+                    best = r;
+                    bestVersion = v;
+                }
+            }
+
+            return best;
         }
     }
 }
