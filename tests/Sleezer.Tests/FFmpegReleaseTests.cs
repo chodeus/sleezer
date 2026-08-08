@@ -284,9 +284,18 @@ public class FFmpegReleaseTests
     }
 
     [Fact]
-    public void ParseReleases_empty_on_non_array()
+    public void ParseReleases_throws_on_invalid_feed()
     {
-        Assert.Empty(FFmpegRelease.ParseReleases("{ \"tag_name\": \"n9.0\" }"));
-        Assert.Empty(FFmpegRelease.ParseReleases(""));
+        // A GitHub error object is valid JSON — mapping it to "no releases" would be
+        // indistinguishable from a genuinely empty feed and suppress the next check.
+        Assert.Throws<InvalidOperationException>(
+            () => FFmpegRelease.ParseReleases("{ \"message\": \"API rate limit exceeded\" }"));
+        Assert.Throws<InvalidOperationException>(() => FFmpegRelease.ParseReleases(""));
+    }
+
+    [Fact]
+    public void ParseReleases_allows_a_genuinely_empty_feed()
+    {
+        Assert.Empty(FFmpegRelease.ParseReleases("[]"));
     }
 }

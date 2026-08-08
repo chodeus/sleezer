@@ -20,14 +20,10 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
         public const string Repo = "chodeus/ffmpeg-static";
 
         /// <summary>
-        /// The release list, not <c>/releases/latest</c>. A release only carries the
-        /// platforms that could be built when it was cut — a new FFmpeg major ships
-        /// Linux-first, because the Windows mirror trails upstream by weeks — so the
-        /// newest release can legitimately have no Windows binaries. Resolving against
-        /// the list lets each platform fall back to the newest release that has its
-        /// assets instead of failing on one that doesn't.
+        /// The list, not <c>/releases/latest</c>: the newest release does not always
+        /// carry every platform, so each falls back to the newest one that has its assets.
         /// </summary>
-        public const string ReleasesApiUrl = "https://api.github.com/repos/chodeus/ffmpeg-static/releases?per_page=30";
+        public const string ReleasesApiUrl = "https://api.github.com/repos/chodeus/ffmpeg-static/releases?per_page=100";
 
         /// <summary>How often the runtime re-checks the feed for a newer ffmpeg.</summary>
         public static readonly TimeSpan UpdateInterval = TimeSpan.FromHours(24);
@@ -203,17 +199,20 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
         /// <summary>
         /// Parse a GitHub "list releases" payload, dropping drafts and prereleases —
         /// <c>/releases/latest</c> excluded those implicitly and this replaces it.
-        /// Unparseable entries are skipped rather than failing the whole list.
+        /// Individual unparseable entries are skipped, but a blank or non-array body
+        /// throws: that is a failed request (an error object, a proxy page), and
+        /// returning it as "no releases" would look identical to a genuinely empty
+        /// feed and silently stand in for a real answer.
         /// </summary>
         public static IReadOnlyList<LatestRelease> ParseReleases(string json)
         {
-            List<LatestRelease> releases = new();
             if (string.IsNullOrWhiteSpace(json))
-                return releases;
+                throw new InvalidOperationException($"Empty response from the {Repo} release feed.");
 
+            List<LatestRelease> releases = new();
             using JsonDocument doc = JsonDocument.Parse(json);
             if (doc.RootElement.ValueKind != JsonValueKind.Array)
-                return releases;
+                throw new InvalidOperationException($"Expected a JSON array from the {Repo} release feed, got {doc.RootElement.ValueKind}.");
 
             foreach (JsonElement el in doc.RootElement.EnumerateArray())
             {
