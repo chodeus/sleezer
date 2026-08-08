@@ -197,12 +197,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
         }
 
         /// <summary>
-        /// Parse a GitHub "list releases" payload, dropping drafts and prereleases —
-        /// <c>/releases/latest</c> excluded those implicitly and this replaces it.
-        /// Individual unparseable entries are skipped, but a blank or non-array body
-        /// throws: that is a failed request (an error object, a proxy page), and
-        /// returning it as "no releases" would look identical to a genuinely empty
-        /// feed and silently stand in for a real answer.
+        /// Drops drafts and prereleases, which <c>/releases/latest</c> excluded implicitly.
+        /// A blank or non-array body throws: a failed request must not read as an empty feed.
         /// </summary>
         public static IReadOnlyList<LatestRelease> ParseReleases(string json)
         {
@@ -232,11 +228,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
         }
 
         /// <summary>
-        /// The newest release carrying every asset needed to install
-        /// <paramref name="asset"/>: both binaries plus <c>SHA256SUMS</c>, since the
-        /// download is verified against it. Ordered by parsed tag rather than by list
-        /// position so it does not depend on GitHub's ordering; releases with an
-        /// unparseable tag are skipped. <c>null</c> when no release qualifies.
+        /// Newest release with both binaries plus <c>SHA256SUMS</c>, which the download is
+        /// verified against. Ordered by parsed tag, not list position — GitHub's can change.
         /// </summary>
         public static LatestRelease? SelectForAsset(IEnumerable<LatestRelease>? releases, PlatformAsset? asset)
         {
