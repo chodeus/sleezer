@@ -152,6 +152,44 @@ public class SlskdStatusResolverAbandonTests
     }
 
     [Fact]
+    public void A_foreign_failed_transfer_does_not_fail_the_album()
+    {
+        SlskdDownloadItem item = NewItem(("01.flac", 1000), ("02.flac", 1000));
+        Transfers(item,
+            Transfer("01.flac", "Completed, Succeeded", 1000),
+            Transfer("02.flac", "Completed, Succeeded", 1000),
+            Transfer("foreign.flac", "Completed, Errored", 1000));
+        State(item, "foreign.flac").MarkRetriesExhausted();
+
+        Assert.Equal(DownloadItemStatus.Completed, Resolve(item).Status);
+    }
+
+    [Fact]
+    public void A_foreign_queued_transfer_is_not_reported_in_the_status_message()
+    {
+        SlskdDownloadItem item = NewItem(("01.flac", 1000));
+        Transfers(item,
+            Transfer("01.flac", "InProgress", 1000),
+            Transfer("foreign.flac", "Queued, Remotely", 1000));
+
+        SlskdStatusResolver.DownloadStatus resolved = Resolve(item);
+
+        Assert.Contains("downloading", resolved.Message);
+        Assert.DoesNotContain("queued", resolved.Message);
+    }
+
+    [Fact]
+    public void A_foreign_queued_transfer_cannot_hold_the_album_incomplete()
+    {
+        SlskdDownloadItem item = NewItem(("01.flac", 1000));
+        Transfers(item,
+            Transfer("01.flac", "Completed, Succeeded", 1000),
+            Transfer("foreign.flac", "Queued, Remotely", 1000));
+
+        Assert.Equal(DownloadItemStatus.Completed, Resolve(item).Status);
+    }
+
+    [Fact]
     public void AllAcceptedFilesCompleted_does_not_wait_on_an_enqueue_rejected_file()
     {
         SlskdDownloadItem item = NewItem(("01.flac", 1000), ("02.flac", 1000));
@@ -196,6 +234,15 @@ public class SlskdNonAudioBasenamesTests
     public void A_pure_audio_grab_has_no_extras()
     {
         SlskdDownloadItem item = NewItem(@"@@u\A\B\01.flac", @"@@u\A\B\02.mp3", @"@@u\A\B\03.m4a");
+
+        Assert.Empty(item.NonAudioBasenames());
+    }
+
+    [Fact]
+    public void An_enqueue_rejected_extra_is_not_an_extra_to_import()
+    {
+        SlskdDownloadItem item = NewItem(@"@@u\A\B\01.flac", @"@@u\A\B\rip.cue");
+        item.MarkEnqueueFailed([@"@@u\A\B\rip.cue"]);
 
         Assert.Empty(item.NonAudioBasenames());
     }

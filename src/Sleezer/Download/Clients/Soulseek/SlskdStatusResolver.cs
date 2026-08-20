@@ -18,13 +18,17 @@ public static class SlskdStatusResolver
         if (item.SlskdDownloadDirectory?.Files == null)
             return new(DownloadItemStatus.Queued, null, 0, 0, null);
 
-        IReadOnlyList<SlskdDownloadFile> files = item.SlskdDownloadDirectory.Files;
+        // A shared peer directory can put another item's transfers in this view —
+        // only files this item enqueued may drive its status.
+        List<SlskdDownloadFile> ownedFiles = item.SlskdDownloadDirectory.Files
+            .Where(f => item.OwnsFile(f.Filename))
+            .ToList();
 
         long totalSize = 0, remainingSize = 0, totalSpeed = 0;
         bool anyActive = false, anyIncomplete = false, allIncompleteRemoteQueued = true;
         DateTime lastActivity = DateTime.MinValue;
 
-        foreach (SlskdDownloadFile f in files)
+        foreach (SlskdDownloadFile f in ownedFiles)
         {
             // An abandoned extra contributes nothing — not to totals, activity,
             // nor the all-stuck check; it can never hold the album back.
@@ -78,6 +82,9 @@ public static class SlskdStatusResolver
 
         foreach (SlskdFileState fs in item.FileStates.Values)
         {
+            if (!item.OwnsFile(fs.File.Filename))
+                continue;
+
             if (SlskdDownloadItem.IsAbandonedExtra(fs))
             {
                 abandonedExtras++;
@@ -152,7 +159,7 @@ public static class SlskdStatusResolver
         // the Lidarr UI a "queued at position X" summary instead of a blank.
         if (message == null && (status == DownloadItemStatus.Queued || status == DownloadItemStatus.Downloading))
         {
-            message = BuildQueueMessage(item, files);
+            message = BuildQueueMessage(item, ownedFiles);
         }
 
         TimeSpan? remainingTime = totalSpeed > 0

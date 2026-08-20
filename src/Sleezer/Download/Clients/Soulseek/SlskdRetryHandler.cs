@@ -19,6 +19,10 @@ public class SlskdRetryHandler(ISlskdApiClient apiClient, Logger logger)
             return;
         if (item == null)
             return;
+        // A shared peer directory raises FileStateChanged for foreign transfers too;
+        // retrying one would mark it exhausted in the finally and fail this item.
+        if (!item.OwnsFile(fileState.File.Filename))
+            return;
 
         _logger.Trace("Retry triggered: {Filename} | State: {State} | Attempt: {Attempt}/{Max}", Path.GetFileName(fileState.File.Filename), fileState.State, fileState.RetryCount + 1, fileState.MaxRetryCount);
         _ = RetryDownloadAsync(item, fileState, settings);

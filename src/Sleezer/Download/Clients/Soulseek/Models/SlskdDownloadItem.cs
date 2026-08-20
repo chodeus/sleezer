@@ -195,7 +195,9 @@ public class SlskdDownloadItem
     /// <summary>Local basenames of the enqueued non-audio files (cue/log extras).</summary>
     public IReadOnlyList<string> NonAudioBasenames() =>
         FileData
-            .Where(f => !string.IsNullOrEmpty(f.Filename) && !AudioFormatHelper.IsAudioFilename(f.Filename))
+            .Where(f => f.Filename is { Length: > 0 } filename &&
+                !_enqueueFailedFilenames.Contains(filename) &&
+                !AudioFormatHelper.IsAudioFilename(filename))
             .Select(f => Path.GetFileName(f.Filename!.Replace('\\', '/')))
             .Where(n => !string.IsNullOrEmpty(n))
             .Distinct(StringComparer.OrdinalIgnoreCase)
