@@ -36,6 +36,38 @@ public static partial class SlskdPathResolver
         return bestMatches * 2 > ownedFileCount ? best : null;
     }
 
+    /// <summary>Deepest directory containing every given file path; null when they share no root.</summary>
+    public static string? CommonParentDirectory(IReadOnlyCollection<string> filePaths)
+    {
+        List<string[]> segmentLists = filePaths
+            .Select(Path.GetDirectoryName)
+            .Where(d => !string.IsNullOrEmpty(d))
+            .Select(d => d!.Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar]))
+            .ToList();
+
+        if (segmentLists.Count == 0)
+            return null;
+
+        // A Unix absolute path splits to a leading "" segment — keep it so the
+        // rebuilt path keeps its leading separator.
+        string[] first = segmentLists[0];
+        int common = first.Length;
+        foreach (string[] segments in segmentLists.Skip(1))
+        {
+            common = Math.Min(common, segments.Length);
+            int i = 0;
+            while (i < common && string.Equals(first[i], segments[i], StringComparison.Ordinal))
+                i++;
+            common = i;
+        }
+
+        // Sharing only the leading "" (or the bare root) is not a usable parent.
+        if (!first.Take(common).Any(s => s.Length > 0))
+            return null;
+
+        return string.Join(Path.DirectorySeparatorChar, first.Take(common));
+    }
+
     public static string? ResolveSubdirectory(
         SlskdDestinationConfig config, string username, string remoteFilename, string? batchId = null, string? externalId = null)
     {

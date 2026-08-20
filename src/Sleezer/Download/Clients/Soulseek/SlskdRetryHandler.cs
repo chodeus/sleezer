@@ -1,6 +1,7 @@
 using NLog;
 using NzbDrone.Core.Download;
 using System.Text.Json;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek.Models;
 
 namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
@@ -58,7 +59,12 @@ public class SlskdRetryHandler(ISlskdApiClient apiClient, Logger logger)
             // GetStatus still lets a Completed/Downloading transport state win,
             // so a healthy retry that succeeds isn't cancelled.
             if (fileState.RetryCount >= fileState.MaxRetryCount)
+            {
                 fileState.MarkRetriesExhausted();
+                // Only log for the drop — the resolver skips abandoned extras silently.
+                if (!AudioFormatHelper.IsAudioFilename(fileState.File.Filename))
+                    _logger.Warn("Extra file {Filename} failed permanently; the album will complete without it", Path.GetFileName(fileState.File.Filename));
+            }
         }
     }
 

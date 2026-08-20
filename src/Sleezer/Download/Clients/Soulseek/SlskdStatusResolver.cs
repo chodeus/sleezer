@@ -26,6 +26,12 @@ public static class SlskdStatusResolver
 
         foreach (SlskdDownloadFile f in files)
         {
+            // An abandoned extra contributes nothing — not to totals, activity,
+            // nor the all-stuck check; it can never hold the album back.
+            if (item.FileStates.TryGetValue(f.Filename, out SlskdFileState? abandonCheck) &&
+                SlskdDownloadItem.IsAbandonedExtra(abandonCheck))
+                continue;
+
             totalSize += f.Size;
             remainingSize += f.BytesRemaining;
 
@@ -66,12 +72,18 @@ public static class SlskdStatusResolver
 
         bool allStuckInRemoteQueue = anyIncomplete && allIncompleteRemoteQueued;
 
-        int totalFileCount = 0, failedCount = 0, completedCount = 0;
+        int totalFileCount = 0, failedCount = 0, completedCount = 0, abandonedExtras = 0;
         bool anyWarning = false, anyPaused = false, anyDownloadingState = false;
         List<string> failedFileNames = [];
 
         foreach (SlskdFileState fs in item.FileStates.Values)
         {
+            if (SlskdDownloadItem.IsAbandonedExtra(fs))
+            {
+                abandonedExtras++;
+                continue;
+            }
+
             totalFileCount++;
             DownloadItemStatus s = fs.GetStatus();
             switch (s)
@@ -115,6 +127,8 @@ public static class SlskdStatusResolver
             status = item.PostProcessTasks.Any(t => !t.IsCompleted)
                 ? DownloadItemStatus.Downloading
                 : DownloadItemStatus.Completed;
+            if (abandonedExtras > 0)
+                message = $"Completed; {abandonedExtras} extra file(s) failed and were skipped";
         }
         else if (anyPaused)
         {

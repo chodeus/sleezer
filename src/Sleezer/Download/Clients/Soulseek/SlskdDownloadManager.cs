@@ -352,6 +352,110 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             _ = CleanStaleDirectoriesAsync(directory, ownedFileSizes, settings);
     }
 
+    /// <summary>
+    /// Copies this grab's cue/log extras into the album folder Lidarr just
+    /// imported into. Runs on AlbumImportedEvent, which fires before the
+    /// download folder is cleaned up, so the source is still on disk.
+    /// </summary>
+    public void ImportExtrasForImportedAlbum(string downloadId, IReadOnlyCollection<string> importedTrackPaths)
+    {
+        try
+        {
+            // Most imports are other download clients' — miss quietly, before any disk work.
+            KeyValuePair<DownloadKey<int, string>, SlskdDownloadItem> tracked = _downloadMappings
+                .FirstOrDefault(kvp => string.Equals(kvp.Value.ID, downloadId, StringComparison.OrdinalIgnoreCase));
+            SlskdDownloadItem? item = tracked.Value;
+            if (item == null)
+            {
+                _logger.Trace("No tracked slskd item for {DownloadId}; nothing to import", downloadId);
+                return;
+            }
+
+            IReadOnlyList<string> extras = item.NonAudioBasenames();
+            if (extras.Count == 0)
+            {
+                _logger.Trace("[{ItemId}] Grab has no extra files to import", item.ID);
+                return;
+            }
+
+            int definitionId = tracked.Key.OuterKey;
+            if (!_settingsCache.TryGetValue(definitionId, out SlskdProviderSettings? settings))
+            {
+                _logger.Debug("[{ItemId}] No cached settings for definition {DefinitionId}; skipping extra import", item.ID, definitionId);
+                return;
+            }
+
+            string root = GetRemoteDownloadPath(settings).FullPath.TrimEnd('/', '\\');
+            string folder = item.GetFullFolderPath(new OsPath(root)).FullPath.TrimEnd('/', '\\');
+            if (!IsStrictDescendantOfRoot(folder, root) || !_diskProvider.FolderExists(folder))
+                folder = FindFolderOwningItemFiles(item, root) ?? string.Empty;
+
+            // Defense in depth: the recovery path is basename-driven, so re-confine it.
+            if (folder.Length == 0 || !IsStrictDescendantOfRoot(folder, root))
+            {
+                _logger.Warn("[{ItemId}] No download folder inside '{Root}' to read extras from; skipping extra import", item.ID, root);
+                return;
+            }
+
+            string? destination = SlskdPathResolver.CommonParentDirectory(importedTrackPaths);
+            if (string.IsNullOrEmpty(destination) || !_diskProvider.FolderExists(destination))
+            {
+                _logger.Warn("[{ItemId}] Imported tracks share no existing album folder; skipping extra import", item.ID);
+                return;
+            }
+
+            CopyExtrasIntoAlbumFolder(item, extras, folder, destination);
+        }
+        catch (Exception ex)
+        {
+            _logger.Warn(ex, "Failed to import extra files for {DownloadId}", downloadId);
+        }
+    }
+
+    /// <summary>
+    /// Copies only extras this item conclusively owns (basename AND size), so a
+    /// foreign file in a shared download folder is never pulled into the library.
+    /// </summary>
+    private void CopyExtrasIntoAlbumFolder(SlskdDownloadItem item, IReadOnlyList<string> extras, string folder, string destination)
+    {
+        Dictionary<string, long> ownedFileSizes = item.BuildOwnedFileSizes();
+        Dictionary<string, string> onDisk = new(StringComparer.OrdinalIgnoreCase);
+        foreach (string file in _diskProvider.GetFiles(folder, recursive: true))
+            onDisk.TryAdd(Path.GetFileName(file), file);
+
+        int copied = 0;
+        foreach (string basename in extras)
+        {
+            if (!onDisk.TryGetValue(basename, out string? source))
+            {
+                _logger.Debug("[{ItemId}] Extra '{Extra}' not downloaded — skipping", item.ID, basename);
+                continue;
+            }
+
+            if (!IsConclusivelyOwned(source, ownedFileSizes))
+            {
+                _logger.Debug("[{ItemId}] Extra '{Extra}' in '{Folder}' is not conclusively this download's — skipping", item.ID, basename, folder);
+                continue;
+            }
+
+            try
+            {
+                // Overwrite mirrors track replacement on upgrade — a stale log
+                // from the previous rip must not survive. Copy, never move:
+                // Lidarr expects the download folder intact until it removes it.
+                _diskProvider.CopyFile(source, Path.Combine(destination, basename), true);
+                copied++;
+            }
+            catch (Exception ex)
+            {
+                _logger.Warn(ex, "[{ItemId}] Failed to copy extra '{Extra}' into '{Folder}'", item.ID, basename, destination);
+            }
+        }
+
+        if (copied > 0)
+            _logger.Info("Imported {Count} extra file(s) into {Folder}", copied, destination);
+    }
+
     private void TryDeleteOutputFolder(DownloadClientItem clientItem, Dictionary<string, long> ownedFileSizes, SlskdProviderSettings settings)
     {
         if (clientItem.OutputPath.IsEmpty)
@@ -805,7 +909,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             // DownloadDirectoryComplete event, enqueue here. Without this, Lidarr
             // can see status=Completed and start importing before the scan runs.
             // _postProcessed.TryAdd dedupes against the event-path trigger.
-            if (AllFilesCompleted(item))
+            if (item.AllAcceptedFilesCompleted())
                 EnqueuePostProcess(item, settings);
         }
     }
@@ -973,25 +1077,6 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }
     }
 
-    private static bool AllFilesCompleted(SlskdDownloadItem item)
-    {
-        IReadOnlyDictionary<string, SlskdFileState> states = item.FileStates;
-        if (states.Count == 0)
-            return false;
-
-        // Multi-disc: transfer state arrives per remote directory, so wait until
-        // every ACCEPTED file has reported before declaring the album complete
-        // (enqueue-rejected files never produce a transfer).
-        if (item.ExpectedFileCount > 0 && states.Count < item.ExpectedFileCount)
-            return false;
-
-        foreach (SlskdFileState state in states.Values)
-            if (state.GetStatus() != DownloadItemStatus.Completed)
-                return false;
-
-        return true;
-    }
-
     private async Task PollEventsAsync(int definitionId, SlskdProviderSettings settings, int offset)
     {
         (List<SlskdEventRecord> events, _) = await _apiClient.GetEventsAsync(settings, offset, 50);
@@ -1053,7 +1138,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
                 // Multi-disc items get one DownloadDirectoryComplete per disc;
                 // only post-process once every enqueued file is done.
-                if (AllFilesCompleted(item))
+                if (item.AllAcceptedFilesCompleted())
                     EnqueuePostProcess(item, settings);
                 else
                     _logger.Trace("[def={DefinitionId}] Directory {RemoteDir} complete but item {ItemId} still has pending files — waiting", definitionId, remoteDir, item.ID);

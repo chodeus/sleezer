@@ -6,6 +6,7 @@ using NzbDrone.Core.Download.History;
 using NzbDrone.Core.Music;
 using NzbDrone.Core.Parser.Model;
 using System.Text.Json;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Indexers.Soulseek;
 
 namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek.Models;
@@ -147,6 +148,46 @@ public class SlskdDownloadItem
 
     /// <summary>Files that were actually accepted by slskd.</summary>
     public int ExpectedFileCount => Math.Max(0, FileData.Count - _enqueueFailedFilenames.Count);
+
+    /// <summary>
+    /// A terminally-failed non-audio extra (cue/log) — skipped from status and
+    /// completion so a broken extra can never fail an otherwise-complete album.
+    /// </summary>
+    public static bool IsAbandonedExtra(SlskdFileState state) =>
+        state.GetStatus() == DownloadItemStatus.Failed &&
+        !AudioFormatHelper.IsAudioFilename(state.File.Filename);
+
+    /// <summary>Every accepted file completed; abandoned extras don't block completion.</summary>
+    public bool AllAcceptedFilesCompleted()
+    {
+        IReadOnlyDictionary<string, SlskdFileState> states = FileStates;
+        if (states.Count == 0)
+            return false;
+
+        // Multi-disc: transfer state arrives per remote directory, so wait until
+        // every ACCEPTED file has reported (enqueue-rejected files never produce a transfer).
+        if (ExpectedFileCount > 0 && states.Count < ExpectedFileCount)
+            return false;
+
+        foreach (SlskdFileState state in states.Values)
+        {
+            if (IsAbandonedExtra(state))
+                continue;
+            if (state.GetStatus() != DownloadItemStatus.Completed)
+                return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>Local basenames of the enqueued non-audio files (cue/log extras).</summary>
+    public IReadOnlyList<string> NonAudioBasenames() =>
+        FileData
+            .Where(f => !string.IsNullOrEmpty(f.Filename) && !AudioFormatHelper.IsAudioFilename(f.Filename))
+            .Select(f => Path.GetFileName(f.Filename!.Replace('\\', '/')))
+            .Where(n => !string.IsNullOrEmpty(n))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
     /// <summary>True when this item tracks transfers for the given remote directory.</summary>
     public bool TracksRemoteDirectory(string? remoteDirectory) =>

@@ -9,4 +9,5 @@ public interface ISlskdDownloadManager
     Task<string> DownloadAsync(RemoteAlbum remoteAlbum, int definitionId, SlskdProviderSettings settings);
     IEnumerable<DownloadClientItem> GetItems(int definitionId, SlskdProviderSettings settings, OsPath remotePath);
     void RemoveItem(DownloadClientItem clientItem, bool deleteData, int definitionId, SlskdProviderSettings settings);
+    void ImportExtrasForImportedAlbum(string downloadId, IReadOnlyCollection<string> importedTrackPaths);
 }

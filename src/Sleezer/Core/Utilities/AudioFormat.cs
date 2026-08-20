@@ -209,6 +209,10 @@
             _ => AudioFormat.Unknown
         };
 
+        /// <summary>True when the filename's extension maps to a known audio format.</summary>
+        public static bool IsAudioFilename(string? filename) =>
+            GetAudioCodecFromExtension(Path.GetExtension(filename ?? string.Empty)) != AudioFormat.Unknown;
+
         /// <summary>
         /// Returns the default bitrate for a given audio format.
         /// </summary>
