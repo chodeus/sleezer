@@ -189,6 +189,24 @@ public class SlskdStatusResolverAbandonTests
         Assert.Equal(DownloadItemStatus.Completed, Resolve(item).Status);
     }
 
+    // A file slskd rejected for THIS item produces no transfer of ours, so any
+    // transfer under that name belongs to another item sharing the peer folder.
+    [Fact]
+    public void A_rejected_files_transfer_cannot_fail_the_album()
+    {
+        SlskdDownloadItem item = NewItem(("01.flac", 1000), ("02.flac", 1000));
+        item.MarkEnqueueFailed([Dir + @"\02.flac"]);
+        Transfers(item,
+            Transfer("01.flac", "Completed, Succeeded", 1000),
+            Transfer("02.flac", "Completed, Errored", 1000));
+        State(item, "02.flac").MarkRetriesExhausted();
+
+        SlskdStatusResolver.DownloadStatus resolved = Resolve(item);
+
+        Assert.Equal(DownloadItemStatus.Completed, resolved.Status);
+        Assert.Equal(1000, resolved.TotalSize);
+    }
+
     [Fact]
     public void AllAcceptedFilesCompleted_does_not_wait_on_an_enqueue_rejected_file()
     {

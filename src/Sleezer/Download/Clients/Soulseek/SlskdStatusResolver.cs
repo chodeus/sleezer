@@ -19,9 +19,9 @@ public static class SlskdStatusResolver
             return new(DownloadItemStatus.Queued, null, 0, 0, null);
 
         // A shared peer directory can put another item's transfers in this view —
-        // only files this item enqueued may drive its status.
+        // only files slskd accepted for THIS item may drive its status.
         List<SlskdDownloadFile> ownedFiles = item.SlskdDownloadDirectory.Files
-            .Where(f => item.OwnsFile(f.Filename))
+            .Where(f => item.OwnsAcceptedFile(f.Filename))
             .ToList();
 
         long totalSize = 0, remainingSize = 0, totalSpeed = 0;
@@ -82,7 +82,7 @@ public static class SlskdStatusResolver
 
         foreach (SlskdFileState fs in item.FileStates.Values)
         {
-            if (!item.OwnsFile(fs.File.Filename))
+            if (!item.OwnsAcceptedFile(fs.File.Filename))
                 continue;
 
             if (SlskdDownloadItem.IsAbandonedExtra(fs))

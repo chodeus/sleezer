@@ -137,6 +137,14 @@ public class SlskdDownloadItem
         !string.IsNullOrEmpty(remoteFilename) && _enqueuedFilenames.Contains(remoteFilename);
 
     /// <summary>
+    /// True when this item enqueued the file AND slskd accepted it — the
+    /// ownership test for anything reading transfer state, since a rejected
+    /// file's only possible transfer belongs to another item.
+    /// </summary>
+    public bool OwnsAcceptedFile(string? remoteFilename) =>
+        OwnsFile(remoteFilename) && !_enqueueFailedFilenames.Contains(remoteFilename!);
+
+    /// <summary>
     /// Records files slskd rejected at enqueue time. They will never produce a
     /// transfer, so completion tracking must not wait for them.
     /// </summary>
@@ -171,7 +179,7 @@ public class SlskdDownloadItem
         bool anyAccepted = false;
         foreach (SlskdFileData file in FileData)
         {
-            if (file.Filename is not { Length: > 0 } filename || _enqueueFailedFilenames.Contains(filename))
+            if (file.Filename is not { Length: > 0 } filename || !OwnsAcceptedFile(filename))
                 continue;
 
             // Identity, not count: an accepted file with no transfer yet blocks
@@ -196,7 +204,7 @@ public class SlskdDownloadItem
     public IReadOnlyList<string> NonAudioBasenames() =>
         FileData
             .Where(f => f.Filename is { Length: > 0 } filename &&
-                !_enqueueFailedFilenames.Contains(filename) &&
+                OwnsAcceptedFile(filename) &&
                 !AudioFormatHelper.IsAudioFilename(filename))
             .Select(f => Path.GetFileName(f.Filename!.Replace('\\', '/')))
             .Where(n => !string.IsNullOrEmpty(n))
