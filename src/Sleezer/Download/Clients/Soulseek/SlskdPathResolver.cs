@@ -39,11 +39,17 @@ public static partial class SlskdPathResolver
     /// <summary>Deepest directory containing every given file path; null when they share no root.</summary>
     public static string? CommonParentDirectory(IReadOnlyCollection<string> filePaths)
     {
-        List<string[]> segmentLists = filePaths
-            .Select(Path.GetDirectoryName)
-            .Where(d => !string.IsNullOrEmpty(d))
-            .Select(d => d!.Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar]))
-            .ToList();
+        List<string[]> segmentLists = [];
+        foreach (string filePath in filePaths)
+        {
+            // Fail closed: dropping a parentless path would return a folder that
+            // doesn't contain it, and the caller copies extras into that folder.
+            string? directory = Path.GetDirectoryName(filePath);
+            if (string.IsNullOrEmpty(directory))
+                return null;
+
+            segmentLists.Add(directory.Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar]));
+        }
 
         if (segmentLists.Count == 0)
             return null;

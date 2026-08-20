@@ -160,24 +160,36 @@ public class SlskdDownloadItem
     /// <summary>Every accepted file completed; abandoned extras don't block completion.</summary>
     public bool AllAcceptedFilesCompleted()
     {
-        IReadOnlyDictionary<string, SlskdFileState> states = FileStates;
-        if (states.Count == 0)
+        if (_previousFileStates.Count == 0)
             return false;
 
-        // Multi-disc: transfer state arrives per remote directory, so wait until
-        // every ACCEPTED file has reported (enqueue-rejected files never produce a transfer).
-        if (ExpectedFileCount > 0 && states.Count < ExpectedFileCount)
-            return false;
+        // Case-insensitive to match OwnsFile; _previousFileStates is ordinal.
+        Dictionary<string, SlskdFileState> statesByName = new(StringComparer.OrdinalIgnoreCase);
+        foreach (KeyValuePair<string, SlskdFileState> kvp in _previousFileStates)
+            statesByName.TryAdd(kvp.Key, kvp.Value);
 
-        foreach (SlskdFileState state in states.Values)
+        bool anyAccepted = false;
+        foreach (SlskdFileData file in FileData)
         {
+            if (file.Filename is not { Length: > 0 } filename || _enqueueFailedFilenames.Contains(filename))
+                continue;
+
+            // Identity, not count: an accepted file with no transfer yet blocks
+            // completion, so foreign records in a shared peer dir can't pad it.
+            if (!statesByName.TryGetValue(filename, out SlskdFileState? state))
+                return false;
+
             if (IsAbandonedExtra(state))
                 continue;
+
             if (state.GetStatus() != DownloadItemStatus.Completed)
                 return false;
+
+            anyAccepted = true;
         }
 
-        return true;
+        // Nothing importable (every accepted file was an abandoned extra) never completes.
+        return anyAccepted;
     }
 
     /// <summary>Local basenames of the enqueued non-audio files (cue/log extras).</summary>

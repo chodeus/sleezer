@@ -121,6 +121,55 @@ public class SlskdStatusResolverAbandonTests
 
         Assert.False(item.AllAcceptedFilesCompleted());
     }
+
+    [Fact]
+    public void An_abandoned_extra_is_not_reported_as_queued_in_the_status_message()
+    {
+        SlskdDownloadItem item = NewItem(("01.flac", 1000), ("rip.cue", 2000));
+        Transfers(item,
+            Transfer("01.flac", "InProgress", 1000),
+            Transfer("rip.cue", "Queued, Remotely", 2000));
+        State(item, "rip.cue").MarkRetriesExhausted();
+
+        SlskdStatusResolver.DownloadStatus resolved = Resolve(item);
+
+        Assert.Contains("downloading", resolved.Message);
+        Assert.DoesNotContain("queued", resolved.Message);
+    }
+
+    // slskd hands the whole per-directory transfer group to whichever item owns
+    // file[0], so a shared peer folder puts another item's files in FileStates.
+    [Fact]
+    public void A_foreign_transfer_cannot_pad_the_count_for_a_file_that_never_reported()
+    {
+        SlskdDownloadItem item = NewItem(("01.flac", 1000), ("02.flac", 1000), ("rip.cue", 2000));
+        Transfers(item,
+            Transfer("01.flac", "Completed, Succeeded", 1000),
+            Transfer("rip.cue", "Completed, Succeeded", 2000),
+            Transfer("foreign.flac", "Completed, Succeeded", 1000));
+
+        Assert.False(item.AllAcceptedFilesCompleted());
+    }
+
+    [Fact]
+    public void AllAcceptedFilesCompleted_does_not_wait_on_an_enqueue_rejected_file()
+    {
+        SlskdDownloadItem item = NewItem(("01.flac", 1000), ("02.flac", 1000));
+        item.MarkEnqueueFailed([Dir + @"\02.flac"]);
+        Transfers(item, Transfer("01.flac", "Completed, Succeeded", 1000));
+
+        Assert.True(item.AllAcceptedFilesCompleted());
+    }
+
+    [Fact]
+    public void An_item_whose_only_accepted_file_is_an_abandoned_extra_never_completes()
+    {
+        SlskdDownloadItem item = NewItem(("rip.cue", 2000));
+        Transfers(item, Transfer("rip.cue", "Completed, Errored", 2000));
+        State(item, "rip.cue").UpdateMaxRetryCount(0);
+
+        Assert.False(item.AllAcceptedFilesCompleted());
+    }
 }
 
 public class SlskdNonAudioBasenamesTests

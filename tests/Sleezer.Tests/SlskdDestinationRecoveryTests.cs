@@ -201,4 +201,11 @@ public class SlskdDestinationRecoveryTests
     {
         Assert.Null(SlskdPathResolver.CommonParentDirectory(["01.flac", "02.flac"]));
     }
+
+    [Fact]
+    public void CommonParentDirectory_is_null_when_one_path_has_no_parent()
+    {
+        Assert.Null(SlskdPathResolver.CommonParentDirectory(
+            [P("", "music", "Album", "01.flac"), "02.flac"]));
+    }
 }

@@ -152,7 +152,7 @@ public static class SlskdStatusResolver
         // the Lidarr UI a "queued at position X" summary instead of a blank.
         if (message == null && (status == DownloadItemStatus.Queued || status == DownloadItemStatus.Downloading))
         {
-            message = BuildQueueMessage(files);
+            message = BuildQueueMessage(item, files);
         }
 
         TimeSpan? remainingTime = totalSpeed > 0
@@ -162,7 +162,7 @@ public static class SlskdStatusResolver
         return new(status, message, totalSize, remainingSize, remainingTime);
     }
 
-    private static string? BuildQueueMessage(IReadOnlyList<SlskdDownloadFile> files)
+    private static string? BuildQueueMessage(SlskdDownloadItem item, IReadOnlyList<SlskdDownloadFile> files)
     {
         int queuedCount = 0;
         int downloadingCount = 0;
@@ -171,6 +171,12 @@ public static class SlskdStatusResolver
 
         foreach (SlskdDownloadFile f in files)
         {
+            // Same skip as the totals loop above — an extra that exhausted its
+            // retries is abandoned, so it must never be reported as queued.
+            if (item.FileStates.TryGetValue(f.Filename, out SlskdFileState? abandonCheck) &&
+                SlskdDownloadItem.IsAbandonedExtra(abandonCheck))
+                continue;
+
             DownloadItemStatus fs = SlskdFileState.GetStatus(f.State);
             switch (fs)
             {
