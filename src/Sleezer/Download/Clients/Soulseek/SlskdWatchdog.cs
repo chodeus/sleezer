@@ -41,6 +41,11 @@ public class SlskdWatchdog : ISlskdWatchdog
 
         foreach (SlskdFileState fileState in item.FileStates.Values)
         {
+            // A shared peer directory can put another item's transfers in FileStates —
+            // never cancel a file this item didn't enqueue.
+            if (!item.OwnsFile(fileState.File.Filename))
+                continue;
+
             if (fileState.WatchdogCancelled)
                 continue;
 

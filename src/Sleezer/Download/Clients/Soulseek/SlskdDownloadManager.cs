@@ -1426,7 +1426,12 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
     private async Task RemoveItemFilesAsync(SlskdDownloadItem item, SlskdProviderSettings settings, HashSet<string>? protectBasenames = null)
     {
-        List<SlskdDownloadFile> files = item.SlskdDownloadDirectory?.Files ?? [];
+        // The merged directory view can carry another item's transfers from a shared
+        // peer directory; cancelling/removing those would kill a live download.
+        List<SlskdDownloadFile> files = (item.SlskdDownloadDirectory?.Files ?? [])
+            .Where(f => item.OwnsFile(f.Filename))
+            .ToList();
+
         if (files.Count == 0 || item.Username == null)
         {
             _logger.Debug("No slskd transfers to cancel for {ItemId} (directory not populated); relying on local folder deletion", item.ID);
