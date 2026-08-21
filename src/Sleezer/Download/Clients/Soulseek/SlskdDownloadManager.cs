@@ -914,6 +914,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         return item;
     }
 
+    /// <summary>Attaches one item's share of a peer directory and its derived state.</summary>
     private void ApplyDirectoryToItem(
         SlskdProviderSettings settings,
         string username,
