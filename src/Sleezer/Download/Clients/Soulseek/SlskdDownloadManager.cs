@@ -837,92 +837,121 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             string hash = SlskdDownloadItem.GetStableMD5Id(dir.Files?.Select(f => f.Filename) ?? []);
             currentIdSet.TryAdd(hash, true);
 
-            // A multi-disc item's ID hashes ALL its files, but slskd reports
-            // transfers per remote directory — the per-directory hash never
-            // matches, so fall back to matching by enqueued-file membership.
-            SlskdDownloadItem? item = GetItem(definitionId, hash)
-                ?? FindItemOwningDirectory(definitionId, userTransfers.Username, dir);
-            if (item == null)
-            {
-                _logger.Trace("[def={DefinitionId}] Unknown item {Hash}: checking history", definitionId, hash);
-                DownloadHistory? history = FindGrabOwningDirectory(hash, dir);
-
-                if (history != null)
-                {
-                    item = new SlskdDownloadItem(history.Release)
-                    {
-                        // The grab's id, not the recomputed content hash: a
-                        // retry grab carries an -rN suffix and a multi-disc
-                        // grab hashes ALL discs — Lidarr tracks both under
-                        // the id it was handed at grab time.
-                        ID = history.DownloadId
-                    };
-                }
-                else if (settings.Inclusive)
-                {
-                    item = new SlskdDownloadItem(CreateReleaseInfoFromDirectory(userTransfers.Username, dir));
-                }
-
-                if (item == null)
-                    continue;
-
-                SubscribeStateChanges(item, definitionId);
-                AddItem(definitionId, item);
-            }
-            else
+            foreach ((SlskdDownloadItem item, SlskdDownloadDirectory slice) in ResolveDirectoryOwners(definitionId, settings, userTransfers.Username, dir))
             {
                 currentIdSet.TryAdd(item.ID, true);
+                ApplyDirectoryToItem(settings, userTransfers.Username, item, slice);
             }
-
-            item.Username ??= userTransfers.Username;
-            item.SlskdDownloadDirectory = dir;
-
-            // slskd echoes the batch id on every transfer — the only copy that
-            // survives a restart. A batch always carried a destination, so slskd
-            // placed the discs pre-merged: restoring both stops a needless merge
-            // from moving a same-named root folder belonging to another download,
-            // and lets the ConfirmedSubdirectory gate in HandleEventAsync trust a
-            // multi-disc completion.
-            if (item.BatchId == null &&
-                dir.Files?.Select(f => f.BatchId).FirstOrDefault(id => !string.IsNullOrEmpty(id)) is { } recoveredBatchId)
-            {
-                item.BatchId = recoveredBatchId;
-                item.DiscFoldersMerged = true;
-            }
-
-            // With a non-default subdirectory pattern, slskd places transfers
-            // somewhere the leaf-name guess can't predict — derive it.
-            if (item.DerivedSubdirectory == null && item.ConfirmedSubdirectory == null &&
-                settings.GetDestinationConfig() is { UsesDefaultPattern: false } destinationConfig &&
-                dir.Files?.FirstOrDefault()?.Filename is { Length: > 0 } firstFile)
-            {
-                item.DerivedSubdirectory = SlskdPathResolver.ResolveSubdirectory(
-                    destinationConfig,
-                    userTransfers.Username,
-                    firstFile,
-                    item.BatchId,
-                    item.BatchId != null ? item.ID : null);
-            }
-
-            // Fallback trigger for post-process: if the transfer poll sees all
-            // files completed before the event poll has caught up with the matching
-            // DownloadDirectoryComplete event, enqueue here. Without this, Lidarr
-            // can see status=Completed and start importing before the scan runs.
-            // _postProcessed.TryAdd dedupes against the event-path trigger.
-            if (item.AllAcceptedFilesCompleted())
-                EnqueuePostProcess(item, settings);
         }
     }
 
-    private SlskdDownloadItem? FindItemOwningDirectory(int definitionId, string username, SlskdDownloadDirectory dir)
+    /// <summary>
+    /// Every tracked item with a stake in one peer directory, each paired with
+    /// just its own transfers — two Lidarr albums can share a peer directory.
+    /// </summary>
+    private List<(SlskdDownloadItem Item, SlskdDownloadDirectory Slice)> ResolveDirectoryOwners(
+        int definitionId,
+        SlskdProviderSettings settings,
+        string username,
+        SlskdDownloadDirectory dir)
     {
-        string? probeFile = dir.Files?.FirstOrDefault()?.Filename;
-        if (string.IsNullOrEmpty(probeFile))
+        // A multi-disc item's ID hashes ALL its files, but slskd reports transfers
+        // per remote directory — that hash only hits for a single-directory item.
+        if (GetItem(definitionId, SlskdDownloadItem.GetStableMD5Id(dir.Files?.Select(f => f.Filename) ?? [])) is { } keyed)
+            return [(keyed, dir)];
+
+        SlskdDirectoryPartition partition = SlskdDirectoryPartitioner.Partition(dir, GetItemsForDef(definitionId), username);
+        List<(SlskdDownloadItem Item, SlskdDownloadDirectory Slice)> owners = [.. partition.Owners];
+
+        if (partition.Unclaimed is { } unclaimed &&
+            AdoptUnknownDirectory(definitionId, settings, username, unclaimed) is { } adopted)
+            owners.Add((adopted, unclaimed));
+
+        return owners;
+    }
+
+    /// <summary>
+    /// Re-attaches transfers no tracked item claimed to the grab that started
+    /// them, or (inclusive mode) builds an item from the directory itself.
+    /// </summary>
+    private SlskdDownloadItem? AdoptUnknownDirectory(
+        int definitionId,
+        SlskdProviderSettings settings,
+        string username,
+        SlskdDownloadDirectory dir)
+    {
+        string hash = SlskdDownloadItem.GetStableMD5Id(dir.Files?.Select(f => f.Filename) ?? []);
+        _logger.Trace("[def={DefinitionId}] Unknown item {Hash}: checking history", definitionId, hash);
+        DownloadHistory? history = FindGrabOwningDirectory(hash, dir);
+
+        SlskdDownloadItem? item = null;
+        if (history != null)
+        {
+            item = new SlskdDownloadItem(history.Release)
+            {
+                // The grab's id, not the recomputed content hash: a
+                // retry grab carries an -rN suffix and a multi-disc
+                // grab hashes ALL discs — Lidarr tracks both under
+                // the id it was handed at grab time.
+                ID = history.DownloadId
+            };
+        }
+        else if (settings.Inclusive)
+        {
+            item = new SlskdDownloadItem(CreateReleaseInfoFromDirectory(username, dir));
+        }
+
+        if (item == null)
             return null;
 
-        return GetItemsForDef(definitionId).FirstOrDefault(i =>
-            (i.Username == null || string.Equals(i.Username, username, StringComparison.OrdinalIgnoreCase)) &&
-            i.OwnsFile(probeFile));
+        SubscribeStateChanges(item, definitionId);
+        AddItem(definitionId, item);
+        return item;
+    }
+
+    private void ApplyDirectoryToItem(
+        SlskdProviderSettings settings,
+        string username,
+        SlskdDownloadItem item,
+        SlskdDownloadDirectory dir)
+    {
+        item.Username ??= username;
+        item.SlskdDownloadDirectory = dir;
+
+        // slskd echoes the batch id on every transfer — the only copy that
+        // survives a restart. A batch always carried a destination, so slskd
+        // placed the discs pre-merged: restoring both stops a needless merge
+        // from moving a same-named root folder belonging to another download,
+        // and lets the ConfirmedSubdirectory gate in HandleEventAsync trust a
+        // multi-disc completion.
+        if (item.BatchId == null &&
+            dir.Files?.Select(f => f.BatchId).FirstOrDefault(id => !string.IsNullOrEmpty(id)) is { } recoveredBatchId)
+        {
+            item.BatchId = recoveredBatchId;
+            item.DiscFoldersMerged = true;
+        }
+
+        // With a non-default subdirectory pattern, slskd places transfers
+        // somewhere the leaf-name guess can't predict — derive it.
+        if (item.DerivedSubdirectory == null && item.ConfirmedSubdirectory == null &&
+            settings.GetDestinationConfig() is { UsesDefaultPattern: false } destinationConfig &&
+            dir.Files?.FirstOrDefault()?.Filename is { Length: > 0 } firstFile)
+        {
+            item.DerivedSubdirectory = SlskdPathResolver.ResolveSubdirectory(
+                destinationConfig,
+                username,
+                firstFile,
+                item.BatchId,
+                item.BatchId != null ? item.ID : null);
+        }
+
+        // Fallback trigger for post-process: if the transfer poll sees all
+        // files completed before the event poll has caught up with the matching
+        // DownloadDirectoryComplete event, enqueue here. Without this, Lidarr
+        // can see status=Completed and start importing before the scan runs.
+        // _postProcessed.TryAdd dedupes against the event-path trigger.
+        if (item.AllAcceptedFilesCompleted())
+            EnqueuePostProcess(item, settings);
     }
 
     // Restart re-attach: -rN retry and multi-disc grab ids never equal the
