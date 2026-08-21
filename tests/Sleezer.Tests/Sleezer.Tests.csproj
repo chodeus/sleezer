@@ -89,6 +89,8 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Indexers\Soulseek\SlskdSettings.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Indexers\Soulseek\SlskdUrls.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Indexers\Soulseek\Search\Core\SearchContext.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Indexers\Soulseek\Search\Templates\TemplateEngine.cs"

@@ -227,7 +227,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             // Points at the peer, not the search: Lidarr renders this as the title's
             // href, so hovering a result reveals which user it came from. Searches are
             // deleted after parsing, so a /searches/ link is usually dead by then.
-            string infoUrl = BuildPeerUrl(settings, folderData.Username);
+            string infoUrl = SlskdUrls.Peer(settings, folderData.Username);
             string? edition = ExtractEdition(folderData.Path)?.ToUpper();
 
             int priority = folderData.CalculatePriority(expectedTrackCount);
@@ -287,19 +287,6 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 ExtraInfo = string.IsNullOrEmpty(edition) ? null : [edition],
                 Duration = TotalDuration
             };
-        }
-
-        /// <summary>
-        /// slskd's browse page for the peer. Lidarr has no column for the user, so
-        /// this link is where it surfaces: the browser shows the target on hover.
-        /// </summary>
-        internal static string BuildPeerUrl(SlskdSettings? settings, string? username)
-        {
-            if (settings == null || string.IsNullOrEmpty(username))
-                return "";
-
-            string host = string.IsNullOrEmpty(settings.ExternalUrl) ? settings.BaseUrl : settings.ExternalUrl;
-            return $"{host?.TrimEnd('/')}/browse?user={Uri.EscapeDataString(username)}";
         }
 
         private static string[] SplitPathIntoComponents(string path) => path.Split(['\\', '/'], StringSplitOptions.RemoveEmptyEntries);

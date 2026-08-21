@@ -20,6 +20,9 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
 
         public string ArtistName { get; set; } = string.Empty;
         public string InfoUrl { get; set; } = string.Empty;
+
+        // Identity, not display: slskd matches an interactive grab back to its search.
+        public string CommentUrl { get; set; } = string.Empty;
         public string ReleaseDate { get; set; } = string.Empty;
         public DateTime ReleaseDateTime { get; set; }
         public string ReleaseDatePrecision { get; set; } = string.Empty;
@@ -81,6 +84,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
             release.Album = AlbumName;
             release.DownloadUrl = AlbumId;
             release.InfoUrl = InfoUrl;
+            release.CommentUrl = CommentUrl;
             // Only day-precision dates populate PublishDate; year/month are
             // synthesized and would trip EarlyReleaseSpecification — use discovery time.
             release.PublishDate = ReleaseDatePrecision == "day" && ReleaseDateTime != DateTime.MinValue
