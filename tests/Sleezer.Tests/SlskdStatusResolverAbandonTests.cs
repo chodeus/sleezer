@@ -1,0 +1,267 @@
+using System.Text.Json;
+using NzbDrone.Core.Download;
+using NzbDrone.Core.Parser.Model;
+using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
+using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek.Models;
+using Xunit;
+
+namespace Sleezer.Tests;
+
+// A permanently-failed cue/log used to fail the WHOLE album: the resolver
+// counted it in failedCount and completion never turned true, so a flaky peer's
+// 2 KB log blocklisted a perfect rip. "Abandoned extra" is derived state — no
+// flags — so it survives restart rehydration and RetryAttempts=0.
+public class SlskdStatusResolverAbandonTests
+{
+    private const string Dir = @"@@u\Artist\Album";
+
+    private static SlskdDownloadItem NewItem(params (string Name, long Size)[] files)
+    {
+        string source = "[" + string.Join(",", files.Select(f =>
+            $"{{\"Filename\":{JsonSerializer.Serialize(Dir + "\\" + f.Name)},\"Size\":{f.Size}}}")) + "]";
+        return new SlskdDownloadItem(new ReleaseInfo { Source = source, Title = "t", DownloadUrl = "u" });
+    }
+
+    private static SlskdDownloadFile Transfer(string name, string state, long size) => new(
+        Id: name, Username: "peer", Direction: "Download", Filename: Dir + "\\" + name,
+        Size: size, StartOffset: 0, State: state,
+        RequestedAt: DateTime.UtcNow, EnqueuedAt: DateTime.UtcNow, StartedAt: DateTime.UtcNow,
+        BytesTransferred: 0, AverageSpeed: 0, BytesRemaining: 0,
+        ElapsedTime: TimeSpan.Zero, PercentComplete: 0, RemainingTime: TimeSpan.Zero, EndedAt: null);
+
+    private static void Transfers(SlskdDownloadItem item, params SlskdDownloadFile[] files) =>
+        item.SlskdDownloadDirectory = new SlskdDownloadDirectory(Dir, files.Length, files.ToList());
+
+    private static SlskdFileState State(SlskdDownloadItem item, string name) => item.FileStates[Dir + "\\" + name];
+
+    private static SlskdStatusResolver.DownloadStatus Resolve(SlskdDownloadItem item) =>
+        SlskdStatusResolver.Resolve(item, TimeSpan.FromMinutes(30), DateTime.UtcNow);
+
+    [Fact]
+    public void A_terminally_errored_cue_still_completes_the_album()
+    {
+        SlskdDownloadItem item = NewItem(("01.flac", 1000), ("02.flac", 1000), ("03.flac", 1000), ("rip.cue", 2000));
+        Transfers(item,
+            Transfer("01.flac", "Completed, Succeeded", 1000),
+            Transfer("02.flac", "Completed, Succeeded", 1000),
+            Transfer("03.flac", "Completed, Succeeded", 1000),
+            Transfer("rip.cue", "Completed, Errored", 2000));
+        // RetryAttempts=0: the file is terminally failed with no retry ever fired.
+        State(item, "rip.cue").UpdateMaxRetryCount(0);
+
+        SlskdStatusResolver.DownloadStatus resolved = Resolve(item);
+
+        Assert.Equal(DownloadItemStatus.Completed, resolved.Status);
+        Assert.Contains("extra file", resolved.Message);
+    }
+
+    [Fact]
+    public void A_cue_stuck_in_the_remote_queue_past_its_retries_still_completes_the_album()
+    {
+        SlskdDownloadItem item = NewItem(("01.flac", 1000), ("02.flac", 1000), ("rip.cue", 2000));
+        Transfers(item,
+            Transfer("01.flac", "Completed, Succeeded", 1000),
+            Transfer("02.flac", "Completed, Succeeded", 1000),
+            Transfer("rip.cue", "Queued, Remotely", 2000));
+        State(item, "rip.cue").MarkRetriesExhausted();
+
+        Assert.Equal(DownloadItemStatus.Completed, Resolve(item).Status);
+    }
+
+    [Fact]
+    public void A_terminally_failed_audio_file_still_fails_the_album()
+    {
+        SlskdDownloadItem item = NewItem(("01.flac", 1000), ("02.flac", 1000), ("rip.cue", 2000));
+        Transfers(item,
+            Transfer("01.flac", "Completed, Succeeded", 1000),
+            Transfer("02.flac", "Completed, Errored", 1000),
+            Transfer("rip.cue", "Completed, Succeeded", 2000));
+        State(item, "02.flac").MarkRetriesExhausted();
+
+        SlskdStatusResolver.DownloadStatus resolved = Resolve(item);
+
+        Assert.Equal(DownloadItemStatus.Failed, resolved.Status);
+        Assert.Contains("02.flac", resolved.Message);
+    }
+
+    [Fact]
+    public void An_abandoned_extra_contributes_nothing_to_the_size_totals()
+    {
+        SlskdDownloadItem item = NewItem(("01.flac", 1000), ("02.flac", 1000), ("rip.cue", 2000));
+        Transfers(item,
+            Transfer("01.flac", "Completed, Succeeded", 1000),
+            Transfer("02.flac", "Completed, Succeeded", 1000),
+            Transfer("rip.cue", "Completed, Errored", 2000));
+        State(item, "rip.cue").MarkRetriesExhausted();
+
+        Assert.Equal(2000, Resolve(item).TotalSize);
+    }
+
+    [Fact]
+    public void AllAcceptedFilesCompleted_ignores_an_abandoned_extra()
+    {
+        SlskdDownloadItem item = NewItem(("01.flac", 1000), ("rip.cue", 2000));
+        Transfers(item,
+            Transfer("01.flac", "Completed, Succeeded", 1000),
+            Transfer("rip.cue", "Completed, Errored", 2000));
+        State(item, "rip.cue").MarkRetriesExhausted();
+
+        Assert.True(item.AllAcceptedFilesCompleted());
+    }
+
+    [Fact]
+    public void AllAcceptedFilesCompleted_still_waits_on_a_queued_audio_file()
+    {
+        SlskdDownloadItem item = NewItem(("01.flac", 1000), ("02.flac", 1000), ("rip.cue", 2000));
+        Transfers(item,
+            Transfer("01.flac", "Completed, Succeeded", 1000),
+            Transfer("02.flac", "Queued, Remotely", 1000),
+            Transfer("rip.cue", "Completed, Errored", 2000));
+        State(item, "rip.cue").MarkRetriesExhausted();
+
+        Assert.False(item.AllAcceptedFilesCompleted());
+    }
+
+    [Fact]
+    public void An_abandoned_extra_is_not_reported_as_queued_in_the_status_message()
+    {
+        SlskdDownloadItem item = NewItem(("01.flac", 1000), ("rip.cue", 2000));
+        Transfers(item,
+            Transfer("01.flac", "InProgress", 1000),
+            Transfer("rip.cue", "Queued, Remotely", 2000));
+        State(item, "rip.cue").MarkRetriesExhausted();
+
+        SlskdStatusResolver.DownloadStatus resolved = Resolve(item);
+
+        Assert.Contains("downloading", resolved.Message);
+        Assert.DoesNotContain("queued", resolved.Message);
+    }
+
+    // slskd hands the whole per-directory transfer group to whichever item owns
+    // file[0], so a shared peer folder puts another item's files in FileStates.
+    [Fact]
+    public void A_foreign_transfer_cannot_pad_the_count_for_a_file_that_never_reported()
+    {
+        SlskdDownloadItem item = NewItem(("01.flac", 1000), ("02.flac", 1000), ("rip.cue", 2000));
+        Transfers(item,
+            Transfer("01.flac", "Completed, Succeeded", 1000),
+            Transfer("rip.cue", "Completed, Succeeded", 2000),
+            Transfer("foreign.flac", "Completed, Succeeded", 1000));
+
+        Assert.False(item.AllAcceptedFilesCompleted());
+    }
+
+    [Fact]
+    public void A_foreign_failed_transfer_does_not_fail_the_album()
+    {
+        SlskdDownloadItem item = NewItem(("01.flac", 1000), ("02.flac", 1000));
+        Transfers(item,
+            Transfer("01.flac", "Completed, Succeeded", 1000),
+            Transfer("02.flac", "Completed, Succeeded", 1000),
+            Transfer("foreign.flac", "Completed, Errored", 1000));
+        State(item, "foreign.flac").MarkRetriesExhausted();
+
+        Assert.Equal(DownloadItemStatus.Completed, Resolve(item).Status);
+    }
+
+    [Fact]
+    public void A_foreign_queued_transfer_is_not_reported_in_the_status_message()
+    {
+        SlskdDownloadItem item = NewItem(("01.flac", 1000));
+        Transfers(item,
+            Transfer("01.flac", "InProgress", 1000),
+            Transfer("foreign.flac", "Queued, Remotely", 1000));
+
+        SlskdStatusResolver.DownloadStatus resolved = Resolve(item);
+
+        Assert.Contains("downloading", resolved.Message);
+        Assert.DoesNotContain("queued", resolved.Message);
+    }
+
+    [Fact]
+    public void A_foreign_queued_transfer_cannot_hold_the_album_incomplete()
+    {
+        SlskdDownloadItem item = NewItem(("01.flac", 1000));
+        Transfers(item,
+            Transfer("01.flac", "Completed, Succeeded", 1000),
+            Transfer("foreign.flac", "Queued, Remotely", 1000));
+
+        Assert.Equal(DownloadItemStatus.Completed, Resolve(item).Status);
+    }
+
+    // A file slskd rejected for THIS item produces no transfer of ours, so any
+    // transfer under that name belongs to another item sharing the peer folder.
+    [Fact]
+    public void A_rejected_files_transfer_cannot_fail_the_album()
+    {
+        SlskdDownloadItem item = NewItem(("01.flac", 1000), ("02.flac", 1000));
+        item.MarkEnqueueFailed([Dir + @"\02.flac"]);
+        Transfers(item,
+            Transfer("01.flac", "Completed, Succeeded", 1000),
+            Transfer("02.flac", "Completed, Errored", 1000));
+        State(item, "02.flac").MarkRetriesExhausted();
+
+        SlskdStatusResolver.DownloadStatus resolved = Resolve(item);
+
+        Assert.Equal(DownloadItemStatus.Completed, resolved.Status);
+        Assert.Equal(1000, resolved.TotalSize);
+    }
+
+    [Fact]
+    public void AllAcceptedFilesCompleted_does_not_wait_on_an_enqueue_rejected_file()
+    {
+        SlskdDownloadItem item = NewItem(("01.flac", 1000), ("02.flac", 1000));
+        item.MarkEnqueueFailed([Dir + @"\02.flac"]);
+        Transfers(item, Transfer("01.flac", "Completed, Succeeded", 1000));
+
+        Assert.True(item.AllAcceptedFilesCompleted());
+    }
+
+    [Fact]
+    public void An_item_whose_only_accepted_file_is_an_abandoned_extra_never_completes()
+    {
+        SlskdDownloadItem item = NewItem(("rip.cue", 2000));
+        Transfers(item, Transfer("rip.cue", "Completed, Errored", 2000));
+        State(item, "rip.cue").UpdateMaxRetryCount(0);
+
+        Assert.False(item.AllAcceptedFilesCompleted());
+    }
+}
+
+public class SlskdNonAudioBasenamesTests
+{
+    private static SlskdDownloadItem NewItem(params string[] filenames)
+    {
+        string source = "[" + string.Join(",", filenames.Select(f =>
+            $"{{\"Filename\":{JsonSerializer.Serialize(f)},\"Size\":1000}}")) + "]";
+        return new SlskdDownloadItem(new ReleaseInfo { Source = source, Title = "t", DownloadUrl = "u" });
+    }
+
+    [Fact]
+    public void Only_the_non_audio_basenames_are_returned()
+    {
+        SlskdDownloadItem item = NewItem(
+            @"@@u\Artist\Album\01 - Track.flac",
+            @"@@u\Artist\Album\rip.cue",
+            @"@@u\Artist\Album\rip.log");
+
+        Assert.Equal(new[] { "rip.cue", "rip.log" }, item.NonAudioBasenames());
+    }
+
+    [Fact]
+    public void A_pure_audio_grab_has_no_extras()
+    {
+        SlskdDownloadItem item = NewItem(@"@@u\A\B\01.flac", @"@@u\A\B\02.mp3", @"@@u\A\B\03.m4a");
+
+        Assert.Empty(item.NonAudioBasenames());
+    }
+
+    [Fact]
+    public void An_enqueue_rejected_extra_is_not_an_extra_to_import()
+    {
+        SlskdDownloadItem item = NewItem(@"@@u\A\B\01.flac", @"@@u\A\B\rip.cue");
+        item.MarkEnqueueFailed([@"@@u\A\B\rip.cue"]);
+
+        Assert.Empty(item.NonAudioBasenames());
+    }
+}

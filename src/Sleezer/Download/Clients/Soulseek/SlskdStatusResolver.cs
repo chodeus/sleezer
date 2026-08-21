@@ -18,14 +18,24 @@ public static class SlskdStatusResolver
         if (item.SlskdDownloadDirectory?.Files == null)
             return new(DownloadItemStatus.Queued, null, 0, 0, null);
 
-        IReadOnlyList<SlskdDownloadFile> files = item.SlskdDownloadDirectory.Files;
+        // A shared peer directory can put another item's transfers in this view —
+        // only files slskd accepted for THIS item may drive its status.
+        List<SlskdDownloadFile> ownedFiles = item.SlskdDownloadDirectory.Files
+            .Where(f => item.OwnsAcceptedFile(f.Filename))
+            .ToList();
 
         long totalSize = 0, remainingSize = 0, totalSpeed = 0;
         bool anyActive = false, anyIncomplete = false, allIncompleteRemoteQueued = true;
         DateTime lastActivity = DateTime.MinValue;
 
-        foreach (SlskdDownloadFile f in files)
+        foreach (SlskdDownloadFile f in ownedFiles)
         {
+            // An abandoned extra contributes nothing — not to totals, activity,
+            // nor the all-stuck check; it can never hold the album back.
+            if (item.FileStates.TryGetValue(f.Filename, out SlskdFileState? abandonCheck) &&
+                SlskdDownloadItem.IsAbandonedExtra(abandonCheck))
+                continue;
+
             totalSize += f.Size;
             remainingSize += f.BytesRemaining;
 
@@ -66,12 +76,21 @@ public static class SlskdStatusResolver
 
         bool allStuckInRemoteQueue = anyIncomplete && allIncompleteRemoteQueued;
 
-        int totalFileCount = 0, failedCount = 0, completedCount = 0;
+        int totalFileCount = 0, failedCount = 0, completedCount = 0, abandonedExtras = 0;
         bool anyWarning = false, anyPaused = false, anyDownloadingState = false;
         List<string> failedFileNames = [];
 
         foreach (SlskdFileState fs in item.FileStates.Values)
         {
+            if (!item.OwnsAcceptedFile(fs.File.Filename))
+                continue;
+
+            if (SlskdDownloadItem.IsAbandonedExtra(fs))
+            {
+                abandonedExtras++;
+                continue;
+            }
+
             totalFileCount++;
             DownloadItemStatus s = fs.GetStatus();
             switch (s)
@@ -115,6 +134,8 @@ public static class SlskdStatusResolver
             status = item.PostProcessTasks.Any(t => !t.IsCompleted)
                 ? DownloadItemStatus.Downloading
                 : DownloadItemStatus.Completed;
+            if (abandonedExtras > 0)
+                message = $"Completed; {abandonedExtras} extra file(s) failed and were skipped";
         }
         else if (anyPaused)
         {
@@ -138,7 +159,7 @@ public static class SlskdStatusResolver
         // the Lidarr UI a "queued at position X" summary instead of a blank.
         if (message == null && (status == DownloadItemStatus.Queued || status == DownloadItemStatus.Downloading))
         {
-            message = BuildQueueMessage(files);
+            message = BuildQueueMessage(item, ownedFiles);
         }
 
         TimeSpan? remainingTime = totalSpeed > 0
@@ -148,7 +169,7 @@ public static class SlskdStatusResolver
         return new(status, message, totalSize, remainingSize, remainingTime);
     }
 
-    private static string? BuildQueueMessage(IReadOnlyList<SlskdDownloadFile> files)
+    private static string? BuildQueueMessage(SlskdDownloadItem item, IReadOnlyList<SlskdDownloadFile> files)
     {
         int queuedCount = 0;
         int downloadingCount = 0;
@@ -157,6 +178,12 @@ public static class SlskdStatusResolver
 
         foreach (SlskdDownloadFile f in files)
         {
+            // Same skip as the totals loop above — an extra that exhausted its
+            // retries is abandoned, so it must never be reported as queued.
+            if (item.FileStates.TryGetValue(f.Filename, out SlskdFileState? abandonCheck) &&
+                SlskdDownloadItem.IsAbandonedExtra(abandonCheck))
+                continue;
+
             DownloadItemStatus fs = SlskdFileState.GetStatus(f.State);
             switch (fs)
             {

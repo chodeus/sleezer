@@ -6,6 +6,7 @@ using NzbDrone.Core.Download.History;
 using NzbDrone.Core.Music;
 using NzbDrone.Core.Parser.Model;
 using System.Text.Json;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Indexers.Soulseek;
 
 namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek.Models;
@@ -136,6 +137,14 @@ public class SlskdDownloadItem
         !string.IsNullOrEmpty(remoteFilename) && _enqueuedFilenames.Contains(remoteFilename);
 
     /// <summary>
+    /// True when this item enqueued the file AND slskd accepted it — the
+    /// ownership test for anything reading transfer state, since a rejected
+    /// file's only possible transfer belongs to another item.
+    /// </summary>
+    public bool OwnsAcceptedFile(string? remoteFilename) =>
+        OwnsFile(remoteFilename) && !_enqueueFailedFilenames.Contains(remoteFilename!);
+
+    /// <summary>
     /// Records files slskd rejected at enqueue time. They will never produce a
     /// transfer, so completion tracking must not wait for them.
     /// </summary>
@@ -147,6 +156,60 @@ public class SlskdDownloadItem
 
     /// <summary>Files that were actually accepted by slskd.</summary>
     public int ExpectedFileCount => Math.Max(0, FileData.Count - _enqueueFailedFilenames.Count);
+
+    /// <summary>
+    /// A terminally-failed non-audio extra (cue/log) — skipped from status and
+    /// completion so a broken extra can never fail an otherwise-complete album.
+    /// </summary>
+    public static bool IsAbandonedExtra(SlskdFileState state) =>
+        state.GetStatus() == DownloadItemStatus.Failed &&
+        !AudioFormatHelper.IsAudioFilename(state.File.Filename);
+
+    /// <summary>Every accepted file completed; abandoned extras don't block completion.</summary>
+    public bool AllAcceptedFilesCompleted()
+    {
+        if (_previousFileStates.Count == 0)
+            return false;
+
+        // Case-insensitive to match OwnsFile; _previousFileStates is ordinal.
+        Dictionary<string, SlskdFileState> statesByName = new(StringComparer.OrdinalIgnoreCase);
+        foreach (KeyValuePair<string, SlskdFileState> kvp in _previousFileStates)
+            statesByName.TryAdd(kvp.Key, kvp.Value);
+
+        bool anyAccepted = false;
+        foreach (SlskdFileData file in FileData)
+        {
+            if (file.Filename is not { Length: > 0 } filename || !OwnsAcceptedFile(filename))
+                continue;
+
+            // Identity, not count: an accepted file with no transfer yet blocks
+            // completion, so foreign records in a shared peer dir can't pad it.
+            if (!statesByName.TryGetValue(filename, out SlskdFileState? state))
+                return false;
+
+            if (IsAbandonedExtra(state))
+                continue;
+
+            if (state.GetStatus() != DownloadItemStatus.Completed)
+                return false;
+
+            anyAccepted = true;
+        }
+
+        // Nothing importable (every accepted file was an abandoned extra) never completes.
+        return anyAccepted;
+    }
+
+    /// <summary>Local basenames of the enqueued non-audio files (cue/log extras).</summary>
+    public IReadOnlyList<string> NonAudioBasenames() =>
+        FileData
+            .Where(f => f.Filename is { Length: > 0 } filename &&
+                OwnsAcceptedFile(filename) &&
+                !AudioFormatHelper.IsAudioFilename(filename))
+            .Select(f => Path.GetFileName(f.Filename!.Replace('\\', '/')))
+            .Where(n => !string.IsNullOrEmpty(n))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
     /// <summary>True when this item tracks transfers for the given remote directory.</summary>
     public bool TracksRemoteDirectory(string? remoteDirectory) =>

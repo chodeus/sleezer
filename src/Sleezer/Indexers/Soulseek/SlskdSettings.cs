@@ -117,7 +117,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         [FieldDefinition(3, Type = FieldType.Checkbox, Label = "Audio Files Only", HelpText = "Return only audio file types")]
         public bool OnlyAudioFiles { get; set; } = true;
 
-        [FieldDefinition(4, Type = FieldType.Tag, Label = "File Extensions", HelpText = "Additional extensions when Audio Files Only is enabled (without dots)", Advanced = true)]
+        [FieldDefinition(4, Type = FieldType.Tag, Label = "File Extensions", HelpText = "Additional extensions when Audio Files Only is enabled (without dots, e.g. cue, log)", Advanced = true)]
         public IEnumerable<string> IncludeFileExtensions { get; set; } = [];
 
         [FieldDefinition(6, Type = FieldType.Number, Label = "Early Download Limit", Unit = "days", HelpText = "Days before release to allow downloads", Advanced = true)]

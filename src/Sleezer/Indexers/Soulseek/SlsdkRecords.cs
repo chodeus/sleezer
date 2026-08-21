@@ -38,9 +38,13 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             {
                 string? extension = !string.IsNullOrWhiteSpace(file.Extension) ? file.Extension : Path.GetExtension(file.Filename);
 
+                // The whitelist is stored dotless but peers report either form (and
+                // the filename fallback always yields ".cue") — compare normalized.
+                string normalizedExtension = (extension ?? string.Empty).TrimStart('.');
+
                 if (onlyIncludeAudio &&
-                    AudioFormatHelper.GetAudioCodecFromExtension(extension ?? "") == AudioFormat.Unknown &&
-                    !(includedFileExtensions?.Contains(extension, StringComparer.OrdinalIgnoreCase) ?? false))
+                    AudioFormatHelper.GetAudioCodecFromExtension(normalizedExtension) == AudioFormat.Unknown &&
+                    !(includedFileExtensions?.Contains(normalizedExtension, StringComparer.OrdinalIgnoreCase) ?? false))
                 {
                     continue;
                 }
