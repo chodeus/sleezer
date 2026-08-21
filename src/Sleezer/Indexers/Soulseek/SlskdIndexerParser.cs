@@ -149,7 +149,11 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                             }
                         }
 
-                        AlbumData albumData = _itemsParser.CreateAlbumData(searchResponse.Id, finalGroup, searchTextData, folderData, Settings, searchTextData.TrackCount);
+                        AlbumData albumData = _itemsParser.CreateAlbumData(finalGroup, searchTextData, folderData, Settings, searchTextData.TrackCount);
+
+                        // Carries the search this release came from; the display link
+                        // points at the peer, so grab cleanup matches on this instead.
+                        albumData.CommentUrl = SlskdUrls.Search(Settings, searchResponse.Id);
                         List<SlskdFileData> downloadFiles = JsonSerializer.Deserialize<List<SlskdFileData>>(albumData.CustomString, IndexerParserHelper.StandardJsonOptions) ?? [];
 
                         // Per-directory single/EP decisions log at Debug (too many to surface
@@ -281,7 +285,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
         public void Handle(AlbumGrabbedEvent message)
         {
-            if (!_interactiveResults.TryGetValue(message.Album.Release.IndexerId, out string? selectedId) || !message.Album.Release.InfoUrl.EndsWith(selectedId))
+            if (!_interactiveResults.TryGetValue(message.Album.Release.IndexerId, out string? selectedId) ||
+                !SlskdUrls.IsFromSearch(message.Album.Release.CommentUrl, selectedId))
                 return;
             ExecuteRemovalAsync((SlskdSettings)_indexerFactory.Value.Get(message.Album.Release.IndexerId).Settings, selectedId).GetAwaiter().GetResult();
             _interactiveResults.TryRemove(message.Album.Release.IndexerId, out _);

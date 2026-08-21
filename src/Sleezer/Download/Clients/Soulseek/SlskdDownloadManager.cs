@@ -1665,7 +1665,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         SlskdFolderData folderData = dir.CreateFolderData(username, _slskdItemsParser);
         SlskdSearchData searchData = new(null, null, false, false, 1, null);
         IGrouping<string, SlskdFileData> dirGroup = dir.ToSlskdFileDataList().GroupBy(_ => dir.Directory).First();
-        AlbumData albumData = _slskdItemsParser.CreateAlbumData(string.Empty, dirGroup, searchData, folderData, null, 0);
+        AlbumData albumData = _slskdItemsParser.CreateAlbumData(dirGroup, searchData, folderData, null, 0);
         ReleaseInfo release = albumData.ToShareInfo();
         release.DownloadProtocol = null;
         return release;

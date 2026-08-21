@@ -80,7 +80,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 Files: []);
         }
 
-        public AlbumData CreateAlbumData(string searchId, IGrouping<string, SlskdFileData> directory, SlskdSearchData searchData, SlskdFolderData folderData, SlskdSettings? settings = null, int expectedTrackCount = 0)
+        public AlbumData CreateAlbumData(IGrouping<string, SlskdFileData> directory, SlskdSearchData searchData, SlskdFolderData folderData, SlskdSettings? settings = null, int expectedTrackCount = 0)
         {
             string dirNameNorm = NormalizeString(directory.Key);
             string searchArtistNorm = NormalizeString(searchData.Artist ?? "");
@@ -224,7 +224,10 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
             _logger.Trace("Audio: {Codec}, BitRate: {BitRate}, BitDepth: {BitDepth}, Files: {TrackCount}", Codec, BitRate, BitDepth, actualTrackCount);
 
-            string infoUrl = settings != null ? $"{(string.IsNullOrEmpty(settings.ExternalUrl) ? settings.BaseUrl : settings.ExternalUrl)}/searches/{searchId}" : "";
+            // Points at the peer, not the search: Lidarr renders this as the title's
+            // href, so hovering a result reveals which user it came from. Searches are
+            // deleted after parsing, so a /searches/ link is usually dead by then.
+            string infoUrl = SlskdUrls.Peer(settings, folderData.Username);
             string? edition = ExtractEdition(folderData.Path)?.ToUpper();
 
             int priority = folderData.CalculatePriority(expectedTrackCount);

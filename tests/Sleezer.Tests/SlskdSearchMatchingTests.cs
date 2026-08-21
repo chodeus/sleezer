@@ -284,7 +284,7 @@ public class SlskdSingleSourceTests
         };
         SlskdSearchData search = new(artist, album, false, false, 1, null,
             TrackCount: expectedTrackCount, Tracks: tracks.ToList(), AlbumType: albumType);
-        return Parser.CreateAlbumData("search1", group, search, folder, settings, expectedTrackCount);
+        return Parser.CreateAlbumData(group, search, folder, settings, expectedTrackCount);
     }
 
     private static int FlacCount(string customString) => customString.Split(".flac").Length - 1;
@@ -336,7 +336,7 @@ public class SlskdSingleSourceTests
         }.GroupBy(_ => dir).Single();
         SlskdFolderData folder = Parser.ParseFolderName(dir) with { Username = "user", HasFreeUploadSlot = true, FileCount = 3 };
         SlskdSearchData search = new("Van Halen", "Dreams", false, false, 1, null, TrackCount: 1, Tracks: new() { "Dreams" });
-        AlbumData a = Parser.CreateAlbumData("s", group, search, folder, null, 1);
+        AlbumData a = Parser.CreateAlbumData(group, search, folder, null, 1);
 
         Assert.True(a.MatchedSearchCriteria);         // recognized as audio via filename fallback
         Assert.Equal(1, FlacCount(a.CustomString));   // and the Dreams track is plucked
@@ -356,7 +356,7 @@ public class SlskdSingleSourceTests
         }.GroupBy(_ => dir).Single();
         SlskdFolderData folder = Parser.ParseFolderName(dir) with { Username = "user", HasFreeUploadSlot = true, FileCount = 4 };
         SlskdSearchData search = new("Artist", "Dreams", false, false, 1, null, TrackCount: 1, Tracks: new() { "Dreams" });
-        AlbumData a = Parser.CreateAlbumData("s", group, search, folder, null, 1);
+        AlbumData a = Parser.CreateAlbumData(group, search, folder, null, 1);
 
         Assert.True(a.MatchedSearchCriteria);
         Assert.Equal(1, FlacCount(a.CustomString));   // the flac, not the cue, is plucked

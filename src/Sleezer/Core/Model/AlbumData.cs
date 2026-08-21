@@ -20,6 +20,9 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
 
         public string ArtistName { get; set; } = string.Empty;
         public string InfoUrl { get; set; } = string.Empty;
+
+        // Identity, not display: slskd matches an interactive grab back to its search.
+        public string CommentUrl { get; set; } = string.Empty;
         public string ReleaseDate { get; set; } = string.Empty;
         public DateTime ReleaseDateTime { get; set; }
         public string ReleaseDatePrecision { get; set; } = string.Empty;
@@ -81,6 +84,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
             release.Album = AlbumName;
             release.DownloadUrl = AlbumId;
             release.InfoUrl = InfoUrl;
+            release.CommentUrl = CommentUrl;
             // Only day-precision dates populate PublishDate; year/month are
             // synthesized and would trip EarlyReleaseSpecification — use discovery time.
             release.PublishDate = ReleaseDatePrecision == "day" && ReleaseDateTime != DateTime.MinValue
@@ -134,8 +138,13 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
             else
                 title += $" [{Codec}]";
 
+            // An edition that repeats the source tag ("[CD] [CD]") reads as a bug;
+            // SourceTag is appended below, so it wins.
             if (ExtraInfo?.Count > 0)
-                title += string.Concat(ExtraInfo.Where(info => !string.IsNullOrEmpty(info)).Select(info => $" [{info}]"));
+                title += string.Concat(ExtraInfo
+                    .Where(info => !string.IsNullOrEmpty(info) && !string.Equals(info, SourceTag, StringComparison.OrdinalIgnoreCase))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Select(info => $" [{info}]"));
 
             title += $" [{SourceTag}]";
             return title;

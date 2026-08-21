@@ -29,7 +29,7 @@ public class SlskdExtrasFlowTests
         };
         SlskdSearchData search = new(artist, album, false, false, 1, null,
             TrackCount: expectedTrackCount, Tracks: tracks.ToList(), AlbumType: albumType);
-        return Parser.CreateAlbumData("search1", group, search, folder, null, expectedTrackCount);
+        return Parser.CreateAlbumData(group, search, folder, null, expectedTrackCount);
     }
 
     [Fact]

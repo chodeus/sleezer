@@ -108,7 +108,6 @@ public class RadioEditTrackMatchingTests
     public void A_radio_edit_only_source_no_longer_satisfies_plain_wanted_tracks()
     {
         AlbumData album = Parser.CreateAlbumData(
-            "s1",
             Group(
                 @"Music\GLXY - Proposition # Mind Less (2017)\01. GLXY - Proposition (Radio Edit) [feat. James Robb].flac",
                 @"Music\GLXY - Proposition # Mind Less (2017)\02. GLXY - Mind Less (Radio Edit) [feat. Blake].flac"),
@@ -124,7 +123,6 @@ public class RadioEditTrackMatchingTests
     public void The_plain_versions_of_the_same_release_still_match()
     {
         AlbumData album = Parser.CreateAlbumData(
-            "s1",
             Group(
                 @"Music\GLXY - Proposition # Mind Less (2017)\01. GLXY - Proposition.flac",
                 @"Music\GLXY - Proposition # Mind Less (2017)\02. GLXY - Mind Less.flac"),
@@ -142,7 +140,6 @@ public class RadioEditTrackMatchingTests
     public void A_target_that_wants_the_radio_edits_still_matches_them()
     {
         AlbumData album = Parser.CreateAlbumData(
-            "s1",
             Group(
                 @"Music\GLXY - Proposition # Mind Less (2017)\01. GLXY - Proposition (Radio Edit) [feat. James Robb].flac",
                 @"Music\GLXY - Proposition # Mind Less (2017)\02. GLXY - Mind Less (Radio Edit) [feat. Blake].flac"),
@@ -164,7 +161,6 @@ public class RadioEditTrackMatchingTests
     public void A_live_album_with_plain_track_titles_still_matches_live_files()
     {
         AlbumData album = Parser.CreateAlbumData(
-            "s1",
             Group(
                 @"Music\Van Halen - Tokyo Dome\01. Unchained (live at the Tokyo Dome June 21, 2013).flac",
                 @"Music\Van Halen - Tokyo Dome\02. Somebody Get Me a Doctor (live at the Tokyo Dome June 21, 2013).flac"),
@@ -183,7 +179,6 @@ public class RadioEditTrackMatchingTests
     public void A_live_single_with_plain_track_titles_still_covers_its_live_files()
     {
         AlbumData album = Parser.CreateAlbumData(
-            "s1",
             Group(
                 @"Music\Van Halen - Tokyo Dome\01. Unchained (live at the Tokyo Dome June 21, 2013).flac",
                 @"Music\Van Halen - Tokyo Dome\02. Somebody Get Me a Doctor (live at the Tokyo Dome June 21, 2013).flac"),
@@ -212,7 +207,6 @@ public class RadioEditTrackMatchingTests
     public void A_partly_radio_edit_source_is_only_partially_covered()
     {
         AlbumData album = Parser.CreateAlbumData(
-            "s1",
             Group(
                 @"Music\GLXY - Proposition # Mind Less (2017)\01. GLXY - Proposition.flac",
                 @"Music\GLXY - Proposition # Mind Less (2017)\02. GLXY - Mind Less (Radio Edit).flac"),
@@ -255,7 +249,6 @@ public class FolderVariantComponentTests
     private static bool Matches(string album, string folder, string file, List<string>? variantTypes = null)
     {
         AlbumData data = Parser.CreateAlbumData(
-            "s1",
             Group($@"{folder}\{file}"),
             new SlskdSearchData("Some Artist", album, Interactive: false, ExpandDirectory: false,
                 MinimumFiles: 1, MaximumFiles: 40, TrackCount: 1, Tracks: ["Only Track"],
