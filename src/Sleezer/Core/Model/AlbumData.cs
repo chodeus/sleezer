@@ -134,8 +134,13 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
             else
                 title += $" [{Codec}]";
 
+            // An edition that repeats the source tag ("[CD] [CD]") reads as a bug;
+            // SourceTag is appended below, so it wins.
             if (ExtraInfo?.Count > 0)
-                title += string.Concat(ExtraInfo.Where(info => !string.IsNullOrEmpty(info)).Select(info => $" [{info}]"));
+                title += string.Concat(ExtraInfo
+                    .Where(info => !string.IsNullOrEmpty(info) && !string.Equals(info, SourceTag, StringComparison.OrdinalIgnoreCase))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Select(info => $" [{info}]"));
 
             title += $" [{SourceTag}]";
             return title;

@@ -149,7 +149,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                             }
                         }
 
-                        AlbumData albumData = _itemsParser.CreateAlbumData(searchResponse.Id, finalGroup, searchTextData, folderData, Settings, searchTextData.TrackCount);
+                        AlbumData albumData = _itemsParser.CreateAlbumData(finalGroup, searchTextData, folderData, Settings, searchTextData.TrackCount);
                         List<SlskdFileData> downloadFiles = JsonSerializer.Deserialize<List<SlskdFileData>>(albumData.CustomString, IndexerParserHelper.StandardJsonOptions) ?? [];
 
                         // Per-directory single/EP decisions log at Debug (too many to surface

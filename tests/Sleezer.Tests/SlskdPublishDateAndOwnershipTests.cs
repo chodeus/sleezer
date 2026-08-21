@@ -90,7 +90,6 @@ public class SlskdCoherentSourceClassificationTests
     public void A_folder_covering_one_of_two_tracks_is_not_a_match_when_coherence_is_required()
     {
         AlbumData album = Parser.CreateAlbumData(
-            "search1",
             Group(
                 @"Music\Pilot Records\PILOT027 - GLXY - Proposition EP\2. GLXY - Mind Less (Radio Edit).flac",
                 @"Music\Pilot Records\PILOT027 - GLXY - Proposition EP\4. GLXY - Mind Less.flac"),
@@ -106,7 +105,6 @@ public class SlskdCoherentSourceClassificationTests
     public void A_folder_covering_both_tracks_stays_a_match()
     {
         AlbumData album = Parser.CreateAlbumData(
-            "search1",
             Group(
                 @"Music\Pilot Records\PILOT027 - GLXY - Proposition EP\1. GLXY - Proposition.flac",
                 @"Music\Pilot Records\PILOT027 - GLXY - Proposition EP\4. GLXY - Mind Less.flac"),
@@ -124,7 +122,6 @@ public class SlskdCoherentSourceClassificationTests
         DateTime before = DateTime.UtcNow.AddSeconds(-5);
 
         AlbumData album = Parser.CreateAlbumData(
-            "search1",
             Group(
                 @"complete\Pilot\[PILOT027] GLXY - Proposition # Mind Less (2017)\1. GLXY - Proposition.flac",
                 @"complete\Pilot\[PILOT027] GLXY - Proposition # Mind Less (2017)\4. GLXY - Mind Less.flac"),
