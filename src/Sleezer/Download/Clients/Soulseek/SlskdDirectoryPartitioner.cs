@@ -14,6 +14,7 @@ public record SlskdDirectoryPartition(
 /// </summary>
 public static class SlskdDirectoryPartitioner
 {
+    /// <summary>Splits a peer directory into one slice per owning item, plus the rest.</summary>
     public static SlskdDirectoryPartition Partition(
         SlskdDownloadDirectory directory,
         IEnumerable<SlskdDownloadItem> candidates,
@@ -49,5 +50,21 @@ public static class SlskdDirectoryPartitioner
         return new SlskdDirectoryPartition(
             owners,
             unclaimed.Count > 0 ? new SlskdDownloadDirectory(directory.Directory, unclaimed.Count, unclaimed) : null);
+    }
+
+    /// <summary>Adds the item whose ID hashes the whole directory, if it isn't already an owner.</summary>
+    public static List<(SlskdDownloadItem Item, SlskdDownloadDirectory Slice)> WithKeyedOwner(
+        SlskdDirectoryPartition partition,
+        SlskdDownloadItem? keyed,
+        SlskdDownloadDirectory directory)
+    {
+        List<(SlskdDownloadItem Item, SlskdDownloadDirectory Slice)> owners = [.. partition.Owners];
+
+        // Returning early on the hash match would starve a co-owner that enqueued
+        // only part of the directory — the same starvation this class exists to fix.
+        if (keyed != null && !owners.Any(owner => ReferenceEquals(owner.Item, keyed)))
+            owners.Add((keyed, directory));
+
+        return owners;
     }
 }

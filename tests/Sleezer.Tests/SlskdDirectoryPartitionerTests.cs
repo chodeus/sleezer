@@ -150,4 +150,45 @@ public class SlskdDirectoryPartitionerTests
         Assert.Empty(missing.Owners);
         Assert.Null(missing.Unclaimed);
     }
+
+    // The manager also looks an item up by the hash of the whole directory.
+    // Taking that match as the only owner starves anyone who enqueued a subset.
+    [Fact]
+    public void A_co_owner_survives_the_whole_directory_hash_matching_another_item()
+    {
+        SlskdDownloadItem whole = Item("01.flac", "02.flac", "03.flac");
+        SlskdDownloadItem plucked = Item("02.flac");
+        SlskdDownloadDirectory dir = Group("01.flac", "02.flac", "03.flac");
+
+        SlskdDirectoryPartition partition = SlskdDirectoryPartitioner.Partition(dir, [whole, plucked], Peer);
+        List<(SlskdDownloadItem Item, SlskdDownloadDirectory Slice)> owners =
+            SlskdDirectoryPartitioner.WithKeyedOwner(partition, whole, dir);
+
+        Assert.Equal(2, owners.Count);
+        Assert.Single(owners, o => ReferenceEquals(o.Item, whole));
+        Assert.Equal(["02.flac"], Names(owners.Single(o => ReferenceEquals(o.Item, plucked)).Slice));
+    }
+
+    [Fact]
+    public void An_item_the_partition_missed_is_added_with_the_whole_directory()
+    {
+        SlskdDownloadItem keyed = Item("01.flac");
+        SlskdDownloadDirectory dir = Group("01.flac");
+
+        List<(SlskdDownloadItem Item, SlskdDownloadDirectory Slice)> owners =
+            SlskdDirectoryPartitioner.WithKeyedOwner(new SlskdDirectoryPartition([], null), keyed, dir);
+
+        Assert.Equal(["01.flac"], Names(Assert.Single(owners).Slice));
+    }
+
+    [Fact]
+    public void Without_a_hash_match_the_partitioned_owners_stand_alone()
+    {
+        SlskdDownloadItem item = Item("01.flac");
+        SlskdDownloadDirectory dir = Group("01.flac");
+
+        SlskdDirectoryPartition partition = SlskdDirectoryPartitioner.Partition(dir, [item], Peer);
+
+        Assert.Single(SlskdDirectoryPartitioner.WithKeyedOwner(partition, null, dir));
+    }
 }

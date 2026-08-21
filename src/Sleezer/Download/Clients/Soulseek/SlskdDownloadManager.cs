@@ -855,13 +855,12 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         string username,
         SlskdDownloadDirectory dir)
     {
+        SlskdDirectoryPartition partition = SlskdDirectoryPartitioner.Partition(dir, GetItemsForDef(definitionId), username);
+
         // A multi-disc item's ID hashes ALL its files, but slskd reports transfers
         // per remote directory — that hash only hits for a single-directory item.
-        if (GetItem(definitionId, SlskdDownloadItem.GetStableMD5Id(dir.Files?.Select(f => f.Filename) ?? [])) is { } keyed)
-            return [(keyed, dir)];
-
-        SlskdDirectoryPartition partition = SlskdDirectoryPartitioner.Partition(dir, GetItemsForDef(definitionId), username);
-        List<(SlskdDownloadItem Item, SlskdDownloadDirectory Slice)> owners = [.. partition.Owners];
+        SlskdDownloadItem? keyed = GetItem(definitionId, SlskdDownloadItem.GetStableMD5Id(dir.Files?.Select(f => f.Filename) ?? []));
+        List<(SlskdDownloadItem Item, SlskdDownloadDirectory Slice)> owners = SlskdDirectoryPartitioner.WithKeyedOwner(partition, keyed, dir);
 
         if (partition.Unclaimed is { } unclaimed &&
             AdoptUnknownDirectory(definitionId, settings, username, unclaimed) is { } adopted)
@@ -902,6 +901,12 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }
 
         if (item == null)
+            return null;
+
+        // AddItem overwrites by ID, and the history probe matches on the enqueued
+        // set — so a live item's own rejected file would rebuild it here and drop
+        // the transfer state it has accumulated.
+        if (GetItem(definitionId, item.ID) != null)
             return null;
 
         SubscribeStateChanges(item, definitionId);
