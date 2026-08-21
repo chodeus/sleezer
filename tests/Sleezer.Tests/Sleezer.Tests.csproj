@@ -107,6 +107,8 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Download\Clients\Soulseek\SlskdPathResolver.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Download\Clients\Soulseek\SlskdStatusResolver.cs"
+             LinkBase="SourceUnderTest" />
     <!-- Watchdog cancel path. Only the API *interface* is pulled in (tests fake it),
          so no HTTP client machinery follows; settings supply the bailout thresholds. -->
     <Compile Include="..\..\src\Sleezer\Download\Clients\Soulseek\SlskdWatchdog.cs"

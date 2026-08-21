@@ -158,4 +158,54 @@ public class SlskdDestinationRecoveryTests
     {
         Assert.Equal(expected, SlskdPathResolver.MakeRelativeToDownloads(root, folder));
     }
+
+    // Import destination for cue/log extras: the album folder Lidarr just wrote
+    // the tracks into, derived from the imported track paths alone.
+    private static string P(params string[] segments) => string.Join(Path.DirectorySeparatorChar, segments);
+
+    [Fact]
+    public void CommonParentDirectory_is_the_folder_the_tracks_share()
+    {
+        Assert.Equal(P("", "music", "Artist", "Album"), SlskdPathResolver.CommonParentDirectory(
+            [P("", "music", "Artist", "Album", "01.flac"), P("", "music", "Artist", "Album", "02.flac")]));
+    }
+
+    [Fact]
+    public void CommonParentDirectory_folds_disc_subfolders_into_the_album_folder()
+    {
+        Assert.Equal(P("", "music", "Album"), SlskdPathResolver.CommonParentDirectory(
+            [P("", "music", "Album", "CD1", "01.flac"), P("", "music", "Album", "CD2", "01.flac")]));
+    }
+
+    [Fact]
+    public void CommonParentDirectory_of_one_path_is_its_own_directory()
+    {
+        Assert.Equal(P("", "music", "Album"), SlskdPathResolver.CommonParentDirectory([P("", "music", "Album", "01.flac")]));
+    }
+
+    [Fact]
+    public void CommonParentDirectory_is_null_without_paths()
+    {
+        Assert.Null(SlskdPathResolver.CommonParentDirectory([]));
+    }
+
+    [Fact]
+    public void CommonParentDirectory_is_null_when_nothing_past_the_root_is_shared()
+    {
+        Assert.Null(SlskdPathResolver.CommonParentDirectory(
+            [P("", "music", "A", "01.flac"), P("", "other", "B", "01.flac")]));
+    }
+
+    [Fact]
+    public void CommonParentDirectory_is_null_for_bare_filenames()
+    {
+        Assert.Null(SlskdPathResolver.CommonParentDirectory(["01.flac", "02.flac"]));
+    }
+
+    [Fact]
+    public void CommonParentDirectory_is_null_when_one_path_has_no_parent()
+    {
+        Assert.Null(SlskdPathResolver.CommonParentDirectory(
+            [P("", "music", "Album", "01.flac"), "02.flac"]));
+    }
 }

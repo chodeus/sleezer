@@ -216,7 +216,10 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             string finalAlbum = DetermineFinalAlbum(isAlbumMatch, folderData, searchData);
             string finalYear = folderData.Year;
 
-            (AudioFormat Codec, int? BitRate, int? BitDepth, int? SampleRate, long TotalSize, int TotalDuration) = AnalyzeAudioQuality(filesToDownload);
+            // Whitelisted extras (cue/log) must not skew codec/bitrate detection.
+            List<SlskdFileData> audioForQuality = filesToDownload.Where(IsAudioFile).ToList();
+            (AudioFormat Codec, int? BitRate, int? BitDepth, int? SampleRate, long TotalSize, int TotalDuration)
+                = AnalyzeAudioQuality(audioForQuality.Count > 0 ? audioForQuality : filesToDownload);
             string qualityInfo = FormatQualityInfo(Codec, BitRate, BitDepth, SampleRate);
 
             _logger.Trace("Audio: {Codec}, BitRate: {BitRate}, BitDepth: {BitDepth}, Files: {TrackCount}", Codec, BitRate, BitDepth, actualTrackCount);
@@ -266,7 +269,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 Bitrate = (Codec == AudioFormat.MP3
                           ? AudioFormatHelper.RoundToStandardBitrate(BitRate ?? 0)
                           : BitRate) ?? 0,
-                Size = TotalSize,
+                Size = filesToDownload.Sum(f => f.Size),
                 InfoUrl = infoUrl,
                 ExplicitContent = ExtractExplicitTag(folderData.Path),
                 Priotity = priority,

@@ -1,6 +1,7 @@
 using NLog;
 using NzbDrone.Core.Download;
 using System.Text.Json;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek.Models;
 
 namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
@@ -17,6 +18,10 @@ public class SlskdRetryHandler(ISlskdApiClient apiClient, Logger logger)
         if (fileState.GetStatus() != DownloadItemStatus.Warning)
             return;
         if (item == null)
+            return;
+        // Foreign transfers (shared peer directory) and files slskd rejected at
+        // enqueue both raise state changes; retrying either fails this item.
+        if (!item.OwnsAcceptedFile(fileState.File.Filename))
             return;
 
         _logger.Trace("Retry triggered: {Filename} | State: {State} | Attempt: {Attempt}/{Max}", Path.GetFileName(fileState.File.Filename), fileState.State, fileState.RetryCount + 1, fileState.MaxRetryCount);
@@ -58,7 +63,12 @@ public class SlskdRetryHandler(ISlskdApiClient apiClient, Logger logger)
             // GetStatus still lets a Completed/Downloading transport state win,
             // so a healthy retry that succeeds isn't cancelled.
             if (fileState.RetryCount >= fileState.MaxRetryCount)
+            {
                 fileState.MarkRetriesExhausted();
+                // Only log for the drop — the resolver skips abandoned extras silently.
+                if (!AudioFormatHelper.IsAudioFilename(fileState.File.Filename))
+                    _logger.Warn("Extra file {Filename} failed permanently; the album will complete without it", Path.GetFileName(fileState.File.Filename));
+            }
         }
     }
 
