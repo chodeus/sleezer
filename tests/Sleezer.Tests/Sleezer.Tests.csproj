@@ -38,6 +38,10 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\PostProcessing\RecordingVerdict.cs"
              LinkBase="SourceUnderTest" />
+    <!-- Claim-vs-reality comparison for issue #85. The TagLib read path is IO;
+         only the pure Compare half is exercised here. -->
+    <Compile Include="..\..\src\Sleezer\Core\PostProcessing\AudioQualityVerifier.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Blocklisting\BaseBlocklist.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Blocklisting\Blocklists.cs"

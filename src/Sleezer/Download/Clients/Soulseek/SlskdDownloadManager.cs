@@ -1204,6 +1204,54 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
     // Per-file ffmpeg decode timeout. Hardcoded: 120s handles any real track;
     // corrupt files that hang ffmpeg get killed at this limit.
+    // Issue #85: a peer's advertised bit depth is never checked before the transfer,
+    // and cannot be — Soulseek exposes no file header. Once the bytes are on disk they
+    // can be read, so the operator is told what actually arrived rather than what was
+    // claimed. Deliberately reports only: a file that is not what it claimed is still a
+    // good file, Lidarr re-detects quality at import, and failing here would delete a
+    // usable album over a label.
+    private void VerifyAdvertisedQuality(SlskdDownloadItem item, string folderPath)
+    {
+        try
+        {
+            string[] audioFiles = [.. _diskProvider.GetFiles(folderPath, recursive: true).Where(IsAudioExtension)];
+            if (audioFiles.Length == 0)
+                return;
+
+            AudioQualityReading actual = AudioQualityVerifier.Read(audioFiles, _logger);
+            int? advertisedDepth = SlskdItemsParser.UnanimousOrNull(item.FileData, f => f.BitDepth);
+            int? advertisedRate = SlskdItemsParser.UnanimousOrNull(item.FileData, f => f.SampleRate);
+
+            switch (AudioQualityVerifier.Compare(advertisedDepth, advertisedRate, actual))
+            {
+                case QualityVerdict.Overstated:
+                    _logger.Warn("[quality-verify] {ItemId}: advertised {AdvertisedDepth}-bit/{AdvertisedRate}Hz but the files are {ActualDepth}-bit/{ActualRate}Hz across {FileCount} file(s). The download is kept — Lidarr re-detects quality on import — but it is not what the peer said it was.",
+                        item.ID, advertisedDepth, advertisedRate, actual.BitDepth, actual.SampleRate, actual.FilesRead);
+                    break;
+
+                case QualityVerdict.Mixed:
+                    _logger.Warn("[quality-verify] {ItemId}: the downloaded files do not share one bit depth or sample rate, so no single quality claim describes this folder ({FileCount} file(s) read).",
+                        item.ID, actual.FilesRead);
+                    break;
+
+                case QualityVerdict.Matches:
+                    _logger.Debug("[quality-verify] {ItemId}: verified {ActualDepth}-bit/{ActualRate}Hz across {FileCount} file(s)",
+                        item.ID, actual.BitDepth, actual.SampleRate, actual.FilesRead);
+                    break;
+
+                default:
+                    _logger.Debug("[quality-verify] {ItemId}: nothing to compare — advertised depth {AdvertisedDepth}, read {FileCount} file(s)",
+                        item.ID, advertisedDepth, actual.FilesRead);
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            // Reporting only; never let it affect the download's outcome.
+            _logger.Debug(ex, "[quality-verify] {ItemId}: verification pass failed", item.ID);
+        }
+    }
+
     private const int CorruptionScanTimeoutSeconds = 120;
 
     // Confidence threshold for pre-import tagging. 0.15 is stricter than
@@ -1286,6 +1334,9 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                         await _corruptionHandler.HandleCorruptDownloadAsync(item, strikes, folderPath, settings, cts.Token);
                         return;
                     }
+
+                    // The files are readable, so they can now answer for themselves.
+                    VerifyAdvertisedQuality(item, folderPath);
                 }
 
                 if (tagEnabled)
