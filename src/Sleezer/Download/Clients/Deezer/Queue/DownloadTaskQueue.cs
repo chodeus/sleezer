@@ -273,10 +273,16 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                     if (persisted == null || persisted.Status != DownloadItemStatus.Completed)
                         continue;
 
-                    if (_items.Any(i => i.ID == persisted.ID))
-                        continue;
+                    // SetSettings triggers this from a Lidarr request thread while the
+                    // worker and other proxy calls read _items.
+                    lock (_lock)
+                    {
+                        if (_items.Any(i => i.ID == persisted.ID))
+                            continue;
 
-                    _items.Add(DownloadItem.FromPersisted(persisted));
+                        _items.Add(DownloadItem.FromPersisted(persisted));
+                    }
+
                     count++;
                 }
 

@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using NLog;
 using NzbDrone.Common.Http;
+using NzbDrone.Core.Download.Clients.Bandcamp;
 
 namespace NzbDrone.Core.Http.Bandcamp
 {
@@ -41,6 +42,14 @@ namespace NzbDrone.Core.Http.Bandcamp
         /// <param name="cookies">Raw cookie string from browser (e.g. "identity=xxx; js=1").</param>
         public HttpRequestBuilder CreateRequestBuilder(string url, string cookies)
         {
+            // Every credentialed Bandcamp request funnels through here, so the
+            // destination is vouched for once, in one place, before the Cookie header
+            // is attached. Callers used to pass response-derived URLs unchecked.
+            if (!IsCredentialedBandcampUrl(url))
+            {
+                throw new BandcampCollectionException($"Refusing to send Bandcamp session cookies to an unapproved destination: {new Uri(url, UriKind.RelativeOrAbsolute).GetLeftPart(UriPartial.Authority)}");
+            }
+
             var builder = new HttpRequestBuilder(url)
             {
                 RateLimit = RateLimitInterval
@@ -65,6 +74,21 @@ namespace NzbDrone.Core.Http.Bandcamp
             }
 
             return builder;
+        }
+
+        // Bandcamp serves pages from bandcamp.com and files from its bcbits CDN. Matched
+        // on a label boundary: EndsWith("bandcamp.com") would accept evilbandcamp.com.
+        public static bool IsCredentialedBandcampUrl(string url)
+        {
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+                return false;
+
+            if (!uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            return uri.Host.Equals("bandcamp.com", StringComparison.OrdinalIgnoreCase)
+                   || uri.Host.EndsWith(".bandcamp.com", StringComparison.OrdinalIgnoreCase)
+                   || uri.Host.EndsWith(".bcbits.com", StringComparison.OrdinalIgnoreCase);
         }
 
         public static string NormalizeCookieHeader(string cookies)

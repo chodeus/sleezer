@@ -85,7 +85,22 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
 
             // Publish under the item's own token so an item cancelled while waiting for
             // capacity never reaches a worker at all.
-            await _queue.Writer.WriteAsync(workItem, token.Token);
+            try
+            {
+                await _queue.Writer.WriteAsync(workItem, token.Token);
+            }
+            catch
+            {
+                // Publication failed, so no worker will ever clean this up.
+                lock (_lock)
+                {
+                    _items.Remove(workItem);
+                    _cancellationSources.Remove(workItem);
+                }
+
+                token.Dispose();
+                throw;
+            }
         }
 
         public void RemoveItem(DownloadItem workItem)
@@ -140,6 +155,14 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
                         // genuinely unexpected — drop the item rather than kill the loop.
                         _logger.Error("Qobuz queue received item before settings populated; marking failed: {Title}", item.Title);
                         item.Status = DownloadItemStatus.Failed;
+
+                        // HandleTask never runs for this item, so its source is orphaned.
+                        lock (_lock)
+                        {
+                            if (_cancellationSources.Remove(item, out var orphan))
+                                orphan.Dispose();
+                        }
+
                         semaphore.Release();
                         continue;
                     }

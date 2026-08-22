@@ -1,6 +1,10 @@
 ﻿// Vendored from DaveBinM/QobuzApiSharp (GPL-3.0), kept structurally as-is so
 // upstream fixes can be pulled by hand. Nullable is off for the same reason.
 #nullable disable
+
+// MODIFIED BY SLEEZER, 2026-08-23 (GPL-3.0 s5a): login failure messages no longer
+// quote the auth token or password hash back into the exception, which put the
+// credential into any log that recorded it. See VENDOR.md.
 using Newtonsoft.Json;
 using QobuzApiSharp.Exceptions;
 using QobuzApiSharp.Models;
@@ -35,7 +39,7 @@ namespace QobuzApiSharp.Service
             if (!response.IsSuccessStatusCode)
             {
                 QobuzApiStatusResponse errorResponse = QobuzApiHelper.DeserializeResponse<QobuzApiStatusResponse>(response);
-                throw new ApiErrorResponseException($"Failed to login user with email {email} and password {password}.", response.RequestMessage.ToString(), errorResponse);
+                throw new ApiErrorResponseException($"Failed to login user with email {email}.", response.RequestMessage.ToString(), errorResponse);
             }
 
             try
@@ -72,7 +76,7 @@ namespace QobuzApiSharp.Service
             if (!response.IsSuccessStatusCode)
             {
                 QobuzApiStatusResponse errorResponse = QobuzApiHelper.DeserializeResponse<QobuzApiStatusResponse>(response);
-                throw new ApiErrorResponseException($"Failed to login user with username {username} and password {password}.", response.RequestMessage.ToString(), errorResponse);
+                throw new ApiErrorResponseException($"Failed to login user with username {username}.", response.RequestMessage.ToString(), errorResponse);
             }
 
             try
@@ -109,7 +113,7 @@ namespace QobuzApiSharp.Service
             if (!response.IsSuccessStatusCode)
             {
                 QobuzApiStatusResponse errorResponse = QobuzApiHelper.DeserializeResponse<QobuzApiStatusResponse>(response);
-                throw new ApiErrorResponseException($"Failed to login user with ID {userId} and Token {userAuthToken}.", response.RequestMessage.ToString(), errorResponse);
+                throw new ApiErrorResponseException($"Failed to login user with ID {userId} using a token.", response.RequestMessage.ToString(), errorResponse);
             }
 
             try

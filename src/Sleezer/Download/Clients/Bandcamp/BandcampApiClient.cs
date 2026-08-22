@@ -76,22 +76,51 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
             _collectionCache = cacheManager.GetCache<List<BandcampCollectionItem>>(typeof(BandcampApiClient), "collections");
         }
 
-        // Cookies are the credential, so they are keyed by hash rather than value.
-        // Bandcamp serves files from bandcamp.com and its CDN subdomains. Anything else
-        // gets no cookie. Matches on a label boundary: EndsWith would accept
-        // evilbandcamp.com.
-        private static bool IsCredentialedBandcampUrl(string url)
+        private const int MaxDownloadRedirects = 5;
+
+        private async Task<HttpResponse> SendWithValidatedRedirectsAsync(
+            string cookies, string url, Stream? destination, CancellationToken cancellationToken)
         {
-            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
-                return false;
+            for (var hop = 0; hop <= MaxDownloadRedirects; hop++)
+            {
+                var builder = _httpClient.CreateRequestBuilder(url, cookies);
+                var request = builder.Build();
+                request.AllowAutoRedirect = false;
 
-            if (!uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
-                return false;
+                // Bind the destination only on the hop that actually returns the body.
+                if (destination != null)
+                {
+                    request.ResponseStream = destination;
+                }
 
-            return uri.Host.Equals("bandcamp.com", StringComparison.OrdinalIgnoreCase)
-                   || uri.Host.EndsWith(".bandcamp.com", StringComparison.OrdinalIgnoreCase)
-                   || uri.Host.EndsWith(".bcbits.com", StringComparison.OrdinalIgnoreCase);
+                var response = await _httpClient.ExecuteRawAsync(request, cancellationToken);
+
+                if ((int)response.StatusCode is < 300 or >= 400)
+                {
+                    return response;
+                }
+
+                var location = response.Headers?.GetSingleValue("Location");
+                if (string.IsNullOrWhiteSpace(location))
+                {
+                    throw new DownloadException($"Bandcamp returned {(int)response.StatusCode} with no Location header.");
+                }
+
+                url = new Uri(new Uri(url), location).AbsoluteUri;
+
+                // Revalidated on every hop: a redirect off Bandcamp must not take the
+                // session cookie with it. CreateRequestBuilder enforces this too, but
+                // failing here gives the operator the actual reason.
+                if (!BandcampHttpClient.IsCredentialedBandcampUrl(url))
+                {
+                    throw new DownloadException("Bandcamp redirected the download to an unapproved host; refusing to follow it with session cookies.");
+                }
+            }
+
+            throw new DownloadException($"Bandcamp download exceeded {MaxDownloadRedirects} redirects.");
         }
+
+        // Cookies are the credential, so they are keyed by hash rather than value.
 
         private static string CookieKey(string cookies)
             => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(cookies ?? string.Empty)))[..16];
@@ -389,7 +418,16 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
                 }
 
                 // Get the token for the next page from the oldest item
-                olderThanToken = items.Last().Token;
+                // A blank token would be substituted with the initial one, restarting at
+                // page 1 — the guard GetDownloadableCollectionUncachedAsync already has.
+                var nextToken = items.Last().Token;
+                if (string.IsNullOrWhiteSpace(nextToken))
+                {
+                    _logger.Debug("Bandcamp API: No continuation token after page {0}; stopping", page);
+                    break;
+                }
+
+                olderThanToken = nextToken;
             }
 
             _logger.Debug("Bandcamp API: Purchase not found in collection for URL: {0}", albumUrl);
@@ -549,24 +587,11 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
         {
             _logger.Debug("Bandcamp API: Downloading file from resolved URL");
 
-            // This URL is response-derived, and the request carries the session cookie,
-            // so the destination has to be vouched for before the credential goes out.
-            if (!IsCredentialedBandcampUrl(fileUrl))
-            {
-                throw new DownloadException("Bandcamp returned a download URL on an unexpected host; refusing to send session cookies to it.");
-            }
-
-            var builder = _httpClient.CreateRequestBuilder(fileUrl, cookies);
-            var request = builder.Build();
-
-            // A redirect off Bandcamp would carry the cookie with it.
-            request.AllowAutoRedirect = false;
-
-            // Lidarr's dispatcher copies the body straight into this when set, so a
-            // multi-hundred-MB discography archive never lands on the heap.
-            request.ResponseStream = destination;
-
-            var response = await _httpClient.ExecuteRawAsync(request, cancellationToken);
+            // CreateRequestBuilder vouches for the destination before attaching cookies.
+            // Redirects are followed by hand: Bandcamp hands off to its bcbits CDN, and
+            // Lidarr's dispatcher only writes to ResponseStream on a 200, so an
+            // auto-followed or unfollowed 3xx yields an empty file either way.
+            var response = await SendWithValidatedRedirectsAsync(cookies, fileUrl, destination, cancellationToken);
 
             // Verify content type — Bandcamp should return application/zip or similar
             var contentType = response.Headers?.ContentType ?? string.Empty;

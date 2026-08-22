@@ -26,6 +26,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No git operations here; leaving GITHUB_TOKEN in .git/config is needless.
+          persist-credentials: false
 
       - name: Compare each vendored tree against its upstream
         id: drift
@@ -53,7 +56,11 @@ jobs:
             slug="${upstream#https://github.com/}"
             slug="${slug%.git}"
 
-            branch=$(gh api "repos/${slug}" --jq .default_branch)
+            if ! branch=$(gh api "repos/${slug}" --jq .default_branch 2>/dev/null); then
+              report+=$'\n'"- **${name}** — cannot reach \`${slug}\`. The upstream may have been renamed, made private, or deleted."
+              drifted=$((drifted + 1))
+              continue
+            fi
 
             # compare/base...head is 404 when the base commit is unreachable,
             # which means the upstream force-pushed or the SHA is wrong. Say so

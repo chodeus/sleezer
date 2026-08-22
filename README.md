@@ -325,7 +325,7 @@ Sleezer auto-downloads FFmpeg on first use if it can't find one, pulling the cur
 
 ### Corrupt File Scan & Pre-Import Tagging 🧼
 
-These two features live under FFmpeg's settings because they depend on the bundled FFmpeg binary. Both are scoped to **Sleezer's own downloaders only** — Deezer, Tidal, Qobuz, and Slskd. The web clients (Lucida, SubSonic, T2Tunes, DABMusic) currently share a lighter download path that doesn't invoke them, and Lidarr's native torrent/Usenet clients are untouched. Only the FFmpeg *conversion* provider (previous section) runs on imports from every source.
+These two features live under FFmpeg's settings because they depend on the bundled FFmpeg binary. Both are scoped to **Sleezer's own downloaders only** — Deezer, Tidal, Qobuz, and Slskd. The web clients (Lucida, SubSonic, T2Tunes, DABMusic) and Bandcamp currently share a lighter download path that doesn't invoke them, and Lidarr's native torrent/Usenet clients are untouched. Only the FFmpeg *conversion* provider (previous section) runs on imports from every source.
 
 Each feature is opt-in via a chip-style picker: pick which Sleezer downloaders should get the treatment. An empty picker means the feature is off entirely. **Both pickers default empty** — nothing runs until you opt in.
 

@@ -85,10 +85,16 @@ namespace NzbDrone.Core.Indexers.Qobuz
             if (missing.Count == 0)
                 return result;
 
-            using SemaphoreSlim gate = new(DetailConcurrency, DetailConcurrency);
-            using CancellationTokenSource budget = new(DetailLookupBudget);
+            // Deliberately not `using`: on the timeout path below this method returns
+            // while stragglers are still in flight, and disposing here would have them
+            // release a disposed semaphore in a task nobody observes. They are cheap and
+            // short-lived, so they are left to the GC once the last lookup finishes.
+            SemaphoreSlim gate = new(DetailConcurrency, DetailConcurrency);
+            CancellationTokenSource budget = new(DetailLookupBudget);
             var lookups = missing.Select(async album =>
             {
+                // Release only what was actually acquired: a cancelled wait throws, and
+                // a finally would then release a permit this task never held.
                 await gate.WaitAsync(budget.Token);
                 try
                 {

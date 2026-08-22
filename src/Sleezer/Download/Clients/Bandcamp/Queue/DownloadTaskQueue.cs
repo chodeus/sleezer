@@ -69,7 +69,27 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
 
             _registry.Upsert(item);
 
-            await _channel.Writer.WriteAsync(item, _cts.Token).ConfigureAwait(false);
+            try
+
+            {
+
+                await _channel.Writer.WriteAsync(item, _cts.Token).ConfigureAwait(false);
+
+            }
+
+            catch
+
+            {
+
+                // Nothing will consume it, so nothing else will clean this up.
+
+                if (_itemCancellations.TryRemove(item.DownloadId, out var orphan))
+
+                    orphan.Dispose();
+
+                throw;
+
+            }
 
             _logger.Debug("Bandcamp download queue: Enqueued download {0} for '{1}'",
                 item.DownloadId, item.AlbumUrl);

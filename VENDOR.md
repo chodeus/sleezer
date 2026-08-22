@@ -47,7 +47,8 @@ it is the source of truth, not the prose.
     "upstream": "https://github.com/jtstothard/lidarr-plugin-bandcamp",
     "commit": "e146da55de4375e94a0c0fc9b73c5f0d4a0132ab",
     "vendored": "2026-08-04",
-    "track": true
+    "adopted": "2026-08-23",
+    "track": false
   },
   {
     "name": "TidalSharp",
@@ -65,12 +66,22 @@ it is the source of truth, not the prose.
 How useful an upstream fix is depends entirely on how far we diverged. These are
 not equally trackable and should not be treated as if they were.
 
-### QobuzApiSharp — verbatim
+### QobuzApiSharp — tracked, with a patch series
 
-**Pull upstream fixes directly.** The only local change is a two-line `#nullable
-disable` banner on every file, plus `#pragma warning disable CS0672,
-SYSLIB0051` on the three exception types (formatter-based serialization, obsolete
-on net8). No logic is ours.
+**Still worth pulling from.** Its highest-value part is the `bundle.js` scrape,
+which breaks when *Qobuz* changes rather than when upstream does — and upstream
+is the likelier place a fix appears first. That sync path earns its keep, so
+this tree stays diffable.
+
+Local changes, which GPL-3.0 §5(a) requires be stated:
+
+- A two-line `#nullable disable` banner on every file, plus `#pragma warning
+  disable CS0672, SYSLIB0051` on the three exception types.
+- `QobuzApiService.User.cs`: the login failure messages no longer quote the
+  user's auth token or password hash back into the exception, which was putting
+  the credential into any log that recorded it.
+
+Re-vendoring means re-applying that list, not discarding it.
 
 The file that matters is `Service/QobuzApiHelper.cs`: it scrapes the Qobuz web
 player's `bundle.js` for the `app_id` and derives the `app_secret` from an
@@ -102,16 +113,24 @@ internals diverged enough that a patch will rarely apply:
   could loop forever on an empty page.
 - Sleezer logging conventions and nullable annotations throughout.
 
-### lidarr-plugin-bandcamp — near-verbatim
+### lidarr-plugin-bandcamp — adopted, no longer tracked
 
-**Upstream fixes usually apply.** Structure and logic are upstream's; the local
-changes are house rules:
+**This code is ours now.** Fix it in place; do not defer a defect on the grounds
+that it came from upstream.
 
-- Eight `catch` blocks that swallowed their exception now log at Trace.
-- `MakeValidDirectoryName` extended to the full Windows-invalid set —
-  `Path.GetInvalidFileNameChars()` returns only `/` and NUL on Linux.
-- Its `Plugin.cs`, `AssemblyInfo.cs` and standalone protocol file dropped; the
-  protocol folded into `Indexers/DownloadProtocols.cs`.
+Originally imported from `e146da5` and initially treated as near-verbatim. That
+stopped being true: review surfaced enough real defects — an SSRF on the
+credentialed download path, a whole-archive buffer, substring purchase matching,
+process-randomised release GUIDs, swallowed collection failures, a dead JSON
+parse path, an `IHttpDispatcher` that would have competed for every HTTP call
+Lidarr makes — that roughly 450 lines across nine files have changed, three of
+them by 15-37%, with five files deleted and one added. A patch of that size is
+not a vendored copy, and calling it one only served as a reason not to fix
+things properly.
+
+MIT permits this without restriction; the licence text is reproduced in NOTICE
+and jtstothard keeps authorship credit for the original work. Upstream remains
+worth reading, but nothing here is written to stay diffable against it.
 
 ### TidalSharp — baseline lost
 

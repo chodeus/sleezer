@@ -385,6 +385,12 @@ namespace NzbDrone.Core.Indexers.Bandcamp
 
         private static bool ContainsQuery(string value, string query)
         {
+            // An item with no band name or title normalizes to empty, and
+            // query.Contains(string.Empty) is true for every query — it would match
+            // every search and be returned as a release.
+            if (string.IsNullOrEmpty(value))
+                return false;
+
             if (query.IsNullOrWhiteSpace())
             {
                 return true;

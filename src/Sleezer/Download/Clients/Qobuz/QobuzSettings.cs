@@ -12,6 +12,10 @@ namespace NzbDrone.Core.Download.Clients.Qobuz
         {
             RuleFor(x => x.DownloadPath).IsValidPath();
 
+            RuleFor(x => x.MaxConcurrentTracks)
+                .InclusiveBetween(1, 8)
+                .WithMessage("Max concurrent tracks must be between 1 and 8.");
+
             RuleFor(x => x.CustomArtworkResolution)
                 .InclusiveBetween(100, 4000)
                 .When(x => x.ArtworkSize == (int)QobuzArtworkSize.Custom)

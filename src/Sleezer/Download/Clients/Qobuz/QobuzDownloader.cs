@@ -82,7 +82,7 @@ namespace NzbDrone.Core.Download.Clients.Qobuz
             if (!response.IsSuccessStatusCode)
                 return null;
 
-            var content = await response.Content.ReadAsStringAsync(token);
+            var content = await response.Content.ReadAsStringAsync(cts.Token);
             var json = JObject.Parse(content);
             return (json["plainLyrics"]?.ToString(), json["syncedLyrics"]?.ToString());
         }
@@ -115,8 +115,15 @@ namespace NzbDrone.Core.Download.Clients.Qobuz
 
         public static async Task ApplyMetadataToFile(this QobuzApiService s, string trackId, string trackPath, byte[]? albumArt, bool embedArt, string lyrics = "", CancellationToken token = default)
         {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(token);
+            cts.CancelAfter(AuxRequestTimeout);
+
             using TagLib.File file = TagLib.File.Create(trackPath);
-            await Task.Run(() => s.ApplyMetadataToTagLibFile(file, trackId, albumArt, embedArt, lyrics), token);
+
+            // WaitAsync as well as the Task.Run token: the token is only observed before
+            // the delegate starts, and the calls inside are synchronous.
+            await Task.Run(() => s.ApplyMetadataToTagLibFile(file, trackId, albumArt, embedArt, lyrics), cts.Token)
+                .WaitAsync(cts.Token);
         }
 
         private static string ToOriginalUrl(string largeUrl)

@@ -57,7 +57,12 @@ namespace NzbDrone.Plugin.Sleezer.Qobuz
         public string CredentialFingerprint => _credentialFingerprint;
 
         public static string FingerprintOf(QobuzIndexerSettings settings)
-            => string.Join('\u001f', settings.AppID, settings.AppSecret, settings.Email, settings.MD5Password, settings.UserID, settings.UserAuthToken);
+        {
+            // Hashed rather than held: this is only ever compared for equality, so there
+            // is no reason to keep the credentials themselves resident.
+            var joined = string.Join('\u001f', settings.AppID, settings.AppSecret, settings.Email, settings.MD5Password, settings.UserID, settings.UserAuthToken);
+            return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(joined)));
+        }
 
         /// <summary>Two-letter country of the signed-in account, or empty when not signed in.</summary>
         public string CountryCode => _login?.User?.CountryCode ?? string.Empty;

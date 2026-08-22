@@ -345,7 +345,11 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
             cts.CancelAfter(AlbumLookupTimeout);
 
-            _qobuzAlbum = await Task.Run(() => api.Client.GetAlbum(_qobuzUrl.Id, true), cts.Token);
+            // WaitAsync, not just the Task.Run token: the token is observed only before
+            // the delegate starts, so without this the deadline cannot release the grab
+            // thread once the synchronous call is under way. The worker finishes on its
+            // own and is discarded.
+            _qobuzAlbum = await Task.Run(() => api.Client.GetAlbum(_qobuzUrl.Id, true), cts.Token).WaitAsync(cts.Token);
             _tracks = _qobuzAlbum.Tracks?.Items?.ToArray() ?? [];
 
             Title = _qobuzAlbum.CompleteTitle;

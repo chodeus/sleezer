@@ -67,6 +67,15 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
         /// <returns>The download ID for tracking.</returns>
         public override async Task<string> Download(RemoteAlbum remoteAlbum, IIndexer indexer)
         {
+            // Lidarr will call this whether or not Test() ever passed. A blank download
+            // path silently becomes a relative one, and a blank cookie only surfaces
+            // later in the background proxy.
+            if (string.IsNullOrWhiteSpace(Settings.DownloadPath))
+                throw new DownloadClientException("Bandcamp download path is not configured.");
+
+            if (string.IsNullOrWhiteSpace(Settings.Cookies))
+                throw new DownloadClientException("Bandcamp session cookies are not configured.");
+
             var albumUrl = remoteAlbum.Release.DownloadUrl;
 
             if (string.IsNullOrWhiteSpace(albumUrl))
