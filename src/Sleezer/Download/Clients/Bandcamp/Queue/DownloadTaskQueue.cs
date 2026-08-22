@@ -54,6 +54,10 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
         /// <returns>The download ID for tracking.</returns>
         public async Task<string> EnqueueAsync(BandcampDownloadItem item)
         {
+            // Registered before publication so RemoveItem can cancel an item that has
+            // not been picked up yet.
+            _itemCancellations[item.DownloadId] = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
+
             if (_disposed)
             {
                 throw new ObjectDisposedException(nameof(DownloadTaskQueue));
@@ -120,8 +124,16 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
                         break;
                     }
 
-                    using var itemCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                    _itemCancellations[item.DownloadId] = itemCts;
+                    // The source is created at enqueue time, so an item removed while
+                    // still sitting in the channel is already cancelled by the time it
+                    // gets here rather than downloading anyway.
+                    if (!_itemCancellations.TryGetValue(item.DownloadId, out var itemCts) || itemCts.IsCancellationRequested)
+                    {
+                        _logger.Debug("Bandcamp download queue: Skipping {0}; removed before it started", item.DownloadId);
+                        _itemCancellations.TryRemove(item.DownloadId, out _);
+                        itemCts?.Dispose();
+                        continue;
+                    }
 
                     try
                     {
@@ -130,6 +142,7 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
                     finally
                     {
                         _itemCancellations.TryRemove(item.DownloadId, out _);
+                        itemCts.Dispose();
                     }
                 }
             }

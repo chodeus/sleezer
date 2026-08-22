@@ -42,7 +42,18 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
         /// </summary>
         public async Task<bool> RunAsync(PostProcessRequest request, CancellationToken ct)
         {
-            FFmpegSettings? sharedSettings = GetSharedSettings();
+            FFmpegSettings? sharedSettings;
+            try
+            {
+                sharedSettings = GetSharedSettings();
+            }
+            catch (Exception ex)
+            {
+                logger.Error(ex, "[post-process] {Client} item {ID}: settings unreadable; failing the item rather than importing it unscanned",
+                    request.Client, request.DownloadId);
+                return false;
+            }
+
             bool scanEnabled = sharedSettings?.CorruptionScanClients?.Contains((int)request.Client) ?? false;
             bool tagEnabled = sharedSettings?.PreImportTaggingClients?.Contains((int)request.Client) ?? false;
 
@@ -104,8 +115,10 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
             }
             catch (Exception ex)
             {
-                logger.Debug(ex, "[post-process] Failed to read shared post-processing settings; treating toggles as disabled.");
-                return null;
+                // Deliberately not swallowed: returning null here is indistinguishable
+                // from "the operator turned both toggles off", so a transient settings
+                // failure would import content that was never scanned or tagged.
+                throw new InvalidOperationException("Could not read the shared post-processing settings.", ex);
             }
         }
 
@@ -130,12 +143,17 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
             // rather than discarded: an unhandled fault here is otherwise invisible.
             if (install && !string.IsNullOrWhiteSpace(configuredPath))
             {
-                _ = FFmpegInstaller.EnsureUpToDateAsync(configuredPath, logger, ct)
-                    .ContinueWith(
-                        faulted => logger.Debug(faulted.Exception, "[post-process] FFmpeg update check failed"),
-                        CancellationToken.None,
-                        TaskContinuationOptions.OnlyOnFaulted,
-                        TaskScheduler.Default);
+                // Awaited rather than detached: this already runs on the post-process
+                // task, it is internally throttled to once a day, and a detached task
+                // outliving the request is what the review flagged.
+                try
+                {
+                    await FFmpegInstaller.EnsureUpToDateAsync(configuredPath, logger, ct);
+                }
+                catch (Exception ex)
+                {
+                    logger.Debug(ex, "[post-process] FFmpeg update check failed");
+                }
             }
 
             if (string.Equals(configuredPath, _lastResolvedFfmpegPath, StringComparison.Ordinal))

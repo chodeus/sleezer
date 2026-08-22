@@ -83,7 +83,9 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
                 _cancellationSources.Add(workItem, token);
             }
 
-            await _queue.Writer.WriteAsync(workItem);
+            // Publish under the item's own token so an item cancelled while waiting for
+            // capacity never reaches a worker at all.
+            await _queue.Writer.WriteAsync(workItem, token.Token);
         }
 
         public void RemoveItem(DownloadItem workItem)
@@ -95,12 +97,13 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
             {
                 if (_cancellationSources.TryGetValue(workItem, out var src))
                 {
+                    // Cancel but keep the mapping: the worker may not have read the token
+                    // yet, and GetTokenForItem returning default would hand it an
+                    // uncancellable download. HandleTask disposes it when it is done.
                     src.Cancel();
-                    src.Dispose();
                 }
 
                 _items.Remove(workItem);
-                _cancellationSources.Remove(workItem);
             }
 
             TryDeleteSidecar(workItem);
@@ -200,6 +203,14 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
             finally
             {
                 semaphore.Release();
+
+                // The source stays alive through RemoveItem so the worker always has a
+                // real token; this is the only place that knows the work is over.
+                lock (_lock)
+                {
+                    if (_cancellationSources.Remove(item, out var src))
+                        src.Dispose();
+                }
             }
         }
 

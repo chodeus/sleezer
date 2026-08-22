@@ -20,6 +20,19 @@ namespace NzbDrone.Core.Indexers.Bandcamp
     public class BandcampParser : IParseIndexerResponse
     {
         // Fallback patterns for HTML scraping
+        // string.GetHashCode is randomised per process on .NET Core, so a restart gave
+        // the same release a new Guid — and Guid is what deduplication and the blocklist
+        // key on. The normalized URL is already unique per release.
+        private static string StableReleaseGuid(string albumUrl)
+        {
+            var normalized = Uri.TryCreate(albumUrl, UriKind.Absolute, out var uri)
+                ? $"{uri.Host}{uri.AbsolutePath.TrimEnd('/')}".ToLowerInvariant()
+                : (albumUrl ?? string.Empty).Trim().ToLowerInvariant();
+
+            var digest = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(normalized));
+            return $"bandcamp-{Convert.ToHexString(digest)[..16].ToLowerInvariant()}";
+        }
+
         private static readonly Regex HeadingRegex = new(
             @"<div\s+class=""heading"">\s*<a\s+href=""(?<url>[^""]+)""[^>]*>\s*(?<title>[^<]+)\s*</a>",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -200,7 +213,7 @@ namespace NzbDrone.Core.Indexers.Bandcamp
 
             return new ReleaseInfo
             {
-                Guid = $"bandcamp-{albumUrl.GetHashCode():x}",
+                Guid = StableReleaseGuid(albumUrl),
                 Title = $"{artistName} - {albumTitle} [WEB] [FLAC]",
                 Artist = artistName,
                 Album = albumTitle,

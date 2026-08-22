@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using NLog;
 using NzbDrone.Common.Http;
@@ -18,6 +19,10 @@ namespace NzbDrone.Core.Http.Bandcamp
             "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
 
         private static readonly TimeSpan RateLimitInterval = TimeSpan.FromSeconds(2);
+
+        // Long enough for a large discography archive, short enough that a wedged
+        // connection does not hold a queue slot forever.
+        private static readonly TimeSpan DownloadRequestTimeout = TimeSpan.FromMinutes(30);
 
         private readonly IHttpClient _httpClient;
         private readonly Logger _logger;
@@ -104,8 +109,18 @@ namespace NzbDrone.Core.Http.Bandcamp
         /// <summary>
         /// Executes an HTTP request and returns the raw response (for non-string content).
         /// </summary>
-        public async Task<HttpResponse> ExecuteRawAsync(HttpRequest request)
+        public async Task<HttpResponse> ExecuteRawAsync(HttpRequest request, CancellationToken cancellationToken = default)
         {
+            // Lidarr's IHttpClient exposes no CancellationToken, so a transfer already in
+            // flight cannot be interrupted through it. What is available: refuse to start
+            // one that is already cancelled, and bound the request so it cannot hang.
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (request.RequestTimeout == default)
+            {
+                request.RequestTimeout = DownloadRequestTimeout;
+            }
+
             _logger.Debug("Bandcamp request: {0} {1}", request.Method, request.Url);
 
             try

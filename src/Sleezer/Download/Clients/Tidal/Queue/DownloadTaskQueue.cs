@@ -113,6 +113,14 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
                 finally
                 {
                     semaphore.Release();
+
+                    // The source stays alive through RemoveItem so the worker always has
+                    // a real token; this is the only place that knows the work is over.
+                    lock (_lock)
+                    {
+                        if (_cancellationSources.Remove(item, out var src))
+                            src.Dispose();
+                    }
                 }
             }
 
@@ -200,7 +208,9 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
                 _cancellationSources.Add(workItem, token);
             }
 
-            await _queue.Writer.WriteAsync(workItem);
+            // Publish under the item's own token so an item cancelled while waiting for
+            // capacity never reaches a worker at all.
+            await _queue.Writer.WriteAsync(workItem, token.Token);
         }
 
         private async ValueTask<DownloadItem> DequeueAsync(CancellationToken cancellationToken)
@@ -212,9 +222,12 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
             lock (_lock)
             {
                 if (_cancellationSources.TryGetValue(workItem, out var src))
+                {
+                    // Cancel but keep the mapping — see the Qobuz queue.
                     src.Cancel();
+                }
+
                 _items.Remove(workItem);
-                _cancellationSources.Remove(workItem);
             }
             TryDeleteSidecar(workItem);
         }

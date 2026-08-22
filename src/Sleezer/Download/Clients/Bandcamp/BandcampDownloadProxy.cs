@@ -261,7 +261,7 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
             // validates the Content-Type before anything is written.
             await using (var destination = new FileStream(tempFilePath, FileMode.Create, FileAccess.Write, FileShare.None))
             {
-                await _apiClient.DownloadFileAsync(cookies, fileUrl, destination).ConfigureAwait(false);
+                await _apiClient.DownloadFileAsync(cookies, fileUrl, destination, cancellationToken).ConfigureAwait(false);
             }
 
             var written = new FileInfo(tempFilePath).Length;
@@ -292,7 +292,36 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
                 if (IsZipFile(archivePath))
                 {
                     _logger.Debug("Bandcamp download proxy: Extracting ZIP archive to {0}", outputDir);
-                    ZipFile.ExtractToDirectory(archivePath, outputDir, overwriteFiles: true);
+
+                    // ZipFile.ExtractToDirectory takes no token, so a large archive would
+                    // ignore cancellation entirely. Walking the entries lets the check
+                    // happen between files.
+                    using (var archive = ZipFile.OpenRead(archivePath))
+                    {
+                        foreach (var entry in archive.Entries)
+                        {
+                            cancellationToken.ThrowIfCancellationRequested();
+
+                            var destination = Path.GetFullPath(Path.Combine(outputDir, entry.FullName));
+
+                            // Zip-slip: an entry named ../../x must not escape outputDir.
+                            var root = Path.GetFullPath(outputDir) + Path.DirectorySeparatorChar;
+                            if (!destination.StartsWith(root, StringComparison.Ordinal))
+                            {
+                                throw new DownloadException($"Bandcamp archive contains an entry that escapes the output directory: {entry.FullName}");
+                            }
+
+                            if (string.IsNullOrEmpty(entry.Name))
+                            {
+                                Directory.CreateDirectory(destination);
+                                continue;
+                            }
+
+                            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                            entry.ExtractToFile(destination, overwrite: true);
+                        }
+                    }
+
                     NormalizeExtractedPermissions(outputDir);
                 }
                 else

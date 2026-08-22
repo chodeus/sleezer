@@ -81,9 +81,11 @@ namespace NzbDrone.Core.ImportLists.Qobuz
             return CleanupListItems(items);
         }
 
-        // ResponseStatusCode is a string on this exception type.
+        // ResponseStatusCode is a string on this exception type. Only 404 is a reliable
+        // statement about the playlist; a 403 usually means the session is rejected, and
+        // skipping it would hand Lidarr a short list it treats as authoritative.
         private static bool IsPlaylistGone(ApiErrorResponseException ex)
-            => ex.ResponseStatusCode is "404" or "403";
+            => ex.ResponseStatusCode is "404";
 
         protected override void Test(List<ValidationFailure> failures)
         {

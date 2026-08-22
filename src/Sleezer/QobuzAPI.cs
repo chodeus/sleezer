@@ -35,12 +35,7 @@ namespace NzbDrone.Plugin.Sleezer.Qobuz
             if (Instance != null && !forceRecreate)
                 return;
 
-            // The outgoing client is deliberately not disposed. A download in flight
-            // still holds it, and disposing here would throw ObjectDisposedException
-            // mid-transfer. Re-initialisation only happens when the App ID or Secret
-            // actually change — a human editing settings — so at most one HttpClient is
-            // left for the GC per edit. Lidarr makes the same trade: ManagedHttpDispatcher
-            // caches HttpClients by proxy key and never disposes them either.
+            // Must not dispose the outgoing client: a download in flight still holds it.
             Instance = new QobuzAPI(appId, appSecret, logger);
         }
 
@@ -95,7 +90,10 @@ namespace NzbDrone.Plugin.Sleezer.Qobuz
             {
                 _login = null;
                 _credentialFingerprint = string.Empty;
-                _logger.Error(ex, "Qobuz login rejected — status {Status} {StatusCode}, reason {Reason}",
+                // Deliberately not passing `ex`: QobuzApiSharp embeds the auth token in
+                // this exception's Message, and the parse variant carries the raw login
+                // response. Only the sanitized status fields are safe to record.
+                _logger.Error("Qobuz login rejected — status {Status} {StatusCode}, reason {Reason}",
                     ex.ResponseStatus, ex.ResponseStatusCode, ex.ResponseReason);
                 return false;
             }
@@ -103,7 +101,8 @@ namespace NzbDrone.Plugin.Sleezer.Qobuz
             {
                 _login = null;
                 _credentialFingerprint = string.Empty;
-                _logger.Error(ex, "Qobuz login failed");
+                // Same reason as above — the message may quote the credential back.
+                _logger.Error("Qobuz login failed: {ExceptionType}", ex.GetType().Name);
                 return false;
             }
         }

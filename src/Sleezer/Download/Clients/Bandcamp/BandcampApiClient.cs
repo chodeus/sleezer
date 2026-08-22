@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using NLog;
 using NzbDrone.Common.Cache;
@@ -76,6 +77,22 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
         }
 
         // Cookies are the credential, so they are keyed by hash rather than value.
+        // Bandcamp serves files from bandcamp.com and its CDN subdomains. Anything else
+        // gets no cookie. Matches on a label boundary: EndsWith would accept
+        // evilbandcamp.com.
+        private static bool IsCredentialedBandcampUrl(string url)
+        {
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+                return false;
+
+            if (!uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            return uri.Host.Equals("bandcamp.com", StringComparison.OrdinalIgnoreCase)
+                   || uri.Host.EndsWith(".bandcamp.com", StringComparison.OrdinalIgnoreCase)
+                   || uri.Host.EndsWith(".bcbits.com", StringComparison.OrdinalIgnoreCase);
+        }
+
         private static string CookieKey(string cookies)
             => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(cookies ?? string.Empty)))[..16];
 
@@ -528,18 +545,28 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
         /// <param name="cookies">Session cookies from browser.</param>
         /// <param name="fileUrl">The resolved file download URL.</param>
         /// <returns>The raw HTTP response containing the file data.</returns>
-        public async Task<HttpResponse> DownloadFileAsync(string cookies, string fileUrl, Stream? destination = null)
+        public async Task<HttpResponse> DownloadFileAsync(string cookies, string fileUrl, Stream? destination = null, CancellationToken cancellationToken = default)
         {
             _logger.Debug("Bandcamp API: Downloading file from resolved URL");
 
+            // This URL is response-derived, and the request carries the session cookie,
+            // so the destination has to be vouched for before the credential goes out.
+            if (!IsCredentialedBandcampUrl(fileUrl))
+            {
+                throw new DownloadException("Bandcamp returned a download URL on an unexpected host; refusing to send session cookies to it.");
+            }
+
             var builder = _httpClient.CreateRequestBuilder(fileUrl, cookies);
             var request = builder.Build();
+
+            // A redirect off Bandcamp would carry the cookie with it.
+            request.AllowAutoRedirect = false;
 
             // Lidarr's dispatcher copies the body straight into this when set, so a
             // multi-hundred-MB discography archive never lands on the heap.
             request.ResponseStream = destination;
 
-            var response = await _httpClient.ExecuteRawAsync(request);
+            var response = await _httpClient.ExecuteRawAsync(request, cancellationToken);
 
             // Verify content type — Bandcamp should return application/zip or similar
             var contentType = response.Headers?.ContentType ?? string.Empty;

@@ -105,17 +105,29 @@ namespace NzbDrone.Core.Indexers.Qobuz
                 }
             }).ToArray();
 
+            // The token cannot interrupt QobuzApiSharp's synchronous call once it is
+            // running, so the budget is enforced on the wait instead: whatever has
+            // resolved by the deadline is used, and the stragglers are abandoned rather
+            // than holding the search thread.
+            var all = Task.WhenAll(lookups);
             try
             {
-                foreach (var (id, type) in Task.WhenAll(lookups).GetAwaiter().GetResult())
+                if (!all.Wait(DetailLookupBudget))
+                {
+                    Logger.Debug("Qobuz album detail lookups exceeded {Budget}s; releases keep the type the search payload carried",
+                        DetailLookupBudget.TotalSeconds);
+                    return result;
+                }
+
+                foreach (var (id, type) in all.Result)
                 {
                     if (!string.IsNullOrEmpty(type))
                         result[id] = type;
                 }
             }
-            catch (OperationCanceledException)
+            catch (Exception ex)
             {
-                Logger.Debug("Qobuz album detail lookups exceeded {Budget}s; releases keep the type the search payload carried", DetailLookupBudget.TotalSeconds);
+                Logger.Debug(ex, "Qobuz album detail lookups failed; releases keep the type the search payload carried");
             }
 
             return result;

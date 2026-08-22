@@ -115,6 +115,13 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                 finally
                 {
                     semaphore.Release();
+
+                    // Only this path knows the work is over, so it owns disposal.
+                    lock (_lock)
+                    {
+                        if (_cancellationSources.Remove(item, out var src))
+                            src.Dispose();
+                    }
                 }
             }
 
@@ -172,7 +179,9 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                 _cancellationSources.Add(workItem, token);
             }
 
-            await _queue.Writer.WriteAsync(workItem);
+            // Publish under the item's own token so an item cancelled while waiting for
+            // capacity never reaches a worker at all.
+            await _queue.Writer.WriteAsync(workItem, token.Token);
         }
 
         private async ValueTask<DownloadItem> DequeueAsync(CancellationToken cancellationToken)
@@ -186,29 +195,31 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
             if (workItem == null)
                 return;
 
-            // Rehydrated items were never enqueued, so they have no cancellation source.
-            if (_cancellationSources.TryGetValue(workItem, out CancellationTokenSource? src))
+            lock (_lock)
             {
-                src.Cancel();
-                _cancellationSources.Remove(workItem);
+                // Rehydrated items were never enqueued, so they have no source. Cancel but
+                // keep the mapping: the worker may not have read the token yet, and
+                // GetTokenForItem returning default would hand it an uncancellable
+                // download. The handler disposes it when the work actually ends.
+                if (_cancellationSources.TryGetValue(workItem, out CancellationTokenSource? src))
+                    src.Cancel();
+
+                _items.Remove(workItem);
             }
 
             TryDeleteSidecar(workItem);
-
-            _items.Remove(workItem);
         }
 
         public DownloadItem[] GetQueueListing()
         {
-            return _items.ToArray();
+            lock (_lock)
+                return _items.ToArray();
         }
 
         public CancellationToken GetTokenForItem(DownloadItem item)
         {
-            if (_cancellationSources.TryGetValue(item, out var src))
-                return src!.Token;
-
-            return default;
+            lock (_lock)
+                return _cancellationSources.TryGetValue(item, out var src) ? src.Token : default;
         }
 
         private void TryPersistCompletedItem(DownloadItem item)

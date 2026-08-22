@@ -77,7 +77,7 @@ namespace NzbDrone.Core.Download.Clients.Qobuz
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(token);
             cts.CancelAfter(AuxRequestTimeout);
 
-            var response = await _client.GetAsync(requestUrl, cts.Token);
+            using var response = await _client.GetAsync(requestUrl, cts.Token);
 
             if (!response.IsSuccessStatusCode)
                 return null;

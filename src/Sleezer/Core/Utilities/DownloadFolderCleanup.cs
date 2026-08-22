@@ -29,8 +29,10 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
                     // separator matters: a bare StartsWith would treat
                     // "/downloads/music-old" as inside "/downloads/music", and this
                     // guard is the only thing standing in front of a directory delete.
+                    // Case-sensitive on purpose: /downloads/MUSIC is a different tree from
+                    // /downloads/music on Linux, and a false accept deletes an unrelated folder.
                     if (normalizedCurrent.Length <= normalizedRoot.Length ||
-                        !normalizedCurrent.StartsWith(normalizedRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                        !normalizedCurrent.StartsWith(normalizedRoot + Path.DirectorySeparatorChar, StringComparison.Ordinal))
                         return;
 
                     if (!Directory.Exists(current))
