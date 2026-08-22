@@ -158,7 +158,7 @@ namespace NzbDrone.Core.Indexers.Qobuz
                 DownloadUrl = url,
                 InfoUrl = url,
                 PublishDate = publishDate,
-                DownloadProtocol = nameof(QobuzDirectDownloadProtocol)
+                DownloadProtocol = nameof(QobuzDownloadProtocol)
             };
 
             string format;

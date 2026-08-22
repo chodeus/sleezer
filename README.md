@@ -133,7 +133,7 @@ Sleezer talks to Qobuz directly using a vendored fork of `QobuzApiSharp`. Qobuz 
 1. **Settings → Download Clients → Add**.
 2. Select `Qobuz` from the list.
 3. Set **Download Path** to a directory Lidarr can read.
-4. **Profiles → Delay Profiles**: tick **QobuzDirect** on the default profile so Lidarr will grab from it.
+4. **Profiles → Delay Profiles**: tick **Qobuz** on the default profile so Lidarr will grab from it.
 
 #### Notes
 
@@ -142,7 +142,12 @@ Sleezer talks to Qobuz directly using a vendored fork of `QobuzApiSharp`. Qobuz 
 * **Require Complete Album** (on by default) fails the whole album when any track can't be downloaded, so Lidarr retries or picks another release instead of importing a gap-toothed album.
 * The post-processing pipeline (corrupt-file scan + pre-import tagging) runs on Qobuz downloads — enable **Qobuz** in the FFmpeg provider's client pickers.
 * Qobuz supplies no lyrics; enable **Use LRCLIB as Lyric Provider** if you want them.
-* Qobuz is *not* the same as the **DABMusic** web client, which speaks the Qobuz protocol against a third-party proxy. DABMusic keeps its own `Qobuz` delay-profile protocol row; this first-party client uses `QobuzDirect`.
+* Qobuz is *not* the same as the **DABMusic** web client, which speaks the Qobuz protocol against a third-party proxy. DABMusic now appears as **DABMusic** in Delay Profiles; it previously occupied the **Qobuz** row.
+  <details>
+  <summary>Upgrading from a build before this client existed</summary>
+
+  DABMusic used to own the `Qobuz` protocol name. It is now `DABMusic`, and the `Qobuz` name belongs to this first-party client. On first start after upgrading, Lidarr adds a **DABMusic** row to each delay profile (enabled by default) and your existing **Qobuz** row now governs this client — check both are set the way you want. Blocklist entries recorded against DABMusic under the old name stop matching, so anything you had blocklisted there can be grabbed again.
+  </details>
 
 ---
 

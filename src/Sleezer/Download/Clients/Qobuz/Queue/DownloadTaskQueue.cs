@@ -278,7 +278,7 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
                 item.ID,
                 item.Title,
                 item.DownloadFolder ?? string.Empty,
-                nameof(QobuzDirectDownloadProtocol),
+                nameof(QobuzDownloadProtocol),
                 album);
 
             return await _postProcess.RunAsync(request, GetTokenForItem(item));

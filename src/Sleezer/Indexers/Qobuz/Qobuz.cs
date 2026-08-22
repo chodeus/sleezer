@@ -17,7 +17,7 @@ namespace NzbDrone.Core.Indexers.Qobuz
     public class Qobuz : HttpIndexerBase<QobuzIndexerSettings>
     {
         public override string Name => "Qobuz";
-        public override string Protocol => nameof(QobuzDirectDownloadProtocol);
+        public override string Protocol => nameof(QobuzDownloadProtocol);
         public override bool SupportsRss => false;
         public override bool SupportsSearch => true;
         public override int PageSize => 100;

@@ -29,7 +29,7 @@ namespace NzbDrone.Core.Download.Clients.Qobuz
             _proxy = proxy;
         }
 
-        public override string Protocol => nameof(QobuzDirectDownloadProtocol);
+        public override string Protocol => nameof(QobuzDownloadProtocol);
         public override string Name => "Qobuz";
 
         public override IEnumerable<DownloadClientItem> GetItems()
