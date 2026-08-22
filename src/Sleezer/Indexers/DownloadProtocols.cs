@@ -11,4 +11,5 @@ namespace NzbDrone.Core.Indexers
     public class SubSonicDownloadProtocol : IDownloadProtocol { }
     public class AmazonMusicDownloadProtocol : IDownloadProtocol { }
     public class TidalDownloadProtocol : IDownloadProtocol { }
+    public class BandcampDownloadProtocol : IDownloadProtocol { }
 }

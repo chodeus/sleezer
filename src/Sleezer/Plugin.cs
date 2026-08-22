@@ -43,7 +43,8 @@ namespace NzbDrone.Plugin.Sleezer
             typeof(QobuzDownloadProtocol),
             typeof(SubSonicDownloadProtocol),
             typeof(AmazonMusicDownloadProtocol),
-            typeof(TidalDownloadProtocol)];
+            typeof(TidalDownloadProtocol),
+            typeof(BandcampDownloadProtocol)];
 
         public static TimeSpan AverageRuntime { get; private set; } = TimeSpan.FromDays(4);
         public static DateTime LastStarted { get; private set; } = DateTime.UtcNow;
