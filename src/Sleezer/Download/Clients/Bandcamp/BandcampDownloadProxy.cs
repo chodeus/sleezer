@@ -222,20 +222,9 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
         /// Lidarr's HttpResponse buffers the full response into byte[], so we write
         /// ResponseData to disk in one shot. Progress jumps to 1.0 on completion.
         /// </summary>
-        private async Task DownloadToFileAsync(
-            string cookies,
-            string fileUrl,
-            string tempFilePath,
-            BandcampDownloadItem item,
-            CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            // Use the API client's DownloadFileAsync which validates Content-Type
-            var response = await _apiClient.DownloadFileAsync(cookies, fileUrl).ConfigureAwait(false);
-            await WriteResponseToFileAsync(response, tempFilePath, item, cancellationToken).ConfigureAwait(false);
-        }
-
+        // The direct-response path already holds the body in memory (it was fetched
+        // while resolving), so there is nothing left to stream — unlike DownloadToFileAsync,
+        // which now writes straight from the socket.
         private async Task WriteResponseToFileAsync(
             HttpResponse response,
             string tempFilePath,
@@ -248,13 +237,41 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
                 throw new DownloadException("Download response contained no data.");
             }
 
-            // Track size for progress reporting
-            item.TotalSize = responseData.Length;
-
-            // Write to temp file asynchronously
             await File.WriteAllBytesAsync(tempFilePath, responseData, cancellationToken).ConfigureAwait(false);
 
+            item.TotalSize = responseData.Length;
             item.DownloadedBytes = responseData.Length;
+            item.Progress = 1.0;
+
+            _logger.Debug("Bandcamp download proxy [{0}]: File download complete ({1} bytes)",
+                item.DownloadId, item.DownloadedBytes);
+        }
+
+        private async Task DownloadToFileAsync(
+            string cookies,
+            string fileUrl,
+            string tempFilePath,
+            BandcampDownloadItem item,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // Stream into the temp file rather than buffering the archive: a
+            // discography ZIP is routinely hundreds of MB, and DownloadFileAsync still
+            // validates the Content-Type before anything is written.
+            await using (var destination = new FileStream(tempFilePath, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                await _apiClient.DownloadFileAsync(cookies, fileUrl, destination).ConfigureAwait(false);
+            }
+
+            var written = new FileInfo(tempFilePath).Length;
+            if (written == 0)
+            {
+                throw new DownloadException("Download response contained no data.");
+            }
+
+            item.TotalSize = written;
+            item.DownloadedBytes = written;
             item.Progress = 1.0;
 
             _logger.Debug("Bandcamp download proxy [{0}]: File download complete ({1} bytes)",

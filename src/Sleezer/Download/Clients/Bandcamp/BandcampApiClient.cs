@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using NLog;
+using NzbDrone.Common.Cache;
 using NzbDrone.Common.Http;
 using NzbDrone.Core.Http.Bandcamp;
 
@@ -55,11 +57,27 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
 
         private readonly Logger _logger;
 
-        public BandcampApiClient(BandcampHttpClient httpClient, Logger logger)
+        // This class is resolved transiently (Lidarr registers concrete types as
+        // Reuse.Transient), so an instance field would cache nothing. ICacheManager is
+        // an interface and therefore a process singleton, and its caches are keyed by
+        // type, so every instance shares these.
+        private static readonly TimeSpan FanIdLifetime = TimeSpan.FromHours(1);
+        private static readonly TimeSpan CollectionLifetime = TimeSpan.FromMinutes(15);
+
+        private readonly ICached<long?> _fanIdCache;
+        private readonly ICached<List<BandcampCollectionItem>> _collectionCache;
+
+        public BandcampApiClient(BandcampHttpClient httpClient, ICacheManager cacheManager, Logger logger)
         {
             _httpClient = httpClient;
             _logger = logger;
+            _fanIdCache = cacheManager.GetCache<long?>(typeof(BandcampApiClient), "fanIds");
+            _collectionCache = cacheManager.GetCache<List<BandcampCollectionItem>>(typeof(BandcampApiClient), "collections");
         }
+
+        // Cookies are the credential, so they are keyed by hash rather than value.
+        private static string CookieKey(string cookies)
+            => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(cookies ?? string.Empty)))[..16];
 
         /// <summary>
         /// Resolves the fan_id for the authenticated user by fetching the Bandcamp
@@ -70,6 +88,27 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
         /// <param name="cookies">Session cookies from browser.</param>
         /// <returns>The fan_id, or null if resolution fails.</returns>
         public async Task<long?> ResolveFanIdAsync(string cookies)
+        {
+            var cacheKey = CookieKey(cookies);
+            var cached = _fanIdCache.Find(cacheKey);
+            if (cached.HasValue)
+            {
+                return cached;
+            }
+
+            var resolved = await ResolveFanIdUncachedAsync(cookies).ConfigureAwait(false);
+
+            // Only a success is cached — caching a null would pin a transient failure
+            // for an hour and make every search look like a bad cookie.
+            if (resolved.HasValue)
+            {
+                _fanIdCache.Set(cacheKey, resolved, FanIdLifetime);
+            }
+
+            return resolved;
+        }
+
+        private async Task<long?> ResolveFanIdUncachedAsync(string cookies)
         {
             _logger.Debug("Bandcamp API: Resolving fan_id from homepage");
 
@@ -224,6 +263,33 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
 
         public async Task<List<BandcampCollectionItem>> GetDownloadableCollectionAsync(
             string cookies, long fanId, int maxPages = 20)
+        {
+            // Lidarr issues one search per album, and a full re-page costs ~2s each.
+            // maxPages is part of the key so the indexer test's 1-page probe cannot
+            // poison the full collection.
+            var cacheKey = $"{fanId}:{maxPages}";
+            var cached = _collectionCache.Find(cacheKey);
+            if (cached != null)
+            {
+                _logger.Debug("Bandcamp API: Serving {0} collection item(s) from cache", cached.Count);
+                return cached;
+            }
+
+            var fetched = await GetDownloadableCollectionUncachedAsync(cookies, fanId, maxPages).ConfigureAwait(false);
+
+            // An empty collection is a legitimate answer but a poor thing to pin, and a
+            // parse failure now throws rather than returning empty, so this only caches
+            // a genuine result.
+            if (fetched.Count > 0)
+            {
+                _collectionCache.Set(cacheKey, fetched, CollectionLifetime);
+            }
+
+            return fetched;
+        }
+
+        private async Task<List<BandcampCollectionItem>> GetDownloadableCollectionUncachedAsync(
+            string cookies, long fanId, int maxPages)
         {
             var results = new List<BandcampCollectionItem>();
             var seenKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -462,12 +528,17 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
         /// <param name="cookies">Session cookies from browser.</param>
         /// <param name="fileUrl">The resolved file download URL.</param>
         /// <returns>The raw HTTP response containing the file data.</returns>
-        public async Task<HttpResponse> DownloadFileAsync(string cookies, string fileUrl)
+        public async Task<HttpResponse> DownloadFileAsync(string cookies, string fileUrl, Stream? destination = null)
         {
             _logger.Debug("Bandcamp API: Downloading file from resolved URL");
 
             var builder = _httpClient.CreateRequestBuilder(fileUrl, cookies);
             var request = builder.Build();
+
+            // Lidarr's dispatcher copies the body straight into this when set, so a
+            // multi-hundred-MB discography archive never lands on the heap.
+            request.ResponseStream = destination;
+
             var response = await _httpClient.ExecuteRawAsync(request);
 
             // Verify content type — Bandcamp should return application/zip or similar

@@ -16,6 +16,10 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
     {
         private readonly Channel<BandcampDownloadItem> _channel;
         private readonly CancellationTokenSource _cts = new();
+
+        // Per-item sources so RemoveItem can stop one download without stopping the
+        // queue — the shape the other three clients already use.
+        private readonly ConcurrentDictionary<string, CancellationTokenSource> _itemCancellations = new();
         private readonly IBandcampDownloadProxy _downloadProxy;
         private readonly IBandcampDownloadRegistry _registry;
         private readonly Logger _logger;
@@ -83,6 +87,22 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
         /// </summary>
         public void RemoveItem(string downloadId)
         {
+            // Cancel before deregistering: dropping the registry entry alone left the
+            // download running and still writing files after Lidarr had been told the
+            // item was gone.
+            if (_itemCancellations.TryGetValue(downloadId, out var itemCts))
+            {
+                try
+                {
+                    itemCts.Cancel();
+                    _logger.Debug("Bandcamp download queue: Cancelled in-flight download {0}", downloadId);
+                }
+                catch (ObjectDisposedException)
+                {
+                    // The item finished between the lookup and the cancel; nothing to stop.
+                }
+            }
+
             _registry.Remove(downloadId);
             _logger.Debug("Bandcamp download queue: Removed item {0}", downloadId);
         }
@@ -100,7 +120,17 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
                         break;
                     }
 
-                    await ProcessItemAsync(item, cancellationToken).ConfigureAwait(false);
+                    using var itemCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                    _itemCancellations[item.DownloadId] = itemCts;
+
+                    try
+                    {
+                        await ProcessItemAsync(item, itemCts.Token).ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        _itemCancellations.TryRemove(item.DownloadId, out _);
+                    }
                 }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

@@ -35,7 +35,12 @@ namespace NzbDrone.Plugin.Sleezer.Qobuz
             if (Instance != null && !forceRecreate)
                 return;
 
-            Instance?.Dispose();
+            // The outgoing client is deliberately not disposed. A download in flight
+            // still holds it, and disposing here would throw ObjectDisposedException
+            // mid-transfer. Re-initialisation only happens when the App ID or Secret
+            // actually change — a human editing settings — so at most one HttpClient is
+            // left for the GC per edit. Lidarr makes the same trade: ManagedHttpDispatcher
+            // caches HttpClients by proxy key and never disposes them either.
             Instance = new QobuzAPI(appId, appSecret, logger);
         }
 
@@ -120,17 +125,6 @@ namespace NzbDrone.Plugin.Sleezer.Qobuz
             return stringBuilder.ToString();
         }
 
-        private void Dispose()
-        {
-            try
-            {
-                _client.Dispose();
-            }
-            catch (Exception ex)
-            {
-                _logger.Debug(ex, "Failed to dispose previous Qobuz API client");
-            }
-        }
 
         // An empty appId/appSecret makes QobuzApiService scrape both from the
         // web player's bundle.js, which is what we want by default — Qobuz
