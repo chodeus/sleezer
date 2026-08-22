@@ -76,6 +76,10 @@ public class API
 
     internal void UpdateUser(TidalUser user) => _activeUser = user;
 
+    // Sleezer addition: Tidal licenses per territory, so the downloader names the
+    // storefront in its failure messages rather than saying "your region".
+    internal string CountryCode => _activeUser?.CountryCode ?? "unknown";
+
     internal async Task<JObject> Call(
         HttpMethod method,
         string path,

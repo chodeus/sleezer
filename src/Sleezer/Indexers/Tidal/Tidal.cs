@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Threading.Tasks;
+using FluentValidation.Results;
 using NLog;
 using NzbDrone.Common.Http;
 using NzbDrone.Core.Configuration;
@@ -76,6 +77,24 @@ namespace NzbDrone.Core.Indexers.Tidal
                 Settings = Settings,
                 Logger = _logger
             };
+        }
+
+        protected override async Task<ValidationFailure> TestConnection()
+        {
+            ValidationFailure? baseFailure = await base.TestConnection();
+            if (baseFailure != null)
+                return baseFailure;
+
+            // Tidal licenses per territory and the entitlement is bound to the account,
+            // not to the countryCode we send — so this is the single fact that explains
+            // most "album not found" and "couldn't deliver track" reports.
+            string country = TidalAPI.Instance?.CountryCode ?? string.Empty;
+            if (string.IsNullOrEmpty(country))
+                _logger.Warn("Tidal authenticated but reported no storefront; regional availability cannot be determined");
+            else
+                _logger.Info("Tidal account storefront is {Country} — search results and lossless entitlement are limited to what is licensed there", country);
+
+            return null!;
         }
 
         public override object RequestAction(string action, IDictionary<string, string> query)

@@ -96,11 +96,19 @@ Tidal's device-code OAuth flow doesn't redirect back to Lidarr after you authori
 
 * The post-processing pipeline (corrupt-file scan + pre-import tagging) runs on Tidal downloads, just like Deezer and Slskd.
 * If searches start returning errors that mention `countryCode parameter missing`, that's Tidal's confusing way of saying your session expired. Sleezer detects this and forces a refresh; if that fails, re-authenticate via the indexer settings.
+* **Your storefront is the usual explanation.** After authenticating, the indexer shows an **Account Storefront** field (under Advanced) — the two-letter country Tidal licenses your account against. Testing the indexer logs it too. Download failures now name it directly: `not licensed lossless in AU`, or `either not licensed in AU or removed from Tidal`.
+  <details>
+  <summary>Why a VPN does not fix this</summary>
+
+  Tidal enforces regional entitlement **on the account**, not on the `countryCode` a client sends or the IP it connects from. Sleezer sends your account's own country because every other Tidal client does the same — tiddl and orpheusdl-tidal included; none of them attempt to override it, because it does not work. Connecting through a VPN leaves the account's storefront unchanged.
+
+  The only thing that actually changes it is a Tidal account registered in another country. Tidal's own support states the country cannot be altered on an existing account: you create a new one with a different email and an in-country billing address, and they migrate playlists and favourites across.
+  </details>
 * A Tidal download failing with `Tidal returned codec 'MP4A' ... despite a LOSSLESS request` is expected — the grab is failed deliberately so Lidarr re-picks another source instead of importing AAC into a Lossless bucket.
   <details>
-  <summary>Why this happens / what to do</summary>
+  <summary>Why this happens</summary>
 
-  Tidal silently downgrades to AAC for tracks not licensed lossless in your region — common in AU/NZ/SE-Asia for older or remix-heavy catalogue. Sleezer fails the grab so Lidarr can re-pick another source (e.g. a slskd FLAC peer). Re-authenticating via a US VPN sometimes unlocks more lossless catalogue if the album genuinely is licensed lossless somewhere.
+  Tidal silently downgrades to AAC for tracks not licensed lossless in your storefront — common in AU/NZ/SE-Asia for older or remix-heavy catalogue — returning an mp4a manifest with no error at all. Sleezer reads the delivered codec and fails the grab so Lidarr can re-pick another source (e.g. a slskd FLAC peer) rather than filing AAC into a Lossless bucket.
   </details>
 * Various Artists, Soundtracks, and Cast Recordings are recognised explicitly so they actually return search hits.
 * Tidal music videos and Dolby Atmos tracks are not supported in this release.
