@@ -16,7 +16,6 @@ using NzbDrone.Common.Instrumentation.Extensions;
 using NzbDrone.Plugin.Sleezer.Core.Model;
 using NzbDrone.Plugin.Sleezer.Core.PostProcessing;
 using NzbDrone.Plugin.Sleezer.Metadata.FFmpeg;
-using XabeFFmpeg = Xabe.FFmpeg.FFmpeg;
 
 namespace NzbDrone.Core.Download.Clients.Deezer.Queue
 {
@@ -43,15 +42,12 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
 
         private DeezerSettings? _settings;
         private readonly Logger _logger;
+        private readonly PostProcessRunner _postProcess;
         private readonly ICorruptionScanner _corruptionScanner;
         private readonly ICorruptionFailureHandler _corruptionFailureHandler;
         private readonly IPreImportTagger _preImportTagger;
         private readonly IMetadataFactory _metadataFactory;
         private readonly IDiskProvider _diskProvider;
-        // Track the last FFmpeg path we resolved against so a user changing the
-        // FFmpeg metadata path mid-run is picked up on the next post-process,
-        // not at next Lidarr restart. null = never resolved.
-        private string? _lastResolvedFfmpegPath;
         private int _rehydrated;
 
         public DownloadTaskQueue(
@@ -78,6 +74,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
             _metadataFactory = metadataFactory;
             _diskProvider = diskProvider;
             _logger = logger;
+            _postProcess = new PostProcessRunner(corruptionScanner, corruptionFailureHandler, preImportTagger, metadataFactory, diskProvider, logger);
         }
 
         public void SetSettings(DeezerSettings settings)
@@ -106,7 +103,8 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                     await task;
 
                     if (item.Status == DownloadItemStatus.Completed)
-                        await RunPostProcessAsync(item, token);
+                        if (!await RunPostProcessAsync(item, token))
+                            item.Status = DownloadItemStatus.Failed;
 
                     TryPersistCompletedItem(item);
                 }
@@ -151,189 +149,19 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
             await Task.WhenAll(remainingTasks);
         }
 
-        private async Task RunPostProcessAsync(DownloadItem item, CancellationToken ct)
+
+        private async Task<bool> RunPostProcessAsync(DownloadItem item, CancellationToken ct)
         {
-            FFmpegSettings? sharedSettings = GetSharedPostProcessingSettings();
-            bool scanEnabled = sharedSettings?.CorruptionScanClients?.Contains((int)PostProcessClient.Deezer) ?? false;
-            bool tagEnabled = sharedSettings?.PreImportTaggingClients?.Contains((int)PostProcessClient.Deezer) ?? false;
+            Album? album = item.RemoteAlbum?.Albums?.FirstOrDefault();
+            var request = new PostProcessRequest(
+                PostProcessClient.Deezer,
+                item.ID,
+                item.Title,
+                item.DownloadFolder ?? string.Empty,
+                nameof(NzbDrone.Core.Indexers.DeezerDownloadProtocol),
+                album);
 
-            if (!scanEnabled && !tagEnabled)
-            {
-                _logger.Debug("[post-process] Deezer item {ID}: scan and tag both disabled; skipping", item.ID);
-                return;
-            }
-
-            string? folder = item.DownloadFolder;
-            if (string.IsNullOrEmpty(folder) || !_diskProvider.FolderExists(folder))
-            {
-                _logger.Warn("[post-process] Deezer folder missing for {ID}; skipping post-process", item.ID);
-                return;
-            }
-
-            _logger.Debug("[post-process] Deezer item {ID}: scan={ScanEnabled} tag={TagEnabled} folder={Folder}",
-                item.ID, scanEnabled, tagEnabled, folder);
-            var sw = System.Diagnostics.Stopwatch.StartNew();
-
-            EnsureFFmpegResolved();
-
-            // Tag first, scan second. Tagging rewrites ID3/Vorbis comments via
-            // Lidarr's IAudioTagService and (when StripFeaturedArtists is on)
-            // re-saves via TagLib. Either step can in principle damage framing
-            // — running the corruption scan AFTER tagging means we validate the
-            // exact bytes Lidarr is about to import, not the pre-tag bytes.
-            if (tagEnabled)
-            {
-                Album? album = item.RemoteAlbum?.Albums?.FirstOrDefault();
-                Artist? artist = album?.Artist?.Value;
-                if (album == null || artist == null)
-                {
-                    _logger.Debug("[post-process] Deezer pre-import tag: skipping {ID}; no Album/Artist on RemoteAlbum", item.ID);
-                }
-                else
-                {
-                    _logger.Debug("[post-process] Deezer item {ID}: tagging '{Album}' by '{Artist}'", item.ID, album.Title, artist.Name);
-                    var tagSw = System.Diagnostics.Stopwatch.StartNew();
-
-                    // Pass null for albumRelease so PreImportTagger lets Lidarr's
-                    // CandidateService rank releases by track-count distance —
-                    // forcing the monitored release here is what was causing the
-                    // "missing tracks" import failures when the download was a
-                    // different edition than the monitored one.
-                    await _preImportTagger.TagCompletedDownloadAsync(
-                        album,
-                        artist,
-                        albumRelease: null,
-                        item.ID,
-                        folder,
-                        TagConfidenceThreshold,
-                        sharedSettings?.StripFeaturedArtists ?? false,
-                        ct);
-
-                    _logger.Debug("[post-process] Deezer item {ID}: tagging completed in {ElapsedMs}ms", item.ID, tagSw.ElapsedMilliseconds);
-                }
-            }
-
-            if (scanEnabled)
-            {
-                List<CorruptionStrike> strikes = await ScanForCorruptAsync(folder, ct);
-                _logger.Debug("[post-process] Deezer item {ID}: scan completed in {ElapsedMs}ms — {StrikeCount} strike(s)",
-                    item.ID, sw.ElapsedMilliseconds, strikes.Count);
-                if (strikes.Count > 0)
-                {
-                    // One corrupt file poisons the album. Mark the item Failed,
-                    // then delegate to the shared failure handler: it wipes the
-                    // whole folder and publishes DownloadFailedEvent so Lidarr
-                    // blocklists this release and searches for a different one.
-                    item.Status = DownloadItemStatus.Failed;
-                    _logger.Warn("[post-process] Deezer item {ID}: {Count} corrupt file(s) found; wiping album and requesting re-search.",
-                                 item.ID, strikes.Count);
-
-                    await _corruptionFailureHandler.HandleAsync(
-                        downloadId: item.ID,
-                        releaseTitle: item.Title,
-                        folder: folder,
-                        strikes: strikes,
-                        protocolName: nameof(DeezerDownloadProtocol),
-                        ct: ct);
-                    return;
-                }
-            }
-        }
-
-        private async Task<List<CorruptionStrike>> ScanForCorruptAsync(string folder, CancellationToken ct)
-        {
-            List<CorruptionStrike> strikes = new();
-
-            string[] audioFiles = _diskProvider.GetFiles(folder, recursive: true)
-                .Where(p => AudioExtensions.Contains(Path.GetExtension(p)))
-                .ToArray();
-
-            if (audioFiles.Length == 0)
-                return strikes;
-
-            int concurrency = Math.Max(2, Environment.ProcessorCount / 2);
-            using SemaphoreSlim gate = new(concurrency);
-
-            Task<(string path, CorruptionScanner.Result result)>[] tasks = audioFiles.Select(async path =>
-            {
-                await gate.WaitAsync(ct);
-                try
-                {
-                    CorruptionScanner.Result r = await _corruptionScanner.ScanAsync(path, CorruptionScanTimeoutSeconds, ct);
-                    return (path, r);
-                }
-                finally { gate.Release(); }
-            }).ToArray();
-
-            foreach (Task<(string path, CorruptionScanner.Result result)> t in tasks)
-            {
-                (string path, CorruptionScanner.Result result) = await t;
-                if (!result.IsCorrupt)
-                    continue;
-
-                _logger.Warn("[post-process] Deezer corrupt file: {File} — {Reason}", Path.GetFileName(path), result.Reason);
-                strikes.Add(new CorruptionStrike(Path.GetFileName(path), result.Reason));
-            }
-
-            return strikes;
-        }
-
-        private FFmpegSettings? GetSharedPostProcessingSettings()
-        {
-            try
-            {
-                return _metadataFactory.All()
-                    .Where(d => d.Settings is FFmpegSettings)
-                    .Select(d => d.Settings as FFmpegSettings)
-                    .FirstOrDefault(s => s != null);
-            }
-            catch (Exception ex)
-            {
-                _logger.Debug(ex, "[post-process] Failed to read shared post-processing settings; treating toggles as disabled.");
-                return null;
-            }
-        }
-
-        private void EnsureFFmpegResolved()
-        {
-            string? configuredPath = null;
-            try
-            {
-                FFmpegSettings? settings = GetSharedPostProcessingSettings();
-                configuredPath = settings?.FFmpegPath;
-            }
-            catch (Exception ex)
-            {
-                _logger.Debug(ex, "[post-process] Failed to read FFmpeg metadata settings");
-            }
-
-            // Throttled (24h), best-effort auto-update of the cached ffmpeg from
-            // chodeus/ffmpeg-static. Fire-and-forget so it never blocks post-process;
-            // it no-ops when the path is unset or we've checked recently.
-            if (!string.IsNullOrWhiteSpace(configuredPath))
-                _ = FFmpegInstaller.EnsureUpToDateAsync(configuredPath, _logger, CancellationToken.None);
-
-            // Re-resolve only when the configured path actually changes. Avoids
-            // probing the filesystem on every post-process while still picking
-            // up settings changes without requiring a Lidarr restart.
-            if (string.Equals(configuredPath, _lastResolvedFfmpegPath, StringComparison.Ordinal))
-                return;
-
-            try
-            {
-                if (!string.IsNullOrWhiteSpace(configuredPath))
-                {
-                    XabeFFmpeg.SetExecutablesPath(configuredPath);
-                    AudioMetadataHandler.ResetFFmpegInstallationCheck();
-                    _logger.Info("[post-process] FFmpeg path applied: {Path}", configuredPath);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.Debug(ex, "[post-process] Failed to apply ffmpeg path {Path}", configuredPath);
-            }
-
-            _lastResolvedFfmpegPath = configuredPath;
+            return await _postProcess.RunAsync(request, ct);
         }
 
         public async ValueTask QueueBackgroundWorkItemAsync(DownloadItem workItem)

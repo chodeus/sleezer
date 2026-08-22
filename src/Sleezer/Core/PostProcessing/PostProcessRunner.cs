@@ -11,8 +11,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
 {
     /// <summary>
     /// Shared pre-import tagging + corruption-scan pass for the plugin's own download
-    /// clients. Deezer and Tidal still carry their own near-identical private copies;
-    /// migrating them onto this is a separate change.
+    /// clients (Deezer, Tidal, Qobuz). Slskd runs the same two steps from its own
+    /// manager, which owns extra state this does not model.
     /// </summary>
     public sealed class PostProcessRunner(
         ICorruptionScanner corruptionScanner,
@@ -20,7 +20,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
         IPreImportTagger preImportTagger,
         IMetadataFactory metadataFactory,
         IDiskProvider diskProvider,
-        Logger logger)
+        Logger logger,
+        Action<string?>? onFfmpegPathResolved = null)
     {
         private const int CorruptionScanTimeoutSeconds = 120;
         private const double TagConfidenceThreshold = 0.15;
@@ -149,6 +150,11 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
             {
                 logger.Warn(ex, "[post-process] Failed to apply ffmpeg path {Path}; the corruption scan may not run", configuredPath);
             }
+
+            // Clients with their own ffmpeg call path (Tidal's FLAC-from-M4A extraction)
+            // need the resolved directory pushed into their wrapper too; without it they
+            // fall back to a bare PATH lookup that misses /usr/bin in the Lidarr image.
+            onFfmpegPathResolved?.Invoke(string.IsNullOrWhiteSpace(configuredPath) ? null : configuredPath);
 
             _lastResolvedFfmpegPath = configuredPath;
         }
