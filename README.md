@@ -135,6 +135,16 @@ Sleezer talks to Qobuz directly using a vendored fork of `QobuzApiSharp`. Qobuz 
 3. Set **Download Path** to a directory Lidarr can read.
 4. **Profiles → Delay Profiles**: tick **Qobuz** on the default profile so Lidarr will grab from it.
 
+#### Qobuz Import Lists (optional)
+
+Three lists reuse the indexer's session, so add and save the indexer first — they have no credentials of their own.
+
+* **Qobuz Favourite Albums** — the albums you've favourited, imported as albums.
+* **Qobuz Favourite Artists** — the artists you've favourited.
+* **Qobuz Playlist** — one or more playlists by ID (the number at the end of a playlist URL); imports the album behind each track.
+
+**Settings → Import Lists → Add**, pick one, set a Monitor / Quality Profile / Root Folder as usual.
+
 #### Notes
 
 * Each album is offered at up to four qualities — `MP3 320kbps`, `FLAC Lossless`, `FLAC 24bit 96kHz`, `FLAC 24bit 192kHz`. Your Lidarr quality profile picks.
