@@ -38,4 +38,7 @@ namespace NzbDrone.Plugin.Sleezer.Blocklisting
 
     public class SubSonicBlocklist(IBlocklistRepository blocklistRepository) : BaseBlocklist<SubSonicDownloadProtocol>(blocklistRepository)
     { }
+
+    public class BandcampBlocklist(IBlocklistRepository blocklistRepository) : BaseBlocklist<BandcampDownloadProtocol>(blocklistRepository)
+    { }
 }

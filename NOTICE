@@ -26,8 +26,13 @@ exist without the original authors of those projects.
   as part of `Tubifarry` under the MIT License.
     https://github.com/TypNull/Tubifarry  (MIT — relicensed under GPL-3.0 in Sleezer)
 
-The MIT license under which Tubifarry is originally released is compatible
-with GPL-3.0; the combined work is distributed under GPL-3.0 because the
+* Portions of the Bandcamp indexer and download client are Copyright (C) 2025
+  jtstothard and contributors, and were originally distributed as
+  `lidarr-plugin-bandcamp` under the MIT License.
+    https://github.com/jtstothard/lidarr-plugin-bandcamp  (MIT — relicensed under GPL-3.0 in Sleezer)
+
+The MIT licenses under which Tubifarry and lidarr-plugin-bandcamp are
+originally released are compatible with GPL-3.0; the combined work is distributed under GPL-3.0 because the
 bundled `DeezNET` library is GPL-3.0.
 
 

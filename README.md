@@ -2,7 +2,7 @@
 
 ![License](https://img.shields.io/github/license/chodeus/sleezer) ![GitHub release (latest by date)](https://img.shields.io/github/v/release/chodeus/sleezer) ![GitHub last commit](https://img.shields.io/github/last-commit/chodeus/sleezer) ![GitHub stars](https://img.shields.io/github/stars/chodeus/sleezer)
 
-Sleezer is a Lidarr plugin that adds **Deezer**, **Tidal**, **Slskd (Soulseek)**, and a handful of other music sources behind a single install. It also ships post-processing: corrupt-file scanning and pre-import tagging for Deezer/Tidal/Slskd downloads, plus an FFmpeg-based format converter that runs on every imported track regardless of source. 🛠️
+Sleezer is a Lidarr plugin that adds **Deezer**, **Tidal**, **Bandcamp**, **Slskd (Soulseek)**, and a handful of other music sources behind a single install. It also ships post-processing: corrupt-file scanning and pre-import tagging for Deezer/Tidal/Slskd downloads, plus an FFmpeg-based format converter that runs on every imported track regardless of source. 🛠️
 
 Credit where it's due: Sleezer is built on [Lidarr.Plugin.Deezer](https://github.com/TrevTV/Lidarr.Plugin.Deezer) by [TrevTV](https://github.com/TrevTV) and [Tubifarry](https://github.com/TypNull/Tubifarry) by [TypNull](https://github.com/TypNull). See [Credits](#credits-).
 
@@ -13,18 +13,19 @@ Credit where it's due: Sleezer is built on [Lidarr.Plugin.Deezer](https://github
 1. [Installation 🚀](#installation-)
 2. [Deezer Setup 🎧](#deezer-setup-)
 3. [Tidal Setup 🌊](#tidal-setup-)
-4. [Soulseek (Slskd) Setup 🐟](#soulseek-slskd-setup-)
-5. [Web Clients 📻](#web-clients-)
-6. [FFmpeg 🎛️](#ffmpeg-️)
-7. [Corrupt File Scan & Pre-Import Tagging 🧼](#corrupt-file-scan--pre-import-tagging-)
-8. [Queue Cleaner 🧹](#queue-cleaner-)
-9. [Search Sniper 🏹](#search-sniper-)
-10. [Custom Metadata Sources 🧩](#custom-metadata-sources-)
-11. [Similar Artists 🧷](#similar-artists-)
-12. [Troubleshooting 🛠️](#troubleshooting-)
-13. [Credits 🙌](#credits-)
-14. [Contributing 🤝](#contributing-)
-15. [License 📄](#license-)
+4. [Bandcamp Setup 🏕️](#bandcamp-setup-)
+5. [Soulseek (Slskd) Setup 🐟](#soulseek-slskd-setup-)
+6. [Web Clients 📻](#web-clients-)
+7. [FFmpeg 🎛️](#ffmpeg-️)
+8. [Corrupt File Scan & Pre-Import Tagging 🧼](#corrupt-file-scan--pre-import-tagging-)
+9. [Queue Cleaner 🧹](#queue-cleaner-)
+10. [Search Sniper 🏹](#search-sniper-)
+11. [Custom Metadata Sources 🧩](#custom-metadata-sources-)
+12. [Similar Artists 🧷](#similar-artists-)
+13. [Troubleshooting 🛠️](#troubleshooting-)
+14. [Credits 🙌](#credits-)
+15. [Contributing 🤝](#contributing-)
+16. [License 📄](#license-)
 
 ---
 
@@ -105,6 +106,34 @@ Tidal's device-code OAuth flow doesn't redirect back to Lidarr after you authori
 * Various Artists, Soundtracks, and Cast Recordings are recognised explicitly so they actually return search hits.
 * Tidal music videos and Dolby Atmos tracks are not supported in this release.
 * Tidal does not expose a public RSS / new-release feed, so RSS sync is disabled at the indexer level.
+
+---
+
+### Bandcamp Setup 🏕️
+
+Bandcamp only ever surfaces **music you have already bought**. It searches your own purchase history, so it fills gaps nothing else can — Bandcamp-exclusive releases are frequently absent from every other source in this plugin.
+
+> ⚠️ Nothing here downloads music you do not own. If it is not in your Bandcamp collection, it will not appear in search results.
+
+#### Setting Up the Bandcamp Indexer
+
+1. **Settings → Indexers → Add**.
+2. Select `Bandcamp` (under **Other** at the bottom).
+3. Paste your `identity` cookie into **Session Cookies**: log in at bandcamp.com, open DevTools → **Application** → Cookies → `https://bandcamp.com`, and copy the value of `identity`.
+4. **Test**, then **Save**.
+
+#### Setting Up the Bandcamp Download Client
+
+1. **Settings → Download Clients → Add**, select `Bandcamp`.
+2. Same `identity` cookie, and a **Download Path** Lidarr can write to.
+3. **Profiles → Delay Profiles**: tick **Bandcamp** on the default profile.
+
+#### Notes
+
+* Bandcamp serves whatever format you request per purchase — FLAC where the artist provided it, and often 24-bit.
+* Downloads arrive as a ZIP for multi-track releases; the client extracts it and normalises file permissions, which matters on Unraid where Lidarr runs as `99:100`.
+* The `identity` cookie expires. When searches suddenly return nothing, re-copy it.
+* Bandcamp is not a streaming catalogue — there is no RSS feed and no way to discover releases you have not purchased.
 
 ---
 
@@ -349,10 +378,11 @@ Enable **Debug** log level in `Settings -> General` if you're filing an issue �
 
 ## Credits 🙌
 
-Sleezer exists because of two people:
+Sleezer exists because of these people:
 
 * **[TrevTV](https://github.com/TrevTV)** — author of [Lidarr.Plugin.Deezer](https://github.com/TrevTV/Lidarr.Plugin.Deezer) and the [DeezNET](https://github.com/TrevTV/DeezNET) client library that powers Sleezer's Deezer integration. Nothing Deezer-related in this plugin would exist without his work.
 * **[TypNull](https://github.com/TypNull)** — author of [Tubifarry](https://github.com/TypNull/Tubifarry), which contributed the Slskd integration, web-client framework, FFmpeg pipeline, Queue Cleaner, Search Sniper, custom metadata sources, and Similar Artists. Sleezer is basically Tubifarry with YouTube/Spotify/Lyrics/telemetry stripped out and Deezer bolted in.
+* **[jtstothard](https://github.com/jtstothard)** — author of [lidarr-plugin-bandcamp](https://github.com/jtstothard/lidarr-plugin-bandcamp), from which Sleezer's Bandcamp indexer and download client are ported.
 
 Also thanks to the maintainers of Lidarr's plugin system, and the authors of every bundled library listed in [NOTICE](NOTICE).
 
