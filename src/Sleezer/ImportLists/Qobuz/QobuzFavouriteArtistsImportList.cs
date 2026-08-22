@@ -22,6 +22,11 @@ namespace NzbDrone.Core.ImportLists.Qobuz
         {
             List<ImportListItemInfo> items = [];
 
+            QobuzAPI api = QobuzAPI.Instance
+                ?? throw new InvalidOperationException("Not signed in to Qobuz — add and save the Qobuz indexer first.");
+            if (api.Login == null)
+                throw new InvalidOperationException("Not signed in to Qobuz — add and save the Qobuz indexer first.");
+
             try
             {
                 PageThrough("favourite artists", offset =>
@@ -42,7 +47,11 @@ namespace NzbDrone.Core.ImportLists.Qobuz
             }
             catch (Exception ex)
             {
-                _logger.Warn(ex, "Failed to fetch Qobuz favourite artists");
+                // Never return a partial list: Lidarr takes the result as the current,
+                // authoritative set, so a transient outage would read as the user
+                // having removed everything that had not been paged yet.
+                _logger.Warn(ex, "Failed to fetch Qobuz favourite artists; failing the list rather than reporting a short one");
+                throw;
             }
 
             return CleanupListItems(items);

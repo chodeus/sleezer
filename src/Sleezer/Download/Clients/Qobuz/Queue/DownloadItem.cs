@@ -333,18 +333,24 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
             DownloadFolderCleanup.TryRemoveEmptyParentFolders(DownloadFolder, settings.DownloadPath, "Qobuz", logger);
         }
 
-        private Task LoadAlbum()
+        // QobuzApiSharp is synchronous and unbounded, and QobuzProxy.Download awaits
+        // this on Lidarr's grab request thread — so a stalled Qobuz would hang the
+        // request forever. Run it off-thread with a deadline instead.
+        private static readonly TimeSpan AlbumLookupTimeout = TimeSpan.FromSeconds(60);
+
+        private async Task LoadAlbum(CancellationToken cancellation = default)
         {
             QobuzAPI api = QobuzAPI.Instance ?? throw new InvalidOperationException("Qobuz API is not initialised.");
 
-            _qobuzAlbum = api.Client.GetAlbum(_qobuzUrl.Id, true);
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+            cts.CancelAfter(AlbumLookupTimeout);
+
+            _qobuzAlbum = await Task.Run(() => api.Client.GetAlbum(_qobuzUrl.Id, true), cts.Token);
             _tracks = _qobuzAlbum.Tracks?.Items?.ToArray() ?? [];
 
             Title = _qobuzAlbum.CompleteTitle;
             Artist = _qobuzAlbum.Artist?.Name ?? string.Empty;
             Explicit = _qobuzAlbum.ParentalWarning.GetValueOrDefault();
-
-            return Task.CompletedTask;
         }
 
         private static bool IsHiRes(AudioQuality quality)

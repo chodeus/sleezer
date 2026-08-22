@@ -24,6 +24,11 @@ namespace NzbDrone.Core.ImportLists.Qobuz
         {
             List<ImportListItemInfo> items = [];
 
+            QobuzAPI api = QobuzAPI.Instance
+                ?? throw new InvalidOperationException("Not signed in to Qobuz — add and save the Qobuz indexer first.");
+            if (api.Login == null)
+                throw new InvalidOperationException("Not signed in to Qobuz — add and save the Qobuz indexer first.");
+
             foreach (string playlistId in Settings.PlaylistIds ?? [])
             {
                 try
@@ -57,19 +62,28 @@ namespace NzbDrone.Core.ImportLists.Qobuz
                         return (page.Count, playlist?.Tracks?.Total ?? 0);
                     });
                 }
-                catch (ApiErrorResponseException ex)
+                catch (ApiErrorResponseException ex) when (IsPlaylistGone(ex))
                 {
-                    // One unavailable playlist (deleted, private) must not stop the others.
+                    // A deleted or private playlist is a real answer about that playlist,
+                    // so skip it — the others are still valid.
                     _logger.Warn(ex, "Skipping Qobuz playlist {PlaylistId}: {Status} ({Reason})", playlistId, ex.ResponseStatusCode, ex.ResponseReason);
                 }
                 catch (Exception ex)
                 {
-                    _logger.Warn(ex, "Failed to fetch Qobuz playlist {PlaylistId}", playlistId);
+                    // Anything else (auth, rate limit, 5xx, timeout) says nothing about
+                    // the playlist's contents, so failing the list beats reporting a
+                    // short one that Lidarr would treat as authoritative.
+                    _logger.Warn(ex, "Failed to fetch Qobuz playlist {PlaylistId}; failing the list", playlistId);
+                    throw;
                 }
             }
 
             return CleanupListItems(items);
         }
+
+        // ResponseStatusCode is a string on this exception type.
+        private static bool IsPlaylistGone(ApiErrorResponseException ex)
+            => ex.ResponseStatusCode is "404" or "403";
 
         protected override void Test(List<ValidationFailure> failures)
         {

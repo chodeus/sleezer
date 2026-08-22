@@ -58,7 +58,17 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
                 TryRehydrateFromDisk(settings);
         }
 
-        public void StartQueueHandler() => Task.Run(() => BackgroundProcessing());
+        public void StartQueueHandler()
+        {
+            // Without the continuation a faulted loop is silent: the queue keeps
+            // accepting items and reporting them as queued while nothing drains it.
+            _ = Task.Run(() => BackgroundProcessing())
+                .ContinueWith(
+                    faulted => _logger.Error(faulted.Exception, "Qobuz queue handler stopped; no further downloads will be processed until Lidarr restarts."),
+                    CancellationToken.None,
+                    TaskContinuationOptions.OnlyOnFaulted,
+                    TaskScheduler.Default);
+        }
 
         public async ValueTask QueueBackgroundWorkItemAsync(DownloadItem workItem)
         {

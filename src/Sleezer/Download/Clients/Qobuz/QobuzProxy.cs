@@ -51,7 +51,11 @@ namespace NzbDrone.Core.Download.Clients.Qobuz
             var queue = listing.Where(x => x.Status == DownloadItemStatus.Queued);
             var current = listing.Where(x => x.Status == DownloadItemStatus.Downloading);
 
-            return [.. completed.Concat(current).Concat(queue).Where(x => x != null).Select(ToDownloadClientItem)];
+            // Failed items have to be reported or Lidarr never runs its failed-download
+            // handling — the queue keeps them, so hiding them here strands them.
+            var failed = listing.Where(x => x.Status == DownloadItemStatus.Failed);
+
+            return [.. completed.Concat(current).Concat(queue).Concat(failed).Where(x => x != null).Select(ToDownloadClientItem)];
         }
 
         public void RemoveFromQueue(string downloadId, QobuzSettings settings)

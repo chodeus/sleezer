@@ -15,13 +15,17 @@ namespace NzbDrone.Plugin.Sleezer.Qobuz
         public static QobuzAPI? Instance { get; private set; }
 
         private readonly Logger _logger;
+        private readonly string _configuredAppId;
+        private readonly string _configuredAppSecret;
         private QobuzApiService _client;
         private Login? _login;
-        private string? _lastPassword;
+        private string _credentialFingerprint = string.Empty;
 
         private QobuzAPI(string? appId, string? appSecret, Logger logger)
         {
             _logger = logger;
+            _configuredAppId = appId ?? string.Empty;
+            _configuredAppSecret = appSecret ?? string.Empty;
             _client = CreateClient(appId, appSecret);
         }
 
@@ -39,8 +43,21 @@ namespace NzbDrone.Plugin.Sleezer.Qobuz
 
         public Login? Login => _login;
 
-        /// <summary>MD5 password the current session was established with, for change detection.</summary>
-        public string? LastPassword => _lastPassword;
+        /// <summary>The App ID/Secret this client was constructed with — blank when auto-detected.</summary>
+        public string ConfiguredAppId => _configuredAppId;
+
+        public string ConfiguredAppSecret => _configuredAppSecret;
+
+        /// <summary>
+        /// The settings the live session was signed in with. Compared against current
+        /// settings to decide whether to re-authenticate; comparing settings against
+        /// runtime-resolved values instead would never match, because blank App ID and
+        /// blank Email resolve to real values the settings do not carry.
+        /// </summary>
+        public string CredentialFingerprint => _credentialFingerprint;
+
+        public static string FingerprintOf(QobuzIndexerSettings settings)
+            => string.Join('\u001f', settings.AppID, settings.AppSecret, settings.Email, settings.MD5Password, settings.UserID, settings.UserAuthToken);
 
         /// <summary>Two-letter country of the signed-in account, or empty when not signed in.</summary>
         public string CountryCode => _login?.User?.CountryCode ?? string.Empty;
@@ -56,8 +73,6 @@ namespace NzbDrone.Plugin.Sleezer.Qobuz
                 return false;
             }
 
-            _lastPassword = settings.MD5Password;
-
             try
             {
                 // Token login is preferred: an email/password session cannot call
@@ -66,6 +81,7 @@ namespace NzbDrone.Plugin.Sleezer.Qobuz
                     ? _client.LoginWithToken(settings.UserID, settings.UserAuthToken)
                     : _client.LoginWithEmail(settings.Email, settings.MD5Password);
 
+                _credentialFingerprint = FingerprintOf(settings);
                 _logger.Info("Qobuz signed in — user {UserId} country {Country} appId {AppId}",
                     _login?.User?.Id, CountryCode, _client.AppId);
                 return true;
@@ -73,6 +89,7 @@ namespace NzbDrone.Plugin.Sleezer.Qobuz
             catch (ApiErrorResponseException ex)
             {
                 _login = null;
+                _credentialFingerprint = string.Empty;
                 _logger.Error(ex, "Qobuz login rejected — status {Status} {StatusCode}, reason {Reason}",
                     ex.ResponseStatus, ex.ResponseStatusCode, ex.ResponseReason);
                 return false;
@@ -80,6 +97,7 @@ namespace NzbDrone.Plugin.Sleezer.Qobuz
             catch (Exception ex)
             {
                 _login = null;
+                _credentialFingerprint = string.Empty;
                 _logger.Error(ex, "Qobuz login failed");
                 return false;
             }

@@ -84,17 +84,19 @@ namespace NzbDrone.Core.Indexers.Qobuz
 
         private void EnsureSignedIn()
         {
-            bool credentialsChanged =
-                Settings.AppID != QobuzAPI.Instance?.Client?.AppId
-                || Settings.AppSecret != QobuzAPI.Instance?.Client?.AppSecret
-                || Settings.Email != QobuzAPI.Instance?.Login?.User?.Email
-                || Settings.MD5Password != QobuzAPI.Instance?.LastPassword
-                || Settings.UserID != QobuzAPI.Instance?.Login?.User?.Id.ToString()
-                || Settings.UserAuthToken != QobuzAPI.Instance?.Login?.AuthToken;
+            // Only the App ID/Secret decide whether the client itself has to be rebuilt;
+            // everything else is a sign-in concern. Both are compared as configured,
+            // never against the values QobuzApiService resolves from the web player —
+            // a blank setting never equals a resolved one, which would rebuild and
+            // re-authenticate on every single search.
+            bool clientNeedsRebuild = QobuzAPI.Instance == null
+                || QobuzAPI.Instance.ConfiguredAppId != (Settings.AppID ?? string.Empty)
+                || QobuzAPI.Instance.ConfiguredAppSecret != (Settings.AppSecret ?? string.Empty);
 
-            QobuzAPI.Initialize(Settings.AppID, Settings.AppSecret, _logger, credentialsChanged);
+            QobuzAPI.Initialize(Settings.AppID, Settings.AppSecret, _logger, clientNeedsRebuild);
 
-            if (QobuzAPI.Instance!.Login != null && !credentialsChanged)
+            if (QobuzAPI.Instance!.Login != null
+                && QobuzAPI.Instance.CredentialFingerprint == QobuzAPI.FingerprintOf(Settings))
                 return;
 
             if (!QobuzAPI.Instance.SignIn(Settings))
