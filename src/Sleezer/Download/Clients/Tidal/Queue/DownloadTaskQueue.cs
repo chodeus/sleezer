@@ -39,10 +39,6 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
         private TidalSettings? _settings;
         private readonly Logger _logger;
         private readonly PostProcessRunner _postProcess;
-        private readonly ICorruptionScanner _corruptionScanner;
-        private readonly ICorruptionFailureHandler _corruptionFailureHandler;
-        private readonly IPreImportTagger _preImportTagger;
-        private readonly IMetadataFactory _metadataFactory;
         private readonly IDiskProvider _diskProvider;
 
         // 0 = rehydration not yet attempted, 1 = attempted (idempotent). Mirrors
@@ -65,10 +61,6 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
             };
             _queue = Channel.CreateBounded<DownloadItem>(options);
             _settings = settings;
-            _corruptionScanner = corruptionScanner;
-            _corruptionFailureHandler = corruptionFailureHandler;
-            _preImportTagger = preImportTagger;
-            _metadataFactory = metadataFactory;
             _diskProvider = diskProvider;
             _logger = logger;
             _postProcess = new PostProcessRunner(corruptionScanner, corruptionFailureHandler, preImportTagger, metadataFactory, diskProvider, logger, FFMPEG.SetBinaryDirectory);
@@ -100,9 +92,8 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
                     item.Status = DownloadItemStatus.Downloading;
                     await task;
 
-                    if (item.Status == DownloadItemStatus.Completed)
-                        if (!await RunPostProcessAsync(item, token))
-                            item.Status = DownloadItemStatus.Failed;
+                    if (item.Status == DownloadItemStatus.Completed && !await RunPostProcessAsync(item, token))
+                        item.Status = DownloadItemStatus.Failed;
 
                     TryPersistCompletedItem(item);
                 }

@@ -43,10 +43,6 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
         private DeezerSettings? _settings;
         private readonly Logger _logger;
         private readonly PostProcessRunner _postProcess;
-        private readonly ICorruptionScanner _corruptionScanner;
-        private readonly ICorruptionFailureHandler _corruptionFailureHandler;
-        private readonly IPreImportTagger _preImportTagger;
-        private readonly IMetadataFactory _metadataFactory;
         private readonly IDiskProvider _diskProvider;
         private int _rehydrated;
 
@@ -68,10 +64,6 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
             _items = new();
             _cancellationSources = new();
             _settings = settings;
-            _corruptionScanner = corruptionScanner;
-            _corruptionFailureHandler = corruptionFailureHandler;
-            _preImportTagger = preImportTagger;
-            _metadataFactory = metadataFactory;
             _diskProvider = diskProvider;
             _logger = logger;
             _postProcess = new PostProcessRunner(corruptionScanner, corruptionFailureHandler, preImportTagger, metadataFactory, diskProvider, logger);
@@ -102,9 +94,8 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                     item.Status = DownloadItemStatus.Downloading;
                     await task;
 
-                    if (item.Status == DownloadItemStatus.Completed)
-                        if (!await RunPostProcessAsync(item, token))
-                            item.Status = DownloadItemStatus.Failed;
+                    if (item.Status == DownloadItemStatus.Completed && !await RunPostProcessAsync(item, token))
+                        item.Status = DownloadItemStatus.Failed;
 
                     TryPersistCompletedItem(item);
                 }
