@@ -1,0 +1,92 @@
+name: Qobuz bundle canary
+
+# QobuzApiSharp derives the app_id and app_secret by scraping Qobuz's web-player
+# bundle.js. Qobuz can change that page at any time, and when they do the Qobuz
+# client stops authenticating — searches simply fail. Nothing in this repo or
+# upstream changes when it happens, so drift checks cannot see it. This asks the
+# live player directly.
+
+on:
+  schedule:
+    - cron: '0 7 * * 1'  # Mondays, after the drift check
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'src/Sleezer/QobuzApiSharp/Service/QobuzApiHelper.cs'
+      - '.github/workflows/qobuz-bundle-canary.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  canary:
+    name: Verify the bundle.js scrape still resolves
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Resolve app_id and app_secret from the live player
+        id: canary
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Mirrors QobuzApiHelper.cs exactly. If either file changes, both must.
+          if python3 .github/scripts/qobuz_bundle_canary.py > canary.out 2> canary.err; then
+            {
+              echo "ok=true"
+              echo "detail<<EOF"
+              cat canary.out
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+            cat canary.out
+          else
+            {
+              echo "ok=false"
+              echo "detail<<EOF"
+              cat canary.err
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+            cat canary.err
+          fi
+
+      - name: Fail the run so the schedule surfaces it
+        if: steps.canary.outputs.ok != 'true'
+        shell: bash
+        run: |
+          echo "::error::Qobuz bundle scrape no longer resolves — the Qobuz client cannot authenticate."
+          exit 1
+
+      - name: Open or update the breakage issue
+        if: failure() && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DETAIL: ${{ steps.canary.outputs.detail }}
+          TITLE: Qobuz bundle scrape no longer resolves
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          body="\`QobuzApiHelper\` derives the Qobuz \`app_id\` and \`app_secret\` from the web
+          player's \`bundle.js\`. That no longer resolves, which means the Qobuz indexer and
+          download client cannot authenticate — searches will fail.
+
+          Check whether upstream (\`DaveBinM/QobuzApiSharp\`) has adapted; if not, the regexes in
+          \`src/Sleezer/QobuzApiSharp/Service/QobuzApiHelper.cs\` need updating against the current
+          bundle, and \`.github/scripts/qobuz_bundle_canary.py\` alongside them.
+
+          \`\`\`
+          ${DETAIL}
+          \`\`\`"
+
+          existing=$(gh issue list --state open --search "\"${TITLE}\" in:title" --json number --jq '.[0].number // empty')
+
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --body "$body"
+          else
+            gh issue create --title "${TITLE}" --body "$body"
+          fi

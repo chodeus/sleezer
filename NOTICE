@@ -60,7 +60,10 @@ contains or links to the authoritative license text from upstream.
  DeezNET                                  GPL-3.0       https://github.com/TrevTV/DeezNET
  TagLibSharp                              LGPL-2.1      https://github.com/mono/taglib-sharp
  Xabe.FFmpeg                              Apache-2.0    https://github.com/tomaszzmuda/Xabe.FFmpeg
- Xabe.FFmpeg.Downloader                   Apache-2.0    https://github.com/tomaszzmuda/Xabe.FFmpeg
+                                                        (wrapper only — the ffmpeg/ffprobe binaries
+                                                         come from chodeus/ffmpeg-static via
+                                                         Core/Model/FFmpegInstaller.cs, which replaced
+                                                         Xabe.FFmpeg.Downloader)
  Jint                                     BSD-2-Clause  https://github.com/sebastienros/jint
  AngleSharp                               MIT           https://github.com/AngleSharp/AngleSharp
  AngleSharp.XPath                         MIT           https://github.com/AngleSharp/AngleSharp.XPath
