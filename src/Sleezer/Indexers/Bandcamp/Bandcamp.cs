@@ -10,6 +10,7 @@ using NzbDrone.Common.Extensions;
 using NzbDrone.Common.Http;
 using NzbDrone.Core.Configuration;
 using NzbDrone.Core.Download.Clients.Bandcamp;
+using NzbDrone.Core.Indexers.Exceptions;
 using NzbDrone.Core.IndexerSearch.Definitions;
 using NzbDrone.Core.Parser;
 using NzbDrone.Core.Parser.Model;
@@ -132,8 +133,11 @@ namespace NzbDrone.Core.Indexers.Bandcamp
             var fanId = await _apiClient.ResolveFanIdAsync(Settings.Cookies).ConfigureAwait(false);
             if (fanId == null)
             {
-                _logger.Debug("Bandcamp indexer: Cannot search collection because fan_id could not be resolved");
-                return results;
+                // An empty result here is indistinguishable from "you own nothing that
+                // matches", so an expired or malformed identity cookie would stay
+                // invisible. Throwing puts it on Lidarr's indexer status instead.
+                throw new IndexerException(new IndexerResponse(null, null),
+                    "Bandcamp identity could not be resolved. Re-copy the current 'identity' cookie from your browser into the indexer settings.");
             }
 
             var collection = await _apiClient.GetDownloadableCollectionAsync(Settings.Cookies, fanId.Value)
@@ -174,8 +178,11 @@ namespace NzbDrone.Core.Indexers.Bandcamp
             var fanId = await _apiClient.ResolveFanIdAsync(Settings.Cookies).ConfigureAwait(false);
             if (fanId == null)
             {
-                _logger.Debug("Bandcamp indexer: Cannot search collection because fan_id could not be resolved");
-                return results;
+                // An empty result here is indistinguishable from "you own nothing that
+                // matches", so an expired or malformed identity cookie would stay
+                // invisible. Throwing puts it on Lidarr's indexer status instead.
+                throw new IndexerException(new IndexerResponse(null, null),
+                    "Bandcamp identity could not be resolved. Re-copy the current 'identity' cookie from your browser into the indexer settings.");
             }
 
             var collection = await _apiClient.GetDownloadableCollectionAsync(Settings.Cookies, fanId.Value)

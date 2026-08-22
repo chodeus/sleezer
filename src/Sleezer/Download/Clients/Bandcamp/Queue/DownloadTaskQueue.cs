@@ -20,7 +20,7 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
         private readonly IBandcampDownloadRegistry _registry;
         private readonly Logger _logger;
         private readonly Task _consumerTask;
-        private bool _disposed;
+        private volatile bool _disposed;
 
         public DownloadTaskQueue(
             IBandcampDownloadProxy downloadProxy,
@@ -145,13 +145,17 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
             }
             catch (Exception ex)
             {
+                // Capture before overwriting, or the message reports the phase "failed"
+                // as the phase that failed.
+                var failedPhase = item.Phase;
+
                 item.Status = BandcampDownloadStatus.Failed;
                 item.ErrorMessage = ex.Message;
                 item.CompletedAt = DateTime.UtcNow;
                 item.Phase = "failed";
 
-                _logger.Debug(ex, "Bandcamp download queue: Download {0} failed during phase '{1}'",
-                    item.DownloadId, item.Phase);
+                _logger.Warn(ex, "Bandcamp download queue: Download {0} failed during phase '{1}'",
+                    item.DownloadId, failedPhase);
             }
         }
 
@@ -166,16 +170,28 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
             _cts.Cancel();
             _channel.Writer.TryComplete();
 
+            var stopped = false;
             try
             {
-                _consumerTask.Wait(TimeSpan.FromSeconds(10));
+                stopped = _consumerTask.Wait(TimeSpan.FromSeconds(10));
             }
             catch (AggregateException)
             {
-                // Consumer task may throw on cancellation — safe to ignore
+                // Consumer threw on cancellation, which still means it has stopped.
+                stopped = true;
             }
 
-            _cts.Dispose();
+            if (stopped)
+            {
+                _cts.Dispose();
+            }
+            else
+            {
+                // Still running — a large extraction can outlast the wait. Disposing now
+                // would throw ObjectDisposedException inside the background task the
+                // moment it touched the token. Leaking one CTS beats that.
+                _logger.Warn("Bandcamp download queue: consumer still running after 10s; leaving its cancellation source alive");
+            }
         }
     }
 }

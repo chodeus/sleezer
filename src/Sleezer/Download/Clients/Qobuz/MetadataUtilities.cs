@@ -22,9 +22,9 @@ namespace NzbDrone.Core.Download.Clients.Qobuz
 
                 // Qobuz exposes no multi-artist list on a track.
                 [qobuzTrack.Performer?.Name ?? string.Empty],
-                $"{qobuzTrack.TrackNumber:00}",
+                FormatNumber(qobuzTrack.TrackNumber),
                 qobuzAlbum.TracksCount.GetValueOrDefault().ToString(CultureInfo.InvariantCulture),
-                $"{qobuzTrack.MediaNumber:00}",
+                FormatNumber(qobuzTrack.MediaNumber),
                 qobuzAlbum.MediaCount.GetValueOrDefault().ToString(CultureInfo.InvariantCulture),
                 releaseDate.Year.ToString(CultureInfo.InvariantCulture),
                 ext);
@@ -34,6 +34,11 @@ namespace NzbDrone.Core.Download.Clients.Qobuz
         // which on Linux returns only '/' and NUL — leaving ':' and '\' in album titles
         // for Lidarr's path parser to trip over. Tidal's MetadataUtilities does the same.
         public static string CleanPath(string str) => TidalPathSanitizer.CleanPath(str);
+
+        // Interpolating a null through "{x:00}" yields an empty field, which silently
+        // produces filenames like " -  - Title.flac". "00" says "Qobuz did not tell us".
+        private static string FormatNumber(int? value)
+            => value.HasValue ? value.Value.ToString("00", CultureInfo.InvariantCulture) : "00";
 
         private static string GetFilledTemplate(string template, string title, string album, string albumArtist, string artist, string[] albumArtists, string[] artists, string track, string trackCount, string volume, string volumeCount, string year, string ext)
         {

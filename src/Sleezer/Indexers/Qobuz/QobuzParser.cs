@@ -20,6 +20,11 @@ namespace NzbDrone.Core.Indexers.Qobuz
         private const int MaxDetailLookups = 10;
         private const int DetailConcurrency = 2;
 
+        // ParseResponse is synchronous, so these lookups block the search thread. Bound
+        // the whole batch: a stalled Qobuz would otherwise hold it indefinitely, and a
+        // release type is only a title decoration.
+        private static readonly TimeSpan DetailLookupBudget = TimeSpan.FromSeconds(20);
+
         // FLAC on real music lands around 60-70% of raw PCM. Only used for the size
         // estimate Lidarr shows; the true size isn't known until the file lands.
         private const double FlacCompressionFactor = 0.7;
@@ -81,12 +86,13 @@ namespace NzbDrone.Core.Indexers.Qobuz
                 return result;
 
             using SemaphoreSlim gate = new(DetailConcurrency, DetailConcurrency);
+            using CancellationTokenSource budget = new(DetailLookupBudget);
             var lookups = missing.Select(async album =>
             {
-                await gate.WaitAsync();
+                await gate.WaitAsync(budget.Token);
                 try
                 {
-                    return (album.Id, Type: await Task.Run(() => QobuzAPI.Instance?.Client?.GetAlbum(album.Id, true)?.ReleaseType));
+                    return (album.Id, Type: await Task.Run(() => QobuzAPI.Instance?.Client?.GetAlbum(album.Id, true)?.ReleaseType, budget.Token));
                 }
                 catch (Exception ex)
                 {
@@ -99,10 +105,17 @@ namespace NzbDrone.Core.Indexers.Qobuz
                 }
             }).ToArray();
 
-            foreach (var (id, type) in Task.WhenAll(lookups).GetAwaiter().GetResult())
+            try
             {
-                if (!string.IsNullOrEmpty(type))
-                    result[id] = type;
+                foreach (var (id, type) in Task.WhenAll(lookups).GetAwaiter().GetResult())
+                {
+                    if (!string.IsNullOrEmpty(type))
+                        result[id] = type;
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                Logger.Debug("Qobuz album detail lookups exceeded {Budget}s; releases keep the type the search payload carried", DetailLookupBudget.TotalSeconds);
             }
 
             return result;

@@ -77,28 +77,9 @@ namespace NzbDrone.Core.Indexers.Bandcamp
                     "Bandcamp returned its Fastly client challenge page. Re-copy the current 'identity' cookie from your browser and make sure the indexer cookie field contains either the raw identity value or 'identity=<value>'.");
             }
 
-            // Attempt JSON extraction first (Bandcamp embeds search data in script tags)
-            var jsonResults = TryParseJsonResults(content);
-            if (jsonResults != null && jsonResults.Count > 0)
-            {
-                foreach (var item in jsonResults)
-                {
-                    try
-                    {
-                        var release = MapJsonResultToReleaseInfo(item);
-                        if (release != null)
-                        {
-                            results.Add(release);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.Debug(ex, "Bandcamp: Failed to parse JSON search result, skipping");
-                    }
-                }
-            }
-            else
-            {
+            // Bandcamp's search page is server-rendered HTML; there is no embedded JSON
+            // payload to prefer.
+
                 // Fall back to HTML scraping
                 _logger.Debug("Bandcamp: No embedded JSON found, falling back to HTML scraping");
                 var htmlResults = ParseHtmlResults(content);
@@ -113,7 +94,7 @@ namespace NzbDrone.Core.Indexers.Bandcamp
                         _logger.Debug(ex, "Bandcamp: Failed to parse HTML search result, skipping");
                     }
                 }
-            }
+
 
             _logger.Debug("Bandcamp: Parsed {0} search results", results.Count);
 
@@ -122,40 +103,6 @@ namespace NzbDrone.Core.Indexers.Bandcamp
                 .ToList();
         }
 
-        /// <summary>
-        /// Attempt to extract embedded JSON search data from Bandcamp's HTML page.
-        /// Bandcamp injects search results as JSON in a script tag.
-        /// </summary>
-        private List<BandcampSearchResult>? TryParseJsonResults(string content)
-        {
-            try
-            {
-                // Look for embedded search data in various known patterns
-                // Bandcamp uses different patterns over time; try several
-                var patterns = new[]
-                {
-                    @"<!-- search result data -->\s*<script[^>]*>\s*window\.__SEARCH_DATA__\s*=\s*(\{.*?\})\s*;",
-                    @"<script[^>]*>\s*var\s+SearchResults\s*=\s*(\{.*?\})\s*;",
-                    @"""results""\s*:\s*\[",
-                };
-
-                // Try to find JSON array of results embedded in the page
-                // Look for the specific pattern Bandcamp uses for search data
-                var resultsStart = content.IndexOf(@"""results"":", StringComparison.Ordinal);
-                if (resultsStart < 0)
-                {
-                    return null;
-                }
-
-                // Not a clean JSON parse — return null to trigger HTML fallback
-                return null;
-            }
-            catch (Exception ex)
-            {
-                _logger.Debug(ex, "Bandcamp: JSON extraction attempt failed");
-                return null;
-            }
-        }
 
         /// <summary>
         /// Parse HTML search results by extracting result blocks from the page.
@@ -264,46 +211,6 @@ namespace NzbDrone.Core.Indexers.Bandcamp
                 Codec = "FLAC",
                 Container = "FLAC",
                 Size = estimatedTracks * 30L * 1024 * 1024 // ~30MB per track estimate
-            };
-        }
-
-        private ReleaseInfo? MapJsonResultToReleaseInfo(BandcampSearchResult item)
-        {
-            if (item == null)
-            {
-                return null;
-            }
-
-            var albumUrl = !item.ItemUrl.IsNullOrWhiteSpace() ? item.ItemUrl : item.Url;
-            if (albumUrl.IsNullOrWhiteSpace())
-            {
-                return null;
-            }
-
-            var artistName = !item.BandName.IsNullOrWhiteSpace() ? item.BandName : "Unknown Artist";
-            var albumTitle = !item.ItemName.IsNullOrWhiteSpace() ? item.ItemName : item.Name;
-
-            var publishDate = DateTime.MinValue;
-            if (!item.ReleaseDate.IsNullOrWhiteSpace())
-            {
-                DateTime.TryParse(item.ReleaseDate, out publishDate);
-            }
-
-            var trackCount = item.NumTracks > 0 ? item.NumTracks : 10;
-
-            return new ReleaseInfo
-            {
-                Guid = $"bandcamp-{albumUrl.GetHashCode():x}",
-                Title = $"{artistName} - {albumTitle} [WEB] [FLAC]",
-                Artist = artistName,
-                Album = albumTitle,
-                PublishDate = publishDate == DateTime.MinValue ? DateTime.UtcNow : publishDate.ToUniversalTime(),
-                InfoUrl = albumUrl,
-                DownloadUrl = albumUrl,
-                DownloadProtocol = nameof(BandcampDownloadProtocol),
-                Codec = "FLAC",
-                Container = "FLAC",
-                Size = trackCount * 30L * 1024 * 1024 // ~30MB per track estimate
             };
         }
     }

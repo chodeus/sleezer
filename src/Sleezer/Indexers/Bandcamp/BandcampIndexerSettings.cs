@@ -11,7 +11,6 @@ namespace NzbDrone.Core.Indexers.Bandcamp
         {
             RuleFor(c => c.BaseUrl).ValidRootUrl();
             RuleFor(c => c.Cookies).NotEmpty()
-                .When(c => !string.IsNullOrWhiteSpace(c.BaseUrl))
                 .WithMessage("Session cookies are required to access Bandcamp");
         }
     }

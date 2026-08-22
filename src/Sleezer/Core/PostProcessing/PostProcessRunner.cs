@@ -61,7 +61,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
             logger.Debug("[post-process] {Client} item {ID}: scan={ScanEnabled} tag={TagEnabled} folder={Folder}",
                 request.Client, request.DownloadId, scanEnabled, tagEnabled, request.Folder);
 
-            EnsureFFmpegResolved();
+            await EnsureFFmpegResolvedAsync(ct);
 
             // Tag first, scan second, so the scan validates the exact bytes Lidarr is
             // about to import rather than the pre-tag ones.
@@ -110,17 +110,33 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
         }
 
         /// <summary>
-        /// Points Xabe.FFmpeg at the configured directory and downloads the binaries if
-        /// they aren't there, so the corruption scan has an ffmpeg to call.
+        /// Applies the configured FFmpeg directory without downloading anything. Callers
+        /// on a Lidarr request thread want this; the post-process path wants the async
+        /// version below, which will also fetch the binaries.
         /// </summary>
-        public void EnsureFFmpegResolved()
+        public void EnsureFFmpegResolved() => ApplyFFmpegPath(install: false, ct: CancellationToken.None).GetAwaiter().GetResult();
+
+        /// <summary>
+        /// Points Xabe.FFmpeg at the configured directory and fetches the binaries when
+        /// they are missing, so the corruption scan has an ffmpeg to call.
+        /// </summary>
+        public Task EnsureFFmpegResolvedAsync(CancellationToken ct) => ApplyFFmpegPath(install: true, ct);
+
+        private async Task ApplyFFmpegPath(bool install, CancellationToken ct)
         {
             string? configuredPath = GetSharedSettings()?.FFmpegPath;
 
-            // Throttled (24h), best-effort refresh from chodeus/ffmpeg-static.
-            // Fire-and-forget so it never blocks post-process.
-            if (!string.IsNullOrWhiteSpace(configuredPath))
-                _ = FFmpegInstaller.EnsureUpToDateAsync(configuredPath, logger, CancellationToken.None);
+            // Throttled (24h), best-effort refresh from chodeus/ffmpeg-static. Observed
+            // rather than discarded: an unhandled fault here is otherwise invisible.
+            if (install && !string.IsNullOrWhiteSpace(configuredPath))
+            {
+                _ = FFmpegInstaller.EnsureUpToDateAsync(configuredPath, logger, ct)
+                    .ContinueWith(
+                        faulted => logger.Debug(faulted.Exception, "[post-process] FFmpeg update check failed"),
+                        CancellationToken.None,
+                        TaskContinuationOptions.OnlyOnFaulted,
+                        TaskScheduler.Default);
+            }
 
             if (string.Equals(configuredPath, _lastResolvedFfmpegPath, StringComparison.Ordinal))
                 return;
@@ -136,10 +152,10 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
                     XabeFFmpeg.SetExecutablesPath(configuredPath);
                     AudioMetadataHandler.ResetFFmpegInstallationCheck();
 
-                    if (!AudioMetadataHandler.CheckFFmpegInstalled())
+                    if (install && !AudioMetadataHandler.CheckFFmpegInstalled())
                     {
                         logger.Info("[post-process] FFmpeg binaries missing at {Path}; downloading from chodeus/ffmpeg-static", configuredPath);
-                        AudioMetadataHandler.InstallFFmpeg(configuredPath).GetAwaiter().GetResult();
+                        await AudioMetadataHandler.InstallFFmpeg(configuredPath);
                         AudioMetadataHandler.ResetFFmpegInstallationCheck();
                     }
 

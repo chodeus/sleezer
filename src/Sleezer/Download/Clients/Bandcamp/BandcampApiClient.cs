@@ -198,9 +198,28 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
             }
             catch (Exception ex)
             {
-                _logger.Debug(ex, "Bandcamp API: Failed to parse collection response");
-                return new List<BandcampCollectionItem>();
+                // Returning an empty list here is indistinguishable from "this account
+                // owns nothing", so an expired session, an HTML error page or a
+                // rate-limit body silently reads as an empty collection — and the
+                // indexer test then reports no purchases were found.
+                _logger.Warn(ex, "Bandcamp API: could not parse the collection response; failing rather than reporting an empty collection");
+                throw new BandcampCollectionException("Bandcamp returned a collection response that could not be parsed. The session cookie may have expired.", ex);
             }
+        }
+
+        // Bandcamp is inconsistent about scheme, trailing slash and case across the
+        // collection API and the URLs the indexer produces, so compare on host + path.
+        private static bool SameAlbumUrl(string? itemUrl, string? albumUrl)
+        {
+            if (string.IsNullOrEmpty(itemUrl) || string.IsNullOrEmpty(albumUrl))
+                return false;
+
+            if (!Uri.TryCreate(itemUrl, UriKind.Absolute, out var left) ||
+                !Uri.TryCreate(albumUrl, UriKind.Absolute, out var right))
+                return false;
+
+            return left.Host.Equals(right.Host, StringComparison.OrdinalIgnoreCase)
+                   && left.AbsolutePath.TrimEnd('/').Equals(right.AbsolutePath.TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
         }
 
         public async Task<List<BandcampCollectionItem>> GetDownloadableCollectionAsync(
@@ -274,10 +293,11 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
                     break;
                 }
 
-                // Match by album URL — collection items contain item_url field
-                var match = items.FirstOrDefault(item =>
-                    !string.IsNullOrEmpty(item.ItemUrl) &&
-                    albumUrl.Contains(item.ItemUrl, StringComparison.OrdinalIgnoreCase));
+                // Compare whole normalized URLs. Contains() matched whenever the item
+                // URL was any substring of the request, so a collection item carrying a
+                // band-root URL matched every album by that artist and returned an
+                // unrelated purchase for the download page to be built from.
+                var match = items.FirstOrDefault(item => SameAlbumUrl(item.ItemUrl, albumUrl));
 
                 if (match != null)
                 {
@@ -379,7 +399,8 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
             // Bandcamp statdownload URLs look like:
             // https://bandcamp.com/statdownload/{item_type}/{item_id}?{params}
             // They return JSON with a "url" field pointing to the actual file
-            var url = $"{downloadUrl}&.format={format}&.json=true";
+            var separator = downloadUrl.Contains('?', StringComparison.Ordinal) ? '&' : '?';
+            var url = $"{downloadUrl}{separator}.format={format}&.json=true";
 
             var builder = _httpClient.CreateRequestBuilder(url, cookies);
             var request = builder.Build();

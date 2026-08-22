@@ -23,6 +23,10 @@ namespace NzbDrone.Core.Download.Clients.Qobuz
         // is per-attempt via a linked token rather than a client-wide timeout.
         private static readonly TimeSpan AttemptTimeout = TimeSpan.FromMinutes(10);
 
+        // Lyrics and artwork are optional extras, so they get a far shorter leash than
+        // a track body — a stalled one otherwise holds a track slot indefinitely.
+        private static readonly TimeSpan AuxRequestTimeout = TimeSpan.FromSeconds(30);
+
         private static readonly HttpClient _client = new() { Timeout = Timeout.InfiniteTimeSpan };
 
         // static.qobuz.com/.../{id}_600.jpg -> _org.jpg (Qobuz's maximum resolution).
@@ -69,7 +73,11 @@ namespace NzbDrone.Core.Download.Clients.Qobuz
         public static async Task<(string? PlainLyrics, string? SyncLyrics)?> FetchLyricsFromLRCLIB(string instance, string trackName, string artistName, string albumName, long duration, CancellationToken token = default)
         {
             var requestUrl = $"https://{instance}/api/get?artist_name={Uri.EscapeDataString(artistName)}&track_name={Uri.EscapeDataString(trackName)}&album_name={Uri.EscapeDataString(albumName)}&duration={duration}";
-            var response = await _client.GetAsync(requestUrl, token);
+
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(token);
+            cts.CancelAfter(AuxRequestTimeout);
+
+            var response = await _client.GetAsync(requestUrl, cts.Token);
 
             if (!response.IsSuccessStatusCode)
                 return null;
@@ -119,15 +127,29 @@ namespace NzbDrone.Core.Download.Clients.Qobuz
             if (string.IsNullOrEmpty(url))
                 return null;
 
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(token);
+            cts.CancelAfter(AuxRequestTimeout);
+
             using HttpRequestMessage message = new(HttpMethod.Get, url);
-            using HttpResponseMessage response = await _client.SendAsync(message, token);
-            return response.IsSuccessStatusCode ? await response.Content.ReadAsByteArrayAsync(token) : null;
+            using HttpResponseMessage response = await _client.SendAsync(message, cts.Token);
+            return response.IsSuccessStatusCode ? await response.Content.ReadAsByteArrayAsync(cts.Token) : null;
         }
 
+        // Runs inside a catch block, so it must not throw: doing so would replace the
+        // original download exception that the caller branches on. File.Delete already
+        // no-ops on a missing file, so the Exists check was only a TOCTOU race.
         private static void TryDelete(string path)
         {
-            if (File.Exists(path))
+            try
+            {
                 File.Delete(path);
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
         }
 
         private static async Task<HttpResponseMessage> GetTrackResponse(this QobuzApiService s, string trackId, AudioQuality bitrate, CancellationToken token = default)
@@ -144,9 +166,19 @@ namespace NzbDrone.Core.Download.Clients.Qobuz
             // 50-150 MB hi-res file in memory, with several tracks running at once.
             HttpResponseMessage response = await _client.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, token);
 
-            // Without this an expired/403 CDN URL would write its error body straight
-            // into the .flac.
-            response.EnsureSuccessStatusCode();
+            try
+            {
+                // Without this an expired/403 CDN URL would write its error body straight
+                // into the .flac.
+                response.EnsureSuccessStatusCode();
+            }
+            catch
+            {
+                // The caller's `using` never takes ownership when this throws, and the
+                // download path retries, so the leak would repeat per attempt.
+                response.Dispose();
+                throw;
+            }
 
             return response;
         }
@@ -154,20 +186,24 @@ namespace NzbDrone.Core.Download.Clients.Qobuz
         private static void ApplyMetadataToTagLibFile(this QobuzApiService s, TagLib.File track, string trackId, byte[]? albumArt, bool embedArt, string lyrics)
         {
             var page = s.GetTrack(trackId, true);
-            var albumPage = s.GetAlbum(page.Album.Id, true);
+            var albumPage = page.Album?.Id is string albumId ? s.GetAlbum(albumId, true) : null;
 
             track.Tag.Title = page.CompleteTitle;
-            track.Tag.Album = albumPage.CompleteTitle;
-            track.Tag.Performers = [page.Performer.Name];
-            track.Tag.AlbumArtists = [.. albumPage.Artists.Select(x => x.Name)];
+            track.Tag.Album = albumPage?.CompleteTitle ?? page.Album?.CompleteTitle;
+
+            if (page.Performer?.Name is string performer)
+                track.Tag.Performers = [performer];
+
+            if (albumPage?.Artists is { } artists)
+                track.Tag.AlbumArtists = [.. artists.Select(x => x.Name)];
             track.Tag.Year = (uint)page.ReleaseDateOriginal.GetValueOrDefault().DateTime.Year;
             track.Tag.Track = (uint)page.TrackNumber.GetValueOrDefault();
-            track.Tag.TrackCount = (uint)albumPage.TracksCount.GetValueOrDefault();
+            track.Tag.TrackCount = (uint)(albumPage?.TracksCount).GetValueOrDefault();
             track.Tag.Disc = (uint)page.MediaNumber.GetValueOrDefault();
-            track.Tag.DiscCount = (uint)albumPage.MediaCount.GetValueOrDefault();
+            track.Tag.DiscCount = (uint)(albumPage?.MediaCount).GetValueOrDefault();
 
-            if (!string.IsNullOrEmpty(albumPage.Genre?.Name))
-                track.Tag.Genres = [albumPage.Genre.Name];
+            if (albumPage?.Genre?.Name is { Length: > 0 } genre)
+                track.Tag.Genres = [genre];
 
             if (embedArt && albumArt != null)
                 track.Tag.Pictures = [new TagLib.Picture(new TagLib.ByteVector(albumArt))];
