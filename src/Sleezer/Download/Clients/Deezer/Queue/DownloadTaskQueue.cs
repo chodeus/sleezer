@@ -126,8 +126,6 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                 finally
                 {
                     semaphore.Release();
-                    lock (_lock)
-                        _runningTasks.Remove(task);
                 }
             }
 
@@ -141,8 +139,15 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                 // so by the time we dequeue an item the settings must be populated.
                 var downloadTask = item.DoDownload(_settings!, _logger, token);
 
+                var handler = HandleTask(item, downloadTask);
                 lock (_lock)
-                    _runningTasks.Add(HandleTask(item, downloadTask));
+                {
+                    // Prune here rather than from inside HandleTask: that removed
+                    // the download task, not the handler that was added, so the list
+                    // only ever grew — and its Remove scan grew with it.
+                    _runningTasks.RemoveAll(t => t.IsCompleted);
+                    _runningTasks.Add(handler);
+                }
             }
 
             List<Task> remainingTasks;

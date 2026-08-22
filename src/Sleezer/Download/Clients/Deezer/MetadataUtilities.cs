@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using Newtonsoft.Json.Linq;
+using NzbDrone.Plugin.Sleezer.Core.Tidal;
 
 namespace NzbDrone.Core.Download.Clients.Deezer
 {
@@ -57,15 +58,10 @@ namespace NzbDrone.Core.Download.Clients.Deezer
             }
         }
 
-        public static string CleanPath(string str)
-        {
-            var invalid = Path.GetInvalidFileNameChars();
-            for (var i = 0; i < invalid.Length; i++)
-            {
-                var c = invalid[i];
-                str = str.Replace(c, '_');
-            }
-            return str;
-        }
+        // Delegated to the canonical sanitizer rather than Path.GetInvalidFileNameChars,
+        // which on Linux returns only '/' and NUL — leaving ':', '\\', '*', '?', '<', '>',
+        // '|', '"' and trailing dots in Deezer paths for Lidarr's parser to trip over.
+        // Tidal's MetadataUtilities already delegates the same way.
+        public static string CleanPath(string str) => TidalPathSanitizer.CleanPath(str);
     }
 }

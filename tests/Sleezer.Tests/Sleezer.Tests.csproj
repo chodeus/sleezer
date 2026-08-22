@@ -50,6 +50,10 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Tidal\TidalArtistMatcher.cs"
              LinkBase="SourceUnderTest" />
+    <!-- Deezer path templating: guards the delegation to TidalPathSanitizer, without
+         which Linux leaves ':' and '\' in download paths. Newtonsoft only. -->
+    <Compile Include="..\..\src\Sleezer\Download\Clients\Deezer\MetadataUtilities.cs"
+             LinkBase="SourceUnderTest" />
     <!-- Slskd retry-exhaustion state machine and its transitive deps. Lidarr.Core
          supplies DownloadItemStatus via the project reference below. -->
     <Compile Include="..\..\src\Sleezer\Download\Clients\Soulseek\Models\SlskdFileState.cs"
