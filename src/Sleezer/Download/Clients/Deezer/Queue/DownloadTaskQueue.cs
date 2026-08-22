@@ -162,10 +162,17 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
 
         public async ValueTask QueueBackgroundWorkItemAsync(DownloadItem workItem)
         {
-            await _queue.Writer.WriteAsync(workItem);
+            // Register before the channel write (see the Tidal queue), and under the
+            // lock the readers already take — these were being mutated unsynchronised
+            // while GetQueueListing and RemoveItem read them from other threads.
             CancellationTokenSource token = new();
-            _items.Add(workItem);
-            _cancellationSources.Add(workItem, token);
+            lock (_lock)
+            {
+                _items.Add(workItem);
+                _cancellationSources.Add(workItem, token);
+            }
+
+            await _queue.Writer.WriteAsync(workItem);
         }
 
         private async ValueTask<DownloadItem> DequeueAsync(CancellationToken cancellationToken)

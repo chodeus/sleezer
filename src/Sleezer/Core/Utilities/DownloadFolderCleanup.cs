@@ -25,9 +25,12 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
                 {
                     string normalizedCurrent = current.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 
-                    // Never delete at or above the configured download root.
+                    // Never delete at or above the configured download root. The
+                    // separator matters: a bare StartsWith would treat
+                    // "/downloads/music-old" as inside "/downloads/music", and this
+                    // guard is the only thing standing in front of a directory delete.
                     if (normalizedCurrent.Length <= normalizedRoot.Length ||
-                        !normalizedCurrent.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase))
+                        !normalizedCurrent.StartsWith(normalizedRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
                         return;
 
                     if (!Directory.Exists(current))

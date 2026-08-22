@@ -604,12 +604,20 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
             return url.Replace('\\', '/');
         }
 
+        // The session cookie is attached to whatever URL passes this, so the host must
+        // match on a label boundary: EndsWith("bandcamp.com") also accepts
+        // evilbandcamp.com. HTTPS is required for the same reason.
         private static bool IsDownloadPageUrl(string url)
         {
             return Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
-                   uri.Host.EndsWith("bandcamp.com", StringComparison.OrdinalIgnoreCase) &&
+                   uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) &&
+                   IsBandcampHost(uri.Host) &&
                    uri.AbsolutePath.Equals("/download", StringComparison.OrdinalIgnoreCase);
         }
+
+        private static bool IsBandcampHost(string host)
+            => host.Equals("bandcamp.com", StringComparison.OrdinalIgnoreCase)
+               || host.EndsWith(".bandcamp.com", StringComparison.OrdinalIgnoreCase);
 
         private static string StripFragment(string url)
         {

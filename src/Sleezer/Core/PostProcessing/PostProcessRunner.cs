@@ -212,9 +212,13 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
                 }
             })];
 
-            foreach (var task in tasks)
+            // Await everything before inspecting: iterating with await would rethrow on
+            // the first failure and leave `using` to dispose the gate while sibling
+            // tasks are still waiting on it.
+            var scanned = await Task.WhenAll(tasks);
+
+            foreach ((string path, CorruptionScanner.Result result) in scanned)
             {
-                (string path, CorruptionScanner.Result result) = await task;
                 if (!result.IsCorrupt)
                     continue;
 
