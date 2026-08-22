@@ -26,9 +26,21 @@ exist without the original authors of those projects.
   as part of `Tubifarry` under the MIT License.
     https://github.com/TypNull/Tubifarry  (MIT — relicensed under GPL-3.0 in Sleezer)
 
+* Portions of the Qobuz indexer and download client are Copyright (C) TrevTV,
+  DaveBinM and contributors, and were originally distributed as part of
+  `Lidarr.Plugin.Qobuz`.
+    https://github.com/TrevTV/Lidarr.Plugin.Qobuz
+    https://github.com/DaveBinM/Lidarr.Plugin.Qobuz  (fork this port follows)
+
+* The `QobuzApiSharp` client library vendored under `src/Sleezer/QobuzApiSharp/`
+  is Copyright (C) DJDoubleD and contributors, licensed GPL-3.0. It is kept
+  structurally as-is so upstream fixes can be pulled by hand.
+    https://github.com/DJDoubleD/QobuzApiSharp  (GPL-3.0)
+    https://github.com/DaveBinM/QobuzApiSharp    (fork this copy follows)
+
 The MIT license under which Tubifarry is originally released is compatible
 with GPL-3.0; the combined work is distributed under GPL-3.0 because the
-bundled `DeezNET` library is GPL-3.0.
+bundled `DeezNET` and vendored `QobuzApiSharp` libraries are GPL-3.0.
 
 
 == Bundled third-party libraries ==

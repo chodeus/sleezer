@@ -33,6 +33,9 @@ namespace NzbDrone.Plugin.Sleezer.Blocklisting
     public class QobuzBlocklist(IBlocklistRepository blocklistRepository) : BaseBlocklist<QobuzDownloadProtocol>(blocklistRepository)
     { }
 
+    public class QobuzDirectBlocklist(IBlocklistRepository blocklistRepository) : BaseBlocklist<QobuzDirectDownloadProtocol>(blocklistRepository)
+    { }
+
     public class LucidaBlocklist(IBlocklistRepository blocklistRepository) : BaseBlocklist<LucidaDownloadProtocol>(blocklistRepository)
     { }
 

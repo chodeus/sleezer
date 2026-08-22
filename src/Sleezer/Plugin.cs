@@ -40,6 +40,7 @@ namespace NzbDrone.Plugin.Sleezer
             typeof(SoulseekDownloadProtocol),
             typeof(LucidaDownloadProtocol),
             typeof(QobuzDownloadProtocol),
+            typeof(QobuzDirectDownloadProtocol),
             typeof(SubSonicDownloadProtocol),
             typeof(AmazonMusicDownloadProtocol),
             typeof(TidalDownloadProtocol)];

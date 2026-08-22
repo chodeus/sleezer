@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using System.Threading;
 using System.Threading.Tasks;
 using FluentValidation.Results;
 using NLog;
@@ -14,13 +12,13 @@ using NzbDrone.Core.Parser.Model;
 using NzbDrone.Core.RemotePathMappings;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
-namespace NzbDrone.Core.Download.Clients.Tidal
+namespace NzbDrone.Core.Download.Clients.Qobuz
 {
-    public class Tidal : DownloadClientBase<TidalSettings>
+    public class Qobuz : DownloadClientBase<QobuzSettings>
     {
-        private readonly ITidalProxy _proxy;
+        private readonly IQobuzProxy _proxy;
 
-        public Tidal(ITidalProxy proxy,
+        public Qobuz(IQobuzProxy proxy,
                      IConfigService configService,
                      IDiskProvider diskProvider,
                      IRemotePathMappingService remotePathMappingService,
@@ -31,8 +29,8 @@ namespace NzbDrone.Core.Download.Clients.Tidal
             _proxy = proxy;
         }
 
-        public override string Protocol => nameof(TidalDownloadProtocol);
-        public override string Name => "Tidal";
+        public override string Protocol => nameof(QobuzDirectDownloadProtocol);
+        public override string Name => "Qobuz";
 
         public override IEnumerable<DownloadClientItem> GetItems()
         {
@@ -40,44 +38,28 @@ namespace NzbDrone.Core.Download.Clients.Tidal
             foreach (var item in queue)
                 item.DownloadClientInfo = DownloadClientItemClientInfo.FromDownloadClient(this, false);
 
-            MaybeSweepEmptyDownloadDirectories(queue);
-            return queue;
-        }
-
-
-        // Independent, throttled sweep of empty download shells — the gap the
-        // per-item RemoveItem cleanup misses (restart / untracked / importFailed).
-        // Throttle, single-flight and pruning all live in the shared sweeper.
-        private void MaybeSweepEmptyDownloadDirectories(IEnumerable<DownloadClientItem> queue)
-        {
+            // Throttled sweep of empty download shells — the gap per-item cleanup misses
+            // (restart / untracked / importFailed). Shared with Deezer and Tidal.
             EmptyDownloadDirectorySweeper.MaybePruneForRoot(
                 Settings.DownloadPath,
                 queue.Where(i => !i.OutputPath.IsEmpty).Select(i => i.OutputPath.FullPath),
                 DateTime.UtcNow,
                 _logger);
+
+            return queue;
         }
 
         public override void RemoveItem(DownloadClientItem item, bool deleteData)
         {
             if (deleteData)
             {
-                // Lidarr's DeleteItemData removes the album folder we exposed
-                // via OutputPath. It does NOT walk up and remove the now-empty
-                // artist folder we created above it. Sweep parents back to the
-                // configured download root so users don't end up with an
-                // ever-growing tree of empty folders.
                 DeleteItemData(item);
                 if (!item.OutputPath.IsEmpty)
-                    TryRemoveEmptyParentFolders(item.OutputPath.FullPath, Settings.DownloadPath, _logger);
+                    DownloadFolderCleanup.TryRemoveEmptyParentFolders(item.OutputPath.FullPath, Settings.DownloadPath, "Qobuz", _logger);
             }
 
             _proxy.RemoveFromQueue(item.DownloadId, Settings);
         }
-
-        // Canonical implementation lives in Core/Utilities/DownloadFolderCleanup —
-        // kept here as a shim so existing call sites read unchanged.
-        internal static void TryRemoveEmptyParentFolders(string startedAt, string downloadRoot, Logger logger)
-            => DownloadFolderCleanup.TryRemoveEmptyParentFolders(startedAt, downloadRoot, "Tidal", logger);
 
         public override Task<string> Download(RemoteAlbum remoteAlbum, IIndexer indexer)
             => _proxy.Download(remoteAlbum, Settings);
@@ -91,12 +73,11 @@ namespace NzbDrone.Core.Download.Clients.Tidal
 
         protected override void Test(List<ValidationFailure> failures)
         {
-            // Auth lives on the indexer; here we verify the configured download path is usable
-            // so misconfigured paths (typos, missing volumes, bad permissions) surface up-front
-            // instead of mid-download.
-            ValidationFailure folderFailure = TestFolder(Settings.DownloadPath, "DownloadPath");
-            if (folderFailure != null)
-                failures.Add(folderFailure);
+            // Auth lives on the indexer; here we only verify the download path is usable
+            // so typos, missing volumes and bad permissions surface before a download.
+            ValidationFailure? failure = TestFolder(Settings.DownloadPath, nameof(Settings.DownloadPath));
+            if (failure != null)
+                failures.Add(failure);
         }
     }
 }
