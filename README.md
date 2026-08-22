@@ -2,7 +2,7 @@
 
 ![License](https://img.shields.io/github/license/chodeus/sleezer) ![GitHub release (latest by date)](https://img.shields.io/github/v/release/chodeus/sleezer) ![GitHub last commit](https://img.shields.io/github/last-commit/chodeus/sleezer) ![GitHub stars](https://img.shields.io/github/stars/chodeus/sleezer)
 
-Sleezer is a Lidarr plugin that adds **Deezer**, **Tidal**, **Slskd (Soulseek)**, and a handful of other music sources behind a single install. It also ships post-processing: corrupt-file scanning and pre-import tagging for Deezer/Tidal/Slskd downloads, plus an FFmpeg-based format converter that runs on every imported track regardless of source. 🛠️
+Sleezer is a Lidarr plugin that adds **Deezer**, **Tidal**, **Qobuz**, **Slskd (Soulseek)**, and a handful of other music sources behind a single install. It also ships post-processing: corrupt-file scanning and pre-import tagging for Deezer/Tidal/Qobuz/Slskd downloads, plus an FFmpeg-based format converter that runs on every imported track regardless of source. 🛠️
 
 Credit where it's due: Sleezer is built on [Lidarr.Plugin.Deezer](https://github.com/TrevTV/Lidarr.Plugin.Deezer) by [TrevTV](https://github.com/TrevTV) and [Tubifarry](https://github.com/TypNull/Tubifarry) by [TypNull](https://github.com/TypNull). See [Credits](#credits-).
 
@@ -13,18 +13,19 @@ Credit where it's due: Sleezer is built on [Lidarr.Plugin.Deezer](https://github
 1. [Installation 🚀](#installation-)
 2. [Deezer Setup 🎧](#deezer-setup-)
 3. [Tidal Setup 🌊](#tidal-setup-)
-4. [Soulseek (Slskd) Setup 🐟](#soulseek-slskd-setup-)
-5. [Web Clients 📻](#web-clients-)
-6. [FFmpeg 🎛️](#ffmpeg-️)
-7. [Corrupt File Scan & Pre-Import Tagging 🧼](#corrupt-file-scan--pre-import-tagging-)
-8. [Queue Cleaner 🧹](#queue-cleaner-)
-9. [Search Sniper 🏹](#search-sniper-)
-10. [Custom Metadata Sources 🧩](#custom-metadata-sources-)
-11. [Similar Artists 🧷](#similar-artists-)
-12. [Troubleshooting 🛠️](#troubleshooting-)
-13. [Credits 🙌](#credits-)
-14. [Contributing 🤝](#contributing-)
-15. [License 📄](#license-)
+4. [Qobuz Setup 🎼](#qobuz-setup-)
+5. [Soulseek (Slskd) Setup 🐟](#soulseek-slskd-setup-)
+6. [Web Clients 📻](#web-clients-)
+7. [FFmpeg 🎛️](#ffmpeg-️)
+8. [Corrupt File Scan & Pre-Import Tagging 🧼](#corrupt-file-scan--pre-import-tagging-)
+9. [Queue Cleaner 🧹](#queue-cleaner-)
+10. [Search Sniper 🏹](#search-sniper-)
+11. [Custom Metadata Sources 🧩](#custom-metadata-sources-)
+12. [Similar Artists 🧷](#similar-artists-)
+13. [Troubleshooting 🛠️](#troubleshooting-)
+14. [Credits 🙌](#credits-)
+15. [Contributing 🤝](#contributing-)
+16. [License 📄](#license-)
 
 ---
 
@@ -116,6 +117,58 @@ Tidal's device-code OAuth flow doesn't redirect back to Lidarr after you authori
 
 ---
 
+### Qobuz Setup 🎼
+
+Sleezer talks to Qobuz directly using a vendored fork of `QobuzApiSharp`. Qobuz serves **native `.flac`** — there is no DASH/M4A container to unwrap and no FFmpeg step, which makes it the cleanest-provenance source in this plugin.
+
+> ⚠️ A paid Qobuz subscription is required. Qobuz refuses even *search* without a valid user token, and Studio/Sublime tiers are what unlock 24-bit hi-res. Sleezer will not bypass entitlement checks.
+
+#### Setting Up the Qobuz Indexer
+
+1. **Settings → Indexers → Add**.
+2. In the modal, select `Qobuz` (under **Other** at the bottom).
+3. Fill in **User ID** and **User Auth Token**:
+   * Open [play.qobuz.com](https://play.qobuz.com) and log in.
+   * DevTools → **Network** tab → click any request → copy the `X-User-Auth-Token` request header.
+   * DevTools → **Application** → Local Storage → the numeric `id` field is your User ID.
+4. Leave **App ID** and **App Secret** blank. Sleezer reads the current pair from Qobuz's web player at runtime, so it survives Qobuz rotating them.
+5. Save. The indexer test logs the storefront your account resolves to — see the region note below.
+
+> Email + MD5 password is accepted as an alternative, but **it can only search**. Qobuz refuses `getFileUrl` on email/password sessions, so downloads fail. Use the token.
+
+#### Setting Up the Qobuz Download Client
+
+1. **Settings → Download Clients → Add**.
+2. Select `Qobuz` from the list.
+3. Set **Download Path** to a directory Lidarr can read.
+4. **Profiles → Delay Profiles**: tick **Qobuz** on the default profile so Lidarr will grab from it.
+
+#### Qobuz Import Lists (optional)
+
+Three lists reuse the indexer's session, so add and save the indexer first — they have no credentials of their own.
+
+* **Qobuz Favourite Albums** — the albums you've favourited, imported as albums.
+* **Qobuz Favourite Artists** — the artists you've favourited.
+* **Qobuz Playlist** — one or more playlists by ID (the number at the end of a playlist URL); imports the album behind each track.
+
+**Settings → Import Lists → Add**, pick one, set a Monitor / Quality Profile / Root Folder as usual.
+
+#### Notes
+
+* Each album is offered at up to four qualities — `MP3 320kbps`, `FLAC Lossless`, `FLAC 24bit 96kHz`, `FLAC 24bit 192kHz`. Your Lidarr quality profile picks.
+* **Region.** Qobuz licenses per territory. An album missing from search is usually not licensed in your account's storefront rather than a bug — the indexer test logs which storefront that is. A failed grab says so explicitly.
+* **Require Complete Album** (on by default) fails the whole album when any track can't be downloaded, so Lidarr retries or picks another release instead of importing a gap-toothed album.
+* The post-processing pipeline (corrupt-file scan + pre-import tagging) runs on Qobuz downloads — enable **Qobuz** in the FFmpeg provider's client pickers.
+* Qobuz supplies no lyrics; enable **Use LRCLIB as Lyric Provider** if you want them.
+* Qobuz is *not* the same as the **DABMusic** web client, which speaks the Qobuz protocol against a third-party proxy. DABMusic now appears as **DABMusic** in Delay Profiles; it previously occupied the **Qobuz** row.
+  <details>
+  <summary>Upgrading from a build before this client existed</summary>
+
+  DABMusic used to own the `Qobuz` protocol name. It is now `DABMusic`, and the `Qobuz` name belongs to this first-party client. On first start after upgrading, Lidarr adds a **DABMusic** row to each delay profile (enabled by default) and your existing **Qobuz** row now governs this client — check both are set the way you want. Blocklist entries recorded against DABMusic under the old name stop matching, so anything you had blocklisted there can be grabbed again.
+  </details>
+
+---
+
 ### Soulseek (Slskd) Setup 🐟
 
 Sleezer includes both the Slskd indexer and download client, so Lidarr can search Soulseek and grab results through your existing Slskd instance.
@@ -143,7 +196,7 @@ A few Slskd behaviours worth knowing, all born from live-log audits of real-worl
 * **Recently-failed sources sit out automatic searches on an escalating clock.** When a download fails ("File not shared.", remote cancel), that release is excluded from automatic grabs — one hour after a first failure, six after a second, a full day from the third — so a transiently busy peer retries quickly while a dead share stops being hammered. Interactive search still shows everything — a manual re-grab is deliberate.
 * **Failed grabs retry cleanly.** A re-grab after a failure tracks under a fresh download id, so a completed retry imports instead of being silently ignored by Lidarr's tracked-download cache (which permanently remembers the failed id until a restart).
 * **Downloads survive Lidarr restarts.** In-flight and completed Slskd transfers re-attach to their grabs after a restart — including multi-disc and retried grabs — so nothing sits finished in Slskd, invisible to Lidarr.
-* **Empty download folders are pruned automatically.** Once an import moves the files out (or a download is abandoned), the leftover empty folder is swept away — the gap that neither Slskd's file-retention (which deletes files, never their empty parent directories) nor a missed per-item cleanup (a Lidarr restart, a failed import) covers. It only ever removes folders that are *provably* empty, so nothing holding data is touched. For Slskd this is gated on the **Clean Stale Directories** client option; **Deezer and Tidal do the same sweep** on their own download paths.
+* **Empty download folders are pruned automatically.** Once an import moves the files out (or a download is abandoned), the leftover empty folder is swept away — the gap that neither Slskd's file-retention (which deletes files, never their empty parent directories) nor a missed per-item cleanup (a Lidarr restart, a failed import) covers. It only ever removes folders that are *provably* empty, so nothing holding data is touched. For Slskd this is gated on the **Clean Stale Directories** client option; **Deezer, Tidal and Qobuz do the same sweep** on their own download paths.
 
 ---
 
@@ -165,7 +218,7 @@ The SubSonic indexer/client is generic: any service that implements the [Subsoni
 
 **FFmpeg** (the component formerly known as "Codec Tinker" in Tubifarry) converts imported audio files between formats. You can set default rules (e.g. "convert all WAV to FLAC", "convert AAC ≥ 256k to MP3 320k") or per-artist overrides. It also backs the corrupt-file scan and pre-import tagging described in the next section, so even users who never touch conversion still benefit from having it configured.
 
-> ⚠️ **Scope note — FFmpeg conversion applies to every track Lidarr imports, not just Sleezer's downloads.** FFmpeg is registered as a Lidarr *Metadata Consumer*, which Lidarr invokes for every imported track regardless of source. Enable it and your torrent, Usenet, and manual imports will also be converted according to the rules you configure. If you only want Sleezer's Deezer/Tidal/Slskd downloads affected, leave the provider disabled — the corrupt-scan and pre-import tagger do **not** require it to be enabled for downloads to work.
+> ⚠️ **Scope note — FFmpeg conversion applies to every track Lidarr imports, not just Sleezer's downloads.** FFmpeg is registered as a Lidarr *Metadata Consumer*, which Lidarr invokes for every imported track regardless of source. Enable it and your torrent, Usenet, and manual imports will also be converted according to the rules you configure. If you only want Sleezer's Deezer/Tidal/Qobuz/Slskd downloads affected, leave the provider disabled — the corrupt-scan and pre-import tagger do **not** require it to be enabled for downloads to work.
 
 #### How to Enable FFmpeg
 
@@ -243,7 +296,7 @@ Sleezer auto-downloads FFmpeg on first use if it can't find one, pulling the cur
 
 ### Corrupt File Scan & Pre-Import Tagging 🧼
 
-These two features live under FFmpeg's settings because they depend on the bundled FFmpeg binary. Both are scoped to **Sleezer's own downloaders only** — Deezer, Tidal, and Slskd. The web clients (Lucida, SubSonic, T2Tunes, DABMusic) currently share a lighter download path that doesn't invoke them, and Lidarr's native torrent/Usenet clients are untouched. Only the FFmpeg *conversion* provider (previous section) runs on imports from every source.
+These two features live under FFmpeg's settings because they depend on the bundled FFmpeg binary. Both are scoped to **Sleezer's own downloaders only** — Deezer, Tidal, Qobuz, and Slskd. The web clients (Lucida, SubSonic, T2Tunes, DABMusic) currently share a lighter download path that doesn't invoke them, and Lidarr's native torrent/Usenet clients are untouched. Only the FFmpeg *conversion* provider (previous section) runs on imports from every source.
 
 Each feature is opt-in via a chip-style picker: pick which Sleezer downloaders should get the treatment. An empty picker means the feature is off entirely. **Both pickers default empty** — nothing runs until you opt in.
 
@@ -357,10 +410,11 @@ Enable **Debug** log level in `Settings -> General` if you're filing an issue �
 
 ## Credits 🙌
 
-Sleezer exists because of two people:
+Sleezer exists because of these people:
 
 * **[TrevTV](https://github.com/TrevTV)** — author of [Lidarr.Plugin.Deezer](https://github.com/TrevTV/Lidarr.Plugin.Deezer) and the [DeezNET](https://github.com/TrevTV/DeezNET) client library that powers Sleezer's Deezer integration. Nothing Deezer-related in this plugin would exist without his work.
 * **[TypNull](https://github.com/TypNull)** — author of [Tubifarry](https://github.com/TypNull/Tubifarry), which contributed the Slskd integration, web-client framework, FFmpeg pipeline, Queue Cleaner, Search Sniper, custom metadata sources, and Similar Artists. Sleezer is basically Tubifarry with YouTube/Spotify/Lyrics/telemetry stripped out and Deezer bolted in.
+* **[DaveBinM](https://github.com/DaveBinM)** — maintainer of the living fork of [Lidarr.Plugin.Qobuz](https://github.com/DaveBinM/Lidarr.Plugin.Qobuz) (originally TrevTV's) and of [QobuzApiSharp](https://github.com/DaveBinM/QobuzApiSharp) (originally [DJDoubleD](https://github.com/DJDoubleD)'s). Sleezer's Qobuz indexer and download client are ported from that fork.
 
 Also thanks to the maintainers of Lidarr's plugin system, and the authors of every bundled library listed in [NOTICE](NOTICE).
 

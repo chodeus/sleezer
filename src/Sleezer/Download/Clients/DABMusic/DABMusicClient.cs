@@ -45,7 +45,7 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.DABMusic
         }
 
         public override string Name => "DABMusic";
-        public override string Protocol => nameof(QobuzDownloadProtocol);
+        public override string Protocol => nameof(DABMusicDownloadProtocol);
         public new DABMusicProviderSettings Settings => base.Settings;
 
         public override Task<string> Download(RemoteAlbum remoteAlbum, IIndexer indexer) => _downloadManager.Download(remoteAlbum, indexer, _namingService.GetConfig(), this);

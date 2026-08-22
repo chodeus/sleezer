@@ -15,7 +15,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.DABMusic
         private readonly IDABMusicSessionManager _sessionManager;
 
         public override string Name => "DABMusic";
-        public override string Protocol => nameof(QobuzDownloadProtocol);
+        public override string Protocol => nameof(DABMusicDownloadProtocol);
         public override bool SupportsRss => false;
         public override bool SupportsSearch => true;
         public override int PageSize => 50;

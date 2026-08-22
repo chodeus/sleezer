@@ -13,6 +13,9 @@ reviews:
   # Exclude vendored/generated/binary trees so review focuses on real plugin source.
   path_filters:
     - "!ext/**"          # vendored Lidarr git submodule (.gitmodules) — not our code
+    # Vendored verbatim from DaveBinM/QobuzApiSharp; only a #nullable banner is ours.
+    # TidalSharp is deliberately NOT filtered — it carries local OAuth/logging changes.
+    - "!src/Sleezer/QobuzApiSharp/**"
     - "!_plugins/**"     # packaged plugin output (DLL/PDB), no .cs source
     - "!_tests/**"       # test/runtime output + localization DLLs, no .cs source
     - "!_temp/**"        # MSBuild obj/bin intermediate cache
