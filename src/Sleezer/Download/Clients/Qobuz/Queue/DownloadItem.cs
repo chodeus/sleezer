@@ -29,6 +29,7 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
         private QobuzURL _qobuzUrl = null!;
         private Album _qobuzAlbum = null!;
         private byte[]? _albumArt;
+        private int? _persistedTrackCount;
 
         // Mutated by up to MaxConcurrentTracks track tasks at once; a lost increment
         // here would let an incomplete album report Completed.
@@ -48,14 +49,45 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
         public int CompletedTracks => Volatile.Read(ref _completedTracks);
         public int FailedTracks => Volatile.Read(ref _failedTracks);
         public int SkippedTracks => Volatile.Read(ref _skippedTracks);
-        public int TrackCount => _tracks.Length;
+
+        // A rehydrated item has no track objects, only the count it finished with.
+        public int TrackCount => _persistedTrackCount ?? _tracks.Length;
 
         /// <summary>Estimated album size from the release, so Lidarr's queue shows bytes.</summary>
         public long TotalSize { get; private set; }
 
-        public long DownloadedSize => TrackCount == 0 ? 0 : TotalSize * CompletedTracks / TrackCount;
+        // A completed item has everything by definition; deriving from the track count
+        // would report 0% for a rehydrated item whose count did not round-trip.
+        public long DownloadedSize => Status == DownloadItemStatus.Completed
+            ? TotalSize
+            : TrackCount == 0 ? 0 : TotalSize * CompletedTracks / TrackCount;
 
-        public float Progress => TrackCount == 0 ? 0 : CompletedTracks / (float)TrackCount;
+        public float Progress => Status == DownloadItemStatus.Completed
+            ? 1f
+            : TrackCount == 0 ? 0 : CompletedTracks / (float)TrackCount;
+
+        // Lets GetQueue keep reporting downloads that completed in a previous plugin
+        // lifetime. Lidarr-facing only: it holds no Qobuz handles and no track list,
+        // and must never be re-enqueued.
+        public static DownloadItem FromPersisted(PersistedDownloadItem persisted)
+        {
+            var item = new DownloadItem
+            {
+                ID = persisted.ID,
+                Title = persisted.Title,
+                Artist = persisted.Artist,
+                Explicit = persisted.Explicit,
+                Bitrate = persisted.Bitrate,
+                TotalSize = persisted.TotalSize,
+                DownloadFolder = persisted.DownloadFolder,
+                Status = persisted.Status,
+                _persistedTrackCount = persisted.TrackCount,
+            };
+
+            // Reported complete, so DownloadedSize and Progress must read as finished.
+            item._completedTracks = persisted.TrackCount;
+            return item;
+        }
 
         public static async Task<DownloadItem?> From(RemoteAlbum remoteAlbum)
         {

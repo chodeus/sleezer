@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Channels;
@@ -25,8 +26,12 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
         private readonly object _lock = new();
 
         private readonly Logger _logger;
+        private readonly IDiskProvider _diskProvider;
         private readonly PostProcessRunner _postProcess;
         private QobuzSettings? _settings;
+
+        // 0 = rehydration not yet attempted, 1 = attempted. Mirrors Deezer and Tidal.
+        private int _rehydrated;
 
         public DownloadTaskQueue(
             int capacity,
@@ -42,10 +47,16 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
             _queue = Channel.CreateBounded<DownloadItem>(options);
             _settings = settings;
             _logger = logger;
+            _diskProvider = diskProvider;
             _postProcess = new PostProcessRunner(corruptionScanner, corruptionFailureHandler, preImportTagger, metadataFactory, diskProvider, logger);
         }
 
-        public void SetSettings(QobuzSettings settings) => _settings = settings;
+        public void SetSettings(QobuzSettings settings)
+        {
+            _settings = settings;
+            if (Interlocked.CompareExchange(ref _rehydrated, 1, 0) == 0)
+                TryRehydrateFromDisk(settings);
+        }
 
         public void StartQueueHandler() => Task.Run(() => BackgroundProcessing());
 
@@ -76,6 +87,8 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
                 _items.Remove(workItem);
                 _cancellationSources.Remove(workItem);
             }
+
+            TryDeleteSidecar(workItem);
         }
 
         public DownloadItem[] GetQueueListing()
@@ -157,6 +170,8 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
 
                 if (item.Status == DownloadItemStatus.Completed && !await RunPostProcessAsync(item))
                     item.Status = DownloadItemStatus.Failed;
+
+                TryPersistCompletedItem(item);
             }
             catch (OperationCanceledException)
             {
@@ -170,6 +185,88 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
             finally
             {
                 semaphore.Release();
+            }
+        }
+
+        // Only completed downloads are persisted: a failed item may have had its files
+        // removed by the corrupt-scan pass, so its on-disk state is not an import target.
+        private void TryPersistCompletedItem(DownloadItem item)
+        {
+            if (item.Status != DownloadItemStatus.Completed
+                || string.IsNullOrEmpty(item.DownloadFolder)
+                || !_diskProvider.FolderExists(item.DownloadFolder))
+                return;
+
+            try
+            {
+                PersistedDownloadItem.CaptureFrom(item).WriteTo(item.DownloadFolder);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warn(ex, "Failed to persist Qobuz download state for {Title}; it will not survive a Lidarr restart.", item.Title);
+            }
+        }
+
+        private void TryRehydrateFromDisk(QobuzSettings settings)
+        {
+            string? root = settings.DownloadPath;
+            if (string.IsNullOrEmpty(root) || !_diskProvider.FolderExists(root))
+                return;
+
+            try
+            {
+                string[] sidecars = Directory.GetFiles(root, PersistedDownloadItem.SidecarFileName, SearchOption.AllDirectories);
+
+                int count = 0;
+                foreach (string sidecarPath in sidecars)
+                {
+                    PersistedDownloadItem? persisted;
+                    try
+                    {
+                        persisted = PersistedDownloadItem.TryRead(sidecarPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.Debug(ex, "Skipping unreadable Qobuz sidecar at {Path}", sidecarPath);
+                        continue;
+                    }
+
+                    if (persisted == null || persisted.Status != DownloadItemStatus.Completed)
+                        continue;
+
+                    lock (_lock)
+                    {
+                        if (_items.Any(i => i.ID == persisted.ID))
+                            continue;
+                        _items.Add(DownloadItem.FromPersisted(persisted));
+                    }
+
+                    count++;
+                }
+
+                if (count > 0)
+                    _logger.Info("Rehydrated {Count} completed Qobuz download(s) from disk.", count);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warn(ex, "Failed to scan the Qobuz download path for persisted state; starting with an empty queue.");
+            }
+        }
+
+        private void TryDeleteSidecar(DownloadItem item)
+        {
+            if (string.IsNullOrEmpty(item.DownloadFolder))
+                return;
+
+            try
+            {
+                string path = PersistedDownloadItem.SidecarPath(item.DownloadFolder);
+                if (File.Exists(path))
+                    File.Delete(path);
+            }
+            catch (Exception ex)
+            {
+                _logger.Trace(ex, "Failed to delete the Qobuz sidecar for {Title}", item.Title);
             }
         }
 
