@@ -153,9 +153,8 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
                     var handler = HandleTask(item, downloadTask);
                     lock (_lock)
                     {
-                        // Prune here rather than from inside HandleTask: that removed
-                        // the download task, not the handler that was added, so the list
-                        // only ever grew — and its Remove scan grew with it.
+                        // Pruned here, not inside HandleTask: a handler that finished
+                        // before being added would never be removed.
                         _runningTasks.RemoveAll(t => t.IsCompleted);
                         _runningTasks.Add(handler);
                     }

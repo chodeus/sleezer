@@ -294,7 +294,10 @@ namespace NzbDrone.Core.Indexers.Tidal
                     Settings.TokenType,
                     Settings.UserId,
                     Settings.Expires,
-                    Settings.CountryCode,
+                    // Deliberately empty rather than Settings.CountryCode: that field is
+                    // an editable textbox, and Tidal's /sessions response is the trusted
+                    // source. It is written back below purely for display.
+                    string.Empty,
                     onTokensRefreshed: PersistRefreshedTokens).GetAwaiter().GetResult();
                 _loadedAccessToken = Settings.AccessToken;
                 var loaded = TidalAPI.Instance!.Client.ActiveUser;

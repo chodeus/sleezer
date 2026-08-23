@@ -58,10 +58,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer
             }
         }
 
-        // Delegated to the canonical sanitizer rather than Path.GetInvalidFileNameChars,
-        // which on Linux returns only '/' and NUL — leaving ':', '\\', '*', '?', '<', '>',
-        // '|', '"' and trailing dots in Deezer paths for Lidarr's parser to trip over.
-        // Tidal's MetadataUtilities already delegates the same way.
+        // Canonical sanitizer: GetInvalidFileNameChars misses ':' and '\\' on Linux.
         public static string CleanPath(string str) => TidalPathSanitizer.CleanPath(str);
     }
 }

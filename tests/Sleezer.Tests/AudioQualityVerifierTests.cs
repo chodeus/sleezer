@@ -57,13 +57,29 @@ public class AudioQualityVerifierTests
             AudioQualityVerifier.Compare(24, 44100, AudioQualityReading.None));
     }
 
-    // Depth is the claim being checked; a rate only one side states is not a mismatch.
+    // Nothing was advertised, so there is nothing to verify — the depth alone decides.
     [Fact]
-    public void Compare_does_not_penalise_an_unstated_sample_rate()
+    public void Compare_does_not_penalise_a_rate_the_source_never_claimed()
     {
         Assert.Equal(QualityVerdict.Matches,
             AudioQualityVerifier.Compare(16, advertisedRate: null, Actual(16, rate: 44100)));
-        Assert.Equal(QualityVerdict.Matches,
+    }
+
+    // The other direction is not symmetrical: a rate WAS advertised and the files did not
+    // report one, so confirming it would vouch for something never checked.
+    [Fact]
+    public void Compare_will_not_confirm_a_rate_the_files_never_reported()
+    {
+        Assert.Equal(QualityVerdict.Unknown,
             AudioQualityVerifier.Compare(16, advertisedRate: 44100, Actual(16, rate: null)));
+    }
+
+    // Same hole via partial metadata: one file carries a rate, another does not, so the
+    // agreed rate describes only the files that happened to have it.
+    [Fact]
+    public void Compare_will_not_confirm_a_rate_when_only_some_files_reported_one()
+    {
+        var partial = new AudioQualityReading(24, 96000, FilesRead: 12, Mixed: false, RateIncomplete: true);
+        Assert.Equal(QualityVerdict.Unknown, AudioQualityVerifier.Compare(24, 96000, partial));
     }
 }
