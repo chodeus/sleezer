@@ -90,8 +90,11 @@ first thing to break. `.github/workflows/qobuz-bundle-canary.yml` checks it
 weekly against the live player, because that failure has no upstream signal —
 nothing changes in this repo or theirs when Qobuz ships a new bundle.
 
-Excluded from CodeRabbit review in `.coderabbit.yaml`, since reviewing upstream
-code we have not written is noise.
+Only `Models/` is excluded from CodeRabbit review in `.coderabbit.yaml` — 47 files
+of JSON-mapped properties with no logic. `Service/`, `Exceptions/`, `Converters/`
+and `Utilities/` are reviewed, because that is where the logic lives and where
+the patch series above applies. Excluding a file we patch would mean the change
+least likely to be safe is the one nobody looks at.
 
 ### Lidarr.Plugin.Qobuz — heavily rewritten
 
