@@ -1,3 +1,4 @@
+using NLog;
 using NzbDrone.Plugin.Sleezer.Indexers.Soulseek;
 using Xunit;
 
@@ -49,6 +50,35 @@ public class SlskdQualityClaimTests
     }
 
     // The issue's worked example: 24/96 advertised against an implied ~900 kbps.
+    // The claim survives the doubt: an implausible reading is warned about, not
+    // erased. Erasing it zeroed AlbumData.BitDepth and let a worse release outrank
+    // a truthful hi-res one, which is the heavier of the two failures.
+    [Fact]
+    public void AnalyzeAudioQuality_keeps_a_bit_depth_the_bytes_look_too_small_for()
+    {
+        SlskdFileData[] files = [
+            File(24, 96000, size: 9_000_000, length: 240),
+            File(24, 96000, size: 9_000_000, length: 240)
+        ];
+
+        var parser = new SlskdItemsParser(LogManager.GetCurrentClassLogger());
+        var quality = parser.AnalyzeAudioQuality(files);
+
+        Assert.False(SlskdItemsParser.DepthClaimIsPlausible(24, 96000, 18_000_000, 480));
+        Assert.Equal(24, quality.BitDepth);
+        Assert.Equal(96000, quality.SampleRate);
+    }
+
+    [Fact]
+    public void AnalyzeAudioQuality_reports_a_plausible_claim_unchanged()
+    {
+        SlskdFileData[] files = [File(24, 96000, size: 45_000_000, length: 240), File(24, 96000, size: 45_000_000, length: 240)];
+
+        var parser = new SlskdItemsParser(LogManager.GetCurrentClassLogger());
+
+        Assert.Equal(24, parser.AnalyzeAudioQuality(files).BitDepth);
+    }
+
     [Fact]
     public void DepthClaimIsPlausible_flags_a_hires_claim_the_bytes_barely_support()
     {
