@@ -278,6 +278,8 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
             bool embedArt = (QobuzArtworkPlacement)settings.ArtworkPlacement != QobuzArtworkPlacement.Sidecar;
             await api.Client.ApplyMetadataToFile(trackId, outPath, _albumArt, embedArt, plainLyrics ?? string.Empty, cancellation);
 
+            SourceTagWriter.TryWrite(outPath, _qobuzUrl?.Url, logger);
+
             if (!string.IsNullOrWhiteSpace(syncLyrics))
             {
                 var lrcPath = Path.Combine(outDir, MetadataUtilities.GetFilledTemplate(FileTemplate, "lrc", page, _qobuzAlbum));
