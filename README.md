@@ -397,7 +397,7 @@ Enable **Debug** log level in `Settings -> General` if you're filing an issue �
 * **[DaveBinM](https://github.com/DaveBinM)** — [Lidarr.Plugin.Qobuz](https://github.com/DaveBinM/Lidarr.Plugin.Qobuz) (originally TrevTV's) and [QobuzApiSharp](https://github.com/DaveBinM/QobuzApiSharp) (originally [DJDoubleD](https://github.com/DJDoubleD)'s), which the Qobuz client is ported from.
 * **[jtstothard](https://github.com/jtstothard)** — [lidarr-plugin-bandcamp](https://github.com/jtstothard/lidarr-plugin-bandcamp), which the Bandcamp client is ported from.
 
-Bundled libraries are listed in [NOTICE](NOTICE). Bugs originating upstream are best filed on the upstream tracker; anything about Sleezer's integration belongs [here](https://github.com/chodeus/sleezer/issues).
+Bundled libraries are listed in [NOTICE](NOTICE). Bugs originating upstream are best filed on the upstream tracker; anything about Sleezer's integration belongs on the [Sleezer issue tracker](https://github.com/chodeus/sleezer/issues).
 
 ## Contributing 🤝
 
