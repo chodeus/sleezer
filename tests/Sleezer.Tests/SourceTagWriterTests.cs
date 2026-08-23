@@ -1,5 +1,7 @@
 using System;
 using System.IO;
+using System.Security.Cryptography;
+using System.Text;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using Xunit;
 
@@ -48,22 +50,51 @@ public class SourceTagWriterTests : IDisposable
     }
 
     // The audio must come through untouched — this runs on a finished download.
+    // Hashing the frames, not STREAMINFO's stored MD5: Qobuz ships that field unset,
+    // so comparing it would pass vacuously on exactly the files this guards.
     [Fact]
     public void Leaves_the_audio_stream_intact()
     {
         string path = Fixture();
-        static string Md5(string p)
-        {
-            using var fs = File.OpenRead(p);
-            var head = new byte[42];
-            fs.ReadExactly(head);
-            return Convert.ToHexString(head.AsSpan(26, 16));
-        }
 
-        string before = Md5(path);
+        string beforeFrames = AudioFramesHash(path);
+        string beforeSignature = StreamInfoMd5(path);
+
         SourceTagWriter.TryWrite(path, "https://tidal.com/album/1", Log);
 
-        Assert.Equal(before, Md5(path));
+        Assert.Equal(beforeFrames, AudioFramesHash(path));
+        Assert.Equal(beforeSignature, StreamInfoMd5(path));
+    }
+
+    // Walks the metadata block chain to the one flagged last, then hashes the rest.
+    private static string AudioFramesHash(string path)
+    {
+        using var fs = File.OpenRead(path);
+        var magic = new byte[4];
+        fs.ReadExactly(magic);
+        Assert.Equal("fLaC", Encoding.ASCII.GetString(magic));
+
+        var header = new byte[4];
+        bool last;
+        do
+        {
+            fs.ReadExactly(header);
+            last = (header[0] & 0x80) != 0;
+            fs.Position += (header[1] << 16) | (header[2] << 8) | header[3];
+        }
+        while (!last);
+
+        Assert.True(fs.Position < fs.Length, "fixture has no audio frames");
+        return Convert.ToHexString(SHA256.HashData(fs));
+    }
+
+    // STREAMINFO is the first block, and its MD5 sits 18 bytes into the 34-byte body.
+    private static string StreamInfoMd5(string path)
+    {
+        using var fs = File.OpenRead(path);
+        var head = new byte[42];
+        fs.ReadExactly(head);
+        return Convert.ToHexString(head.AsSpan(26, 16));
     }
 
     [Theory]
