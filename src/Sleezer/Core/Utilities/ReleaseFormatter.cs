@@ -63,6 +63,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             { "{Track CleanTitle}", () => CleanTitle(track?.Title) },
             { "{Track ArtistName}", () => CleanTitle(_artist?.Name) },
             { "{Track ArtistNameThe}", () => CleanTitle(TitleThe(_artist?.Name)) },
+            { "{Track ArtistCleanName}", () => CleanTitle(_artist?.Name) },
+            { "{Track ArtistCleanNameThe}", () => CleanTitleThe(_artist?.Name) },
             { "{Track ArtistMbId}", () => _artist?.ForeignArtistId ?? string.Empty },
             { "{track:0}", () => FormatTrackNumber(track?.TrackNumber, "0") },
             { "{track:00}", () => FormatTrackNumber(track?.TrackNumber, "00") },
@@ -79,7 +81,23 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         private static string ReplaceTokens(string pattern, Dictionary<string, Func<string>> tokenHandlers) => ReplaceTokensRegex().Replace(pattern, match =>
         {
             string token = match.Groups[1].Value;
-            return tokenHandlers.TryGetValue($"{{{token}}}", out Func<string>? handler) ? handler() : string.Empty;
+
+            // Exact first: {track:00} and {medium:00} carry a colon of their own.
+            if (tokenHandlers.TryGetValue($"{{{token}}}", out Func<string>? handler))
+                return handler();
+
+            // Otherwise a trailing :N is Lidarr's max-length modifier, as in
+            // {Album CleanTitle:100}. Without this the whole token missed the lookup
+            // and rendered as empty, silently mangling every filename.
+            int colon = token.LastIndexOf(':');
+            if (colon > 0 && int.TryParse(token[(colon + 1)..], out int maxLength) && maxLength > 0
+                && tokenHandlers.TryGetValue($"{{{token[..colon]}}}", out Func<string>? truncatable))
+            {
+                string value = truncatable();
+                return value.Length > maxLength ? value[..maxLength].TrimEnd() : value;
+            }
+
+            return string.Empty;
         });
 
         private string CleanFileName(string fileName)

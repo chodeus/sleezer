@@ -60,6 +60,8 @@
     <!-- Provenance tag written after the client's own metadata pass. -->
     <Compile Include="..\..\src\Sleezer\Core\Utilities\SourceTagWriter.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Core\Utilities\ReleaseFormatter.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Tidal\TidalPathSanitizer.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Tidal\TidalArtistMatcher.cs"
