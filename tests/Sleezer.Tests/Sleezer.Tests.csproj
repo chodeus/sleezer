@@ -84,6 +84,15 @@
              LinkBase="SourceUnderTest" />
     <!-- Lossless-tier guard for Tidal silent codec downgrade detection.
          Pulls in the AudioQuality enum from Quality.cs as its only dep. -->
+    <!-- Tidal's ffmpeg wrapper. BCL-only, and the only client that shells out during a
+         download, so its binary resolution is pinned here. -->
+    <!-- Import-vs-post-process ordering gate. BCL + Lidarr's DownloadItemStatus only. -->
+    <Compile Include="..\..\src\Sleezer\Core\Download\IQueuedDownload.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Core\Download\PostProcessGate.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Download\Clients\Tidal\FFMPEG.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\TidalSharp\LosslessGuard.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\TidalSharp\Data\Quality.cs"
