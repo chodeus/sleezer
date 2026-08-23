@@ -298,7 +298,7 @@ public class Downloader
                     {
                         throw new APIException(
                             $"Tidal returned codec '{deliveredCodec}' for track {trackId} despite a {attemptQuality} request " +
-                            $"— this album/track may not be licensed lossless in your region. Failing the download " +
+                            $"— this album/track is not licensed lossless in {_api.CountryCode}. Failing the download " +
                             $"so Lidarr can try another source (e.g. slskd FLAC).");
                     }
                 }
@@ -325,7 +325,7 @@ public class Downloader
         }
 
         throw new APIException(
-            $"Tidal couldn't deliver track {trackId} in any quality of the same tier (tried: {string.Join(", ", attempted)}). The track may be region-locked or removed.",
+            $"Tidal couldn't deliver track {trackId} in any quality of the same tier (tried: {string.Join(", ", attempted)}). It is either not licensed in {_api.CountryCode} or removed from Tidal.",
             lastUnavailable!);
     }
 

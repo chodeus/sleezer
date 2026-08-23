@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using Newtonsoft.Json.Linq;
+using NzbDrone.Plugin.Sleezer.Core.Tidal;
 
 namespace NzbDrone.Core.Download.Clients.Deezer
 {
@@ -57,15 +58,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer
             }
         }
 
-        public static string CleanPath(string str)
-        {
-            var invalid = Path.GetInvalidFileNameChars();
-            for (var i = 0; i < invalid.Length; i++)
-            {
-                var c = invalid[i];
-                str = str.Replace(c, '_');
-            }
-            return str;
-        }
+        // Canonical sanitizer: GetInvalidFileNameChars misses ':' and '\\' on Linux.
+        public static string CleanPath(string str) => TidalPathSanitizer.CleanPath(str);
     }
 }

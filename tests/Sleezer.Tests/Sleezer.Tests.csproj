@@ -38,6 +38,10 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\PostProcessing\RecordingVerdict.cs"
              LinkBase="SourceUnderTest" />
+    <!-- Claim-vs-reality comparison for issue #85. The TagLib read path is IO;
+         only the pure Compare half is exercised here. -->
+    <Compile Include="..\..\src\Sleezer\Core\PostProcessing\AudioQualityVerifier.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Blocklisting\BaseBlocklist.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Blocklisting\Blocklists.cs"
@@ -49,6 +53,10 @@
     <Compile Include="..\..\src\Sleezer\Core\Tidal\TidalPathSanitizer.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Tidal\TidalArtistMatcher.cs"
+             LinkBase="SourceUnderTest" />
+    <!-- Deezer path templating: guards the delegation to TidalPathSanitizer, without
+         which Linux leaves ':' and '\' in download paths. Newtonsoft only. -->
+    <Compile Include="..\..\src\Sleezer\Download\Clients\Deezer\MetadataUtilities.cs"
              LinkBase="SourceUnderTest" />
     <!-- Slskd retry-exhaustion state machine and its transitive deps. Lidarr.Core
          supplies DownloadItemStatus via the project reference below. -->

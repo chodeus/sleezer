@@ -220,9 +220,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             List<SlskdFileData> audioForQuality = filesToDownload.Where(IsAudioFile).ToList();
             (AudioFormat Codec, int? BitRate, int? BitDepth, int? SampleRate, long TotalSize, int TotalDuration)
                 = AnalyzeAudioQuality(audioForQuality.Count > 0 ? audioForQuality : filesToDownload);
-            string qualityInfo = FormatQualityInfo(Codec, BitRate, BitDepth, SampleRate);
 
-            _logger.Trace("Audio: {Codec}, BitRate: {BitRate}, BitDepth: {BitDepth}, Files: {TrackCount}", Codec, BitRate, BitDepth, actualTrackCount);
+            _logger.Trace("Audio: {Codec}, BitRate: {BitRate}, BitDepth: {BitDepth}, SampleRate: {SampleRate}, Files: {TrackCount}", Codec, BitRate, BitDepth, SampleRate, actualTrackCount);
 
             // Points at the peer, not the search: Lidarr renders this as the title's
             // href, so hovering a result reveals which user it came from. Searches are
@@ -792,15 +791,66 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             };
         }
 
-        private (AudioFormat Codec, int? BitRate, int? BitDepth, int? SampleRate, long TotalSize, int TotalDuration) AnalyzeAudioQuality(IEnumerable<SlskdFileData> directory)
+        // Soulseek offers no way to read a file header before transferring, so the
+        // peer's advertised attributes are the only pre-download signal. These two
+        // checks are what can still be said about them without the bytes.
+
+        /// <summary>The value every file reports, or null if they disagree or any is missing.</summary>
+        internal static int? UnanimousOrNull(IEnumerable<SlskdFileData> files, Func<SlskdFileData, int?> selector)
+        {
+            int? agreed = null;
+
+            foreach (SlskdFileData file in files)
+            {
+                int? value = selector(file);
+                if (value is null or <= 0)
+                    return null;
+
+                agreed ??= value;
+                if (value != agreed)
+                    return null;
+            }
+
+            return agreed;
+        }
+
+        // A heuristic, not a proof: FLAC has no guaranteed floor, so this only says a
+        // claim looks unlikely. Assumes mono — the lowest floor any file could have —
+        // so it flags only the egregious. 24/44.1 against 16/44.1 overlaps entirely.
+        private const double FlacCompressionFloor = 0.5;
+
+        internal static bool DepthClaimIsPlausible(int bitDepth, int? sampleRate, long totalSize, int totalDurationSeconds)
+        {
+            if (sampleRate is null or <= 0 || totalDurationSeconds <= 0 || totalSize <= 0)
+                return true;
+
+            double impliedBitsPerSecond = totalSize * 8.0 / totalDurationSeconds;
+            double monoFloor = bitDepth * (double)sampleRate.Value * FlacCompressionFloor;
+
+            return impliedBitsPerSecond >= monoFloor;
+        }
+
+        internal (AudioFormat Codec, int? BitRate, int? BitDepth, int? SampleRate, long TotalSize, int TotalDuration) AnalyzeAudioQuality(IEnumerable<SlskdFileData> directory)
         {
             string? commonExt = GetMostCommonExtension(directory);
             long totalSize = directory.Sum(f => f.Size);
             int totalDuration = directory.Sum(f => f.Length ?? 0);
 
+            // Bitrate legitimately varies per track, so the majority value (or the
+            // computed average below) is the honest summary. Bit depth and sample rate
+            // do not: a folder mixing them cannot advertise one without misdescribing
+            // the rest, so those are claimed only when every file agrees.
             int? commonBitRate = directory.GroupBy(f => f.BitRate).OrderByDescending(g => g.Count()).FirstOrDefault()?.Key;
-            int? commonBitDepth = directory.GroupBy(f => f.BitDepth).OrderByDescending(g => g.Count()).FirstOrDefault()?.Key;
-            int? commonSampleRate = directory.GroupBy(f => f.SampleRate).OrderByDescending(g => g.Count()).FirstOrDefault()?.Key;
+            int? commonBitDepth = UnanimousOrNull(directory, f => f.BitDepth);
+            int? commonSampleRate = UnanimousOrNull(directory, f => f.SampleRate);
+
+            // Reported, never enforced: dropping the claim would demote a truthful
+            // hi-res release. AudioQualityVerifier settles it once the bytes land.
+            if (commonBitDepth.HasValue && !DepthClaimIsPlausible(commonBitDepth.Value, commonSampleRate, totalSize, totalDuration))
+            {
+                _logger.Warn("Slskd: the advertised {BitDepth}-bit/{SampleRate}Hz claim looks implausible — {Size} bytes over {Duration}s. Keeping it; post-download verification will confirm what actually arrived.",
+                    commonBitDepth, commonSampleRate, totalSize, totalDuration);
+            }
 
             if (!commonBitRate.HasValue && totalDuration > 0)
             {
@@ -830,17 +880,6 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 .OrderByDescending(g => g.Count())
                 .Select(g => g.Key)
                 .FirstOrDefault();
-        }
-
-        private static string FormatQualityInfo(AudioFormat codec, int? bitRate, int? bitDepth, int? sampleRate)
-        {
-            if (codec == AudioFormat.MP3 && bitRate.HasValue)
-                return $"{codec} {bitRate}kbps";
-
-            if (bitDepth.HasValue && sampleRate.HasValue)
-                return $"{codec} {bitDepth}bit/{sampleRate / 1000}kHz";
-
-            return codec.ToString();
         }
 
         [GeneratedRegex(@"(?ix)

@@ -124,8 +124,6 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
                 finally
                 {
                     semaphore.Release();
-                    lock (_lock)
-                        _runningTasks.Remove(task);
                 }
             }
 
@@ -152,8 +150,14 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
                     var token = GetTokenForItem(item);
                     var downloadTask = item.DoDownload(_settings, _logger, token);
 
+                    var handler = HandleTask(item, downloadTask);
                     lock (_lock)
-                        _runningTasks.Add(HandleTask(item, downloadTask));
+                    {
+                        // Pruned here, not inside HandleTask: a handler that finished
+                        // before being added would never be removed.
+                        _runningTasks.RemoveAll(t => t.IsCompleted);
+                        _runningTasks.Add(handler);
+                    }
                 }
                 catch (OperationCanceledException)
                 {
