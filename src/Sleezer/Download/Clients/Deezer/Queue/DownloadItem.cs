@@ -17,6 +17,8 @@ using NzbDrone.Common.Instrumentation.Extensions;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Plugin.Sleezer.Deezer;
 
+using NzbDrone.Plugin.Sleezer.Core.Download;
+
 namespace NzbDrone.Core.Download.Clients.Deezer.Queue
 {
     public class InsufficientLicenseRightsException : Exception
@@ -34,7 +36,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
         public TrackUnavailableException(string message, Exception? inner = null) : base(message, inner) { }
     }
 
-    public class DownloadItem
+    public class DownloadItem : IQueuedDownload
     {
         // Rebuilds the minimal display state for a download that completed in a
         // prior plugin lifetime. The returned item is Lidarr-facing only — it

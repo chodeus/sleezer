@@ -1,0 +1,116 @@
+name: Vendored upstream drift
+
+# Vendoring is a decision to take on maintenance. This reports when an upstream
+# we copied from has moved, so "pull fixes by hand" stays possible instead of
+# quietly becoming impossible. Source of truth is the JSON block in VENDOR.md.
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'  # Mondays
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'VENDOR.md'
+      - '.github/workflows/vendor-drift.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    name: Check vendored upstreams
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No git operations here; leaving GITHUB_TOKEN in .git/config is needless.
+          persist-credentials: false
+
+      - name: Compare each vendored tree against its upstream
+        id: drift
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Pull the fenced JSON block out of VENDOR.md — one source of truth,
+          # so the doc and this job cannot disagree.
+          python3 - <<'PY' > entries.json
+          import json, pathlib, re, sys
+          text = pathlib.Path("VENDOR.md").read_text()
+          match = re.search(r"```json\n(.*?)\n```", text, re.S)
+          if not match:
+              sys.exit("VENDOR.md has no ```json block")
+          json.dump(json.loads(match.group(1)), sys.stdout)
+          PY
+
+          report=""
+          drifted=0
+
+          while IFS=$'\t' read -r name upstream commit; do
+            slug="${upstream#https://github.com/}"
+            slug="${slug%.git}"
+
+            if ! branch=$(gh api "repos/${slug}" --jq .default_branch 2>/dev/null); then
+              report+=$'\n'"- **${name}** — cannot reach \`${slug}\`. The upstream may have been renamed, made private, or deleted."
+              drifted=$((drifted + 1))
+              continue
+            fi
+
+            # compare/base...head is 404 when the base commit is unreachable,
+            # which means the upstream force-pushed or the SHA is wrong. Say so
+            # rather than silently reporting no drift.
+            if ! comparison=$(gh api "repos/${slug}/compare/${commit}...${branch}" 2>/dev/null); then
+              report+=$'\n'"- **${name}** — cannot compare \`${commit:0:12}\` against \`${branch}\`. The upstream may have force-pushed, or the recorded commit is wrong."
+              drifted=$((drifted + 1))
+              continue
+            fi
+
+            ahead=$(printf '%s' "$comparison" | jq -r '.ahead_by')
+            if [ "$ahead" -eq 0 ]; then
+              echo "${name}: up to date"
+              continue
+            fi
+
+            drifted=$((drifted + 1))
+            log=$(printf '%s' "$comparison" | jq -r '.commits[-25:] | reverse | .[] | "  - \(.sha[0:9]) \(.commit.message | split("\n")[0])"')
+            report+=$'\n'"### ${name} — ${ahead} commit(s) behind"$'\n'"Vendored at \`${commit:0:12}\`, upstream \`${branch}\`: [compare](${upstream}/compare/${commit}...${branch})"$'\n'$'\n'"${log}"$'\n'
+          done < <(jq -r '.[] | select(.track == true) | [.name, .upstream, .commit] | @tsv' entries.json)
+
+          {
+            echo "drifted=${drifted}"
+            echo "report<<REPORT_EOF"
+            echo "${report}"
+            echo "REPORT_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open or update the drift issue
+        if: steps.drift.outputs.drifted != '0' && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPORT: ${{ steps.drift.outputs.report }}
+          TITLE: Vendored upstreams have moved
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          body="Upstream code vendored into this repository has new commits. Review them for
+          fixes worth pulling, then update the JSON block in \`VENDOR.md\` once re-vendored.
+
+          How much a given upstream is worth pulling from differs per tree — see the
+          \"What is modified\" section of VENDOR.md before diffing.
+          ${REPORT}"
+
+          existing=$(gh issue list --state open --search "\"${TITLE}\" in:title" --json number --jq '.[0].number // empty')
+
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --body "$body"
+            echo "updated issue #${existing}"
+          else
+            gh issue create --title "${TITLE}" --body "$body"
+          fi

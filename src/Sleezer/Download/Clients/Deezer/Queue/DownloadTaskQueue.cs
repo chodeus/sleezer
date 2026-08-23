@@ -1,57 +1,31 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Threading.Channels;
 using System.Threading;
 using System.Threading.Tasks;
 using NLog;
 using NzbDrone.Common.Disk;
-using NzbDrone.Core.Exceptions;
 using NzbDrone.Core.Extras.Metadata;
-using NzbDrone.Core.Indexers;
 using NzbDrone.Core.Music;
-using NzbDrone.Core.Parser.Model;
-using NzbDrone.Common.Instrumentation.Extensions;
-using NzbDrone.Plugin.Sleezer.Core.Model;
+using NzbDrone.Plugin.Sleezer.Core.Download;
 using NzbDrone.Plugin.Sleezer.Core.PostProcessing;
 using NzbDrone.Plugin.Sleezer.Metadata.FFmpeg;
-using XabeFFmpeg = Xabe.FFmpeg.FFmpeg;
 
 namespace NzbDrone.Core.Download.Clients.Deezer.Queue
 {
     public class DownloadTaskQueue
     {
-        // Match SlskdDownloadManager's threshold so behaviour is consistent
-        // across download clients.
-        private const int CorruptionScanTimeoutSeconds = 120;
-        private const double TagConfidenceThreshold = 0.15;
+        // One at a time, where Tidal and Qobuz run three.
+        private const int ConcurrentAlbums = 1;
 
-        private static readonly HashSet<string> AudioExtensions = new(StringComparer.OrdinalIgnoreCase)
-        {
-            ".flac", ".mp3", ".m4a", ".ogg", ".opus", ".wav",
-            ".wma", ".aac", ".aiff", ".aif", ".ape", ".wv",
-            ".alac", ".m4b", ".m4p", ".mp2", ".mpc", ".dsf", ".dff"
-        };
-
-        private readonly Channel<DownloadItem> _queue;
-        private readonly List<DownloadItem> _items;
-        private readonly Dictionary<DownloadItem, CancellationTokenSource> _cancellationSources;
-
-        private readonly List<Task> _runningTasks = new();
-        private readonly object _lock = new();
+        private readonly DownloadPump<DownloadItem> _pump;
+        private readonly Logger _logger;
+        private readonly PostProcessRunner _postProcess;
+        private readonly IDiskProvider _diskProvider;
 
         private DeezerSettings? _settings;
-        private readonly Logger _logger;
-        private readonly ICorruptionScanner _corruptionScanner;
-        private readonly ICorruptionFailureHandler _corruptionFailureHandler;
-        private readonly IPreImportTagger _preImportTagger;
-        private readonly IMetadataFactory _metadataFactory;
-        private readonly IDiskProvider _diskProvider;
-        // Track the last FFmpeg path we resolved against so a user changing the
-        // FFmpeg metadata path mid-run is picked up on the next post-process,
-        // not at next Lidarr restart. null = never resolved.
-        private string? _lastResolvedFfmpegPath;
+
+        // 0 = rehydration not yet attempted, 1 = attempted.
         private int _rehydrated;
 
         public DownloadTaskQueue(
@@ -64,20 +38,11 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
             IDiskProvider diskProvider,
             Logger logger)
         {
-            BoundedChannelOptions options = new(capacity)
-            {
-                FullMode = BoundedChannelFullMode.Wait
-            };
-            _queue = Channel.CreateBounded<DownloadItem>(options);
-            _items = new();
-            _cancellationSources = new();
             _settings = settings;
-            _corruptionScanner = corruptionScanner;
-            _corruptionFailureHandler = corruptionFailureHandler;
-            _preImportTagger = preImportTagger;
-            _metadataFactory = metadataFactory;
             _diskProvider = diskProvider;
             _logger = logger;
+            _postProcess = new PostProcessRunner(corruptionScanner, corruptionFailureHandler, preImportTagger, metadataFactory, diskProvider, logger);
+            _pump = new DownloadPump<DownloadItem>(capacity, ConcurrentAlbums, "Deezer", logger, RunItemAsync);
         }
 
         public void SetSettings(DeezerSettings settings)
@@ -87,312 +52,60 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                 TryRehydrateFromDisk(settings);
         }
 
-        public void StartQueueHandler()
-        {
-            Task.Run(() => BackgroundProcessing());
-        }
+        public void StartQueueHandler() => _pump.Start();
 
-        private async Task BackgroundProcessing(CancellationToken stoppingToken = default)
-        {
-            using SemaphoreSlim semaphore = new(1, 1);
+        public ValueTask QueueBackgroundWorkItemAsync(DownloadItem workItem) => _pump.EnqueueAsync(workItem);
 
-            async Task HandleTask(DownloadItem item, Task task)
-            {
-                try
-                {
-                    var token = GetTokenForItem(item);
-                    item.EnsureValidity();
-                    item.Status = DownloadItemStatus.Downloading;
-                    await task;
+        public DownloadItem[] GetQueueListing() => _pump.Listing();
 
-                    if (item.Status == DownloadItemStatus.Completed)
-                        await RunPostProcessAsync(item, token);
-
-                    TryPersistCompletedItem(item);
-                }
-                catch (TaskCanceledException)
-                {
-                    _logger.Trace("Deezer download task cancelled: {Title}", item.Title);
-                }
-                catch (OperationCanceledException)
-                {
-                    _logger.Trace("Deezer download operation cancelled: {Title}", item.Title);
-                }
-                catch (Exception ex)
-                {
-                    item.Status = DownloadItemStatus.Failed;
-                    _logger.Error(ex, "Error while downloading Deezer album {Title}", item.Title);
-                }
-                finally
-                {
-                    semaphore.Release();
-                }
-            }
-
-            while (!stoppingToken.IsCancellationRequested)
-            {
-                await semaphore.WaitAsync(stoppingToken);
-
-                var item = await DequeueAsync(stoppingToken);
-                var token = GetTokenForItem(item);
-                // SetSettings is always invoked before any queue/download call on the proxy,
-                // so by the time we dequeue an item the settings must be populated.
-                var downloadTask = item.DoDownload(_settings!, _logger, token);
-
-                var handler = HandleTask(item, downloadTask);
-                lock (_lock)
-                {
-                    // Pruned here, not inside HandleTask: a handler that finished
-                    // before being added would never be removed.
-                    _runningTasks.RemoveAll(t => t.IsCompleted);
-                    _runningTasks.Add(handler);
-                }
-            }
-
-            List<Task> remainingTasks;
-            lock (_lock)
-                remainingTasks = _runningTasks.ToList();
-            await Task.WhenAll(remainingTasks);
-        }
-
-        private async Task RunPostProcessAsync(DownloadItem item, CancellationToken ct)
-        {
-            FFmpegSettings? sharedSettings = GetSharedPostProcessingSettings();
-            bool scanEnabled = sharedSettings?.CorruptionScanClients?.Contains((int)PostProcessClient.Deezer) ?? false;
-            bool tagEnabled = sharedSettings?.PreImportTaggingClients?.Contains((int)PostProcessClient.Deezer) ?? false;
-
-            if (!scanEnabled && !tagEnabled)
-            {
-                _logger.Debug("[post-process] Deezer item {ID}: scan and tag both disabled; skipping", item.ID);
-                return;
-            }
-
-            string? folder = item.DownloadFolder;
-            if (string.IsNullOrEmpty(folder) || !_diskProvider.FolderExists(folder))
-            {
-                _logger.Warn("[post-process] Deezer folder missing for {ID}; skipping post-process", item.ID);
-                return;
-            }
-
-            _logger.Debug("[post-process] Deezer item {ID}: scan={ScanEnabled} tag={TagEnabled} folder={Folder}",
-                item.ID, scanEnabled, tagEnabled, folder);
-            var sw = System.Diagnostics.Stopwatch.StartNew();
-
-            EnsureFFmpegResolved();
-
-            // Tag first, scan second. Tagging rewrites ID3/Vorbis comments via
-            // Lidarr's IAudioTagService and (when StripFeaturedArtists is on)
-            // re-saves via TagLib. Either step can in principle damage framing
-            // — running the corruption scan AFTER tagging means we validate the
-            // exact bytes Lidarr is about to import, not the pre-tag bytes.
-            if (tagEnabled)
-            {
-                Album? album = item.RemoteAlbum?.Albums?.FirstOrDefault();
-                Artist? artist = album?.Artist?.Value;
-                if (album == null || artist == null)
-                {
-                    _logger.Debug("[post-process] Deezer pre-import tag: skipping {ID}; no Album/Artist on RemoteAlbum", item.ID);
-                }
-                else
-                {
-                    _logger.Debug("[post-process] Deezer item {ID}: tagging '{Album}' by '{Artist}'", item.ID, album.Title, artist.Name);
-                    var tagSw = System.Diagnostics.Stopwatch.StartNew();
-
-                    // Pass null for albumRelease so PreImportTagger lets Lidarr's
-                    // CandidateService rank releases by track-count distance —
-                    // forcing the monitored release here is what was causing the
-                    // "missing tracks" import failures when the download was a
-                    // different edition than the monitored one.
-                    await _preImportTagger.TagCompletedDownloadAsync(
-                        album,
-                        artist,
-                        albumRelease: null,
-                        item.ID,
-                        folder,
-                        TagConfidenceThreshold,
-                        sharedSettings?.StripFeaturedArtists ?? false,
-                        ct);
-
-                    _logger.Debug("[post-process] Deezer item {ID}: tagging completed in {ElapsedMs}ms", item.ID, tagSw.ElapsedMilliseconds);
-                }
-            }
-
-            if (scanEnabled)
-            {
-                List<CorruptionStrike> strikes = await ScanForCorruptAsync(folder, ct);
-                _logger.Debug("[post-process] Deezer item {ID}: scan completed in {ElapsedMs}ms — {StrikeCount} strike(s)",
-                    item.ID, sw.ElapsedMilliseconds, strikes.Count);
-                if (strikes.Count > 0)
-                {
-                    // One corrupt file poisons the album. Mark the item Failed,
-                    // then delegate to the shared failure handler: it wipes the
-                    // whole folder and publishes DownloadFailedEvent so Lidarr
-                    // blocklists this release and searches for a different one.
-                    item.Status = DownloadItemStatus.Failed;
-                    _logger.Warn("[post-process] Deezer item {ID}: {Count} corrupt file(s) found; wiping album and requesting re-search.",
-                                 item.ID, strikes.Count);
-
-                    await _corruptionFailureHandler.HandleAsync(
-                        downloadId: item.ID,
-                        releaseTitle: item.Title,
-                        folder: folder,
-                        strikes: strikes,
-                        protocolName: nameof(DeezerDownloadProtocol),
-                        ct: ct);
-                    return;
-                }
-            }
-        }
-
-        private async Task<List<CorruptionStrike>> ScanForCorruptAsync(string folder, CancellationToken ct)
-        {
-            List<CorruptionStrike> strikes = new();
-
-            string[] audioFiles = _diskProvider.GetFiles(folder, recursive: true)
-                .Where(p => AudioExtensions.Contains(Path.GetExtension(p)))
-                .ToArray();
-
-            if (audioFiles.Length == 0)
-                return strikes;
-
-            int concurrency = Math.Max(2, Environment.ProcessorCount / 2);
-            using SemaphoreSlim gate = new(concurrency);
-
-            Task<(string path, CorruptionScanner.Result result)>[] tasks = audioFiles.Select(async path =>
-            {
-                await gate.WaitAsync(ct);
-                try
-                {
-                    CorruptionScanner.Result r = await _corruptionScanner.ScanAsync(path, CorruptionScanTimeoutSeconds, ct);
-                    return (path, r);
-                }
-                finally { gate.Release(); }
-            }).ToArray();
-
-            foreach (Task<(string path, CorruptionScanner.Result result)> t in tasks)
-            {
-                (string path, CorruptionScanner.Result result) = await t;
-                if (!result.IsCorrupt)
-                    continue;
-
-                _logger.Warn("[post-process] Deezer corrupt file: {File} — {Reason}", Path.GetFileName(path), result.Reason);
-                strikes.Add(new CorruptionStrike(Path.GetFileName(path), result.Reason));
-            }
-
-            return strikes;
-        }
-
-        private FFmpegSettings? GetSharedPostProcessingSettings()
-        {
-            try
-            {
-                return _metadataFactory.All()
-                    .Where(d => d.Settings is FFmpegSettings)
-                    .Select(d => d.Settings as FFmpegSettings)
-                    .FirstOrDefault(s => s != null);
-            }
-            catch (Exception ex)
-            {
-                _logger.Debug(ex, "[post-process] Failed to read shared post-processing settings; treating toggles as disabled.");
-                return null;
-            }
-        }
-
-        private void EnsureFFmpegResolved()
-        {
-            string? configuredPath = null;
-            try
-            {
-                FFmpegSettings? settings = GetSharedPostProcessingSettings();
-                configuredPath = settings?.FFmpegPath;
-            }
-            catch (Exception ex)
-            {
-                _logger.Debug(ex, "[post-process] Failed to read FFmpeg metadata settings");
-            }
-
-            // Throttled (24h), best-effort auto-update of the cached ffmpeg from
-            // chodeus/ffmpeg-static. Fire-and-forget so it never blocks post-process;
-            // it no-ops when the path is unset or we've checked recently.
-            if (!string.IsNullOrWhiteSpace(configuredPath))
-                _ = FFmpegInstaller.EnsureUpToDateAsync(configuredPath, _logger, CancellationToken.None);
-
-            // Re-resolve only when the configured path actually changes. Avoids
-            // probing the filesystem on every post-process while still picking
-            // up settings changes without requiring a Lidarr restart.
-            if (string.Equals(configuredPath, _lastResolvedFfmpegPath, StringComparison.Ordinal))
-                return;
-
-            try
-            {
-                if (!string.IsNullOrWhiteSpace(configuredPath))
-                {
-                    XabeFFmpeg.SetExecutablesPath(configuredPath);
-                    AudioMetadataHandler.ResetFFmpegInstallationCheck();
-                    _logger.Info("[post-process] FFmpeg path applied: {Path}", configuredPath);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.Debug(ex, "[post-process] Failed to apply ffmpeg path {Path}", configuredPath);
-            }
-
-            _lastResolvedFfmpegPath = configuredPath;
-        }
-
-        public async ValueTask QueueBackgroundWorkItemAsync(DownloadItem workItem)
-        {
-            await _queue.Writer.WriteAsync(workItem);
-            CancellationTokenSource token = new();
-            _items.Add(workItem);
-            _cancellationSources.Add(workItem, token);
-        }
-
-        private async ValueTask<DownloadItem> DequeueAsync(CancellationToken cancellationToken)
-        {
-            var workItem = await _queue.Reader.ReadAsync(cancellationToken);
-            return workItem;
-        }
+        public CancellationToken GetTokenForItem(DownloadItem item) => _pump.TokenFor(item);
 
         public void RemoveItem(DownloadItem workItem)
         {
             if (workItem == null)
                 return;
 
-            // Rehydrated items were never enqueued, so they have no cancellation source.
-            if (_cancellationSources.TryGetValue(workItem, out CancellationTokenSource? src))
-            {
-                src.Cancel();
-                _cancellationSources.Remove(workItem);
-            }
-
+            _pump.Remove(workItem);
             TryDeleteSidecar(workItem);
-
-            _items.Remove(workItem);
         }
 
-        public DownloadItem[] GetQueueListing()
+        private async Task RunItemAsync(DownloadItem item, CancellationToken token)
         {
-            return _items.ToArray();
+            // The proxy always calls SetSettings before queueing, so this is genuinely
+            // unexpected; the pump fails the item and keeps the loop running.
+            if (_settings == null)
+                throw new InvalidOperationException("Deezer queue received an item before settings were populated");
+
+            item.EnsureValidity();
+            await item.DoDownload(_settings, _logger, token);
+
+            if (item.Status == DownloadItemStatus.Completed && !await RunPostProcessAsync(item, token))
+                item.Status = DownloadItemStatus.Failed;
+
+            TryPersistCompletedItem(item);
         }
 
-        public CancellationToken GetTokenForItem(DownloadItem item)
+        private async Task<bool> RunPostProcessAsync(DownloadItem item, CancellationToken ct)
         {
-            if (_cancellationSources.TryGetValue(item, out var src))
-                return src!.Token;
+            Album? album = item.RemoteAlbum?.Albums?.FirstOrDefault();
+            var request = new PostProcessRequest(
+                PostProcessClient.Deezer,
+                item.ID,
+                item.Title,
+                item.DownloadFolder ?? string.Empty,
+                nameof(NzbDrone.Core.Indexers.DeezerDownloadProtocol),
+                album);
 
-            return default;
+            return await _postProcess.RunAsync(request, ct);
         }
 
+        // Only completed downloads are persisted: a failed item may have had files removed
+        // by the corrupt-scan pass, so its on-disk state is not a valid import target.
         private void TryPersistCompletedItem(DownloadItem item)
         {
-            // Only completed downloads are persisted. Failed/cancelled items
-            // may have had files deleted by the corrupt-scan pass, so their
-            // on-disk state isn't a valid import target.
-            if (item.Status != DownloadItemStatus.Completed)
-                return;
-
-            if (string.IsNullOrEmpty(item.DownloadFolder) || !_diskProvider.FolderExists(item.DownloadFolder))
+            if (item.Status != DownloadItemStatus.Completed
+                || string.IsNullOrEmpty(item.DownloadFolder)
+                || !_diskProvider.FolderExists(item.DownloadFolder))
                 return;
 
             try
@@ -413,10 +126,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
 
             try
             {
-                string[] sidecars = Directory.GetFiles(
-                    root,
-                    PersistedDownloadItem.SidecarFileName,
-                    SearchOption.AllDirectories);
+                string[] sidecars = Directory.GetFiles(root, PersistedDownloadItem.SidecarFileName, SearchOption.AllDirectories);
 
                 int count = 0;
                 foreach (string sidecarPath in sidecars)
@@ -435,11 +145,8 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                     if (persisted == null || persisted.Status != DownloadItemStatus.Completed)
                         continue;
 
-                    if (_items.Any(i => i.ID == persisted.ID))
-                        continue;
-
-                    _items.Add(DownloadItem.FromPersisted(persisted));
-                    count++;
+                    if (_pump.TryAddRecovered(DownloadItem.FromPersisted(persisted)))
+                        count++;
                 }
 
                 if (count > 0)

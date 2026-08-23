@@ -68,11 +68,8 @@ namespace NzbDrone.Core.Download.Clients.Deezer
         {
             if (deleteData)
             {
-                // Lidarr's DeleteItemData removes the album folder we exposed
-                // via OutputPath. It does NOT walk up and remove the now-empty
-                // artist folder we created above it. Sweep parents back to the
-                // configured download root so users don't end up with an
-                // ever-growing tree of empty folders.
+                // DeleteItemData removes the album folder only; the artist folder we
+                // created above it is left behind, so sweep parents to the root.
                 DeleteItemData(item);
                 if (!item.OutputPath.IsEmpty)
                     TryRemoveEmptyParentFolders(item.OutputPath.FullPath, Settings.DownloadPath, _logger);
@@ -81,54 +78,10 @@ namespace NzbDrone.Core.Download.Clients.Deezer
             _proxy.RemoveFromQueue(item.DownloadId, Settings);
         }
 
-        // Walks upward from `startedAt` (which has already been removed) and
-        // deletes each parent that's now empty, stopping at `downloadRoot` or
-        // at the first non-empty parent. Defensive — any failure (permissions,
-        // race with another writer) just stops the sweep, never throws.
-        // Internal-static so DownloadItem's failed-download cleanup can reuse it.
+        // Canonical implementation lives in Core/Utilities/DownloadFolderCleanup —
+        // kept here as a shim so existing call sites read unchanged.
         internal static void TryRemoveEmptyParentFolders(string startedAt, string downloadRoot, Logger logger)
-        {
-            try
-            {
-                string normalizedRoot = Path.GetFullPath(downloadRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                string? current = Path.GetDirectoryName(Path.GetFullPath(startedAt));
-
-                while (!string.IsNullOrEmpty(current))
-                {
-                    string normalizedCurrent = current.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-
-                    // Never delete at or above the configured download root.
-                    if (normalizedCurrent.Length <= normalizedRoot.Length ||
-                        !normalizedCurrent.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase))
-                        return;
-
-                    if (!Directory.Exists(current))
-                        return;
-
-                    // Stop at the first parent with anything in it (files OR
-                    // unrelated subfolders from another grab).
-                    if (Directory.EnumerateFileSystemEntries(current).Any())
-                        return;
-
-                    try
-                    {
-                        Directory.Delete(current, recursive: false);
-                        logger.Debug("Deezer: removed empty parent folder {Folder}", current);
-                    }
-                    catch (Exception ex)
-                    {
-                        logger.Debug(ex, "Deezer: could not remove empty parent {Folder}; stopping sweep", current);
-                        return;
-                    }
-
-                    current = Path.GetDirectoryName(current);
-                }
-            }
-            catch (Exception ex)
-            {
-                logger.Debug(ex, "Deezer: empty-parent sweep aborted from {Start}", startedAt);
-            }
-        }
+            => DownloadFolderCleanup.TryRemoveEmptyParentFolders(startedAt, downloadRoot, "Deezer", logger);
 
         public override Task<string> Download(RemoteAlbum remoteAlbum, IIndexer indexer)
         {

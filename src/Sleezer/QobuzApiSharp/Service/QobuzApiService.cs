@@ -1,0 +1,219 @@
+﻿// Vendored from DaveBinM/QobuzApiSharp (GPL-3.0), kept structurally as-is so
+// upstream fixes can be pulled by hand. Nullable is off for the same reason.
+#nullable disable
+using QobuzApiSharp.Exceptions;
+using QobuzApiSharp.Models;
+using QobuzApiSharp.Models.Content;
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Net.Http;
+using System.Threading.Tasks;
+
+namespace QobuzApiSharp.Service
+{
+    /// <summary>
+    /// The service disclosing the various endpoints of the Qobuz REST API. <br/>
+    /// The service can be initialized using your own 'app_id' and 'app_secret', <br/>
+    /// or by letting the service attempt to fetch these 2 values from the Qobuz Web Player.
+    /// </summary>
+    public sealed partial class QobuzApiService : IDisposable
+    {
+        public readonly HttpClient QobuzHttpClient;
+
+        /// <summary>
+        /// Gets the app id.
+        /// </summary>
+        public string AppId { get; }
+        /// <summary>
+        /// Gets the app secret.
+        /// </summary>
+        public string AppSecret { get; }
+        /// <summary>
+        /// Gets or sets the user auth token.
+        /// </summary>
+        public string UserAuthToken { get; set; }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="QobuzApiService"/> class using dynamic retrieval of the app_id and app_secret from the Qobuz Web Player.
+        /// </summary>
+        public QobuzApiService() : this(null, null, true)
+        {
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="QobuzApiService"/> class with custom app_id and app_secret.
+        /// </summary>
+        /// <param name="appId">The app id.</param>
+        /// <param name="appSecret">The app secret.</param>
+        public QobuzApiService(string appId, string appSecret) : this(appId, appSecret, false)
+        {
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="QobuzApiService"/> class.<br/>
+        /// </summary>
+        /// <param name="appId">The app id.</param>
+        /// <param name="appSecret">The app secret.</param>
+        /// <param name="useWebPlayerAppIdAndSecret">If true, use web player app id and secret.</param>
+        private QobuzApiService(string appId, string appSecret, bool useWebPlayerAppIdAndSecret)
+        {
+            if (!useWebPlayerAppIdAndSecret && (string.IsNullOrEmpty(appId) || string.IsNullOrEmpty(appSecret)))
+            {
+                throw new ArgumentException("App ID and App Secret must be provided if not using Web Payer values.");
+            }
+
+            QobuzHttpClient = new HttpClient();
+            QobuzHttpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0");
+
+            if (useWebPlayerAppIdAndSecret)
+            {
+                this.AppSecret = QobuzApiHelper.GetWebPlayerAppSecret();
+
+                if (string.IsNullOrEmpty(this.AppSecret))
+                {
+                    throw new QobuzApiInitializationException("Failed to find Web Player App Secret in bundje.js.");
+                }
+
+                this.AppId = QobuzApiHelper.GetWebPlayerAppId();
+
+                if (string.IsNullOrEmpty(this.AppId))
+                {
+                    throw new QobuzApiInitializationException("Failed to find Web Player app_id in bundje.js.");
+                }
+
+                QobuzHttpClient.DefaultRequestHeaders.Add("X-App-Id", this.AppId);
+                QobuzHttpClient.DefaultRequestHeaders.Add("apikey", this.AppId);
+            }
+            else
+            {
+                this.AppId = appId;
+                QobuzHttpClient.DefaultRequestHeaders.Add("X-App-Id", this.AppId);
+                QobuzHttpClient.DefaultRequestHeaders.Add("apikey", this.AppId);
+                this.AppSecret = appSecret;
+            }
+        }
+
+        /// <summary>
+        /// Releases the unmanaged resources and disposes of the managed resources used by the System.Net.Http.HttpMessageInvoker.
+        /// </summary>
+        public void Dispose()
+        {
+            QobuzHttpClient?.Dispose();
+        }
+
+        /// <summary>
+        /// Send an HTTP request as an asynchronous operation to the Qobuz REST API.
+        /// </summary>
+        /// <param name="method">The method.</param>
+        /// <param name="endpoint">The endpoint.</param>
+        /// <param name="parameters">The parameters.</param>
+        /// <param name="withAuthToken">If true, with user_auth_token in request header.</param>
+        /// <returns>A Task.</returns>
+        private async Task<HttpResponseMessage> SendAsync(HttpMethod method, string endpoint, IDictionary<string, string> parameters = null, bool withAuthToken = false, CancellationToken cancellationToken = default)
+        {
+            UriBuilder uriBuilder = new UriBuilder(QobuzApiConstants.API_BASE_URL + endpoint);
+            if (parameters != null)
+            {
+                uriBuilder.Query = QobuzApiHelper.ToQueryString(parameters);
+            }
+
+            using (HttpRequestMessage request = new HttpRequestMessage(method, uriBuilder.Uri))
+            {
+                if (withAuthToken)
+                {
+                    request.Headers.Add("X-User-Auth-Token", UserAuthToken);
+                }
+
+                return await QobuzHttpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        private async Task<HttpResponseMessage> SendFormAsync(string endpoint, IDictionary<string, string> parameters, bool withAuthToken = false)
+        {
+            UriBuilder uriBuilder = new UriBuilder(QobuzApiConstants.API_BASE_URL + endpoint);
+
+            using (HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, uriBuilder.Uri))
+            {
+                if (withAuthToken)
+                {
+                    request.Headers.Add("X-User-Auth-Token", UserAuthToken);
+                }
+
+                if (parameters != null)
+                {
+                    request.Content = new FormUrlEncodedContent(parameters);
+                }
+
+                return await QobuzHttpClient.SendAsync(request).ConfigureAwait(false);
+            }
+        }
+
+        /// <summary>
+        /// Sends a request to the Qobuz REST API and if successful, tries to parse the api response.
+        /// </summary>
+        /// <param name="apiEndpoint">The api endpoint.</param>
+        /// <param name="parameters">The parameters.</param>
+        /// <param name="requiresAuth">If true, requires auth.</param>
+        /// <returns>Requested Model object containing parsed API response</returns>
+        /// <exception cref="ApiErrorResponseException">Thrown when the API request returns an error.</exception>
+        /// <exception cref="ApiResponseParseErrorException">Thrown when the API response could not be parsed.</exception>
+        private T GetApiResponse<T>(string apiEndpoint, Dictionary<string, string> parameters, bool requiresAuth = false, CancellationToken cancellationToken = default)
+        {
+            // Disposed here: DeserializeResponse only reads the content, so without this the
+            // response and its stream survive until the finalizer runs.
+            using HttpResponseMessage response = this
+                .SendAsync(HttpMethod.Get, apiEndpoint, parameters, requiresAuth, cancellationToken)
+                .ConfigureAwait(false).GetAwaiter().GetResult();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                QobuzApiStatusResponse errorResponse = QobuzApiHelper.DeserializeResponse<QobuzApiStatusResponse>(response);
+                throw new ApiErrorResponseException($"API request failed for endpoint {apiEndpoint}.", QobuzApiHelper.DescribeRequest(response.RequestMessage), errorResponse);
+            }
+
+            return QobuzApiHelper.DeserializeResponse<T>(response);
+        }
+
+        /// <summary>
+        /// Check if the App Secret is valid by trying to fetch the streaming URL for the track with id 7398.
+        /// User must be logged in before testing App Secret.
+        /// </summary>
+        /// <returns>bool indicating if the API returned a valid response</returns>
+        public bool IsAppSecretValid()
+        {
+            string thrillerUrl = null;
+
+            try
+            {
+                FileUrl thrillerFileUrl = GetTrackFileUrl("7398", "27");
+                // A null body deserializes to null without throwing, and an NRE here would
+                // escape the catches below and read as something other than a bad secret.
+                thrillerUrl = thrillerFileUrl?.Url;
+            }
+            catch (ApiErrorResponseException ex)
+            {
+                // A rejected request is what an invalid secret looks like.
+                Trace.WriteLine("AppSecret test with Thriller Hi-Res track was rejected:");
+                Trace.WriteLine(ex);
+                return false;
+            }
+            catch (HttpRequestException ex)
+            {
+                // A transport blip says nothing about the secret, and reporting it
+                // invalid would force a needless re-scrape and re-authentication.
+                Trace.WriteLine("AppSecret test could not reach Qobuz; assuming the secret still holds:");
+                Trace.WriteLine(ex);
+                return true;
+            }
+            catch (TaskCanceledException ex)
+            {
+                Trace.WriteLine("AppSecret test timed out; assuming the secret still holds:");
+                Trace.WriteLine(ex);
+                return true;
+            }
+
+            return !string.IsNullOrEmpty(thrillerUrl);
+        }
+    }
+}

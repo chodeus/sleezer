@@ -7,15 +7,8 @@ namespace NzbDrone.Plugin.Sleezer.Blocklisting
 {
     public class SoulseekBlocklist(IBlocklistRepository blocklistRepository) : BaseBlocklist<SoulseekDownloadProtocol>(blocklistRepository)
     {
-        // Soulseek failures are often transient (peer offline, queue full), so a
-        // permanent native block is too harsh. Each failure appends a row, so
-        // the row count is the attempt count: honour the same escalating window
-        // (1h → 6h → 24h) the parser-side skip uses, decaying naturally so a
-        // recovered peer becomes grabbable again.
-        // Only failures within this window count toward the escalation tier,
-        // so a peer that fails intermittently over months isn't pinned to the
-        // 24h tier forever — the cadence decays back toward 1h after a healthy
-        // gap.
+        // Only failures inside this window count toward the 1h → 6h → 24h tier, so
+        // an intermittently failing peer decays back to 1h instead of pinning at 24h.
         private static readonly TimeSpan EscalationWindow = TimeSpan.FromDays(30);
 
         public override bool IsBlocklisted(int artistId, ReleaseInfo release)
@@ -30,6 +23,9 @@ namespace NzbDrone.Plugin.Sleezer.Blocklisting
         }
     }
 
+    public class DABMusicBlocklist(IBlocklistRepository blocklistRepository) : BaseBlocklist<DABMusicDownloadProtocol>(blocklistRepository)
+    { }
+
     public class QobuzBlocklist(IBlocklistRepository blocklistRepository) : BaseBlocklist<QobuzDownloadProtocol>(blocklistRepository)
     { }
 
@@ -37,5 +33,8 @@ namespace NzbDrone.Plugin.Sleezer.Blocklisting
     { }
 
     public class SubSonicBlocklist(IBlocklistRepository blocklistRepository) : BaseBlocklist<SubSonicDownloadProtocol>(blocklistRepository)
+    { }
+
+    public class BandcampBlocklist(IBlocklistRepository blocklistRepository) : BaseBlocklist<BandcampDownloadProtocol>(blocklistRepository)
     { }
 }

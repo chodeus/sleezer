@@ -44,7 +44,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.DABMusic
             (AudioFormat format, int bitrate, int bitDepth) = GetQuality(album.AudioQuality);
             long estimatedSize = IndexerParserHelper.EstimateSize(0, 0, bitrate, album.TrackCount);
 
-            return new("DABMusic", nameof(QobuzDownloadProtocol))
+            return new("DABMusic", nameof(DABMusicDownloadProtocol))
             {
                 AlbumId = $"https://www.qobuz.com/us-en/album/{SanitizeForUrl(album.Title)}-{SanitizeForUrl(album.Artist)}/{album.Id}",
                 AlbumName = album.Title,
@@ -66,7 +66,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.DABMusic
             (AudioFormat format, int bitrate, int bitDepth) = GetQuality(track.AudioQuality);
             long estimatedSize = IndexerParserHelper.EstimateSize(0, track.Duration, bitrate);
 
-            return new("DABMusic", nameof(QobuzDownloadProtocol))
+            return new("DABMusic", nameof(DABMusicDownloadProtocol))
             {
                 AlbumId = $"https://www.qobuz.com/us-en/track/{SanitizeForUrl(track.DisplayAlbum)}-{SanitizeForUrl(track.Artist)}/{track.Id}",
                 AlbumName = track.DisplayAlbum,

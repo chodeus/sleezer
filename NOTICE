@@ -26,9 +26,53 @@ exist without the original authors of those projects.
   as part of `Tubifarry` under the MIT License.
     https://github.com/TypNull/Tubifarry  (MIT — relicensed under GPL-3.0 in Sleezer)
 
-The MIT license under which Tubifarry is originally released is compatible
-with GPL-3.0; the combined work is distributed under GPL-3.0 because the
-bundled `DeezNET` library is GPL-3.0.
+* Portions of the Qobuz indexer and download client are Copyright (C) TrevTV,
+  DaveBinM and contributors, and were originally distributed as part of
+  `Lidarr.Plugin.Qobuz`.
+    https://github.com/TrevTV/Lidarr.Plugin.Qobuz
+    https://github.com/DaveBinM/Lidarr.Plugin.Qobuz  (fork this port follows)
+
+* The `QobuzApiSharp` client library vendored under `src/Sleezer/QobuzApiSharp/`
+  is Copyright (C) DJDoubleD and contributors, licensed GPL-3.0. It is kept
+  structurally as-is so upstream fixes can be pulled by hand.
+    https://github.com/DJDoubleD/QobuzApiSharp  (GPL-3.0)
+    https://github.com/DaveBinM/QobuzApiSharp    (fork this copy follows)
+
+* The Bandcamp indexer and download client began as `lidarr-plugin-bandcamp`,
+  Copyright (C) 2025 jtstothard and contributors, under the MIT License. It has
+  since been substantially rewritten and is maintained here rather than tracked
+  against upstream (see VENDOR.md), but the original authorship stands.
+    https://github.com/jtstothard/lidarr-plugin-bandcamp  (MIT — relicensed under GPL-3.0 in Sleezer)
+
+  MIT requires its permission notice travel with the code, so it is reproduced
+  in full:
+
+    MIT License
+
+    Copyright (c) 2025 jtstothard
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
+
+The MIT licenses under which Tubifarry and lidarr-plugin-bandcamp are
+originally released are compatible with GPL-3.0; the combined work is
+distributed under GPL-3.0 because the bundled `DeezNET` and vendored
+`QobuzApiSharp` libraries are GPL-3.0.
 
 
 == Bundled third-party libraries ==
@@ -42,7 +86,10 @@ contains or links to the authoritative license text from upstream.
  DeezNET                                  GPL-3.0       https://github.com/TrevTV/DeezNET
  TagLibSharp                              LGPL-2.1      https://github.com/mono/taglib-sharp
  Xabe.FFmpeg                              Apache-2.0    https://github.com/tomaszzmuda/Xabe.FFmpeg
- Xabe.FFmpeg.Downloader                   Apache-2.0    https://github.com/tomaszzmuda/Xabe.FFmpeg
+                                                        (wrapper only — the ffmpeg/ffprobe binaries
+                                                         come from chodeus/ffmpeg-static via
+                                                         Core/Model/FFmpegInstaller.cs, which replaced
+                                                         Xabe.FFmpeg.Downloader)
  Jint                                     BSD-2-Clause  https://github.com/sebastienros/jint
  AngleSharp                               MIT           https://github.com/AngleSharp/AngleSharp
  AngleSharp.XPath                         MIT           https://github.com/AngleSharp/AngleSharp.XPath
