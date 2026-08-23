@@ -6,10 +6,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.Download
 {
     public static class PostProcessGate
     {
-        /// Holds an item out of Lidarr's importable set while post-process runs.
-        /// DoDownload marks the item Completed, and the proxies surface exactly the
-        /// Completed items, so without this Lidarr imports the folder the moment it
-        /// polls — moving the files out from under the corruption scan and tagger.
+        /// The proxies surface exactly the Completed items, so an item left Completed here
+        /// is imported mid-scan — moving the files out from under it.
         public static async Task<bool> RunHeldAsync(IQueuedDownload item, Func<Task<bool>> postProcess)
         {
             if (item.Status != DownloadItemStatus.Completed)
