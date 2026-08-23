@@ -29,17 +29,19 @@ namespace QobuzApiSharp.Service
         {
             using (HttpClient QobuzWebClient = new HttpClient())
             {
-                var getTask = QobuzWebClient.GetStringAsync($"{QobuzApiConstants.WEB_PLAYER_BASE_URL}/login");
-                getTask.Wait();
-                string bundleHTML = getTask.Result;
+                // Wait() + Result would block twice and surface faults as AggregateException;
+                // this stays synchronous because Lidarr's indexer contract is.
+                string bundleHTML = QobuzWebClient
+                    .GetStringAsync($"{QobuzApiConstants.WEB_PLAYER_BASE_URL}/login")
+                    .ConfigureAwait(false).GetAwaiter().GetResult();
 
                 try
                 {
                     // Grab link to bundle.js
                     string bundleSuffix = Regex.Match(bundleHTML, "<script src=\"(?<bundleJS>\\/resources\\/\\d+\\.\\d+\\.\\d+-[a-z]\\d{3}\\/bundle\\.js)").Groups[1].Value;
-                    var getBundleTask = QobuzWebClient.GetStringAsync($"{QobuzApiConstants.WEB_PLAYER_BASE_URL}{bundleSuffix}");
-                    getBundleTask.Wait();
-                    CachedBundleString = getBundleTask.Result;
+                    CachedBundleString = QobuzWebClient
+                        .GetStringAsync($"{QobuzApiConstants.WEB_PLAYER_BASE_URL}{bundleSuffix}")
+                        .ConfigureAwait(false).GetAwaiter().GetResult();
                 }
                 catch (Exception ex)
                 {
@@ -123,7 +125,7 @@ namespace QobuzApiSharp.Service
 
             try
             {
-                jsonResultString = response.Content.ReadAsStringAsync().Result;
+                jsonResultString = response.Content.ReadAsStringAsync().ConfigureAwait(false).GetAwaiter().GetResult();
                 return JsonConvert.DeserializeObject<T>(jsonResultString);
             }
             catch (Exception ex)
@@ -159,7 +161,10 @@ namespace QobuzApiSharp.Service
         internal static string ToQueryString(IDictionary<string, string> parameters)
         {
             var array = parameters
-                .Where(kv => !string.IsNullOrEmpty(kv.Value))
+                // Null means "not supplied" — every optional endpoint parameter defaults to
+                // it. An explicit "" is a caller asking for key=, which Qobuz may read
+                // differently from omission, so only null is dropped.
+                .Where(kv => kv.Value != null)
                 .Select(kv => $"{Uri.EscapeDataString(kv.Key)}={Uri.EscapeDataString(kv.Value)}")
                 .ToArray();
 

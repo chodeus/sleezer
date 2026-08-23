@@ -110,7 +110,7 @@ namespace QobuzApiSharp.Service
         /// <param name="parameters">The parameters.</param>
         /// <param name="withAuthToken">If true, with user_auth_token in request header.</param>
         /// <returns>A Task.</returns>
-        private async Task<HttpResponseMessage> SendAsync(HttpMethod method, string endpoint, IDictionary<string, string> parameters = null, bool withAuthToken = false)
+        private async Task<HttpResponseMessage> SendAsync(HttpMethod method, string endpoint, IDictionary<string, string> parameters = null, bool withAuthToken = false, CancellationToken cancellationToken = default)
         {
             UriBuilder uriBuilder = new UriBuilder(QobuzApiConstants.API_BASE_URL + endpoint);
             if (parameters != null)
@@ -125,7 +125,7 @@ namespace QobuzApiSharp.Service
                     request.Headers.Add("X-User-Auth-Token", UserAuthToken);
                 }
 
-                return await QobuzHttpClient.SendAsync(request).ConfigureAwait(false);
+                return await QobuzHttpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
             }
         }
 
@@ -158,9 +158,13 @@ namespace QobuzApiSharp.Service
         /// <returns>Requested Model object containing parsed API response</returns>
         /// <exception cref="ApiErrorResponseException">Thrown when the API request returns an error.</exception>
         /// <exception cref="ApiResponseParseErrorException">Thrown when the API response could not be parsed.</exception>
-        private T GetApiResponse<T>(string apiEndpoint, Dictionary<string, string> parameters, bool requiresAuth = false)
+        private T GetApiResponse<T>(string apiEndpoint, Dictionary<string, string> parameters, bool requiresAuth = false, CancellationToken cancellationToken = default)
         {
-            HttpResponseMessage response = this.SendAsync(HttpMethod.Get, apiEndpoint, parameters, requiresAuth).Result;
+            // Disposed here: DeserializeResponse only reads the content, so without this the
+            // response and its stream survive until the finalizer runs.
+            using HttpResponseMessage response = this
+                .SendAsync(HttpMethod.Get, apiEndpoint, parameters, requiresAuth, cancellationToken)
+                .ConfigureAwait(false).GetAwaiter().GetResult();
 
             if (!response.IsSuccessStatusCode)
             {
@@ -183,7 +187,9 @@ namespace QobuzApiSharp.Service
             try
             {
                 FileUrl thrillerFileUrl = GetTrackFileUrl("7398", "27");
-                thrillerUrl = thrillerFileUrl.Url;
+                // A null body deserializes to null without throwing, and an NRE here would
+                // escape the catches below and read as something other than a bad secret.
+                thrillerUrl = thrillerFileUrl?.Url;
             }
             catch (ApiErrorResponseException ex)
             {

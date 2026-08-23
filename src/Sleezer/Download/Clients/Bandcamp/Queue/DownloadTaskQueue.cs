@@ -69,14 +69,15 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
         /// <returns>The download ID for tracking.</returns>
         public async Task<string> EnqueueAsync(BandcampDownloadItem item)
         {
-            // Registered before publication so RemoveItem can cancel an item that has
-            // not been picked up yet.
-            _itemCancellations[item.DownloadId] = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
-
             if (_disposed)
             {
                 throw new ObjectDisposedException(nameof(DownloadTaskQueue));
             }
+
+            // Registered before publication so RemoveItem can cancel an item that has not
+            // been picked up yet — and after the disposal check, or a post-dispose call
+            // would leave a source behind that no consumer is left to clean up.
+            _itemCancellations[item.DownloadId] = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
 
             item.Status = BandcampDownloadStatus.Queued;
             item.QueuedAt = DateTime.UtcNow;
@@ -85,25 +86,18 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
             _registry.Upsert(item);
 
             try
-
             {
-
                 await _channel.Writer.WriteAsync(item, _cts.Token).ConfigureAwait(false);
-
             }
-
             catch
-
             {
-
-                // Nothing will consume it, so nothing else will clean this up.
-
+                // Nothing will consume it, so nothing else will clean this up. The registry
+                // entry goes too, or Lidarr lists the item as Queued forever.
+                _registry.Remove(item.DownloadId);
                 if (_itemCancellations.TryRemove(item.DownloadId, out var orphan))
-
                     orphan.Dispose();
 
                 throw;
-
             }
 
             _logger.Debug("Bandcamp download queue: Enqueued download {0} for '{1}'",

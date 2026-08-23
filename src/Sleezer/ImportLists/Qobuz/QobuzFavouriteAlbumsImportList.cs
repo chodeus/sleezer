@@ -41,7 +41,8 @@ namespace NzbDrone.Core.ImportLists.Qobuz
                     foreach (var album in page)
                     {
                         string? artistName = album.Artist?.Name;
-                        if (string.IsNullOrWhiteSpace(artistName))
+                        string? albumTitle = album.CompleteTitle;
+                        if (string.IsNullOrWhiteSpace(artistName) || string.IsNullOrWhiteSpace(albumTitle))
                             continue;
 
                         // Album as well as artist: this is an album list, and without the
@@ -49,7 +50,7 @@ namespace NzbDrone.Core.ImportLists.Qobuz
                         items.Add(new ImportListItemInfo
                         {
                             Artist = artistName,
-                            Album = album.CompleteTitle,
+                            Album = albumTitle,
                             ReleaseDate = album.ReleaseDateOriginal?.DateTime ?? default,
                         });
                     }

@@ -47,7 +47,8 @@ namespace NzbDrone.Core.ImportLists.Qobuz
                         foreach (var track in page)
                         {
                             string? artistName = track.Album?.Artist?.Name ?? track.Performer?.Name;
-                            if (string.IsNullOrWhiteSpace(artistName))
+                            string? albumTitle = track.Album?.CompleteTitle;
+                            if (string.IsNullOrWhiteSpace(artistName) || string.IsNullOrWhiteSpace(albumTitle))
                                 continue;
 
                             // Playlists are track-level, so the album a track belongs to is
@@ -55,7 +56,7 @@ namespace NzbDrone.Core.ImportLists.Qobuz
                             items.Add(new ImportListItemInfo
                             {
                                 Artist = artistName,
-                                Album = track.Album?.CompleteTitle,
+                                Album = albumTitle,
                             });
                         }
 

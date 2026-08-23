@@ -85,7 +85,8 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
                 var request = builder.Build();
                 request.AllowAutoRedirect = false;
 
-                // Bind the destination only on the hop that actually returns the body.
+                // Bound on every hop; Lidarr's dispatcher writes ResponseStream only on a
+                // 200, so a redirect hop never reaches the destination.
                 if (destination != null)
                 {
                     request.ResponseStream = destination;

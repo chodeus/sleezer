@@ -34,18 +34,20 @@ namespace QobuzApiSharp.Exceptions
             : base(message)
         {
             this.RequestContent = requestContent;
-            this.ResponseStatusCode = errorResponse.Code;
-            this.ResponseStatus = errorResponse.Status;
-            this.ResponseReason = errorResponse.Message;
+            // "null" is valid JSON, so DeserializeResponse can hand back null without
+            // throwing; dereferencing it here would bury the API failure under an NRE.
+            this.ResponseStatusCode = errorResponse?.Code;
+            this.ResponseStatus = errorResponse?.Status;
+            this.ResponseReason = errorResponse?.Message;
         }
 
         public ApiErrorResponseException(string message, string requestContent, QobuzApiStatusResponse errorResponse, Exception innerException)
             : base(message, innerException)
         {
             RequestContent = requestContent;
-            ResponseStatusCode = errorResponse.Code;
-            ResponseStatus = errorResponse.Status;
-            ResponseReason = errorResponse.Message;
+            ResponseStatusCode = errorResponse?.Code;
+            ResponseStatus = errorResponse?.Status;
+            ResponseReason = errorResponse?.Message;
         }
 
         protected ApiErrorResponseException(SerializationInfo info, StreamingContext context)

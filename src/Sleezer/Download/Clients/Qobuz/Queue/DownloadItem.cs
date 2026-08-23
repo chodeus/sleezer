@@ -203,7 +203,7 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
             {
                 try
                 {
-                    await DoTrackDownload(track.Id.GetValueOrDefault().ToString(CultureInfo.InvariantCulture), quality, settings, cancellation);
+                    await DoTrackDownload(track.Id.GetValueOrDefault().ToString(CultureInfo.InvariantCulture), quality, settings, logger, cancellation);
                     Interlocked.Increment(ref _completedTracks);
                     return true;
                 }
@@ -237,7 +237,7 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
             return false;
         }
 
-        private async Task DoTrackDownload(string trackId, AudioQuality bitrate, QobuzSettings settings, CancellationToken cancellation)
+        private async Task DoTrackDownload(string trackId, AudioQuality bitrate, QobuzSettings settings, Logger logger, CancellationToken cancellation)
         {
             QobuzAPI api = QobuzAPI.Instance ?? throw new InvalidOperationException("Qobuz API is not initialised.");
 
@@ -264,7 +264,7 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
                 throw new InvalidOperationException($"Qobuz track {trackId} downloaded only {fileSize} bytes; treating as a failed transfer.");
             }
 
-            (string? plainLyrics, string? syncLyrics) = await FetchLyrics(page, settings, cancellation);
+            (string? plainLyrics, string? syncLyrics) = await FetchLyrics(page, settings, logger, cancellation);
 
             bool embedArt = (QobuzArtworkPlacement)settings.ArtworkPlacement != QobuzArtworkPlacement.Sidecar;
             await api.Client.ApplyMetadataToFile(trackId, outPath, _albumArt, embedArt, plainLyrics ?? string.Empty, cancellation);
@@ -276,19 +276,30 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
             }
         }
 
-        private static async Task<(string? Plain, string? Synced)> FetchLyrics(Track page, QobuzSettings settings, CancellationToken cancellation)
+        private static async Task<(string? Plain, string? Synced)> FetchLyrics(Track page, QobuzSettings settings, Logger logger, CancellationToken cancellation)
         {
             // Qobuz serves no lyrics of its own, so LRCLIB is the only source here.
             if (!settings.UseLRCLIB)
                 return (null, null);
 
-            var lyrics = await QobuzDownloader.FetchLyricsFromLRCLIB(
-                "lrclib.net",
-                page.CompleteTitle,
-                page.Performer?.Name ?? string.Empty,
-                page.Album?.CompleteTitle ?? string.Empty,
-                page.Duration ?? 0,
-                cancellation);
+            (string? PlainLyrics, string? SyncLyrics)? lyrics;
+            try
+            {
+                lyrics = await QobuzDownloader.FetchLyricsFromLRCLIB(
+                    "lrclib.net",
+                    page.CompleteTitle,
+                    page.Performer?.Name ?? string.Empty,
+                    page.Album?.CompleteTitle ?? string.Empty,
+                    page.Duration ?? 0,
+                    cancellation);
+            }
+            catch (Exception ex) when (!cancellation.IsCancellationRequested)
+            {
+                // Decoration only. Letting this escape retries the whole track and then
+                // fails the album, and CleanUpFailedDownload deletes what is already on disk.
+                logger.Warn(ex, "LRCLIB lookup failed for {Track}; continuing without lyrics", page.CompleteTitle);
+                return (null, null);
+            }
 
             if (lyrics == null)
                 return (null, null);

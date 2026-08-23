@@ -55,7 +55,7 @@ namespace NzbDrone.Core.Indexers.Bandcamp
 
         public override IParseIndexerResponse GetParser()
         {
-            return new BandcampParser(Settings, _logger);
+            return new BandcampParser();
         }
 
         public override Task<IList<ReleaseInfo>> FetchRecent()
@@ -225,8 +225,6 @@ namespace NzbDrone.Core.Indexers.Bandcamp
 
             var pageData = await _apiClient.GetDownloadPageDataAsync(Settings.Cookies, item.DownloadPageUrl!)
                 .ConfigureAwait(false);
-            var albumDurationSeconds = await _apiClient.GetAlbumDurationSecondsAsync(Settings.Cookies, item.ItemUrl!)
-                .ConfigureAwait(false);
 
             if (pageData == null)
             {
@@ -241,6 +239,12 @@ namespace NzbDrone.Core.Indexers.Bandcamp
                 return releases;
             }
 
+            // Only Vorbis needs a duration to name its bitrate, and fetching one costs a
+            // second album-page request under a 2s per-request rate limit. Resolved once,
+            // and only if a Vorbis format is actually present.
+            double? albumDurationSeconds = null;
+            bool durationResolved = false;
+
             foreach (var format in downloadItem.DownloadUrls)
             {
                 if (string.IsNullOrWhiteSpace(format.Value))
@@ -253,6 +257,13 @@ namespace NzbDrone.Core.Indexers.Bandcamp
                     _logger.Debug("Bandcamp indexer: Skipping {0} / {1} format {2} because no positive size was provided",
                         item.BandName, item.Title, format.Key);
                     continue;
+                }
+
+                if (!durationResolved && NeedsDuration(format.Key))
+                {
+                    albumDurationSeconds = await _apiClient.GetAlbumDurationSecondsAsync(Settings.Cookies, item.ItemUrl!)
+                        .ConfigureAwait(false);
+                    durationResolved = true;
                 }
 
                 releases.Add(ToReleaseInfo(item, format.Key, size, albumDurationSeconds, expectedTrackCounts));
@@ -529,6 +540,10 @@ namespace NzbDrone.Core.Indexers.Bandcamp
 
             return albumTitle;
         }
+
+        // Kept adjacent to FormatLabel's vorbis branch: if that gains a format, this must too.
+        private static bool NeedsDuration(string formatKey)
+            => formatKey is "vorbis" or "ogg-vorbis";
 
         private static string FormatLabel(string formatKey, long size, double? albumDurationSeconds)
         {
