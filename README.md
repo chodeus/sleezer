@@ -128,10 +128,17 @@ Sleezer talks to Qobuz directly using a vendored fork of `QobuzApiSharp`. Qobuz 
 
 1. **Settings → Indexers → Add**.
 2. In the modal, select `Qobuz` (under **Other** at the bottom).
-3. Fill in **User ID** and **User Auth Token**:
-   * Open [play.qobuz.com](https://play.qobuz.com) and log in.
-   * DevTools → **Network** tab → click any request → copy the `X-User-Auth-Token` request header.
-   * DevTools → **Application** → Local Storage → the numeric `id` field is your User ID.
+3. Fill in **User ID** and **User Auth Token**. Open [play.qobuz.com](https://play.qobuz.com),
+   log in, then in DevTools → **Console** run:
+
+   ```js
+   JSON.parse(localStorage.localuser).id            // User ID
+   copy(JSON.parse(localStorage.localuser).token)   // token, straight to your clipboard
+   ```
+
+   The `X-User-Auth-Token` request header carries the same value, but only on
+   `api.qobuz.com` calls — an idle player makes none, so the Network tab looks empty
+   until you click something in the player.
 4. Leave **App ID** and **App Secret** blank. Sleezer reads the current pair from Qobuz's web player at runtime, so it survives Qobuz rotating them.
 5. Save. The indexer test logs the storefront your account resolves to — see the region note below.
 
