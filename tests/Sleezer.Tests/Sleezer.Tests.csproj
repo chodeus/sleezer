@@ -26,6 +26,9 @@
          as Lidarr.Common); without it any type that logs via NzbDroneLogger
          throws TypeInitializationException under the test host. -->
     <PackageReference Include="NLog.Layouts.ClefJsonLayout" Version="1.0.5" />
+    <!-- The scheduler the web download clients run on. Pulled in to pin its completion
+         semantics, which is what a post-process pass has to hang off. -->
+    <PackageReference Include="Shard.DownloadAssistant" Version="1.1.2" />
   </ItemGroup>
 
   <ItemGroup>

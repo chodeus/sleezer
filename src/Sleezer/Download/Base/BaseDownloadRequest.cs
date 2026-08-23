@@ -11,6 +11,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
+using System.Linq;
 using NzbDrone.Plugin.Sleezer.Core.PostProcessing;
 
 namespace NzbDrone.Plugin.Sleezer.Download.Base
@@ -95,6 +96,22 @@ namespace NzbDrone.Plugin.Sleezer.Download.Base
 
             if (Options.PostProcess == null)
                 return;
+
+            // ProcessDownloadAsync only queues the per-track work, so the files do not
+            // exist yet. Scanning here would find an empty folder, report zero strikes
+            // and call it clean.
+            await _trackContainer.Task;
+
+            // A container's Task does not cover requests chained onto its members, and
+            // that chain is where the clients do their per-track tagging — so follow each
+            // track's own SubsequentRequest rather than trusting the container alone.
+            Task[] chained = [.. _trackContainer
+                .Select(t => ((IRequest)t).SubsequentRequest?.Task)
+                .Where(x => x != null)
+                .Select(x => x!)];
+
+            if (chained.Length > 0)
+                await Task.WhenAll(chained);
 
             var request = new PostProcessRequest(
                 Options.PostProcessClient,
