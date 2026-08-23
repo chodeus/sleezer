@@ -2,41 +2,13 @@
 
 ![License](https://img.shields.io/github/license/chodeus/sleezer) ![GitHub release (latest by date)](https://img.shields.io/github/v/release/chodeus/sleezer) ![GitHub last commit](https://img.shields.io/github/last-commit/chodeus/sleezer) ![GitHub stars](https://img.shields.io/github/stars/chodeus/sleezer)
 
-Sleezer is a Lidarr plugin that adds **Deezer**, **Tidal**, **Qobuz**, **Bandcamp**, **Slskd (Soulseek)**, and a handful of other music sources behind a single install. It also ships post-processing: corrupt-file scanning and pre-import tagging for Deezer/Tidal/Qobuz/Slskd downloads, plus an FFmpeg-based format converter that runs on every imported track regardless of source. 🛠️
-
-Credit where it's due: Sleezer is built on [Lidarr.Plugin.Deezer](https://github.com/TrevTV/Lidarr.Plugin.Deezer) by [TrevTV](https://github.com/TrevTV) and [Tubifarry](https://github.com/TypNull/Tubifarry) by [TypNull](https://github.com/TypNull). See [Credits](#credits-).
-
----
-
-## Table of Contents 📑
-
-1. [Installation 🚀](#installation-)
-2. [Deezer Setup 🎧](#deezer-setup-)
-3. [Tidal Setup 🌊](#tidal-setup-)
-4. [Qobuz Setup 🎼](#qobuz-setup-)
-5. [Bandcamp Setup 🏕️](#bandcamp-setup-️)
-6. [Soulseek (Slskd) Setup 🐟](#soulseek-slskd-setup-)
-7. [Web Clients 📻](#web-clients-)
-8. [FFmpeg 🎛️](#ffmpeg-️)
-9. [Corrupt File Scan & Pre-Import Tagging 🧼](#corrupt-file-scan--pre-import-tagging-)
-10. [Queue Cleaner 🧹](#queue-cleaner-)
-11. [Search Sniper 🏹](#search-sniper-)
-12. [Custom Metadata Sources 🧩](#custom-metadata-sources-)
-13. [Similar Artists 🧷](#similar-artists-)
-14. [Troubleshooting 🛠️](#troubleshooting-️)
-15. [Credits 🙌](#credits-)
-16. [Contributing 🤝](#contributing-)
-17. [License 📄](#license-)
-
----
+A Lidarr plugin adding **Deezer**, **Tidal**, **Qobuz**, **Bandcamp** and **Slskd (Soulseek)** as download sources, plus corruption scanning, pre-import tagging and FFmpeg conversion. One install, no middlemen.
 
 ## Installation 🚀
 
 1. In Lidarr, go to `System -> Plugins`.
 2. Paste `https://github.com/chodeus/sleezer` into the GitHub URL box and click **Install**.
 3. Restart Lidarr when prompted.
-
----
 
 ### Deezer Setup 🎧
 
@@ -62,8 +34,6 @@ Sleezer talks to Deezer directly (no Deemix middleman) using the `DeezNET` libra
 
 * If your downloads suddenly start failing, rotate the ARL before anything else. Most "Deezer broke" reports are single-ARL bans.
 * Leaving the ARL field blank uses Sleezer's public-ARL rotation — works but slower and occasionally stale.
-
----
 
 ### Tidal Setup 🌊
 
@@ -110,13 +80,11 @@ Tidal's device-code OAuth flow doesn't redirect back to Lidarr after you authori
   <details>
   <summary>Why this happens</summary>
 
-  Tidal silently downgrades to AAC for tracks not licensed lossless in your storefront — common in AU/NZ/SE-Asia for older or remix-heavy catalogue — returning an mp4a manifest with no error at all. Sleezer reads the delivered codec and fails the grab so Lidarr can re-pick another source (e.g. a slskd FLAC peer) rather than filing AAC into a Lossless bucket.
+  Tidal silently downgrades to AAC for tracks not licensed lossless in your storefront — common in AU/NZ/SE-Asia for older or remix-heavy catalogue — returning an mp4a manifest with no error at all. Sleezer reads the delivered codec rather than trusting the request.
   </details>
 * Various Artists, Soundtracks, and Cast Recordings are recognised explicitly so they actually return search hits.
 * Tidal music videos and Dolby Atmos tracks are not supported in this release.
 * Tidal does not expose a public RSS / new-release feed, so RSS sync is disabled at the indexer level.
-
----
 
 ### Qobuz Setup 🎼
 
@@ -175,8 +143,6 @@ Three lists reuse the indexer's session, so add and save the indexer first — t
   DABMusic used to own the `Qobuz` protocol name. It is now `DABMusic`, and the `Qobuz` name belongs to this first-party client. On first start after upgrading, Lidarr adds a **DABMusic** row to each delay profile (enabled by default) and your existing **Qobuz** row now governs this client — check both are set the way you want. Blocklist entries recorded against DABMusic under the old name stop matching, so anything you had blocklisted there can be grabbed again.
   </details>
 
----
-
 ### Bandcamp Setup 🏕️
 
 Bandcamp only ever surfaces **music you have already bought**. It searches your own purchase history, so it fills gaps nothing else can — Bandcamp-exclusive releases are frequently absent from every other source in this plugin.
@@ -202,8 +168,6 @@ Bandcamp only ever surfaces **music you have already bought**. It searches your 
 * Downloads arrive as a ZIP for multi-track releases; the client extracts it and normalises file permissions, which matters on Unraid where Lidarr runs as `99:100`.
 * The `identity` cookie expires. When searches suddenly return nothing, re-copy it.
 * Bandcamp is not a streaming catalogue — there is no RSS feed and no way to discover releases you have not purchased.
-
----
 
 ### Soulseek (Slskd) Setup 🐟
 
@@ -234,8 +198,6 @@ A few Slskd behaviours worth knowing, all born from live-log audits of real-worl
 * **Downloads survive Lidarr restarts.** In-flight and completed Slskd transfers re-attach to their grabs after a restart — including multi-disc and retried grabs — so nothing sits finished in Slskd, invisible to Lidarr.
 * **Empty download folders are pruned automatically.** Once an import moves the files out (or a download is abandoned), the leftover empty folder is swept away — the gap that neither Slskd's file-retention (which deletes files, never their empty parent directories) nor a missed per-item cleanup (a Lidarr restart, a failed import) covers. It only ever removes folders that are *provably* empty, so nothing holding data is touched. For Slskd this is gated on the **Clean Stale Directories** client option; **Deezer, Tidal and Qobuz do the same sweep** on their own download paths.
 
----
-
 ### Web Clients 📻
 
 Sleezer also ships a family of "web-client" indexers inherited from Tubifarry. These are third-party music services that vary in uptime and quality — Sleezer isn't responsible for any of them.
@@ -247,8 +209,6 @@ Sleezer also ships a family of "web-client" indexers inherited from Tubifarry. T
 * **SubSonic** — a music-streaming API standard with broad compatibility.
 
 The SubSonic indexer/client is generic: any service that implements the [Subsonic API](https://www.subsonic.org/pages/api.jsp) should plug in without modification.
-
----
 
 ### FFmpeg 🎛️
 
@@ -326,13 +286,11 @@ If you'd rather not write rules, the **convert-MP3 / convert-AAC / convert-FLAC 
 
 #### FFmpeg binary
 
-Sleezer auto-downloads FFmpeg on first use if it can't find one, pulling the current static build from [`chodeus/ffmpeg-static`](https://github.com/chodeus/ffmpeg-static) (compiled fully-static from pinned upstream source, so it runs on both musl/Alpine and glibc Lidarr containers) into the configured FFmpeg directory. It then checks daily for a newer release and updates itself, so you stay on a current FFmpeg without manual steps. A newer FFmpeg already on the host PATH is always preferred over the downloaded copy, and you can still set the FFmpeg path explicitly in the settings panel. Downloads are SHA-256 verified before use. (No macOS build is published — on macOS, install FFmpeg via Homebrew and it'll be picked up from PATH.)
-
----
+Sleezer auto-downloads a static FFmpeg from [`chodeus/ffmpeg-static`](https://github.com/chodeus/ffmpeg-static) on first use (musl and glibc compatible, SHA-256 verified), then checks daily for updates. A newer FFmpeg already on PATH wins, and you can set the path explicitly. No macOS build is published — install via Homebrew and it'll be found on PATH.
 
 ### Corrupt File Scan & Pre-Import Tagging 🧼
 
-These two features live under FFmpeg's settings because they depend on the bundled FFmpeg binary. Both are scoped to **Sleezer's own downloaders only** — Deezer, Tidal, Qobuz, and Slskd. The web clients (Lucida, SubSonic, T2Tunes, DABMusic) and Bandcamp currently share a lighter download path that doesn't invoke them, and Lidarr's native torrent/Usenet clients are untouched. Only the FFmpeg *conversion* provider (previous section) runs on imports from every source.
+These live under FFmpeg's settings because they use the bundled FFmpeg binary. They run on **every Sleezer download client** — Deezer, Tidal, Qobuz, Bandcamp, Slskd, Lucida, SubSonic, TripleTriple and DABMusic — opt-in per client. Lidarr's own torrent and Usenet clients are untouched. Only the FFmpeg *conversion* provider (previous section) applies to imports from every source.
 
 Each feature is opt-in via a chip-style picker: pick which Sleezer downloaders should get the treatment. An empty picker means the feature is off entirely. **Both pickers default empty** — nothing runs until you opt in.
 
@@ -363,8 +321,6 @@ With **Strip Featured Artists** enabled, Sleezer:
 
 Bare-text suffixes without brackets (`Foo feat. Bar`) are left alone to avoid false positives on track titles that legitimately contain the word "feat".
 
----
-
 ### Queue Cleaner 🧹
 
 **Queue Cleaner** handles downloads that fail to import. When Lidarr can't import a grab (missing tracks, bad metadata, etc.), Queue Cleaner can rename files from their embedded tags, retry the import, blocklist the release, or just remove the files.
@@ -376,8 +332,6 @@ Bare-text suffixes without brackets (`Foo feat. Bar`) are left alone to avoid fa
 * *Retry Finding Release* — auto-retry search if the import failed.
 
 **Enable:** `Settings -> Connect`, add a new **Queue Cleaner** connection, configure.
-
----
 
 ### Search Sniper 🏹
 
@@ -392,8 +346,6 @@ You can also trigger it manually from the **Tasks** tab.
 * **Cache Retention Time** — days to keep the cache.
 * **Pause When Queued** — stop when the queue hits this size.
 * **Search Options** — at least one of Missing albums / Missing tracks / Cutoff not met.
-
----
 
 ### Custom Metadata Sources 🧩
 
@@ -414,8 +366,6 @@ Sleezer can fetch artist and album metadata from **Discogs**, **Deezer**, and **
 
 Best results come with artists that are linked across multiple metadata systems, which is typically the case on MusicBrainz.
 
----
-
 ### Similar Artists 🧷
 
 **Similar Artists** lets you discover related artists via Last.fm's recommendation data, right inside Lidarr's search. Prefix an artist search with `~` and you get back a list of recommendations ready to add.
@@ -429,8 +379,6 @@ Best results come with artists that are linked across multiple metadata systems,
 * `similar:Pink Floyd`
 * `~20244d07-534f-4eff-b4d4-930878889970`
 
----
-
 ## Troubleshooting 🛠️
 
 * **Deezer downloads fail / 403s** — rotate the ARL. Single-ARL bans are the most common cause.
@@ -442,35 +390,20 @@ Best results come with artists that are linked across multiple metadata systems,
 
 Enable **Debug** log level in `Settings -> General` if you're filing an issue — Sleezer logs the request/response lifecycle at Debug and ARL/API-key values are redacted.
 
----
-
 ## Credits 🙌
 
-Sleezer exists because of these people:
+* **[TrevTV](https://github.com/TrevTV)** — [Lidarr.Plugin.Deezer](https://github.com/TrevTV/Lidarr.Plugin.Deezer) and [DeezNET](https://github.com/TrevTV/DeezNET), which power the Deezer integration.
+* **[TypNull](https://github.com/TypNull)** — [Tubifarry](https://github.com/TypNull/Tubifarry): Slskd, the web clients, the FFmpeg pipeline, Queue Cleaner, Search Sniper, custom metadata sources and Similar Artists.
+* **[DaveBinM](https://github.com/DaveBinM)** — [Lidarr.Plugin.Qobuz](https://github.com/DaveBinM/Lidarr.Plugin.Qobuz) (originally TrevTV's) and [QobuzApiSharp](https://github.com/DaveBinM/QobuzApiSharp) (originally [DJDoubleD](https://github.com/DJDoubleD)'s), which the Qobuz client is ported from.
+* **[jtstothard](https://github.com/jtstothard)** — [lidarr-plugin-bandcamp](https://github.com/jtstothard/lidarr-plugin-bandcamp), which the Bandcamp client is ported from.
 
-* **[TrevTV](https://github.com/TrevTV)** — author of [Lidarr.Plugin.Deezer](https://github.com/TrevTV/Lidarr.Plugin.Deezer) and the [DeezNET](https://github.com/TrevTV/DeezNET) client library that powers Sleezer's Deezer integration. Nothing Deezer-related in this plugin would exist without his work.
-* **[TypNull](https://github.com/TypNull)** — author of [Tubifarry](https://github.com/TypNull/Tubifarry), which contributed the Slskd integration, web-client framework, FFmpeg pipeline, Queue Cleaner, Search Sniper, custom metadata sources, and Similar Artists. Sleezer is basically Tubifarry with YouTube/Spotify/Lyrics/telemetry stripped out and Deezer bolted in.
-* **[DaveBinM](https://github.com/DaveBinM)** — maintainer of the living fork of [Lidarr.Plugin.Qobuz](https://github.com/DaveBinM/Lidarr.Plugin.Qobuz) (originally TrevTV's) and of [QobuzApiSharp](https://github.com/DaveBinM/QobuzApiSharp) (originally [DJDoubleD](https://github.com/DJDoubleD)'s). Sleezer's Qobuz indexer and download client are ported from that fork.
-* **[jtstothard](https://github.com/jtstothard)** — author of [lidarr-plugin-bandcamp](https://github.com/jtstothard/lidarr-plugin-bandcamp), from which Sleezer's Bandcamp indexer and download client are ported.
-
-Also thanks to the maintainers of Lidarr's plugin system, and the authors of every bundled library listed in [NOTICE](NOTICE).
-
-If you're reporting an issue with something that originated upstream (DeezNET, the Slskd protocol, etc.), the bug tracker on the upstream repo is usually the right place. For issues with Sleezer's integration of them — or anything added in the merge — the [Sleezer issue tracker](https://github.com/chodeus/sleezer/issues) is the right place.
-
----
+Bundled libraries are listed in [NOTICE](NOTICE). Bugs originating upstream are best filed on the upstream tracker; anything about Sleezer's integration belongs [here](https://github.com/chodeus/sleezer/issues).
 
 ## Contributing 🤝
 
 Open an issue or PR on the [GitHub repo](https://github.com/chodeus/sleezer). Contributions follow the guidelines in [CONTRIBUTION.md](CONTRIBUTION.md).
 
----
-
 ## License 📄
 
-Sleezer is licensed under **GPL-3.0**. See [LICENSE](LICENSE) for the full text and [NOTICE](NOTICE) for attributions to the upstream projects and bundled libraries.
+**GPL-3.0**, required because Sleezer bundles [DeezNET](https://github.com/TrevTV/DeezNET). See [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
-The GPL-3.0 license is required because Sleezer bundles [DeezNET](https://github.com/TrevTV/DeezNET), which is GPL-3.0 itself.
-
----
-
-Enjoy seamless music downloads with Sleezer! 🎧
