@@ -156,19 +156,27 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
                 }
             }
 
-            if (string.Equals(configuredPath, _lastResolvedFfmpegPath, StringComparison.Ordinal))
+            // An install-less call must not arm the guard against a later installing one:
+            // Tidal primes this from its constructor, which would otherwise make the
+            // auto-install below unreachable for the one client that needs it earliest.
+            bool pathChanged = !string.Equals(configuredPath, _lastResolvedFfmpegPath, StringComparison.Ordinal);
+            if (!pathChanged && !install)
                 return;
 
             try
             {
                 if (string.IsNullOrWhiteSpace(configuredPath))
                 {
-                    logger.Debug("[post-process] No FFmpeg path configured; the corruption scan will skip files it cannot decode.");
+                    if (pathChanged)
+                        logger.Debug("[post-process] No FFmpeg path configured; the corruption scan will skip files it cannot decode.");
                 }
                 else
                 {
-                    XabeFFmpeg.SetExecutablesPath(configuredPath);
-                    AudioMetadataHandler.ResetFFmpegInstallationCheck();
+                    if (pathChanged)
+                    {
+                        XabeFFmpeg.SetExecutablesPath(configuredPath);
+                        AudioMetadataHandler.ResetFFmpegInstallationCheck();
+                    }
 
                     if (install && !AudioMetadataHandler.CheckFFmpegInstalled())
                     {
@@ -177,7 +185,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
                         AudioMetadataHandler.ResetFFmpegInstallationCheck();
                     }
 
-                    logger.Info("[post-process] FFmpeg path applied: {Path}", configuredPath);
+                    if (pathChanged)
+                        logger.Info("[post-process] FFmpeg path applied: {Path}", configuredPath);
                 }
             }
             catch (Exception ex)
