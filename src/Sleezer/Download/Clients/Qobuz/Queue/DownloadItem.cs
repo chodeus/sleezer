@@ -157,6 +157,17 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
             await semaphore.WaitAsync(cancellation);
             try
             {
+                // Rejected here rather than defaulted at the request: GetValueOrDefault
+                // turns a missing ID into track 0, which 404s at every quality, exhausts
+                // the retries and fails the album — and album cleanup then deletes the
+                // tracks that did download. A real ID of 0 is still honoured.
+                if (track.Id is null)
+                {
+                    logger.Warn("Qobuz track '{TrackTitle}' has no ID in the album payload; skipping", track.Title);
+                    Interlocked.Increment(ref _skippedTracks);
+                    return;
+                }
+
                 if (track.Streamable == false)
                 {
                     logger.Warn("Qobuz track {TrackId} ({TrackTitle}) is not streamable for this account; skipping", track.Id, track.Title);
@@ -203,7 +214,7 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
             {
                 try
                 {
-                    await DoTrackDownload(track.Id.GetValueOrDefault().ToString(CultureInfo.InvariantCulture), quality, settings, logger, cancellation);
+                    await DoTrackDownload(track.Id!.Value.ToString(CultureInfo.InvariantCulture), quality, settings, logger, cancellation);
                     Interlocked.Increment(ref _completedTracks);
                     return true;
                 }
