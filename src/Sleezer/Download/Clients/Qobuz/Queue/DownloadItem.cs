@@ -157,10 +157,8 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
             await semaphore.WaitAsync(cancellation);
             try
             {
-                // Rejected here rather than defaulted at the request: GetValueOrDefault
-                // turns a missing ID into track 0, which 404s at every quality, exhausts
-                // the retries and fails the album — and album cleanup then deletes the
-                // tracks that did download. A real ID of 0 is still honoured.
+                // A missing ID would become request ID 0, fail the album, and album
+                // cleanup then deletes what did download. A real ID of 0 still works.
                 if (track.Id is null)
                 {
                     logger.Warn("Qobuz track '{TrackTitle}' has no ID in the album payload; skipping", track.Title);
