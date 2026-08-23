@@ -639,9 +639,12 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
             string fullCandidate = Path.GetFullPath(candidate);
 
+            // Ordinal, not OrdinalIgnoreCase: on Linux /downloads/MUSIC is a different
+            // tree from /downloads/music, and this guard gates a delete. A false reject
+            // leaves a folder behind; a false accept removes an unrelated one.
             string rootWithSep = fullRoot + Path.DirectorySeparatorChar;
             return fullCandidate.Length > rootWithSep.Length
-                && fullCandidate.StartsWith(rootWithSep, StringComparison.OrdinalIgnoreCase);
+                && fullCandidate.StartsWith(rootWithSep, StringComparison.Ordinal);
         }
         catch (Exception ex)
         {
