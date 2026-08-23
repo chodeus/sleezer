@@ -21,17 +21,6 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
 {
     public class DownloadTaskQueue
     {
-        // Match SlskdDownloadManager's threshold so behaviour is consistent
-        // across download clients.
-        private const int CorruptionScanTimeoutSeconds = 120;
-        private const double TagConfidenceThreshold = 0.15;
-
-        private static readonly HashSet<string> AudioExtensions = new(StringComparer.OrdinalIgnoreCase)
-        {
-            ".flac", ".mp3", ".m4a", ".ogg", ".opus", ".wav",
-            ".wma", ".aac", ".aiff", ".aif", ".ape", ".wv",
-            ".alac", ".m4b", ".m4p", ".mp2", ".mpc", ".dsf", ".dff"
-        };
 
         private readonly Channel<DownloadItem> _queue;
         private readonly List<DownloadItem> _items;
@@ -78,7 +67,14 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
 
         public void StartQueueHandler()
         {
-            Task.Run(() => BackgroundProcessing());
+            // Without the continuation a faulted loop is silent: the queue keeps accepting
+            // items and reporting them queued while nothing drains it.
+            _ = Task.Run(() => BackgroundProcessing())
+                .ContinueWith(
+                    faulted => _logger.Error(faulted.Exception, "Deezer queue handler stopped; no further downloads will be processed until Lidarr restarts."),
+                    CancellationToken.None,
+                    TaskContinuationOptions.OnlyOnFaulted,
+                    TaskScheduler.Default);
         }
 
         private async Task BackgroundProcessing(CancellationToken stoppingToken = default)
@@ -129,19 +125,54 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
             {
                 await semaphore.WaitAsync(stoppingToken);
 
-                var item = await DequeueAsync(stoppingToken);
-                var token = GetTokenForItem(item);
-                // SetSettings is always invoked before any queue/download call on the proxy,
-                // so by the time we dequeue an item the settings must be populated.
-                var downloadTask = item.DoDownload(_settings!, _logger, token);
-
-                var handler = HandleTask(item, downloadTask);
-                lock (_lock)
+                DownloadItem? item = null;
+                try
                 {
-                    // Pruned here, not inside HandleTask: a handler that finished
-                    // before being added would never be removed.
-                    _runningTasks.RemoveAll(t => t.IsCompleted);
-                    _runningTasks.Add(handler);
+                    item = await DequeueAsync(stoppingToken);
+
+                    if (_settings == null)
+                    {
+                        // The proxy always calls SetSettings before queueing, so this is
+                        // genuinely unexpected — drop the item rather than kill the loop.
+                        _logger.Error("Deezer queue received item before settings populated; marking failed: {Title}", item.Title);
+                        item.Status = DownloadItemStatus.Failed;
+
+                        // HandleTask never runs for this item, so its source is orphaned.
+                        lock (_lock)
+                        {
+                            if (_cancellationSources.Remove(item, out var orphan))
+                                orphan.Dispose();
+                        }
+
+                        semaphore.Release();
+                        continue;
+                    }
+
+                    var token = GetTokenForItem(item);
+                    var downloadTask = item.DoDownload(_settings, _logger, token);
+
+                    var handler = HandleTask(item, downloadTask);
+                    lock (_lock)
+                    {
+                        // Pruned here, not inside HandleTask: a handler that finished
+                        // before being added would never be removed.
+                        _runningTasks.RemoveAll(t => t.IsCompleted);
+                        _runningTasks.Add(handler);
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    semaphore.Release();
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    // Per-iteration safety net so one bad item cannot kill the loop.
+                    // HandleTask does not own the semaphore for this item, so release here.
+                    if (item != null)
+                        item.Status = DownloadItemStatus.Failed;
+                    _logger.Error(ex, "Deezer queue iteration failed; loop continues");
+                    semaphore.Release();
                 }
             }
 
@@ -150,7 +181,6 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                 remainingTasks = _runningTasks.ToList();
             await Task.WhenAll(remainingTasks);
         }
-
 
         private async Task<bool> RunPostProcessAsync(DownloadItem item, CancellationToken ct)
         {

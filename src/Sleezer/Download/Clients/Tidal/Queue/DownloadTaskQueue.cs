@@ -18,17 +18,6 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
 {
     public class DownloadTaskQueue
     {
-        // Match Slskd / Deezer threshold so behaviour is consistent across
-        // all sleezer-managed download clients.
-        private const int CorruptionScanTimeoutSeconds = 120;
-        private const double TagConfidenceThreshold = 0.15;
-
-        private static readonly HashSet<string> AudioExtensions = new(StringComparer.OrdinalIgnoreCase)
-        {
-            ".flac", ".mp3", ".m4a", ".ogg", ".opus", ".wav",
-            ".wma", ".aac", ".aiff", ".aif", ".ape", ".wv",
-            ".alac", ".m4b", ".m4p", ".mp2", ".mpc", ".dsf", ".dff"
-        };
 
         private readonly Channel<DownloadItem> _queue;
         private readonly List<DownloadItem> _items = new();
@@ -77,7 +66,17 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
                 TryRehydrateFromDisk(settings);
         }
 
-        public void StartQueueHandler() => Task.Run(() => BackgroundProcessing());
+        public void StartQueueHandler()
+        {
+            // Without the continuation a faulted loop is silent: the queue keeps accepting
+            // items and reporting them queued while nothing drains it.
+            _ = Task.Run(() => BackgroundProcessing())
+                .ContinueWith(
+                    faulted => _logger.Error(faulted.Exception, "Tidal queue handler stopped; no further downloads will be processed until Lidarr restarts."),
+                    CancellationToken.None,
+                    TaskContinuationOptions.OnlyOnFaulted,
+                    TaskScheduler.Default);
+        }
 
         private async Task BackgroundProcessing(CancellationToken stoppingToken = default)
         {
@@ -182,7 +181,6 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
                 remainingTasks = _runningTasks.ToList();
             await Task.WhenAll(remainingTasks);
         }
-
 
         private async Task<bool> RunPostProcessAsync(DownloadItem item, CancellationToken ct)
         {
