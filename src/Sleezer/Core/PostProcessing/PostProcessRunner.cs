@@ -20,8 +20,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
         IPreImportTagger preImportTagger,
         IMetadataFactory metadataFactory,
         IDiskProvider diskProvider,
-        Logger logger,
-        Action<string?>? onFfmpegPathResolved = null)
+        Logger logger)
     {
         private const int CorruptionScanTimeoutSeconds = 120;
         private const double TagConfidenceThreshold = 0.15;
@@ -127,21 +126,20 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
         /// on a Lidarr request thread want this; the post-process path wants the async
         /// version below, which will also fetch the binaries.
         /// </summary>
-        public void EnsureFFmpegResolved() => ApplyFFmpegPath(install: false, ct: CancellationToken.None).GetAwaiter().GetResult();
 
         /// <summary>
         /// Points Xabe.FFmpeg at the configured directory and fetches the binaries when
         /// they are missing, so the corruption scan has an ffmpeg to call.
         /// </summary>
-        public Task EnsureFFmpegResolvedAsync(CancellationToken ct) => ApplyFFmpegPath(install: true, ct);
+        public Task EnsureFFmpegResolvedAsync(CancellationToken ct) => ApplyFFmpegPath(ct);
 
-        private async Task ApplyFFmpegPath(bool install, CancellationToken ct)
+        private async Task ApplyFFmpegPath(CancellationToken ct)
         {
             string? configuredPath = GetSharedSettings()?.FFmpegPath;
 
             // Throttled (24h), best-effort refresh from chodeus/ffmpeg-static. Observed
             // rather than discarded: an unhandled fault here is otherwise invisible.
-            if (install && !string.IsNullOrWhiteSpace(configuredPath))
+            if (!string.IsNullOrWhiteSpace(configuredPath))
             {
                 // Awaited rather than detached: this already runs on the post-process
                 // task, it is internally throttled to once a day, and a detached task
@@ -156,48 +154,34 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
                 }
             }
 
-            // An install-less call must not arm the guard against a later installing one:
-            // Tidal primes this from its constructor, which would otherwise make the
-            // auto-install below unreachable for the one client that needs it earliest.
-            bool pathChanged = !string.Equals(configuredPath, _lastResolvedFfmpegPath, StringComparison.Ordinal);
-            if (!pathChanged && !install)
+            if (string.Equals(configuredPath, _lastResolvedFfmpegPath, StringComparison.Ordinal))
                 return;
 
             try
             {
                 if (string.IsNullOrWhiteSpace(configuredPath))
                 {
-                    if (pathChanged)
-                        logger.Debug("[post-process] No FFmpeg path configured; the corruption scan will skip files it cannot decode.");
+                    logger.Debug("[post-process] No FFmpeg path configured; the corruption scan will skip files it cannot decode.");
                 }
                 else
                 {
-                    if (pathChanged)
-                    {
-                        XabeFFmpeg.SetExecutablesPath(configuredPath);
-                        AudioMetadataHandler.ResetFFmpegInstallationCheck();
-                    }
+                    XabeFFmpeg.SetExecutablesPath(configuredPath);
+                    AudioMetadataHandler.ResetFFmpegInstallationCheck();
 
-                    if (install && !AudioMetadataHandler.CheckFFmpegInstalled())
+                    if (!AudioMetadataHandler.CheckFFmpegInstalled())
                     {
                         logger.Info("[post-process] FFmpeg binaries missing at {Path}; downloading from chodeus/ffmpeg-static", configuredPath);
                         await AudioMetadataHandler.InstallFFmpeg(configuredPath);
                         AudioMetadataHandler.ResetFFmpegInstallationCheck();
                     }
 
-                    if (pathChanged)
-                        logger.Info("[post-process] FFmpeg path applied: {Path}", configuredPath);
+                    logger.Info("[post-process] FFmpeg path applied: {Path}", configuredPath);
                 }
             }
             catch (Exception ex)
             {
                 logger.Warn(ex, "[post-process] Failed to apply ffmpeg path {Path}; the corruption scan may not run", configuredPath);
             }
-
-            // Clients with their own ffmpeg call path (Tidal's FLAC-from-M4A extraction)
-            // need the resolved directory pushed into their wrapper too; without it they
-            // fall back to a bare PATH lookup that misses /usr/bin in the Lidarr image.
-            onFfmpegPathResolved?.Invoke(string.IsNullOrWhiteSpace(configuredPath) ? null : configuredPath);
 
             _lastResolvedFfmpegPath = configuredPath;
         }

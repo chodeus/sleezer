@@ -5,6 +5,14 @@ using System.Threading.Channels;
 using System.Threading.Tasks;
 using NLog;
 
+using NzbDrone.Plugin.Sleezer.Core.PostProcessing;
+
+using NzbDrone.Plugin.Sleezer.Metadata.FFmpeg;
+
+using NzbDrone.Common.Disk;
+
+using NzbDrone.Core.Extras.Metadata;
+
 namespace NzbDrone.Core.Download.Clients.Bandcamp
 {
     /// <summary>
@@ -22,6 +30,7 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
         private readonly ConcurrentDictionary<string, CancellationTokenSource> _itemCancellations = new();
         private readonly IBandcampDownloadProxy _downloadProxy;
         private readonly IBandcampDownloadRegistry _registry;
+        private readonly PostProcessRunner _postProcess;
         private readonly Logger _logger;
         private readonly Task _consumerTask;
         private volatile bool _disposed;
@@ -29,10 +38,16 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
         public DownloadTaskQueue(
             IBandcampDownloadProxy downloadProxy,
             IBandcampDownloadRegistry registry,
+            ICorruptionScanner corruptionScanner,
+            ICorruptionFailureHandler corruptionFailureHandler,
+            IPreImportTagger preImportTagger,
+            IMetadataFactory metadataFactory,
+            IDiskProvider diskProvider,
             Logger logger)
         {
             _downloadProxy = downloadProxy;
             _registry = registry;
+            _postProcess = new PostProcessRunner(corruptionScanner, corruptionFailureHandler, preImportTagger, metadataFactory, diskProvider, logger);
             _logger = logger;
 
             // Bounded channel to limit memory pressure; writers block when full
@@ -177,6 +192,19 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
             }
         }
 
+        private async Task<bool> RunPostProcessAsync(BandcampDownloadItem item, CancellationToken ct)
+        {
+            var request = new PostProcessRequest(
+                PostProcessClient.Bandcamp,
+                item.DownloadId,
+                item.Title,
+                item.OutputPath,
+                nameof(NzbDrone.Core.Indexers.BandcampDownloadProtocol),
+                item.Album);
+
+            return await _postProcess.RunAsync(request, ct).ConfigureAwait(false);
+        }
+
         private async Task ProcessItemAsync(BandcampDownloadItem item, CancellationToken cancellationToken)
         {
             _logger.Debug("Bandcamp download queue: Starting download {0} for '{1}'",
@@ -188,6 +216,17 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
                 item.Phase = "resolving";
 
                 await _downloadProxy.ExecuteDownloadAsync(item, cancellationToken).ConfigureAwait(false);
+
+                // Opt-in per client, same as the other three: the operator picks which
+                // clients get scanned and tagged in the FFmpeg metadata settings.
+                if (!await RunPostProcessAsync(item, cancellationToken).ConfigureAwait(false))
+                {
+                    item.Status = BandcampDownloadStatus.Failed;
+                    item.ErrorMessage = "Post-processing rejected the download";
+                    item.CompletedAt = DateTime.UtcNow;
+                    item.Phase = "failed";
+                    return;
+                }
 
                 item.Status = BandcampDownloadStatus.Completed;
                 item.Progress = 1.0;

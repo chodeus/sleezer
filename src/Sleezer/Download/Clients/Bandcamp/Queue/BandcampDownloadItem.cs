@@ -1,5 +1,7 @@
 using System;
 
+using NzbDrone.Core.Music;
+
 namespace NzbDrone.Core.Download.Clients.Bandcamp
 {
     /// <summary>
@@ -28,6 +30,9 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
         /// Desired output directory for the extracted download.
         /// </summary>
         public string OutputPath { get; set; } = string.Empty;
+
+        /// Album this grab is for, so post-process tagging has a target.
+        public Album? Album { get; set; }
 
         /// <summary>
         /// Current status of the download.

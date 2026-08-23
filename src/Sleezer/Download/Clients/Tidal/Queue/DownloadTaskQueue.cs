@@ -63,7 +63,7 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
             _settings = settings;
             _diskProvider = diskProvider;
             _logger = logger;
-            _postProcess = new PostProcessRunner(corruptionScanner, corruptionFailureHandler, preImportTagger, metadataFactory, diskProvider, logger, FFMPEG.SetBinaryDirectory);
+            _postProcess = new PostProcessRunner(corruptionScanner, corruptionFailureHandler, preImportTagger, metadataFactory, diskProvider, logger);
         }
 
         public void SetSettings(TidalSettings settings)
@@ -73,7 +73,6 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
             // (which runs DURING the download, before RunPostProcessAsync would have a
             // chance to call EnsureFFmpegResolved) can find ffprobe / ffmpeg via the
             // path the user configured in Lidarr's FFmpeg metadata settings.
-            _postProcess.EnsureFFmpegResolved();
             if (Interlocked.CompareExchange(ref _rehydrated, 1, 0) == 0)
                 TryRehydrateFromDisk(settings);
         }
@@ -145,6 +144,11 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
                     }
 
                     var token = GetTokenForItem(item);
+                    // Tidal's FLAC-from-M4A extraction runs inside the download, through
+                    // our own FFMPEG wrapper — point it at the configured directory here,
+                    // where the need is, rather than having post-process push it in.
+                    FFMPEG.SetBinaryDirectory(_postProcess.GetSharedSettings()?.FFmpegPath);
+
                     var downloadTask = item.DoDownload(_settings, _logger, token);
 
                     var handler = HandleTask(item, downloadTask);

@@ -166,6 +166,9 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
 
         [FieldOption(Label = "Qobuz")]
         Qobuz = 4,
+
+        [FieldOption(Label = "Bandcamp")]
+        Bandcamp = 5,
     }
 
     public enum TargetAudioFormat

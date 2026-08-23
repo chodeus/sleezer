@@ -13,6 +13,10 @@ using NzbDrone.Core.Music;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Core.RemotePathMappings;
 
+using NzbDrone.Plugin.Sleezer.Core.Tidal;
+
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
+
 namespace NzbDrone.Core.Download.Clients.Bandcamp
 {
     /// <summary>
@@ -94,7 +98,7 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
             var folderTitle = retagContext != null
                 ? $"{retagContext.ArtistName} - {retagContext.AlbumTitle}"
                 : title;
-            var albumDir = MakeValidDirectoryName(folderTitle);
+            var albumDir = TidalPathSanitizer.CleanPath(folderTitle);
             var outputPath = System.IO.Path.Combine(downloadPath, $"{albumDir}-{downloadId[..8]}");
 
             var item = new BandcampDownloadItem
@@ -104,7 +108,8 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
                 Title = title,
                 OutputPath = outputPath,
                 Cookies = Settings.Cookies,
-                RetagContext = retagContext
+                RetagContext = retagContext,
+                Album = remoteAlbum.Albums?.FirstOrDefault()
             };
 
             await _taskQueue.EnqueueAsync(item).ConfigureAwait(false);
@@ -163,6 +168,11 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
             if (deleteData)
             {
                 DeleteItemData(item);
+
+                // Matches Deezer/Tidal/Qobuz: DeleteItemData drops the album folder we
+                // exposed, never the artist folder created above it.
+                if (!item.OutputPath.IsEmpty)
+                    DownloadFolderCleanup.TryRemoveEmptyParentFolders(item.OutputPath.FullPath, Settings.DownloadPath, "Bandcamp", _logger);
             }
         }
 
@@ -386,31 +396,5 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
         /// Creates a filesystem-safe directory name from a release title.
         /// Strips characters invalid on Windows/Linux and collapses whitespace.
         /// </summary>
-        private static string MakeValidDirectoryName(string title)
-        {
-            var invalid = System.IO.Path.GetInvalidFileNameChars();
-            var name = title;
-
-            foreach (var c in invalid)
-            {
-                name = name.Replace(c, ' ');
-            }
-
-            // GetInvalidFileNameChars returns only '/' and NUL on Linux, so the rest of
-            // the Windows-invalid set has to be listed explicitly or it reaches the
-            // filesystem. Same class of gap as Lidarr.Plugin.Tidal issue #52.
-            foreach (var c in new[] { '/', '\\', ':', '*', '?', '<', '>', '|', '"' })
-            {
-                name = name.Replace(c, ' ');
-            }
-
-            // Collapse whitespace and trim
-            while (name.Contains("  "))
-            {
-                name = name.Replace("  ", " ");
-            }
-
-            return name.Trim();
-        }
     }
 }
