@@ -71,8 +71,6 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
             logger.Debug("[post-process] {Client} item {ID}: scan={ScanEnabled} tag={TagEnabled} folder={Folder}",
                 request.Client, request.DownloadId, scanEnabled, tagEnabled, request.Folder);
 
-            await EnsureFFmpegResolvedAsync(ct);
-
             // Tag first, scan second, so the scan validates the exact bytes Lidarr is
             // about to import rather than the pre-tag ones.
             if (tagEnabled)
@@ -80,6 +78,10 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
 
             if (!scanEnabled)
                 return true;
+
+            // Below the tag gate on purpose: the corruption scan's decode tier is the only
+            // thing here that runs ffmpeg, so tagging alone must not trigger an install.
+            await EnsureFFmpegResolvedAsync(ct);
 
             var sw = Stopwatch.StartNew();
             List<CorruptionStrike> strikes = await ScanForCorruptAsync(request.Folder, request.Client.ToString(), ct);

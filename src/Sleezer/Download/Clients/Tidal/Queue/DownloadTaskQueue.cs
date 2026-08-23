@@ -1,16 +1,13 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
-using System.Threading.Channels;
 using System.Threading.Tasks;
 using NLog;
 using NzbDrone.Common.Disk;
 using NzbDrone.Core.Extras.Metadata;
 using NzbDrone.Core.Music;
-using NzbDrone.Core.Parser.Model;
-using NzbDrone.Plugin.Sleezer.Core.Model;
+using NzbDrone.Plugin.Sleezer.Core.Download;
 using NzbDrone.Plugin.Sleezer.Core.PostProcessing;
 using NzbDrone.Plugin.Sleezer.Metadata.FFmpeg;
 
@@ -18,20 +15,16 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
 {
     public class DownloadTaskQueue
     {
+        private const int ConcurrentAlbums = 3;
 
-        private readonly Channel<DownloadItem> _queue;
-        private readonly List<DownloadItem> _items = new();
-        private readonly Dictionary<DownloadItem, CancellationTokenSource> _cancellationSources = new();
-        private readonly List<Task> _runningTasks = new();
-        private readonly object _lock = new();
-
-        private TidalSettings? _settings;
+        private readonly DownloadPump<DownloadItem> _pump;
         private readonly Logger _logger;
         private readonly PostProcessRunner _postProcess;
         private readonly IDiskProvider _diskProvider;
 
-        // 0 = rehydration not yet attempted, 1 = attempted (idempotent). Mirrors
-        // the Deezer queue's _rehydrated guard.
+        private TidalSettings? _settings;
+
+        // 0 = rehydration not yet attempted, 1 = attempted.
         private int _rehydrated;
 
         public DownloadTaskQueue(
@@ -44,142 +37,55 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
             IDiskProvider diskProvider,
             Logger logger)
         {
-            BoundedChannelOptions options = new(capacity)
-            {
-                FullMode = BoundedChannelFullMode.Wait
-            };
-            _queue = Channel.CreateBounded<DownloadItem>(options);
             _settings = settings;
             _diskProvider = diskProvider;
             _logger = logger;
             _postProcess = new PostProcessRunner(corruptionScanner, corruptionFailureHandler, preImportTagger, metadataFactory, diskProvider, logger);
+            _pump = new DownloadPump<DownloadItem>(capacity, ConcurrentAlbums, "Tidal", logger, RunItemAsync);
         }
 
         public void SetSettings(TidalSettings settings)
         {
             _settings = settings;
-            // Eagerly resolve the FFmpeg binary path so DownloadItem.HandleAudioConversion
-            // (which runs DURING the download, before RunPostProcessAsync would have a
-            // chance to call EnsureFFmpegResolved) can find ffprobe / ffmpeg via the
-            // path the user configured in Lidarr's FFmpeg metadata settings.
             if (Interlocked.CompareExchange(ref _rehydrated, 1, 0) == 0)
                 TryRehydrateFromDisk(settings);
         }
 
-        public void StartQueueHandler()
+        public void StartQueueHandler() => _pump.Start();
+
+        public ValueTask QueueBackgroundWorkItemAsync(DownloadItem workItem) => _pump.EnqueueAsync(workItem);
+
+        public DownloadItem[] GetQueueListing() => _pump.Listing();
+
+        public CancellationToken GetTokenForItem(DownloadItem item) => _pump.TokenFor(item);
+
+        public void RemoveItem(DownloadItem workItem)
         {
-            // Without the continuation a faulted loop is silent: the queue keeps accepting
-            // items and reporting them queued while nothing drains it.
-            _ = Task.Run(() => BackgroundProcessing())
-                .ContinueWith(
-                    faulted => _logger.Error(faulted.Exception, "Tidal queue handler stopped; no further downloads will be processed until Lidarr restarts."),
-                    CancellationToken.None,
-                    TaskContinuationOptions.OnlyOnFaulted,
-                    TaskScheduler.Default);
+            if (workItem == null)
+                return;
+
+            _pump.Remove(workItem);
+            TryDeleteSidecar(workItem);
         }
 
-        private async Task BackgroundProcessing(CancellationToken stoppingToken = default)
+        private async Task RunItemAsync(DownloadItem item, CancellationToken token)
         {
-            using SemaphoreSlim semaphore = new(3, 3);
+            // The proxy always calls SetSettings before queueing, so this is genuinely
+            // unexpected; the pump fails the item and keeps the loop running.
+            if (_settings == null)
+                throw new InvalidOperationException("Tidal queue received an item before settings were populated");
 
-            async Task HandleTask(DownloadItem item, Task task)
-            {
-                try
-                {
-                    var token = GetTokenForItem(item);
-                    item.Status = DownloadItemStatus.Downloading;
-                    await task;
+            // Tidal is the only client that runs ffmpeg inside the download — its
+            // FLAC-from-M4A extraction goes through our own wrapper — so point that at the
+            // configured directory here, where the need is. It resolves, never installs.
+            FFMPEG.SetBinaryDirectory(_postProcess.GetSharedSettings()?.FFmpegPath);
 
-                    if (item.Status == DownloadItemStatus.Completed && !await RunPostProcessAsync(item, token))
-                        item.Status = DownloadItemStatus.Failed;
+            await item.DoDownload(_settings, _logger, token);
 
-                    TryPersistCompletedItem(item);
-                }
-                catch (TaskCanceledException)
-                {
-                    _logger.Trace("Tidal download task cancelled: {Title}", item.Title);
-                }
-                catch (OperationCanceledException)
-                {
-                    _logger.Trace("Tidal download operation cancelled: {Title}", item.Title);
-                }
-                catch (Exception ex)
-                {
-                    item.Status = DownloadItemStatus.Failed;
-                    _logger.Error(ex, "Error while downloading Tidal album {Title}", item.Title);
-                }
-                finally
-                {
-                    semaphore.Release();
+            if (item.Status == DownloadItemStatus.Completed && !await RunPostProcessAsync(item, token))
+                item.Status = DownloadItemStatus.Failed;
 
-                    // The source stays alive through RemoveItem so the worker always has
-                    // a real token; this is the only place that knows the work is over.
-                    lock (_lock)
-                    {
-                        if (_cancellationSources.Remove(item, out var src))
-                            src.Dispose();
-                    }
-                }
-            }
-
-            while (!stoppingToken.IsCancellationRequested)
-            {
-                await semaphore.WaitAsync(stoppingToken);
-
-                DownloadItem? item = null;
-                try
-                {
-                    item = await DequeueAsync(stoppingToken);
-
-                    if (_settings == null)
-                    {
-                        // Settings not yet propagated. Drop the item rather
-                        // than crash the loop; the proxy always SetSettings
-                        // before queueing, so this is genuinely unexpected.
-                        _logger.Error("Tidal queue received item before settings populated; marking failed: {Title}", item.Title);
-                        item.Status = DownloadItemStatus.Failed;
-                        semaphore.Release();
-                        continue;
-                    }
-
-                    var token = GetTokenForItem(item);
-                    // Tidal's FLAC-from-M4A extraction runs inside the download, through
-                    // our own FFMPEG wrapper — point it at the configured directory here,
-                    // where the need is, rather than having post-process push it in.
-                    FFMPEG.SetBinaryDirectory(_postProcess.GetSharedSettings()?.FFmpegPath);
-
-                    var downloadTask = item.DoDownload(_settings, _logger, token);
-
-                    var handler = HandleTask(item, downloadTask);
-                    lock (_lock)
-                    {
-                        // Pruned here, not inside HandleTask: a handler that finished
-                        // before being added would never be removed.
-                        _runningTasks.RemoveAll(t => t.IsCompleted);
-                        _runningTasks.Add(handler);
-                    }
-                }
-                catch (OperationCanceledException)
-                {
-                    semaphore.Release();
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    // Per-iteration safety net so one bad item can't kill the
-                    // whole background loop. The semaphore must always be
-                    // released since HandleTask isn't owning it for this item.
-                    if (item != null)
-                        item.Status = DownloadItemStatus.Failed;
-                    _logger.Error(ex, "Tidal queue iteration failed; loop continues");
-                    semaphore.Release();
-                }
-            }
-
-            List<Task> remainingTasks;
-            lock (_lock)
-                remainingTasks = _runningTasks.ToList();
-            await Task.WhenAll(remainingTasks);
+            TryPersistCompletedItem(item);
         }
 
         private async Task<bool> RunPostProcessAsync(DownloadItem item, CancellationToken ct)
@@ -196,52 +102,13 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
             return await _postProcess.RunAsync(request, ct);
         }
 
-        public async ValueTask QueueBackgroundWorkItemAsync(DownloadItem workItem)
-        {
-            // Register before the channel write: the consumer can dequeue and call
-            // GetTokenForItem the instant the write lands, and an unregistered item
-            // yields default(CancellationToken) — one that can never be cancelled, so
-            // RemoveItem would drop it from the queue while the download kept running.
-            CancellationTokenSource token = new();
-            lock (_lock)
-            {
-                _items.Add(workItem);
-                _cancellationSources.Add(workItem, token);
-            }
-
-            // Publish under the item's own token so an item cancelled while waiting for
-            // capacity never reaches a worker at all.
-            await _queue.Writer.WriteAsync(workItem, token.Token);
-        }
-
-        private async ValueTask<DownloadItem> DequeueAsync(CancellationToken cancellationToken)
-            => await _queue.Reader.ReadAsync(cancellationToken);
-
-        public void RemoveItem(DownloadItem workItem)
-        {
-            if (workItem == null) return;
-            lock (_lock)
-            {
-                if (_cancellationSources.TryGetValue(workItem, out var src))
-                {
-                    // Cancel but keep the mapping — see the Qobuz queue.
-                    src.Cancel();
-                }
-
-                _items.Remove(workItem);
-            }
-            TryDeleteSidecar(workItem);
-        }
-
+        // Only completed downloads are persisted: a failed item may have had files removed
+        // by the corrupt-scan pass, so its on-disk state is not a valid import target.
         private void TryPersistCompletedItem(DownloadItem item)
         {
-            // Only completed downloads are persisted. Failed/cancelled items
-            // may have had files deleted by the corrupt-scan pass, so their
-            // on-disk state isn't a valid import target.
-            if (item.Status != DownloadItemStatus.Completed)
-                return;
-
-            if (string.IsNullOrEmpty(item.DownloadFolder) || !_diskProvider.FolderExists(item.DownloadFolder))
+            if (item.Status != DownloadItemStatus.Completed
+                || string.IsNullOrEmpty(item.DownloadFolder)
+                || !_diskProvider.FolderExists(item.DownloadFolder))
                 return;
 
             try
@@ -262,10 +129,7 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
 
             try
             {
-                string[] sidecars = Directory.GetFiles(
-                    root,
-                    PersistedDownloadItem.SidecarFileName,
-                    SearchOption.AllDirectories);
+                string[] sidecars = Directory.GetFiles(root, PersistedDownloadItem.SidecarFileName, SearchOption.AllDirectories);
 
                 int count = 0;
                 foreach (string sidecarPath in sidecars)
@@ -284,13 +148,8 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
                     if (persisted == null || persisted.Status != DownloadItemStatus.Completed)
                         continue;
 
-                    lock (_lock)
-                    {
-                        if (_items.Any(i => i.ID == persisted.ID))
-                            continue;
-                        _items.Add(DownloadItem.FromPersisted(persisted));
-                    }
-                    count++;
+                    if (_pump.TryAddRecovered(DownloadItem.FromPersisted(persisted)))
+                        count++;
                 }
 
                 if (count > 0)
@@ -317,18 +176,6 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
             {
                 _logger.Trace(ex, "Failed to delete Tidal sidecar for {Title}", item.Title);
             }
-        }
-
-        public DownloadItem[] GetQueueListing()
-        {
-            lock (_lock)
-                return _items.ToArray();
-        }
-
-        public CancellationToken GetTokenForItem(DownloadItem item)
-        {
-            lock (_lock)
-                return _cancellationSources.TryGetValue(item, out var src) ? src.Token : default;
         }
     }
 }

@@ -12,9 +12,11 @@ using TagLib;
 using TidalSharp;
 using TidalSharp.Data;
 
+using NzbDrone.Plugin.Sleezer.Core.Download;
+
 namespace NzbDrone.Core.Download.Clients.Tidal.Queue
 {
-    public class DownloadItem
+    public class DownloadItem : IQueuedDownload
     {
         // Time to wait between TagLib retries when the underlying file isn't
         // visible yet to the metadata read (NFS, Unraid mover, etc.).

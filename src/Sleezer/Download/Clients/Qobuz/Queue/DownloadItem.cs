@@ -13,9 +13,11 @@ using NzbDrone.Plugin.Sleezer.Qobuz;
 using QobuzApiSharp.Exceptions;
 using QobuzApiSharp.Models.Content;
 
+using NzbDrone.Plugin.Sleezer.Core.Download;
+
 namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
 {
-    public class DownloadItem
+    public class DownloadItem : IQueuedDownload
     {
         private const int MaxAttemptsPerQuality = 3;
 
