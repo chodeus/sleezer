@@ -830,7 +830,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             return impliedBitsPerSecond >= monoFloor;
         }
 
-        private (AudioFormat Codec, int? BitRate, int? BitDepth, int? SampleRate, long TotalSize, int TotalDuration) AnalyzeAudioQuality(IEnumerable<SlskdFileData> directory)
+        internal (AudioFormat Codec, int? BitRate, int? BitDepth, int? SampleRate, long TotalSize, int TotalDuration) AnalyzeAudioQuality(IEnumerable<SlskdFileData> directory)
         {
             string? commonExt = GetMostCommonExtension(directory);
             long totalSize = directory.Sum(f => f.Size);
@@ -844,10 +844,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             int? commonBitDepth = UnanimousOrNull(directory, f => f.BitDepth);
             int? commonSampleRate = UnanimousOrNull(directory, f => f.SampleRate);
 
-            // Reported, not enforced. FLAC has no fixed lower bound — quiet or highly
-            // repetitive 24-bit content genuinely can fall below this — so discarding the
-            // claim would demote a truthful hi-res release and let a worse candidate win.
-            // AudioQualityVerifier settles it authoritatively once the bytes are on disk.
+            // Reported, never enforced: dropping the claim would demote a truthful
+            // hi-res release. AudioQualityVerifier settles it once the bytes land.
             if (commonBitDepth.HasValue && !DepthClaimIsPlausible(commonBitDepth.Value, commonSampleRate, totalSize, totalDuration))
             {
                 _logger.Warn("Slskd: the advertised {BitDepth}-bit/{SampleRate}Hz claim looks implausible — {Size} bytes over {Duration}s. Keeping it; post-download verification will confirm what actually arrived.",
