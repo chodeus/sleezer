@@ -45,7 +45,7 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.Lucida
                 DelayBetweenAttemps = Options.DelayBetweenAttemps,
                 NumberOfAttempts = Options.NumberOfAttempts,
                 Priority = RequestPriority.Low,
-                Handler = Options.Handler
+                Handler = OrchestrationHandler
             }));
         }
 

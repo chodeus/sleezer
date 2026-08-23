@@ -25,6 +25,12 @@ namespace NzbDrone.Plugin.Sleezer.Download.Base
         protected readonly StringBuilder _message = new();
         protected readonly RequestContainer<IRequest> _requestContainer = [];
         protected readonly RequestContainer<LoadRequest> _trackContainer = [];
+
+        // The orchestrating request must NOT share the download handler. It occupies a
+        // slot while waiting for the tracks that need that same slot, so at
+        // MaxParallelDownloads = 1 the two deadlock and the item hangs at Downloading
+        // forever. Verified in RequestSchedulingTests.
+        protected static readonly RequestHandler OrchestrationHandler = new() { MaxParallelism = 16 };
         protected readonly RemoteAlbum _remoteAlbum;
         protected readonly Album _albumData;
         protected readonly DownloadClientItem _clientItem;
@@ -100,7 +106,7 @@ namespace NzbDrone.Plugin.Sleezer.Download.Base
             // ProcessDownloadAsync only queues the per-track work, so the files do not
             // exist yet. Scanning here would find an empty folder, report zero strikes
             // and call it clean.
-            await _trackContainer.Task;
+            await _trackContainer.Task.WaitAsync(token);
 
             // A container's Task does not cover requests chained onto its members, and
             // that chain is where the clients do their per-track tagging — so follow each
@@ -111,7 +117,7 @@ namespace NzbDrone.Plugin.Sleezer.Download.Base
                 .Select(x => x!)];
 
             if (chained.Length > 0)
-                await Task.WhenAll(chained);
+                await Task.WhenAll(chained).WaitAsync(token);
 
             var request = new PostProcessRequest(
                 Options.PostProcessClient,
