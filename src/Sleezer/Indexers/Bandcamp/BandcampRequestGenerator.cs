@@ -44,7 +44,9 @@ namespace NzbDrone.Core.Indexers.Bandcamp
                 return pageableRequests;
             }
 
-            var query = $"{searchCriteria.CleanArtistQuery}+{searchCriteria.CleanAlbumQuery}";
+            // Space, not "+": EscapeDataString turns a literal + into %2B, which Bandcamp
+            // then searches for as part of the term rather than as a separator.
+            var query = $"{searchCriteria.CleanArtistQuery} {searchCriteria.CleanAlbumQuery}";
             pageableRequests.Add(BuildSearchRequests(query));
 
             return pageableRequests;

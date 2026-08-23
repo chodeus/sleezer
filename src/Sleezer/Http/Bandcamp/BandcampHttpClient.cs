@@ -117,7 +117,7 @@ namespace NzbDrone.Core.Http.Bandcamp
 
             try
             {
-                var response = await _httpClient.ExecuteAsync(request);
+                var response = await _httpClient.ExecuteAsync(request).ConfigureAwait(false);
 
                 _logger.Debug("Bandcamp response: {0} -> {1} ({2} bytes)",
                     request.Url,
@@ -152,7 +152,7 @@ namespace NzbDrone.Core.Http.Bandcamp
 
             try
             {
-                var response = await _httpClient.ExecuteAsync(request);
+                var response = await _httpClient.ExecuteAsync(request).ConfigureAwait(false);
 
                 _logger.Debug("Bandcamp response: {0} -> {1}",
                     request.Url,

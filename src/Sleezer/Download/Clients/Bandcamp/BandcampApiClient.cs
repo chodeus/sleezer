@@ -93,7 +93,7 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
                     request.ResponseStream = destination;
                 }
 
-                var response = await _httpClient.ExecuteRawAsync(request, cancellationToken);
+                var response = await _httpClient.ExecuteRawAsync(request, cancellationToken).ConfigureAwait(false);
 
                 if ((int)response.StatusCode is < 300 or >= 400)
                 {
@@ -160,7 +160,7 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
 
             var builder = _httpClient.CreateRequestBuilder(BandcampBaseUrl, cookies);
             var request = builder.Build();
-            var response = await _httpClient.ExecuteAsync(request);
+            var response = await _httpClient.ExecuteAsync(request).ConfigureAwait(false);
 
             var content = response.Content ?? string.Empty;
 
@@ -273,7 +273,7 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
 
             var request = builder.Build();
             request.SetContent(JsonSerializer.Serialize(payload));
-            var response = await _httpClient.ExecuteAsync(request);
+            var response = await _httpClient.ExecuteAsync(request).ConfigureAwait(false);
 
             var content = response.Content ?? string.Empty;
 
@@ -438,7 +438,7 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
         {
             var builder = _httpClient.CreateRequestBuilder(albumUrl, cookies);
             var request = builder.Build();
-            var response = await _httpClient.ExecuteAsync(request);
+            var response = await _httpClient.ExecuteAsync(request).ConfigureAwait(false);
             var content = response.Content ?? string.Empty;
 
             try
@@ -465,7 +465,7 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
 
             var builder = _httpClient.CreateRequestBuilder(downloadPageUrl, cookies);
             var request = builder.Build();
-            var response = await _httpClient.ExecuteAsync(request);
+            var response = await _httpClient.ExecuteAsync(request).ConfigureAwait(false);
 
             var content = response.Content ?? string.Empty;
 
@@ -525,7 +525,7 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
 
             var builder = _httpClient.CreateRequestBuilder(url, cookies);
             var request = builder.Build();
-            var response = await _httpClient.ExecuteAsync(request);
+            var response = await _httpClient.ExecuteAsync(request).ConfigureAwait(false);
 
             var content = response.Content ?? string.Empty;
 
