@@ -80,3 +80,29 @@ public class SlskdQualityClaimTests
         Assert.True(SlskdItemsParser.DepthClaimIsPossible(24, sampleRate, size, duration));
     }
 }
+
+// The confinement guard in SlskdDownloadManager gates folder deletion. It is not
+// reachable from the test project (it needs Lidarr.Core), so this pins the rule it
+// implements: on a case-sensitive filesystem a sibling that differs only by case is
+// outside the root, and must not be treated as inside it.
+public class PathContainmentRuleTests
+{
+    private static bool IsStrictDescendant(string candidate, string root)
+    {
+        var fullRoot = System.IO.Path.GetFullPath(root).TrimEnd(System.IO.Path.DirectorySeparatorChar);
+        var full = System.IO.Path.GetFullPath(candidate);
+        var withSep = fullRoot + System.IO.Path.DirectorySeparatorChar;
+        return full.Length > withSep.Length && full.StartsWith(withSep, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("/downloads/music/artist/album", "/downloads/music", true)]
+    [InlineData("/downloads/MUSIC/artist/album", "/downloads/music", false)]
+    [InlineData("/downloads/music-old/artist", "/downloads/music", false)]
+    [InlineData("/downloads/music", "/downloads/music", false)]
+    [InlineData("/downloads", "/downloads/music", false)]
+    public void Containment_requires_a_case_sensitive_separator_boundary(string candidate, string root, bool expected)
+    {
+        Assert.Equal(expected, IsStrictDescendant(candidate, root));
+    }
+}
