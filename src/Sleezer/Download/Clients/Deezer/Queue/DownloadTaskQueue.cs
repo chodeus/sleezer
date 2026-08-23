@@ -79,8 +79,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
             item.EnsureValidity();
             await item.DoDownload(_settings, _logger, token);
 
-            if (item.Status == DownloadItemStatus.Completed && !await RunPostProcessAsync(item, token))
-                item.Status = DownloadItemStatus.Failed;
+            await PostProcessGate.RunHeldAsync(item, () => RunPostProcessAsync(item, token));
 
             TryPersistCompletedItem(item);
         }

@@ -80,8 +80,7 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
             // Qobuz client, so the queue's current settings may belong to another one.
             await item.DoDownload(item.Settings ?? _settings!, _logger, token);
 
-            if (item.Status == DownloadItemStatus.Completed && !await RunPostProcessAsync(item, token))
-                item.Status = DownloadItemStatus.Failed;
+            await PostProcessGate.RunHeldAsync(item, () => RunPostProcessAsync(item, token));
 
             TryPersistCompletedItem(item);
         }
