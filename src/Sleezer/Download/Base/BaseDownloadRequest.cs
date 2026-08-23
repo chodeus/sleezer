@@ -86,11 +86,8 @@ namespace NzbDrone.Plugin.Sleezer.Download.Base
         protected abstract Task ProcessDownloadAsync(CancellationToken token);
 
         /// <summary>
-        /// Downloads, then runs the shared corruption-scan and pre-import-tagging pass.
-        /// Called in place of <see cref="ProcessDownloadAsync"/> so the web clients cannot
-        /// drift apart the way the queue clients did. Deliberately runs inside the request
-        /// delegate: State stays Running throughout, so GetDownloadItemStatus keeps
-        /// reporting Downloading and Lidarr cannot import the folder mid-scan.
+        /// Downloads, then runs the shared post-process pass. Must stay inside the request
+        /// delegate: State stays Running, so Lidarr cannot import the folder mid-scan.
         /// </summary>
         protected async Task ProcessDownloadAndPostProcessAsync(CancellationToken token)
         {
