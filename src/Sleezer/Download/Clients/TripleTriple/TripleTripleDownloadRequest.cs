@@ -29,7 +29,7 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.TripleTriple
             {
                 try
                 {
-                    await ProcessDownloadAsync(token);
+                    await ProcessDownloadAndPostProcessAsync(token);
                     return true;
                 }
                 catch (Exception ex)

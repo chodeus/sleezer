@@ -2,6 +2,8 @@
 using NzbDrone.Core.Download;
 using NzbDrone.Core.MediaFiles;
 using NzbDrone.Core.Organizer;
+using NzbDrone.Plugin.Sleezer.Core.PostProcessing;
+using NzbDrone.Plugin.Sleezer.Metadata.FFmpeg;
 using Requests.Options;
 
 namespace NzbDrone.Plugin.Sleezer.Download.Base
@@ -74,6 +76,18 @@ namespace NzbDrone.Plugin.Sleezer.Download.Base
         /// </summary>
         public IAudioTagService AudioTagService { get; set; } = null!;
 
+        /// <summary>
+        /// Shared corruption-scan and pre-import-tagging pass. Null leaves the client
+        /// importing unverified, which is what every web client did before this existed.
+        /// </summary>
+        public PostProcessRunner? PostProcess { get; set; }
+
+        /// <summary>
+        /// Which client this download belongs to, so the runner can honour the per-client
+        /// opt-in lists in the FFmpeg metadata settings.
+        /// </summary>
+        public PostProcessClient PostProcessClient { get; set; }
+
         public BaseDownloadOptions() { }
 
         protected BaseDownloadOptions(BaseDownloadOptions options) : base(options)
@@ -90,6 +104,8 @@ namespace NzbDrone.Plugin.Sleezer.Download.Base
             ItemId = options.ItemId;
             RequestInterceptors = options.RequestInterceptors;
             AudioTagService = options.AudioTagService;
+            PostProcess = options.PostProcess;
+            PostProcessClient = options.PostProcessClient;
         }
     }
 }

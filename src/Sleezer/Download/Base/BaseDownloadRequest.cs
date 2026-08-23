@@ -11,6 +11,8 @@ using System.Text;
 using System.Text.RegularExpressions;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
+using NzbDrone.Plugin.Sleezer.Core.PostProcessing;
+
 namespace NzbDrone.Plugin.Sleezer.Download.Base
 {
     /// <summary>
@@ -82,6 +84,32 @@ namespace NzbDrone.Plugin.Sleezer.Download.Base
         /// Implement the main download processing logic
         /// </summary>
         protected abstract Task ProcessDownloadAsync(CancellationToken token);
+
+        /// <summary>
+        /// Downloads, then runs the shared corruption-scan and pre-import-tagging pass.
+        /// Called in place of <see cref="ProcessDownloadAsync"/> so the web clients cannot
+        /// drift apart the way the queue clients did. Deliberately runs inside the request
+        /// delegate: State stays Running throughout, so GetDownloadItemStatus keeps
+        /// reporting Downloading and Lidarr cannot import the folder mid-scan.
+        /// </summary>
+        protected async Task ProcessDownloadAndPostProcessAsync(CancellationToken token)
+        {
+            await ProcessDownloadAsync(token);
+
+            if (Options.PostProcess == null)
+                return;
+
+            var request = new PostProcessRequest(
+                Options.PostProcessClient,
+                ID,
+                ReleaseInfo.Title,
+                _destinationPath.FullPath,
+                ReleaseInfo.DownloadProtocol ?? string.Empty,
+                _albumData);
+
+            if (!await Options.PostProcess.RunAsync(request, token))
+                throw new PostProcessRejectedException($"Post-processing rejected {ReleaseInfo.Title}.");
+        }
 
         /// <summary>
         /// Get the album title for folder naming

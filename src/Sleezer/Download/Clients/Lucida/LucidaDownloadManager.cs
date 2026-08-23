@@ -7,6 +7,10 @@ using NzbDrone.Core.Parser.Model;
 using NzbDrone.Plugin.Sleezer.Download.Base;
 using NzbDrone.Plugin.Sleezer.Indexers.Lucida;
 
+using NzbDrone.Common.Disk;
+using NzbDrone.Core.Extras.Metadata;
+using NzbDrone.Plugin.Sleezer.Core.PostProcessing;
+using NzbDrone.Plugin.Sleezer.Metadata.FFmpeg;
 namespace NzbDrone.Plugin.Sleezer.Download.Clients.Lucida
 {
     /// <summary>
@@ -20,9 +24,12 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.Lucida
     public class LucidaDownloadManager(
         Logger logger,
         IEnumerable<IHttpRequestInterceptor> requestInterceptors,
-        ILucidaRateLimiter rateLimiter
+        ILucidaRateLimiter rateLimiter,
+        ICorruptionScanner corruptionScanner, ICorruptionFailureHandler corruptionFailureHandler, IPreImportTagger preImportTagger, IMetadataFactory metadataFactory, IDiskProvider diskProvider
     ) : BaseDownloadManager<LucidaDownloadRequest, LucidaDownloadOptions, LucidaClient>(logger), ILucidaDownloadManager
     {
+        private readonly PostProcessRunner _postProcess = new(corruptionScanner, corruptionFailureHandler, preImportTagger, metadataFactory, diskProvider, logger);
+
         protected override async Task<LucidaDownloadRequest> CreateDownloadRequest(
             RemoteAlbum remoteAlbum,
             IIndexer indexer,
@@ -50,6 +57,8 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.Lucida
                 RequestInterceptors = requestInterceptors,
                 NumberOfAttempts = (byte)provider.Settings.ConnectionRetries,
                 ClientInfo = DownloadClientItemClientInfo.FromDownloadClient(provider, false),
+                PostProcess = _postProcess,
+                PostProcessClient = PostProcessClient.Lucida,
                 IsTrack = isTrack,
                 ItemId = itemUrl,
                 RateLimiter = rateLimiter
