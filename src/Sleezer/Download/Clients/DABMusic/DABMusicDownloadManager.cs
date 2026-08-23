@@ -8,6 +8,10 @@ using NzbDrone.Core.Parser.Model;
 using NzbDrone.Plugin.Sleezer.Download.Base;
 using NzbDrone.Plugin.Sleezer.Indexers.DABMusic;
 
+using NzbDrone.Common.Disk;
+using NzbDrone.Core.Extras.Metadata;
+using NzbDrone.Plugin.Sleezer.Core.PostProcessing;
+using NzbDrone.Plugin.Sleezer.Metadata.FFmpeg;
 namespace NzbDrone.Plugin.Sleezer.Download.Clients.DABMusic
 {
     public interface IDABMusicDownloadManager : IBaseDownloadManager<DABMusicDownloadRequest, DABMusicDownloadOptions, DABMusicClient>
@@ -16,11 +20,13 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.DABMusic
     public class DABMusicDownloadManager : BaseDownloadManager<DABMusicDownloadRequest, DABMusicDownloadOptions, DABMusicClient>, IDABMusicDownloadManager
     {
         private readonly IDABMusicSessionManager _sessionManager;
+        private readonly PostProcessRunner _postProcess;
         private readonly IEnumerable<IHttpRequestInterceptor> _requestInterceptors;
         private readonly IAudioTagService _audioTagService;
 
-        public DABMusicDownloadManager(IDABMusicSessionManager sessionManager, IEnumerable<IHttpRequestInterceptor> requestInterceptors, IAudioTagService audioTagService, Logger logger) : base(logger)
+        public DABMusicDownloadManager(IDABMusicSessionManager sessionManager, IEnumerable<IHttpRequestInterceptor> requestInterceptors, IAudioTagService audioTagService, Logger logger, ICorruptionScanner corruptionScanner, ICorruptionFailureHandler corruptionFailureHandler, IPreImportTagger preImportTagger, IMetadataFactory metadataFactory, IDiskProvider diskProvider) : base(logger)
         {
+            _postProcess = new(corruptionScanner, corruptionFailureHandler, preImportTagger, metadataFactory, diskProvider, logger);
             _sessionManager = sessionManager;
             _requestInterceptors = requestInterceptors;
             _audioTagService = audioTagService;
@@ -50,6 +56,8 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.DABMusic
                 DelayBetweenAttemps = TimeSpan.FromSeconds(2),
                 NumberOfAttempts = (byte)provider.Settings.ConnectionRetries,
                 ClientInfo = DownloadClientItemClientInfo.FromDownloadClient(provider, false),
+                PostProcess = _postProcess,
+                PostProcessClient = PostProcessClient.DABMusic,
                 IsTrack = isTrack,
                 ItemId = itemId,
                 Email = provider.Settings.Email,

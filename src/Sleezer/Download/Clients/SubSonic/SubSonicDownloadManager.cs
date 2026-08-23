@@ -7,6 +7,10 @@ using NzbDrone.Core.Organizer;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Plugin.Sleezer.Download.Base;
 
+using NzbDrone.Common.Disk;
+using NzbDrone.Core.Extras.Metadata;
+using NzbDrone.Plugin.Sleezer.Core.PostProcessing;
+using NzbDrone.Plugin.Sleezer.Metadata.FFmpeg;
 namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
 {
     public interface ISubSonicDownloadManager : IBaseDownloadManager<SubSonicDownloadRequest, SubSonicDownloadOptions, SubSonicClient>
@@ -15,8 +19,10 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
     /// <summary>
     /// Manager for SubSonic downloads, handles creating and managing download requests
     /// </summary>
-    public class SubSonicDownloadManager(IEnumerable<IHttpRequestInterceptor> requestInterceptors, IAudioTagService audioTagService, Logger logger) : BaseDownloadManager<SubSonicDownloadRequest, SubSonicDownloadOptions, SubSonicClient>(logger), ISubSonicDownloadManager
+    public class SubSonicDownloadManager(IEnumerable<IHttpRequestInterceptor> requestInterceptors, IAudioTagService audioTagService, Logger logger, ICorruptionScanner corruptionScanner, ICorruptionFailureHandler corruptionFailureHandler, IPreImportTagger preImportTagger, IMetadataFactory metadataFactory, IDiskProvider diskProvider) : BaseDownloadManager<SubSonicDownloadRequest, SubSonicDownloadOptions, SubSonicClient>(logger), ISubSonicDownloadManager
     {
+        private readonly PostProcessRunner _postProcess = new(corruptionScanner, corruptionFailureHandler, preImportTagger, metadataFactory, diskProvider, logger);
+
         private readonly IEnumerable<IHttpRequestInterceptor> _requestInterceptors = requestInterceptors;
         private readonly IAudioTagService _audioTagService = audioTagService;
 
@@ -53,6 +59,8 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
                 DelayBetweenAttemps = TimeSpan.FromSeconds(2),
                 NumberOfAttempts = (byte)provider.Settings.ConnectionRetries,
                 ClientInfo = DownloadClientItemClientInfo.FromDownloadClient(provider, false),
+                PostProcess = _postProcess,
+                PostProcessClient = PostProcessClient.SubSonic,
                 IsTrack = isTrack,
                 ItemId = itemId,
                 PreferredFormat = (PreferredFormatEnum)provider.Settings.PreferredFormat,

@@ -290,7 +290,7 @@ Sleezer auto-downloads a static FFmpeg from [`chodeus/ffmpeg-static`](https://gi
 
 ### Corrupt File Scan & Pre-Import Tagging 🧼
 
-These live under FFmpeg's settings because they use the bundled FFmpeg binary. They run on **Deezer, Tidal, Qobuz, Bandcamp and Slskd**, opt-in per client. The web clients (Lucida, SubSonic, TripleTriple, DABMusic) use a lighter download path that does not invoke them yet — see [#93](https://github.com/chodeus/sleezer/issues/93). Lidarr's own torrent and Usenet clients are untouched. Only the FFmpeg *conversion* provider (previous section) applies to imports from every source.
+These live under FFmpeg's settings because they use the bundled FFmpeg binary. They run on **every Sleezer download client** — Deezer, Tidal, Qobuz, Bandcamp, Slskd, Lucida, SubSonic, TripleTriple and DABMusic — opt-in per client. Lidarr's own torrent and Usenet clients are untouched. Only the FFmpeg *conversion* provider (previous section) applies to imports from every source.
 
 Each feature is opt-in via a chip-style picker: pick which Sleezer downloaders should get the treatment. An empty picker means the feature is off entirely. **Both pickers default empty** — nothing runs until you opt in.
 

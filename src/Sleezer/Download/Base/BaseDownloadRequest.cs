@@ -11,6 +11,9 @@ using System.Text;
 using System.Text.RegularExpressions;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
+using System.Linq;
+using NzbDrone.Plugin.Sleezer.Core.PostProcessing;
+
 namespace NzbDrone.Plugin.Sleezer.Download.Base
 {
     /// <summary>
@@ -82,6 +85,45 @@ namespace NzbDrone.Plugin.Sleezer.Download.Base
         /// Implement the main download processing logic
         /// </summary>
         protected abstract Task ProcessDownloadAsync(CancellationToken token);
+
+        /// <summary>
+        /// Downloads, then runs the shared post-process pass. Must stay inside the request
+        /// delegate: State stays Running, so Lidarr cannot import the folder mid-scan.
+        /// </summary>
+        protected async Task ProcessDownloadAndPostProcessAsync(CancellationToken token)
+        {
+            await ProcessDownloadAsync(token);
+
+            if (Options.PostProcess == null)
+                return;
+
+            // ProcessDownloadAsync only queues the per-track work, so the files do not
+            // exist yet. Scanning here would find an empty folder, report zero strikes
+            // and call it clean.
+            await _trackContainer.Task;
+
+            // A container's Task does not cover requests chained onto its members, and
+            // that chain is where the clients do their per-track tagging — so follow each
+            // track's own SubsequentRequest rather than trusting the container alone.
+            Task[] chained = [.. _trackContainer
+                .Select(t => ((IRequest)t).SubsequentRequest?.Task)
+                .Where(x => x != null)
+                .Select(x => x!)];
+
+            if (chained.Length > 0)
+                await Task.WhenAll(chained);
+
+            var request = new PostProcessRequest(
+                Options.PostProcessClient,
+                ID,
+                ReleaseInfo.Title,
+                _destinationPath.FullPath,
+                ReleaseInfo.DownloadProtocol ?? string.Empty,
+                _albumData);
+
+            if (!await Options.PostProcess.RunAsync(request, token))
+                throw new PostProcessRejectedException($"Post-processing rejected {ReleaseInfo.Title}.");
+        }
 
         /// <summary>
         /// Get the album title for folder naming
