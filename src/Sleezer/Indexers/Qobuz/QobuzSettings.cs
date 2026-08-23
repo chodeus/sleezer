@@ -41,10 +41,10 @@ namespace NzbDrone.Core.Indexers.Qobuz
     {
         private static readonly QobuzIndexerSettingsValidator Validator = new();
 
-        [FieldDefinition(0, Label = "User ID", Type = FieldType.Textbox, HelpText = "Your numeric Qobuz user ID. On play.qobuz.com open DevTools → Application → Local Storage and read the 'id' field.")]
+        [FieldDefinition(0, Label = "User ID", Type = FieldType.Textbox, HelpText = "Your numeric Qobuz user ID. On play.qobuz.com open DevTools → Console and run: JSON.parse(localStorage.localuser).id")]
         public string UserID { get; set; } = "";
 
-        [FieldDefinition(1, Label = "User Auth Token", Type = FieldType.Password, Privacy = PrivacyLevel.ApiKey, HelpText = "Your Qobuz auth token — this is the credential that enables downloading. On play.qobuz.com open DevTools → Network and copy the 'X-User-Auth-Token' request header.")]
+        [FieldDefinition(1, Label = "User Auth Token", Type = FieldType.Password, Privacy = PrivacyLevel.ApiKey, HelpText = "The credential that enables downloading. On play.qobuz.com open DevTools → Console and run: copy(JSON.parse(localStorage.localuser).token) — it is then on your clipboard. The Network tab also carries it as the X-User-Auth-Token header, but only on api.qobuz.com calls, so the player has to be doing something first.")]
         public string UserAuthToken { get; set; } = "";
 
         [FieldDefinition(2, Label = "Qobuz Email", Type = FieldType.Textbox, Advanced = true, HelpText = "Alternative to the token above.", HelpTextWarning = "Email/password sessions can search but CANNOT download — Qobuz refuses getFileUrl on them. Use the token for a working download client.")]

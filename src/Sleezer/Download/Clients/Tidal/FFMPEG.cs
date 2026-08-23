@@ -8,13 +8,8 @@ namespace NzbDrone.Core.Download.Clients.Tidal
 {
     internal static class FFMPEG
     {
-        // Configured ffmpeg/ffprobe binary directory (set by DownloadTaskQueue
-        // from Lidarr's FFmpeg metadata-consumer settings on first post-process).
-        // null = no override; bare PATH lookup is used.
-        // Mirrors how the Deezer queue calls XabeFFmpeg.SetExecutablesPath.
-        // Without this, Lidarr's container PATH (typically just /app/bin and
-        // a couple of system dirs) often misses ffprobe/ffmpeg installed at
-        // /usr/bin or /usr/local/bin.
+        // Set by the Tidal queue before each download. null falls back to PATH, which in
+        // the Lidarr image misses ffmpeg at /usr/bin — see ResolveBinary.
         private static string? _binaryDirectory;
 
         public static void SetBinaryDirectory(string? directory)
@@ -22,7 +17,7 @@ namespace NzbDrone.Core.Download.Clients.Tidal
             _binaryDirectory = string.IsNullOrWhiteSpace(directory) ? null : directory;
         }
 
-        private static string ResolveBinary(string name)
+        internal static string ResolveBinary(string name)
         {
             if (string.IsNullOrEmpty(_binaryDirectory))
                 return name;

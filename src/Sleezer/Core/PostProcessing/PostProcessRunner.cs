@@ -68,7 +68,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
                 return true;
             }
 
-            logger.Debug("[post-process] {Client} item {ID}: scan={ScanEnabled} tag={TagEnabled} folder={Folder}",
+            logger.Info("[post-process] {Client} item {ID}: scan={ScanEnabled} tag={TagEnabled} folder={Folder}",
                 request.Client, request.DownloadId, scanEnabled, tagEnabled, request.Folder);
 
             // Tag first, scan second, so the scan validates the exact bytes Lidarr is
@@ -85,7 +85,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
 
             var sw = Stopwatch.StartNew();
             List<CorruptionStrike> strikes = await ScanForCorruptAsync(request.Folder, request.Client.ToString(), ct);
-            logger.Debug("[post-process] {Client} item {ID}: scan completed in {ElapsedMs}ms — {StrikeCount} strike(s)",
+            logger.Info("[post-process] {Client} item {ID}: scan completed in {ElapsedMs}ms — {StrikeCount} strike(s)",
                 request.Client, request.DownloadId, sw.ElapsedMilliseconds, strikes.Count);
 
             if (strikes.Count == 0)
@@ -214,7 +214,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
                 sharedSettings?.StripFeaturedArtists ?? false,
                 ct);
 
-            logger.Debug("[post-process] {Client} item {ID}: tagging completed in {ElapsedMs}ms", request.Client, request.DownloadId, tagSw.ElapsedMilliseconds);
+            logger.Info("[post-process] {Client} item {ID}: tagging completed in {ElapsedMs}ms", request.Client, request.DownloadId, tagSw.ElapsedMilliseconds);
         }
 
         private async Task<List<CorruptionStrike>> ScanForCorruptAsync(string folder, string clientName, CancellationToken ct)
