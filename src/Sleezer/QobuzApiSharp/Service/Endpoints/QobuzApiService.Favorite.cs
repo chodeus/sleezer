@@ -95,7 +95,7 @@ namespace QobuzApiSharp.Service
         public UserFavoritesIds GetUserFavoriteIds(string userId, int limit = 5000, int offset = 0)
         {
             Dictionary<string, string> parameters = new Dictionary<string, string> {
-                { "user_id ", userId },
+                { "user_id", userId },
                 { "limit", limit.ToString() },
                 { "offset", offset.ToString() }
 
@@ -119,8 +119,8 @@ namespace QobuzApiSharp.Service
         public UserFavorites GetUserFavorites(string userId, string type = null, int limit = 50, int offset = 0)
         {
             Dictionary<string, string> parameters = new Dictionary<string, string> {
-                { "user_id ", userId },
-                { "type " , type },
+                { "user_id", userId },
+                { "type" , type },
                 { "limit", limit.ToString() },
                 { "offset", offset.ToString() }
 

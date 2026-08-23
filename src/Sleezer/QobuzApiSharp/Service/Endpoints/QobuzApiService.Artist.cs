@@ -63,10 +63,10 @@ namespace QobuzApiSharp.Service
         {
             Dictionary<string, string> parameters = new Dictionary<string, string> {
                 { "artist_id", artistId },
-                { "release_type " , release_type  },
+                { "release_type" , release_type  },
                 { "sort", sort },
-                { "order " , order  },
-                { "track_size " , track_size.ToString()  },
+                { "order" , order  },
+                { "track_size" , track_size.ToString()  },
                 { "limit", limit.ToString() },
                 { "offset", offset.ToString() }
 

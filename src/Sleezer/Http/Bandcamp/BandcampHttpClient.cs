@@ -47,7 +47,10 @@ namespace NzbDrone.Core.Http.Bandcamp
             // is attached. Callers used to pass response-derived URLs unchecked.
             if (!IsCredentialedBandcampUrl(url))
             {
-                throw new BandcampCollectionException($"Refusing to send Bandcamp session cookies to an unapproved destination: {new Uri(url, UriKind.RelativeOrAbsolute).GetLeftPart(UriPartial.Authority)}");
+                // Formatted from the parse result, not by re-parsing: the input being
+                // rejected is exactly the input that may not parse.
+                var destination = Uri.TryCreate(url, UriKind.Absolute, out var parsed) ? parsed.GetLeftPart(UriPartial.Authority) : "an unparseable URL";
+                throw new BandcampCollectionException($"Refusing to send Bandcamp session cookies to {destination}.");
             }
 
             var builder = new HttpRequestBuilder(url)

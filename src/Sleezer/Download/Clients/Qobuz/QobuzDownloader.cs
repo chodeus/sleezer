@@ -118,12 +118,16 @@ namespace NzbDrone.Core.Download.Clients.Qobuz
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(token);
             cts.CancelAfter(AuxRequestTimeout);
 
-            using TagLib.File file = TagLib.File.Create(trackPath);
-
-            // WaitAsync as well as the Task.Run token: the token is only observed before
-            // the delegate starts, and the calls inside are synchronous.
-            await Task.Run(() => s.ApplyMetadataToTagLibFile(file, trackId, albumArt, embedArt, lyrics), cts.Token)
-                .WaitAsync(cts.Token);
+            // The file is opened and disposed inside the delegate. WaitAsync can return
+            // on the deadline while the delegate is still running, so anything the
+            // caller owned would be disposed out from under it mid-Save().
+            await Task.Run(
+                () =>
+                {
+                    using TagLib.File file = TagLib.File.Create(trackPath);
+                    s.ApplyMetadataToTagLibFile(file, trackId, albumArt, embedArt, lyrics);
+                },
+                cts.Token).WaitAsync(cts.Token);
         }
 
         private static string ToOriginalUrl(string largeUrl)

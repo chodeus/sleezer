@@ -46,6 +46,13 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
         public AudioQuality Bitrate { get; private set; }
         public DownloadItemStatus Status { get; set; }
 
+        /// <summary>
+        /// The settings this item was queued with. Captured at enqueue because the queue
+        /// is a singleton shared by every configured Qobuz client, and reading the
+        /// queue's current settings at dequeue could apply another client's paths.
+        /// </summary>
+        public QobuzSettings? Settings { get; private set; }
+
         public int CompletedTracks => Volatile.Read(ref _completedTracks);
         public int FailedTracks => Volatile.Read(ref _failedTracks);
         public int SkippedTracks => Volatile.Read(ref _skippedTracks);
@@ -111,6 +118,8 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
             await item.LoadAlbum();
             return item;
         }
+
+        internal void CaptureSettings(QobuzSettings settings) => Settings = settings;
 
         public async Task DoDownload(QobuzSettings settings, Logger logger, CancellationToken cancellation = default)
         {

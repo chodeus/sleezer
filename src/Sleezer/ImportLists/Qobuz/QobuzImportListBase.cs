@@ -44,7 +44,13 @@ namespace NzbDrone.Core.ImportLists.Qobuz
                     break;
 
                 offset += returned;
-                if (offset >= total)
+
+                // A missing total (0) must not read as "done" — keep going until a page
+                // comes back short, which is the reliable end signal.
+                if (total > 0 && offset >= total)
+                    break;
+
+                if (returned < PageSize)
                     break;
             }
 

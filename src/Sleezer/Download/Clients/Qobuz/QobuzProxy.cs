@@ -93,6 +93,7 @@ namespace NzbDrone.Core.Download.Clients.Qobuz
                 throw new ReleaseDownloadException(remoteAlbum.Release,
                     $"Unable to parse a Qobuz album URL from release: {remoteAlbum.Release.DownloadUrl}");
 
+            downloadItem.CaptureSettings(settings);
             await _taskQueue.QueueBackgroundWorkItemAsync(downloadItem);
             return downloadItem.ID;
         }

@@ -5,6 +5,7 @@ using NLog;
 using NzbDrone.Core.Http.Bandcamp;
 using NzbDrone.Common.Extensions;
 using NzbDrone.Common.Http;
+using NzbDrone.Core.Indexers.Exceptions;
 using NzbDrone.Core.IndexerSearch.Definitions;
 
 namespace NzbDrone.Core.Indexers.Bandcamp
@@ -73,6 +74,20 @@ namespace NzbDrone.Core.Indexers.Bandcamp
             _logger.Debug("Bandcamp search URL: {0}", searchUrl);
 
             var request = new IndexerRequest(searchUrl, HttpAccept.Html);
+
+            // Same rule as every other credentialed Bandcamp request: vouch for the
+
+            // destination before the cookie goes out.
+
+            if (!BandcampHttpClient.IsCredentialedBandcampUrl(searchUrl))
+
+            {
+
+                throw new IndexerException(new IndexerResponse(null, null),
+
+                    "Refusing to send Bandcamp session cookies to an unapproved search URL.");
+
+            }
 
             var cookieHeader = BandcampHttpClient.NormalizeCookieHeader(_settings.Cookies);
             if (!string.IsNullOrWhiteSpace(cookieHeader))

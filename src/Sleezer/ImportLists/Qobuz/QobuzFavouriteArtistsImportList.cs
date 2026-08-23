@@ -31,10 +31,12 @@ namespace NzbDrone.Core.ImportLists.Qobuz
             {
                 PageThrough("favourite artists", offset =>
                 {
-                    var favourites = QobuzAPI.Instance?.Client?.GetUserFavorites(null, type: "artists", limit: PageSize, offset: offset);
-                    var page = favourites?.Artists?.Items;
-                    if (page == null)
-                        return (0, 0);
+                    // Use the session already validated above, and treat a null response
+                    // as a failure: returning (0, 0) would stop paging silently and hand
+                    // Lidarr a short list it accepts as the current set.
+                    var favourites = api.Client.GetUserFavorites(null, type: "artists", limit: PageSize, offset: offset);
+                    var page = favourites?.Artists?.Items
+                        ?? throw new InvalidOperationException($"Qobuz returned no favourite artists page at offset {offset}.");
 
                     foreach (var artist in page)
                     {

@@ -85,6 +85,14 @@ namespace QobuzApiSharp.Service
             string berlinExtras = berlinMatch.Groups[2].Value;
 
             string combined = seed + berlinInfo + berlinExtras;
+
+            // A changed bundle shows up here as a short string. Indexing blindly threw
+            // ArgumentOutOfRangeException, which says nothing about the real cause.
+            if (string.IsNullOrEmpty(seed) || combined.Length <= 44)
+            {
+                throw new ApiErrorResponseException("Could not derive the Qobuz app_secret: the web player's bundle.js no longer matches the expected format.");
+            }
+
             string substr = combined.Substring(0, combined.Length - 44);
 
             // Ensure proper base64 padding before decoding
@@ -94,6 +102,14 @@ namespace QobuzApiSharp.Service
 
             return Encoding.UTF8.GetString(Convert.FromBase64String(substr));
         }
+
+        /// <summary>
+        /// Method and URI only. HttpRequestMessage.ToString() renders headers, and
+        /// SendAsync sets X-User-Auth-Token, so the full render puts the caller's
+        /// credential onto every API exception.
+        /// </summary>
+        internal static string DescribeRequest(HttpRequestMessage request)
+            => request == null ? string.Empty : $"{request.Method} {request.RequestUri?.GetLeftPart(UriPartial.Path)}";
 
         /// <summary>
         /// Deserializes the response.

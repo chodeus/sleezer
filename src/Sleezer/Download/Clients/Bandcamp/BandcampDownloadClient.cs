@@ -282,7 +282,7 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
             }
 
             var album = _albumService.GetAlbum(remoteAlbum.Albums[0].Id);
-            var artist = _albumService.GetAlbum(album.Id).Artist?.Value ?? remoteAlbum.Artist;
+            var artist = album.Artist?.Value ?? remoteAlbum.Artist;
             var release = SelectPreferredRelease(album.Id);
             var tracks = BuildTrackContexts(album.Id, release?.Id);
 

@@ -35,14 +35,9 @@ namespace NzbDrone.Core.ImportLists.Qobuz
                 {
                     PageThrough($"tracks from playlist {playlistId}", offset =>
                     {
-                        var playlist = QobuzAPI.Instance?.Client?.GetPlaylist(playlistId, withAuth: true, extra: "tracks", limit: PageSize, offset: offset);
-                        var page = playlist?.Tracks?.Items;
-                        if (page == null)
-                        {
-                            if (offset == 0)
-                                _logger.Warn("Qobuz playlist {PlaylistId} returned no tracks", playlistId);
-                            return (0, 0);
-                        }
+                        var playlist = api.Client.GetPlaylist(playlistId, withAuth: true, extra: "tracks", limit: PageSize, offset: offset);
+                        var page = playlist?.Tracks?.Items
+                            ?? throw new InvalidOperationException($"Qobuz returned no track page for playlist {playlistId} at offset {offset}.");
 
                         foreach (var track in page)
                         {

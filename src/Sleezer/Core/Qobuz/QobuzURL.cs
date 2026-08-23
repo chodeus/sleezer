@@ -19,9 +19,9 @@ namespace NzbDrone.Plugin.Sleezer.Core.Qobuz
         // exclusive and order doesn't matter.
         private static readonly Regex[] UrlPatterns =
         [
-            new(@"^https?://(?:.*?\.)?qobuz\.com/(?<type>[^/]+?)/(?<id>[^/]+?)/?$", RegexOptions.IgnoreCase | RegexOptions.Compiled),
-            new(@"^https?://(?:.*?\.)?qobuz\.com/[^/]+/(?<type>[^/]+?)/[^/]+/download-streaming-albums/(?<id>[^/]+?)/?$", RegexOptions.IgnoreCase | RegexOptions.Compiled),
-            new(@"^https?://(?:.*?\.)?qobuz\.com/[^/]+/(?<type>[^/]+?)/[^/]+/(?<id>[^/]+?)/?$", RegexOptions.IgnoreCase | RegexOptions.Compiled)
+            new(@"^https?://(?:[^/]*\.)?qobuz\.com/(?<type>[^/]+?)/(?<id>[^/]+?)/?$", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+            new(@"^https?://(?:[^/]*\.)?qobuz\.com/[^/]+/(?<type>[^/]+?)/[^/]+/download-streaming-albums/(?<id>[^/]+?)/?$", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+            new(@"^https?://(?:[^/]*\.)?qobuz\.com/[^/]+/(?<type>[^/]+?)/[^/]+/(?<id>[^/]+?)/?$", RegexOptions.IgnoreCase | RegexOptions.Compiled)
         ];
 
         // "interpreter" is Qobuz's word for an artist page in store links.

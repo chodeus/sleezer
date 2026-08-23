@@ -34,12 +34,12 @@ namespace QobuzApiSharp.Service
                 { "email", email },
                 { "password", password }
             };
-            HttpResponseMessage response = this.SendFormAsync("/user/login", parameters).Result;
+            using HttpResponseMessage response = this.SendFormAsync("/user/login", parameters).Result;
 
             if (!response.IsSuccessStatusCode)
             {
                 QobuzApiStatusResponse errorResponse = QobuzApiHelper.DeserializeResponse<QobuzApiStatusResponse>(response);
-                throw new ApiErrorResponseException($"Failed to login user with email {email}.", response.RequestMessage.ToString(), errorResponse);
+                throw new ApiErrorResponseException($"Failed to login user with email {email}.", QobuzApiHelper.DescribeRequest(response.RequestMessage), errorResponse);
             }
 
             try
@@ -71,12 +71,12 @@ namespace QobuzApiSharp.Service
                 { "username", username },
                 { "password", password }
             };
-            HttpResponseMessage response = this.SendFormAsync("/user/login", parameters).Result;
+            using HttpResponseMessage response = this.SendFormAsync("/user/login", parameters).Result;
 
             if (!response.IsSuccessStatusCode)
             {
                 QobuzApiStatusResponse errorResponse = QobuzApiHelper.DeserializeResponse<QobuzApiStatusResponse>(response);
-                throw new ApiErrorResponseException($"Failed to login user with username {username}.", response.RequestMessage.ToString(), errorResponse);
+                throw new ApiErrorResponseException($"Failed to login user with username {username}.", QobuzApiHelper.DescribeRequest(response.RequestMessage), errorResponse);
             }
 
             try
@@ -108,12 +108,12 @@ namespace QobuzApiSharp.Service
                 { "user_id", userId },
                 { "user_auth_token", userAuthToken }
             };
-            HttpResponseMessage response = this.SendFormAsync("/user/login", parameters).Result;
+            using HttpResponseMessage response = this.SendFormAsync("/user/login", parameters).Result;
 
             if (!response.IsSuccessStatusCode)
             {
                 QobuzApiStatusResponse errorResponse = QobuzApiHelper.DeserializeResponse<QobuzApiStatusResponse>(response);
-                throw new ApiErrorResponseException($"Failed to login user with ID {userId} using a token.", response.RequestMessage.ToString(), errorResponse);
+                throw new ApiErrorResponseException($"Failed to login user with ID {userId} using a token.", QobuzApiHelper.DescribeRequest(response.RequestMessage), errorResponse);
             }
 
             try
@@ -137,7 +137,7 @@ namespace QobuzApiSharp.Service
         {
             Dictionary<string, string> parameters = new Dictionary<string, string>
             {
-                {"username ", email }
+                { "username", email }
             };
 
             return GetApiResponse<QobuzApiStatusResponse>("/user/resetPassword", parameters, false);
@@ -152,7 +152,7 @@ namespace QobuzApiSharp.Service
         {
             Dictionary<string, string> parameters = new Dictionary<string, string>
             {
-                {"username ", username }
+                { "username", username }
             };
 
             return GetApiResponse<QobuzApiStatusResponse>("/user/resetPassword", parameters, false);

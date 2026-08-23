@@ -165,7 +165,7 @@ namespace QobuzApiSharp.Service
             if (!response.IsSuccessStatusCode)
             {
                 QobuzApiStatusResponse errorResponse = QobuzApiHelper.DeserializeResponse<QobuzApiStatusResponse>(response);
-                throw new ApiErrorResponseException($"API request failed for endpoint {apiEndpoint}.", response.RequestMessage.ToString(), errorResponse);
+                throw new ApiErrorResponseException($"API request failed for endpoint {apiEndpoint}.", QobuzApiHelper.DescribeRequest(response.RequestMessage), errorResponse);
             }
 
             return QobuzApiHelper.DeserializeResponse<T>(response);
@@ -185,10 +185,21 @@ namespace QobuzApiSharp.Service
                 FileUrl thrillerFileUrl = GetTrackFileUrl("7398", "27");
                 thrillerUrl = thrillerFileUrl.Url;
             }
+            catch (ApiErrorResponseException ex)
+            {
+                // A rejected request is what an invalid secret looks like.
+                Trace.WriteLine("AppSecret test with Thriller Hi-Res track was rejected:");
+                Trace.WriteLine(ex);
+                return false;
+            }
             catch (Exception ex)
             {
-                Trace.WriteLine("AppSecret test with Thriller Hi-Res track failed with exception:");
+                // Anything else — a network blip, a timeout, a 429 — says nothing about
+                // the secret. Reporting it invalid makes the caller re-scrape bundle.js
+                // and re-authenticate for no reason, so assume it still holds.
+                Trace.WriteLine("AppSecret test could not be completed; assuming the secret is still valid:");
                 Trace.WriteLine(ex);
+                return true;
             }
 
             return !string.IsNullOrEmpty(thrillerUrl);

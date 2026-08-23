@@ -181,7 +181,22 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
 
             // Publish under the item's own token so an item cancelled while waiting for
             // capacity never reaches a worker at all.
-            await _queue.Writer.WriteAsync(workItem, token.Token);
+            try
+            {
+                await _queue.Writer.WriteAsync(workItem, token.Token);
+            }
+            catch
+            {
+                // No worker will ever see this item, so nothing else will clean it up.
+                lock (_lock)
+                {
+                    _items.Remove(workItem);
+                    _cancellationSources.Remove(workItem);
+                }
+
+                token.Dispose();
+                throw;
+            }
         }
 
         private async ValueTask<DownloadItem> DequeueAsync(CancellationToken cancellationToken)

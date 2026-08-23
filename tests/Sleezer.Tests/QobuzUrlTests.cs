@@ -50,6 +50,17 @@ public class QobuzUrlTests
         Assert.Null(parsed);
     }
 
+    // The host must be the host, not a string appearing somewhere in the path.
+    [Theory]
+    [InlineData("https://evil.example.com/qobuz.com/album/abc")]
+    [InlineData("https://evil.example.com/?next=https://open.qobuz.com/album/abc")]
+    [InlineData("https://notqobuz.com/album/abc")]
+    public void TryParse_rejects_a_qobuz_host_appearing_inside_another_url(string url)
+    {
+        Assert.False(QobuzURL.TryParse(url, out QobuzURL? parsed));
+        Assert.Null(parsed);
+    }
+
     // Enum.TryParse would happily read "/2/" as QobuzEntityType.Album; the name-keyed
     // lookup must not.
     [Theory]

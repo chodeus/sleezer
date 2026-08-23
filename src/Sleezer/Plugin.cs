@@ -58,8 +58,33 @@ namespace NzbDrone.Plugin.Sleezer
             CheckDelayProfiles(repo, downloadProtocols);
         }
 
+        // DABMusic used to be persisted as QobuzDownloadProtocol. Without this, a profile
+        // that had DABMusic switched off loses that row, and CheckDelayProfiles then seeds
+        // a fresh DABMusic entry with Allowed = true — silently re-enabling something the
+        // operator had deliberately denied. Renaming the stored value preserves the
+        // decision, and leaves QobuzDownloadProtocol free for the first-party client.
+        private void MigrateLegacyDabMusicProtocol(IDelayProfileRepository repo)
+        {
+            const string legacy = nameof(QobuzDownloadProtocol);
+            const string renamed = nameof(DABMusicDownloadProtocol);
+
+            foreach (DelayProfile profile in repo.All())
+            {
+                DelayProfileProtocolItem? stale = profile.Items.FirstOrDefault(x => x.Protocol == legacy && x.Name == "Qobuz");
+                if (stale == null || profile.Items.Any(x => x.Protocol == renamed))
+                    continue;
+
+                _logger.Info("Migrating DABMusic delay-profile entry (ID: {ProfileId}); allowed={Allowed}", profile.Id, stale.Allowed);
+                stale.Protocol = renamed;
+                stale.Name = "DABMusic";
+                repo.Update(profile);
+            }
+        }
+
         private void CheckDelayProfiles(IDelayProfileRepository repo, IEnumerable<IDownloadProtocol> downloadProtocols)
         {
+            MigrateLegacyDabMusicProtocol(repo);
+
             foreach (IDownloadProtocol protocol in downloadProtocols.Where(x => ProtocolTypes.Any(y => y == x.GetType())))
             {
                 _logger.Trace($"Checking protocol: {protocol.GetType().Name}");

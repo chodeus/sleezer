@@ -168,7 +168,10 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
                     }
 
                     var token = GetTokenForItem(item);
-                    var downloadTask = item.DoDownload(_settings, _logger, token);
+
+                    // The item's own snapshot, not the queue's current settings: this
+                    // queue is shared by every configured Qobuz client.
+                    var downloadTask = item.DoDownload(item.Settings ?? _settings, _logger, token);
                     var handler = HandleTask(item, downloadTask, semaphore);
 
                     lock (_lock)

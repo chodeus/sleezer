@@ -79,7 +79,22 @@ Local changes, which GPL-3.0 §5(a) requires be stated:
   disable CS0672, SYSLIB0051` on the three exception types.
 - `QobuzApiService.User.cs`: the login failure messages no longer quote the
   user's auth token or password hash back into the exception, which was putting
-  the credential into any log that recorded it.
+  the credential into any log that recorded it. The three login responses are
+  also disposed.
+- `QobuzApiHelper.cs`: `DescribeRequest` replaces `HttpRequestMessage.ToString()`
+  on every error path — the full render includes the `X-User-Auth-Token` header,
+  so the token was stored on every API exception. The `app_secret` derivation
+  also reports a changed bundle format instead of throwing
+  `ArgumentOutOfRangeException` from a blind substring.
+- `QobuzApiService.Artist.cs`, `.Favorite.cs`, `.User.cs`: eight parameter keys
+  had a trailing space (`"type "`, `"user_id "`, `"order "`, …). `ToQueryString`
+  escapes the key, so they were sent as `type%20=` and silently ignored — which
+  meant the favourites import lists never applied their type filter.
+- `QobuzApiService.cs`: `IsAppSecretValid` treated any exception as an invalid
+  secret, so a network blip forced a needless re-scrape and re-authentication.
+  Only a rejected request counts now.
+- `MostPopularContentConverter.cs`: rejects a missing or unsupported `type`
+  rather than dereferencing null or returning null.
 
 Re-vendoring means re-applying that list, not discarding it.
 
