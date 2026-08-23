@@ -192,12 +192,17 @@ namespace QobuzApiSharp.Service
                 Trace.WriteLine(ex);
                 return false;
             }
-            catch (Exception ex)
+            catch (HttpRequestException ex)
             {
-                // Anything else — a network blip, a timeout, a 429 — says nothing about
-                // the secret. Reporting it invalid makes the caller re-scrape bundle.js
-                // and re-authenticate for no reason, so assume it still holds.
-                Trace.WriteLine("AppSecret test could not be completed; assuming the secret is still valid:");
+                // A transport blip says nothing about the secret, and reporting it
+                // invalid would force a needless re-scrape and re-authentication.
+                Trace.WriteLine("AppSecret test could not reach Qobuz; assuming the secret still holds:");
+                Trace.WriteLine(ex);
+                return true;
+            }
+            catch (TaskCanceledException ex)
+            {
+                Trace.WriteLine("AppSecret test timed out; assuming the secret still holds:");
                 Trace.WriteLine(ex);
                 return true;
             }

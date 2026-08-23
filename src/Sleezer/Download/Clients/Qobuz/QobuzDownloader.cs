@@ -115,19 +115,18 @@ namespace NzbDrone.Core.Download.Clients.Qobuz
 
         public static async Task ApplyMetadataToFile(this QobuzApiService s, string trackId, string trackPath, byte[]? albumArt, bool embedArt, string lyrics = "", CancellationToken token = default)
         {
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(token);
-            cts.CancelAfter(AuxRequestTimeout);
-
-            // The file is opened and disposed inside the delegate. WaitAsync can return
-            // on the deadline while the delegate is still running, so anything the
-            // caller owned would be disposed out from under it mid-Save().
+            // Awaited to completion, deliberately without a WaitAsync deadline. The work
+            // inside is synchronous and cannot be interrupted, so abandoning the wait
+            // would leave it writing to a path the retry is already reusing — or that
+            // album cleanup has deleted. QobuzApiSharp's HttpClient bounds the two
+            // network calls, so this cannot hang indefinitely.
             await Task.Run(
                 () =>
                 {
                     using TagLib.File file = TagLib.File.Create(trackPath);
                     s.ApplyMetadataToTagLibFile(file, trackId, albumArt, embedArt, lyrics);
                 },
-                cts.Token).WaitAsync(cts.Token);
+                token);
         }
 
         private static string ToOriginalUrl(string largeUrl)

@@ -205,7 +205,7 @@ namespace NzbDrone.Core.Indexers.Bandcamp
             var publishDate = DateTime.MinValue;
             if (releasedMatch.Success)
             {
-                DateTime.TryParse(releasedMatch.Groups["date"].Value, CultureInfo.InvariantCulture, DateTimeStyles.None, out publishDate);
+                DateTime.TryParse(releasedMatch.Groups["date"].Value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out publishDate);
             }
 
             // Estimate track count from the block if available

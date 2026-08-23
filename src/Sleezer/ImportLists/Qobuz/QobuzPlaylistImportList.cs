@@ -29,7 +29,12 @@ namespace NzbDrone.Core.ImportLists.Qobuz
             if (api.Login == null)
                 throw new InvalidOperationException("Not signed in to Qobuz — add and save the Qobuz indexer first.");
 
-            foreach (string playlistId in Settings.PlaylistIds ?? [])
+            // An empty list here would be returned to Lidarr as the authoritative current
+            // set, silently unmonitoring everything the lists had contributed.
+            if (Settings.PlaylistIds?.Any() != true)
+                throw new InvalidOperationException("No Qobuz playlist IDs are configured for this import list.");
+
+            foreach (string playlistId in Settings.PlaylistIds)
             {
                 try
                 {

@@ -239,7 +239,11 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
         {
             QobuzAPI api = QobuzAPI.Instance ?? throw new InvalidOperationException("Qobuz API is not initialised.");
 
-            var page = api.Client.GetTrack(trackId, true);
+            // Synchronous QobuzApiSharp call on the download task. Moved off the calling
+            // thread and awaited to completion — not WaitAsync'd — because the call
+            // cannot be interrupted, and abandoning it would leave it running while the
+            // retry reuses outPath. The client's own HttpClient timeout bounds it.
+            var page = await Task.Run(() => api.Client.GetTrack(trackId, true), cancellation);
             var ext = bitrate == AudioQuality.MP3320 ? "mp3" : "flac";
 
             var outPath = Path.Combine(

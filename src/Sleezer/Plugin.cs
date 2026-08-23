@@ -71,8 +71,19 @@ namespace NzbDrone.Plugin.Sleezer
             foreach (DelayProfile profile in repo.All())
             {
                 DelayProfileProtocolItem? stale = profile.Items.FirstOrDefault(x => x.Protocol == legacy && x.Name == "Qobuz");
-                if (stale == null || profile.Items.Any(x => x.Protocol == renamed))
+                if (stale == null)
                     continue;
+
+                if (profile.Items.Any(x => x.Protocol == renamed))
+                {
+                    // Already migrated. Leaving the legacy row would be worse than doing
+                    // nothing: it now governs the first-party Qobuz client, so an old
+                    // DABMusic deny would silently apply to Qobuz.
+                    _logger.Info("Removing a stale DABMusic delay-profile entry (ID: {ProfileId})", profile.Id);
+                    profile.Items.Remove(stale);
+                    repo.Update(profile);
+                    continue;
+                }
 
                 _logger.Info("Migrating DABMusic delay-profile entry (ID: {ProfileId}); allowed={Allowed}", profile.Id, stale.Allowed);
                 stale.Protocol = renamed;
