@@ -17,6 +17,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include="Fixtures\silence.flac" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="4.0.0" />
@@ -52,6 +56,9 @@
     <Compile Include="..\..\src\Sleezer\Blocklisting\DeezerBlocklist.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Blocklisting\TidalBlocklist.cs"
+             LinkBase="SourceUnderTest" />
+    <!-- Provenance tag written after the client's own metadata pass. -->
+    <Compile Include="..\..\src\Sleezer\Core\Utilities\SourceTagWriter.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Utilities\ReleaseFormatter.cs"
              LinkBase="SourceUnderTest" />

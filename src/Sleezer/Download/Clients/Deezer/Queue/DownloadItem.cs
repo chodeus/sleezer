@@ -19,6 +19,8 @@ using NzbDrone.Plugin.Sleezer.Deezer;
 
 using NzbDrone.Plugin.Sleezer.Core.Download;
 
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
+
 namespace NzbDrone.Core.Download.Clients.Deezer.Queue
 {
     public class InsufficientLicenseRightsException : Exception
@@ -334,6 +336,8 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
             }
 
             await DeezerAPI.Instance.Client.Downloader.ApplyMetadataToFile(track, outPath, 512, plainLyrics, token: cancellation);
+
+            SourceTagWriter.TryWrite(outPath, $"https://www.deezer.com/album/{_deezerUrl?.Id}", logger);
 
             if (syncLyrics != null)
                 await CreateLrcFile(Path.Combine(outDir, MetadataUtilities.GetFilledTemplate("%track% - %title%.%ext%", "lrc", page, _deezerAlbum)), syncLyrics);

@@ -14,6 +14,8 @@ using TidalSharp.Data;
 
 using NzbDrone.Plugin.Sleezer.Core.Download;
 
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
+
 namespace NzbDrone.Core.Download.Clients.Tidal.Queue
 {
     public class DownloadItem : IQueuedDownload
@@ -252,6 +254,8 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
             }
 
             await ApplyMetadataWithRetry(track, outPath, plainLyrics, logger, cancellation);
+
+            SourceTagWriter.TryWrite(outPath, _tidalUrl?.Url, logger);
 
             if (syncLyrics != null)
             {
