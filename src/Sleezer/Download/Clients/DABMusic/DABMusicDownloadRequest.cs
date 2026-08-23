@@ -52,7 +52,7 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.DABMusic
                 DelayBetweenAttemps = Options.DelayBetweenAttemps,
                 NumberOfAttempts = Options.NumberOfAttempts,
                 Priority = RequestPriority.Low,
-                Handler = Options.Handler
+                Handler = OrchestrationHandler
             }));
         }
 
