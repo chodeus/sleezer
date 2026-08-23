@@ -814,15 +814,12 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             return agreed;
         }
 
-        // Raw PCM is bitDepth x sampleRate x channels, and FLAC does not compress real
-        // music below roughly half of it. Channel count is not advertised, so this
-        // assumes mono — the lowest floor any file could have — and therefore only
-        // rejects a claim that is impossible even at its most generous reading.
-        // It catches an inflated 24/96 or 24/192; 24/44.1 against 16/44.1 overlaps and
-        // cannot be separated this way. The claim is dropped, never the release.
+        // A heuristic, not a proof: FLAC has no guaranteed floor, so this only says a
+        // claim looks unlikely. Assumes mono — the lowest floor any file could have —
+        // so it flags only the egregious. 24/44.1 against 16/44.1 overlaps entirely.
         private const double FlacCompressionFloor = 0.5;
 
-        internal static bool DepthClaimIsPossible(int bitDepth, int? sampleRate, long totalSize, int totalDurationSeconds)
+        internal static bool DepthClaimIsPlausible(int bitDepth, int? sampleRate, long totalSize, int totalDurationSeconds)
         {
             if (sampleRate is null or <= 0 || totalDurationSeconds <= 0 || totalSize <= 0)
                 return true;
@@ -847,11 +844,14 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             int? commonBitDepth = UnanimousOrNull(directory, f => f.BitDepth);
             int? commonSampleRate = UnanimousOrNull(directory, f => f.SampleRate);
 
-            if (commonBitDepth.HasValue && !DepthClaimIsPossible(commonBitDepth.Value, commonSampleRate, totalSize, totalDuration))
+            // Reported, not enforced. FLAC has no fixed lower bound — quiet or highly
+            // repetitive 24-bit content genuinely can fall below this — so discarding the
+            // claim would demote a truthful hi-res release and let a worse candidate win.
+            // AudioQualityVerifier settles it authoritatively once the bytes are on disk.
+            if (commonBitDepth.HasValue && !DepthClaimIsPlausible(commonBitDepth.Value, commonSampleRate, totalSize, totalDuration))
             {
-                _logger.Debug("Slskd: dropping the advertised {BitDepth}-bit/{SampleRate}Hz claim — {Size} bytes over {Duration}s is below what that format can compress to",
+                _logger.Warn("Slskd: the advertised {BitDepth}-bit/{SampleRate}Hz claim looks implausible — {Size} bytes over {Duration}s. Keeping it; post-download verification will confirm what actually arrived.",
                     commonBitDepth, commonSampleRate, totalSize, totalDuration);
-                commonBitDepth = null;
             }
 
             if (!commonBitRate.HasValue && totalDuration > 0)

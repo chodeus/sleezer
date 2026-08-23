@@ -50,34 +50,34 @@ public class SlskdQualityClaimTests
 
     // The issue's worked example: 24/96 advertised against an implied ~900 kbps.
     [Fact]
-    public void DepthClaimIsPossible_rejects_a_hires_claim_the_bytes_cannot_support()
+    public void DepthClaimIsPlausible_flags_a_hires_claim_the_bytes_barely_support()
     {
         // 900 kbps over 240s ≈ 27 MB. Even mono 24/96 floors at ~1152 kbps.
-        Assert.False(SlskdItemsParser.DepthClaimIsPossible(24, 96000, totalSize: 27_000_000, totalDurationSeconds: 240));
+        Assert.False(SlskdItemsParser.DepthClaimIsPlausible(24, 96000, totalSize: 27_000_000, totalDurationSeconds: 240));
     }
 
     [Fact]
-    public void DepthClaimIsPossible_accepts_a_genuine_hires_folder()
+    public void DepthClaimIsPlausible_accepts_a_genuine_hires_folder()
     {
         // ~3000 kbps over 240s ≈ 90 MB — comfortably above the 24/96 floor.
-        Assert.True(SlskdItemsParser.DepthClaimIsPossible(24, 96000, totalSize: 90_000_000, totalDurationSeconds: 240));
+        Assert.True(SlskdItemsParser.DepthClaimIsPlausible(24, 96000, totalSize: 90_000_000, totalDurationSeconds: 240));
     }
 
     // Explicitly documented as out of reach: the mono floor for 24/44.1 sits below
     // a normal 16/44.1 bitrate, so this pair cannot be separated before download.
     [Fact]
-    public void DepthClaimIsPossible_cannot_separate_24_from_16_at_44_1()
+    public void DepthClaimIsPlausible_cannot_separate_24_from_16_at_44_1()
     {
-        Assert.True(SlskdItemsParser.DepthClaimIsPossible(24, 44100, totalSize: 30_000_000, totalDurationSeconds: 240));
+        Assert.True(SlskdItemsParser.DepthClaimIsPlausible(24, 44100, totalSize: 30_000_000, totalDurationSeconds: 240));
     }
 
     [Theory]
     [InlineData(null, 30_000_000, 240)]  // no sample rate advertised
     [InlineData(96000, 0, 240)]          // no size
     [InlineData(96000, 30_000_000, 0)]   // no duration
-    public void DepthClaimIsPossible_defers_when_there_is_nothing_to_disprove_it_with(int? sampleRate, long size, int duration)
+    public void DepthClaimIsPlausible_defers_when_there_is_nothing_to_disprove_it_with(int? sampleRate, long size, int duration)
     {
-        Assert.True(SlskdItemsParser.DepthClaimIsPossible(24, sampleRate, size, duration));
+        Assert.True(SlskdItemsParser.DepthClaimIsPlausible(24, sampleRate, size, duration));
     }
 }
 

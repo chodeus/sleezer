@@ -18,7 +18,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
     }
 
     /// <summary>What the files on disk actually are, as opposed to what a peer said.</summary>
-    public sealed record AudioQualityReading(int? BitDepth, int? SampleRate, int FilesRead, bool Mixed)
+    public sealed record AudioQualityReading(int? BitDepth, int? SampleRate, int FilesRead, bool Mixed, bool RateIncomplete = false)
     {
         public static readonly AudioQualityReading None = new(null, null, 0, false);
     }
@@ -49,9 +49,14 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
             if (advertisedDepth != actual.BitDepth)
                 return QualityVerdict.Overstated;
 
-            // Depth agrees; only call the rate a mismatch when both sides stated one.
             if (advertisedRate is > 0 && actual.SampleRate is > 0 && advertisedRate != actual.SampleRate)
                 return QualityVerdict.Overstated;
+
+            // A rate was advertised but at least one file did not report one, so it was
+            // never actually checked. Saying Matches here would confirm a claim on the
+            // strength of the files that happened to carry the metadata.
+            if (advertisedRate is > 0 && (actual.SampleRate is null or <= 0 || actual.RateIncomplete))
+                return QualityVerdict.Unknown;
 
             return QualityVerdict.Matches;
         }
@@ -66,6 +71,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
             int? rate = null;
             int read = 0;
             bool mixed = false;
+            bool rateIncomplete = false;
 
             foreach (string path in audioFiles)
             {
@@ -74,6 +80,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
                     continue;
 
                 read++;
+                if (fileRate is null or <= 0)
+                    rateIncomplete = true;
 
                 if (depth is null)
                 {
@@ -86,7 +94,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
                     mixed = true;
             }
 
-            return read == 0 ? AudioQualityReading.None : new AudioQualityReading(depth, rate, read, mixed);
+            return read == 0 ? AudioQualityReading.None : new AudioQualityReading(depth, rate, read, mixed, rateIncomplete);
         }
 
         private static (int? Depth, int? Rate) ReadOne(string path, Logger logger)

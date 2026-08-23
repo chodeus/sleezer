@@ -38,10 +38,9 @@ namespace NzbDrone.Core.Indexers.Tidal
         [FieldDefinition(3, Label = "Expires", Type = FieldType.Textbox, Hidden = HiddenType.Hidden)]
         public DateTime Expires { get; set; }
 
-        // Visible once authentication populates it: this is the storefront Tidal
-        // licenses against, and the usual reason an album cannot be downloaded.
+        // Display only — see Tidal.cs; never fed back in as session input.
         [FieldDefinition(4, Label = "Account Storefront", Type = FieldType.Textbox, Advanced = true, Hidden = HiddenType.HiddenIfNotSet,
-            HelpText = "Set by Tidal when you authenticate; it cannot be changed here. Tidal licenses per territory, so an album missing from search or refusing to download is usually not licensed in this country. Changing it requires a Tidal account registered in another country.")]
+            HelpText = "Reported by Tidal when you authenticate. Editing it has no effect — the value is refreshed from Tidal on every session load. Tidal licenses per territory, so an album missing from search or refusing to download is usually not licensed in this country. Changing it requires a Tidal account registered in another country.")]
         public string CountryCode { get; set; } = "";
 
         [FieldDefinition(5, Label = "User Id", Type = FieldType.Number, Hidden = HiddenType.Hidden)]
