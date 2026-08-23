@@ -84,11 +84,8 @@ namespace NzbDrone.Core.Indexers.Qobuz
 
         private void EnsureSignedIn()
         {
-            // Only the App ID/Secret decide whether the client itself has to be rebuilt;
-            // everything else is a sign-in concern. Both are compared as configured,
-            // never against the values QobuzApiService resolves from the web player —
-            // a blank setting never equals a resolved one, which would rebuild and
-            // re-authenticate on every single search.
+            // Compared as configured, never against what QobuzApiService resolved: a blank
+            // setting never equals a resolved one, so every search would re-authenticate.
             bool clientNeedsRebuild = QobuzAPI.Instance == null
                 || QobuzAPI.Instance.ConfiguredAppId != (Settings.AppID ?? string.Empty)
                 || QobuzAPI.Instance.ConfiguredAppSecret != (Settings.AppSecret ?? string.Empty);

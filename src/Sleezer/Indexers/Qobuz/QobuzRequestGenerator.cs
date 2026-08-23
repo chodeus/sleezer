@@ -117,11 +117,8 @@ namespace NzbDrone.Core.Indexers.Qobuz
             return chain;
         }
 
-        // Final cleanup before the query reaches Qobuz: '+' back to spaces (GetAPIUrl
-        // would encode a literal '+' as %2B), and apostrophes to spaces — Qobuz doesn't
-        // unify apostrophe variants attached to digits (MB "Birthday Blizzard ’26" is
-        // "‘26" there, matched only by a bare "26"), while titles with real apostrophes
-        // still match without them.
+        // '+' back to spaces (GetAPIUrl would send %2B) and apostrophes to spaces —
+        // Qobuz does not unify apostrophe variants attached to digits.
         private static string CleanForTokenSearch(string query)
         {
             if (string.IsNullOrWhiteSpace(query))

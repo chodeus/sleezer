@@ -239,10 +239,8 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
         {
             QobuzAPI api = QobuzAPI.Instance ?? throw new InvalidOperationException("Qobuz API is not initialised.");
 
-            // Synchronous QobuzApiSharp call on the download task. Moved off the calling
-            // thread and awaited to completion — not WaitAsync'd — because the call
-            // cannot be interrupted, and abandoning it would leave it running while the
-            // retry reuses outPath. The client's own HttpClient timeout bounds it.
+            // Awaited to completion, not WaitAsync'd: the call cannot be interrupted, and
+            // abandoning it leaves it running while the retry reuses outPath.
             var page = await Task.Run(() => api.Client.GetTrack(trackId, true), cancellation);
             var ext = bitrate == AudioQuality.MP3320 ? "mp3" : "flac";
 
@@ -358,10 +356,8 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
             cts.CancelAfter(AlbumLookupTimeout);
 
-            // WaitAsync, not just the Task.Run token: the token is observed only before
-            // the delegate starts, so without this the deadline cannot release the grab
-            // thread once the synchronous call is under way. The worker finishes on its
-            // own and is discarded.
+            // WaitAsync, not just the Task.Run token: that token is observed only before
+            // the delegate starts, so it cannot release the grab thread mid-call.
             _qobuzAlbum = await Task.Run(() => api.Client.GetAlbum(_qobuzUrl.Id, true), cts.Token).WaitAsync(cts.Token);
             _tracks = _qobuzAlbum.Tracks?.Items?.ToArray() ?? [];
 

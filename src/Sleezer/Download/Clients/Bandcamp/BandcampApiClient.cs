@@ -58,10 +58,8 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
 
         private readonly Logger _logger;
 
-        // This class is resolved transiently (Lidarr registers concrete types as
-        // Reuse.Transient), so an instance field would cache nothing. ICacheManager is
-        // an interface and therefore a process singleton, and its caches are keyed by
-        // type, so every instance shares these.
+        // This class is Reuse.Transient, so an instance field caches nothing;
+        // ICacheManager is a singleton and its caches are keyed by type.
         private static readonly TimeSpan FanIdLifetime = TimeSpan.FromHours(1);
         private static readonly TimeSpan CollectionLifetime = TimeSpan.FromMinutes(15);
 
@@ -283,10 +281,8 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
             }
             catch (Exception ex)
             {
-                // Returning an empty list here is indistinguishable from "this account
-                // owns nothing", so an expired session, an HTML error page or a
-                // rate-limit body silently reads as an empty collection — and the
-                // indexer test then reports no purchases were found.
+                // An empty list is indistinguishable from "owns nothing", so an expired
+                // session would read as an empty collection.
                 _logger.Warn(ex, "Bandcamp API: could not parse the collection response; failing rather than reporting an empty collection");
                 throw new BandcampCollectionException("Bandcamp returned a collection response that could not be parsed. The session cookie may have expired.", ex);
             }
@@ -405,10 +401,8 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
                     break;
                 }
 
-                // Compare whole normalized URLs. Contains() matched whenever the item
-                // URL was any substring of the request, so a collection item carrying a
-                // band-root URL matched every album by that artist and returned an
-                // unrelated purchase for the download page to be built from.
+                // Whole normalized URLs, not Contains(): a band-root URL is a substring
+                // of every album by that artist and matched all of them.
                 var match = items.FirstOrDefault(item => SameAlbumUrl(item.ItemUrl, albumUrl));
 
                 if (match != null)
@@ -587,10 +581,8 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
         {
             _logger.Debug("Bandcamp API: Downloading file from resolved URL");
 
-            // CreateRequestBuilder vouches for the destination before attaching cookies.
-            // Redirects are followed by hand: Bandcamp hands off to its bcbits CDN, and
-            // Lidarr's dispatcher only writes to ResponseStream on a 200, so an
-            // auto-followed or unfollowed 3xx yields an empty file either way.
+            // Redirects followed by hand — Bandcamp hands off to bcbits, and Lidarr's
+            // dispatcher writes ResponseStream only on 200, so a 3xx yields an empty file.
             var response = await SendWithValidatedRedirectsAsync(cookies, fileUrl, destination, cancellationToken);
 
             // Verify content type — Bandcamp should return application/zip or similar

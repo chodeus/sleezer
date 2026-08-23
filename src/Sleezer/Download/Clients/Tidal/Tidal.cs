@@ -61,11 +61,8 @@ namespace NzbDrone.Core.Download.Clients.Tidal
         {
             if (deleteData)
             {
-                // Lidarr's DeleteItemData removes the album folder we exposed
-                // via OutputPath. It does NOT walk up and remove the now-empty
-                // artist folder we created above it. Sweep parents back to the
-                // configured download root so users don't end up with an
-                // ever-growing tree of empty folders.
+                // DeleteItemData removes the album folder only; the artist folder we
+                // created above it is left behind, so sweep parents to the root.
                 DeleteItemData(item);
                 if (!item.OutputPath.IsEmpty)
                     TryRemoveEmptyParentFolders(item.OutputPath.FullPath, Settings.DownloadPath, _logger);

@@ -58,11 +58,8 @@ namespace NzbDrone.Plugin.Sleezer
             CheckDelayProfiles(repo, downloadProtocols);
         }
 
-        // DABMusic used to be persisted as QobuzDownloadProtocol. Without this, a profile
-        // that had DABMusic switched off loses that row, and CheckDelayProfiles then seeds
-        // a fresh DABMusic entry with Allowed = true — silently re-enabling something the
-        // operator had deliberately denied. Renaming the stored value preserves the
-        // decision, and leaves QobuzDownloadProtocol free for the first-party client.
+        // Renames rather than drops the row: CheckDelayProfiles would reseed a dropped
+        // DABMusic entry with Allowed = true, re-enabling what the operator denied.
         private void MigrateLegacyDabMusicProtocol(IDelayProfileRepository repo)
         {
             const string legacy = nameof(QobuzDownloadProtocol);

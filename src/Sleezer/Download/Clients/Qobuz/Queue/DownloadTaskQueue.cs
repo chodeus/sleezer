@@ -72,10 +72,8 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
 
         public async ValueTask QueueBackgroundWorkItemAsync(DownloadItem workItem)
         {
-            // Register before the channel write: the consumer can dequeue and call
-            // GetTokenForItem the instant the write lands, and an unregistered item
-            // yields default(CancellationToken) — one that can never be cancelled, so
-            // RemoveItem would drop it from the queue while the download kept running.
+            // Register before the channel write: an unregistered item yields
+            // default(CancellationToken), which RemoveItem can never actually cancel.
             CancellationTokenSource token = new();
             lock (_lock)
             {

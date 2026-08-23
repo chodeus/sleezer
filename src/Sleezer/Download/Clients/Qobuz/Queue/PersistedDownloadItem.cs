@@ -5,13 +5,8 @@ using NzbDrone.Plugin.Sleezer.Qobuz;
 
 namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
 {
-    // On-disk record written beside the completed audio so Lidarr can re-discover
-    // Qobuz downloads after the plugin restarts. Only the fields
-    // ToDownloadClientItem reads are persisted — RemoteAlbum and the live
-    // QobuzApiSharp handles neither round-trip nor matter once a download has
-    // completed and post-processing has finished.
-    //
-    // Mirrors the Deezer and Tidal persistence pattern.
+    // Mirrors the Deezer and Tidal persistence pattern: only what
+    // ToDownloadClientItem reads survives a restart.
     public class PersistedDownloadItem
     {
         public const string SidecarFileName = ".sleezer-qobuz-state.json";

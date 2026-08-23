@@ -115,11 +115,8 @@ namespace NzbDrone.Core.Download.Clients.Qobuz
 
         public static async Task ApplyMetadataToFile(this QobuzApiService s, string trackId, string trackPath, byte[]? albumArt, bool embedArt, string lyrics = "", CancellationToken token = default)
         {
-            // Awaited to completion, deliberately without a WaitAsync deadline. The work
-            // inside is synchronous and cannot be interrupted, so abandoning the wait
-            // would leave it writing to a path the retry is already reusing — or that
-            // album cleanup has deleted. QobuzApiSharp's HttpClient bounds the two
-            // network calls, so this cannot hang indefinitely.
+            // No WaitAsync deadline: the body is uninterruptible, so abandoning the wait
+            // leaves it writing to a path the retry reuses. Its HttpClient bounds it.
             await Task.Run(
                 () =>
                 {
