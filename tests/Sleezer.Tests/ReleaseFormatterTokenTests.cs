@@ -1,5 +1,8 @@
 using System.Collections.Generic;
 using System.Reflection;
+using NzbDrone.Core.Music;
+using NzbDrone.Core.Organizer;
+using NzbDrone.Core.Parser.Model;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using Xunit;
 
@@ -50,16 +53,38 @@ public class ReleaseFormatterTokenTests
         Assert.Equal(expected, Replace(token, h));
     }
 
+    // Goes through the real ReleaseFormatter rather than a handler dictionary, so it
+    // fails if the new aliases were never registered — which a Handlers-supplied test
+    // could not detect.
     [Fact]
     public void Renders_the_real_world_format_that_produced_the_broken_filename()
     {
-        var h = Handlers(
-            ("{track:00}", "01"),
-            ("{Track ArtistCleanNameThe}", "Birds of Tokyo"),
-            ("{Track CleanTitle}", "Lanterns"));
+        var formatter = new ReleaseFormatter(
+            new ReleaseInfo(),
+            new Artist { Name = "Birds of Tokyo" },
+            new NamingConfig());
 
-        string actual = Replace("{track:00} - {Track ArtistCleanNameThe:100} - {Track CleanTitle:100}", h);
+        string actual = formatter.BuildTrackFilename(
+            "{track:00} - {Track ArtistCleanNameThe:100} - {Track CleanTitle:100}",
+            new Track { TrackNumber = "1", Title = "Lanterns" },
+            new Album { Title = "Lanterns" });
+
         Assert.Equal("01 - Birds of Tokyo - Lanterns", actual);
+    }
+
+    [Fact]
+    public void Registers_both_new_artist_aliases()
+    {
+        var formatter = new ReleaseFormatter(
+            new ReleaseInfo(),
+            new Artist { Name = "The Beatles" },
+            new NamingConfig());
+
+        var track = new Track { TrackNumber = "1", Title = "Help" };
+        var album = new Album { Title = "Help" };
+
+        Assert.Equal("The Beatles", formatter.BuildTrackFilename("{Track ArtistCleanName}", track, album));
+        Assert.Equal("Beatles, The", formatter.BuildTrackFilename("{Track ArtistCleanNameThe}", track, album));
     }
 
     [Fact]
