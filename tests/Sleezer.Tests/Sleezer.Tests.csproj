@@ -53,6 +53,10 @@
          and Medium come from the Lidarr.Core reference below. -->
     <Compile Include="..\..\src\Sleezer\Core\PostProcessing\DigitalReleaseSelector.cs"
              LinkBase="SourceUnderTest" />
+    <!-- Which download clients are storefronts, and so can only deliver a digital
+         release. Enum + classifier only; the settings class stays out. -->
+    <Compile Include="..\..\src\Sleezer\Metadata\FFmpeg\PostProcessClient.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Blocklisting\BaseBlocklist.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Blocklisting\Blocklists.cs"

@@ -213,7 +213,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
                 TagConfidenceThreshold,
                 sharedSettings?.StripFeaturedArtists ?? false,
                 ct,
-                preferDigitalMedia: sharedSettings?.PreferDigitalReleaseClients?.Contains((int)request.Client) ?? false);
+                preferDigitalMedia: request.Client.IsDigitalStorefront());
 
             logger.Info("[post-process] {Client} item {ID}: tagging completed in {ElapsedMs}ms", request.Client, request.DownloadId, tagSw.ElapsedMilliseconds);
         }

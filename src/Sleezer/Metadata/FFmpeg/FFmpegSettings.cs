@@ -147,43 +147,10 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
         [FieldDefinition(11, Label = "Run Pre-Import Tagging On", Type = FieldType.TagSelect, SelectOptions = typeof(PostProcessClient), Section = MetadataSectionType.Metadata, Placeholder = "Type to add a client", HelpText = "Run Lidarr's identification + tag writer on downloaded files before import for the selected Sleezer downloaders, so untagged or mistagged releases match cleanly. Empty = tagging disabled. Does not run on torrent or Usenet downloads.")]
         public IEnumerable<int> PreImportTaggingClients { get; set; } = Array.Empty<int>();
 
-        [FieldDefinition(12, Label = "Prefer Digital Media Release On", Type = FieldType.TagSelect, SelectOptions = typeof(PostProcessClient), Section = MetadataSectionType.Metadata, Placeholder = "Type to add a client", HelpText = "When pre-import tagging a download from these clients, prefer a Digital Media release over a CD or vinyl one that fits the files equally well. Lidarr ranks releases by track count alone and CD pressings usually outnumber digital ones, so a store download lands on a CD release and carries CD provenance for life. Only affects clients also selected for tagging above; leave empty to keep Lidarr's ranking untouched.")]
-        public IEnumerable<int> PreferDigitalReleaseClients { get; set; } = Array.Empty<int>();
-
-        [FieldDefinition(13, Label = "Strip Featured Artists", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "When pre-import tagging, strip '(feat. X)' / '(featuring Y)' / '(ft Z)' suffixes from track titles and artist tags before writing. Applies to whichever clients are selected above.")]
+        [FieldDefinition(12, Label = "Strip Featured Artists", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "When pre-import tagging, strip '(feat. X)' / '(featuring Y)' / '(ft Z)' suffixes from track titles and artist tags before writing. Applies to whichever clients are selected above.")]
         public bool StripFeaturedArtists { get; set; }
 
         public NzbDroneValidationResult Validate() => new(Validator.Validate(this));
-    }
-
-    public enum PostProcessClient
-    {
-        [FieldOption(Label = "Deezer")]
-        Deezer = 1,
-
-        [FieldOption(Label = "Tidal")]
-        Tidal = 2,
-
-        [FieldOption(Label = "Slskd (Soulseek)")]
-        Slskd = 3,
-
-        [FieldOption(Label = "Qobuz")]
-        Qobuz = 4,
-
-        [FieldOption(Label = "Bandcamp")]
-        Bandcamp = 5,
-
-        [FieldOption(Label = "Lucida")]
-        Lucida = 6,
-
-        [FieldOption(Label = "DABMusic")]
-        DABMusic = 7,
-
-        [FieldOption(Label = "TripleTriple")]
-        TripleTriple = 8,
-
-        [FieldOption(Label = "SubSonic")]
-        SubSonic = 9,
     }
 
     public enum TargetAudioFormat
