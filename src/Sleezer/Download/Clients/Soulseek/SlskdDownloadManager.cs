@@ -1317,10 +1317,14 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             }
             catch (OperationCanceledException)
             {
+                // Fail closed, as above: the pass never finished, so nothing here has
+                // vouched for the files Lidarr is about to import.
+                item.PostProcessFailure = "Post-processing timed out before the files were verified";
                 _logger.Warn("[post-process] Timed out for {ItemId}", item.ID);
             }
             catch (Exception ex)
             {
+                item.PostProcessFailure = "Post-processing failed before the files were verified";
                 _logger.Error(ex, "[post-process] Unexpected failure for {ItemId}", item.ID);
             }
         });

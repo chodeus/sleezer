@@ -23,7 +23,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
                 {
                     await FFmpegInstaller.EnsureUpToDateAsync(configuredPath, logger, ct);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     logger.Debug(ex, "[post-process] FFmpeg update check failed");
                 }
@@ -48,16 +48,19 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
                     if (!AudioMetadataHandler.CheckFFmpegInstalled())
                     {
                         logger.Info("[post-process] FFmpeg binaries missing at {Path}; downloading from chodeus/ffmpeg-static", configuredPath);
-                        await AudioMetadataHandler.InstallFFmpeg(configuredPath);
+                        await AudioMetadataHandler.InstallFFmpeg(configuredPath, ct);
                         AudioMetadataHandler.ResetFFmpegInstallationCheck();
                     }
 
                     logger.Info("[post-process] FFmpeg path applied: {Path}", configuredPath);
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                logger.Warn(ex, "[post-process] Failed to apply ffmpeg path {Path}; the corruption scan may not run", configuredPath);
+                // Left uncached on purpose: a failed install is usually a transient network
+                // failure, and caching it would strand the scan on size+TagLib for the process.
+                logger.Warn(ex, "[post-process] Failed to apply ffmpeg path {Path}; retrying on the next pass", configuredPath);
+                return;
             }
 
             _lastResolvedPath = configuredPath;
