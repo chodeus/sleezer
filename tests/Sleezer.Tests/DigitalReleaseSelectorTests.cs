@@ -5,8 +5,8 @@ using Xunit;
 namespace Sleezer.Tests;
 
 // Issue #102: 22 of 24 albums carrying a Qobuz SOURCE tag sat on a non-digital release
-// while a Digital Media release existed. Lidarr ranks candidates by track-count distance
-// alone, and CD pressings usually tie with the digital one, so the CD wins.
+// while a Digital Media release existed. A store download cannot be a CD or vinyl pressing,
+// but Lidarr ranks by track-count distance alone, so a tying CD pressing wins.
 public class DigitalReleaseSelectorTests
 {
     private static AlbumRelease R(string id, int trackCount, params string[] formats) => new()
@@ -17,61 +17,32 @@ public class DigitalReleaseSelectorTests
         Media = [.. formats.Select((f, i) => new Medium { Number = i + 1, Format = f })]
     };
 
+    private static string[] Ids(IEnumerable<AlbumRelease> releases) => [.. releases.Select(r => r.ForeignReleaseId)];
+
     [Fact]
-    public void Picks_the_digital_release_when_the_current_pick_is_a_cd()
+    public void Ranks_only_the_digital_releases()
     {
-        AlbumRelease? chosen = DigitalReleaseSelector.Choose(
-            [R("cd", 12, "CD"), R("digital", 12, "Digital Media")], R("cd", 12, "CD"), 12);
+        IReadOnlyList<AlbumRelease> ranked = DigitalReleaseSelector.Rank(
+            [R("cd", 12, "CD"), R("digital", 12, "Digital Media"), R("vinyl", 12, "12\" Vinyl")], 12);
 
-        Assert.Equal("digital", chosen?.ForeignReleaseId);
-    }
-
-    // The 12" Vinyl case named in the issue.
-    [Fact]
-    public void Picks_the_digital_release_over_vinyl()
-    {
-        AlbumRelease? chosen = DigitalReleaseSelector.Choose(
-            [R("vinyl", 12, "12\" Vinyl"), R("digital", 12, "Digital Media")], R("vinyl", 12, "12\" Vinyl"), 12);
-
-        Assert.Equal("digital", chosen?.ForeignReleaseId);
+        Assert.Equal(["digital"], Ids(ranked));
     }
 
     [Fact]
-    public void Returns_null_when_the_current_pick_is_already_digital()
+    public void Is_empty_when_musicbrainz_has_no_digital_release()
     {
-        Assert.Null(DigitalReleaseSelector.Choose(
-            [R("digital", 12, "Digital Media"), R("other", 12, "Digital Media")], R("digital", 12, "Digital Media"), 12));
+        Assert.Empty(DigitalReleaseSelector.Rank([R("cd", 12, "CD"), R("vinyl", 12, "12\" Vinyl")], 12));
     }
 
+    // The whole point of returning a list: a near-miss on the standard edition must still
+    // leave the deluxe to try.
     [Fact]
-    public void Returns_null_when_no_digital_release_exists()
+    public void Orders_every_digital_pressing_by_track_count_proximity()
     {
-        Assert.Null(DigitalReleaseSelector.Choose([R("cd", 12, "CD"), R("vinyl", 12, "12\" Vinyl")], R("cd", 12, "CD"), 12));
-    }
+        IReadOnlyList<AlbumRelease> ranked = DigitalReleaseSelector.Rank(
+            [R("deluxe", 18, "Digital Media"), R("standard", 12, "Digital Media"), R("ep", 4, "Digital Media")], 12);
 
-    // A multi-disc release is only digital if every medium is.
-    [Fact]
-    public void A_hybrid_release_does_not_count_as_digital()
-    {
-        Assert.False(DigitalReleaseSelector.IsDigital(R("hybrid", 20, "Digital Media", "CD")));
-        Assert.Null(DigitalReleaseSelector.Choose([R("hybrid", 20, "Digital Media", "CD")], R("cd", 20, "CD"), 20));
-    }
-
-    [Fact]
-    public void A_release_with_no_media_is_not_digital()
-    {
-        Assert.False(DigitalReleaseSelector.IsDigital(R("bare", 12)));
-    }
-
-    // Closest track count wins: the deluxe digital edition should not displace the
-    // standard one when the folder holds exactly the standard track list.
-    [Fact]
-    public void Prefers_the_digital_release_closest_in_track_count()
-    {
-        AlbumRelease? chosen = DigitalReleaseSelector.Choose(
-            [R("deluxe", 18, "Digital Media"), R("standard", 12, "Digital Media")], R("cd", 12, "CD"), 12);
-
-        Assert.Equal("standard", chosen?.ForeignReleaseId);
+        Assert.Equal(["standard", "deluxe", "ep"], Ids(ranked));
     }
 
     // Ties must resolve the same way every run, or an album flips between pressings.
@@ -80,14 +51,29 @@ public class DigitalReleaseSelectorTests
     {
         AlbumRelease[] candidates = [R("bbb", 12, "Digital Media"), R("aaa", 12, "Digital Media")];
 
-        Assert.Equal("aaa", DigitalReleaseSelector.Choose(candidates, R("cd", 12, "CD"), 12)?.ForeignReleaseId);
-        Assert.Equal("aaa", DigitalReleaseSelector.Choose(candidates.AsEnumerable().Reverse(), R("cd", 12, "CD"), 12)?.ForeignReleaseId);
+        Assert.Equal(["aaa", "bbb"], Ids(DigitalReleaseSelector.Rank(candidates, 12)));
+        Assert.Equal(["aaa", "bbb"], Ids(DigitalReleaseSelector.Rank(candidates.AsEnumerable().Reverse(), 12)));
+    }
+
+    // A multi-disc release only counts as digital if every medium is.
+    [Fact]
+    public void A_hybrid_release_does_not_count_as_digital()
+    {
+        Assert.False(DigitalReleaseSelector.IsDigital(R("hybrid", 20, "Digital Media", "CD")));
+        Assert.Empty(DigitalReleaseSelector.Rank([R("hybrid", 20, "Digital Media", "CD")], 20));
     }
 
     [Fact]
-    public void Never_returns_the_release_it_was_given_as_current()
+    public void A_multi_disc_digital_release_counts_as_digital()
     {
-        Assert.Null(DigitalReleaseSelector.Choose([R("only", 12, "Digital Media")], R("only", 12, "Digital Media"), 12));
+        Assert.True(DigitalReleaseSelector.IsDigital(R("2cd", 24, "Digital Media", "Digital Media")));
+    }
+
+    [Fact]
+    public void A_release_with_no_media_is_not_digital()
+    {
+        Assert.False(DigitalReleaseSelector.IsDigital(R("bare", 12)));
+        Assert.False(DigitalReleaseSelector.IsDigital(null));
     }
 
     [Theory]
@@ -99,9 +85,8 @@ public class DigitalReleaseSelectorTests
     }
 
     [Fact]
-    public void Handles_a_null_candidate_list_and_a_null_current_pick()
+    public void Handles_a_null_release_list()
     {
-        Assert.Null(DigitalReleaseSelector.Choose(null, null, 12));
-        Assert.Equal("digital", DigitalReleaseSelector.Choose([R("digital", 12, "Digital Media")], null, 12)?.ForeignReleaseId);
+        Assert.Empty(DigitalReleaseSelector.Rank(null, 12));
     }
 }

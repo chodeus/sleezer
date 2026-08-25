@@ -271,12 +271,17 @@ public class PreImportTagger : IPreImportTagger
         if (albumRelease == null && !releases.Any(r =>
                 Confidence(r) <= confidenceThreshold && r.TrackMapping != null))
         {
-            AlbumRelease? fallback = album.AlbumReleases?.Value?.FirstOrDefault(r => r.Monitored)
+            // A digital source can only have produced a digital release, so it steers the
+            // fallback too — the monitored release is usually the CD the album is wrong on.
+            AlbumRelease? fallback = (preferDigitalMedia
+                                         ? DigitalReleaseSelector.Rank(album.AlbumReleases?.Value, localTracks.Count).FirstOrDefault()
+                                         : null)
+                                     ?? album.AlbumReleases?.Value?.FirstOrDefault(r => r.Monitored)
                                      ?? album.AlbumReleases?.Value?.FirstOrDefault();
             if (fallback != null)
             {
-                _logger.Debug("Pre-import tag: no release matched within confidence for {SourceId} via track-count ranking; retrying constrained to monitored release {Fallback}",
-                    sourceId, fallback.Title);
+                _logger.Debug("Pre-import tag: no release matched within confidence for {SourceId} via track-count ranking; retrying constrained to '{Fallback}' (digital={IsDigital})",
+                    sourceId, fallback.Title, DigitalReleaseSelector.IsDigital(fallback));
                 overrides.AlbumRelease = fallback;
                 albumRelease = fallback;
                 releases = _identificationService.Identify(localTracks, overrides, config);
@@ -368,9 +373,13 @@ public class PreImportTagger : IPreImportTagger
         return new TaggingResult(tagged, skipped, errored, taggedFiles);
     }
 
+    // A near-miss on the standard edition should still try the deluxe; bounded so an
+    // album with a long digital discography cannot spin here.
+    private const int MaxDigitalAttempts = 3;
+
     /// <summary>
-    /// Re-identifies against the closest Digital Media release, keeping the result only if
-    /// it still matches within confidence. Being digital never overrides the threshold.
+    /// Re-identifies against the album's Digital Media releases, closest track count first,
+    /// keeping the first that still matches within confidence. Track mapping still decides.
     /// </summary>
     private (List<LocalAlbumRelease> Releases, AlbumRelease? Chosen) PreferDigitalRelease(
         Album album,
@@ -381,29 +390,42 @@ public class PreImportTagger : IPreImportTagger
         double confidenceThreshold,
         string sourceId)
     {
-        LocalAlbumRelease? winner = releases.FirstOrDefault(r => Confidence(r) <= confidenceThreshold && r.TrackMapping != null);
-        if (winner == null)
-            return (releases, null);
-
-        AlbumRelease? digital = DigitalReleaseSelector.Choose(album.AlbumReleases?.Value, winner.AlbumRelease, localTracks.Count);
-        if (digital == null)
-            return (releases, null);
-
-        IdentificationOverrides overrides = new() { Artist = artist, Album = album, AlbumRelease = digital };
-        List<LocalAlbumRelease> digitalReleases = _identificationService.Identify(localTracks, overrides, config);
-
-        LocalAlbumRelease? matched = digitalReleases.FirstOrDefault(r => Confidence(r) <= confidenceThreshold && r.TrackMapping != null);
-        if (matched == null)
+        IReadOnlyList<AlbumRelease> digital = DigitalReleaseSelector.Rank(album.AlbumReleases?.Value, localTracks.Count);
+        if (digital.Count == 0)
         {
-            _logger.Debug("Pre-import tag: digital release '{Digital}' ({DigitalTracks} tracks) did not match within {Threshold:F3} for {SourceId}; keeping '{Kept}'",
-                digital.Title, digital.TrackCount, confidenceThreshold, sourceId, winner.AlbumRelease?.Title ?? "<unknown>");
+            // Actionable: a digital download with no digital release is an album that wants
+            // a Harmony import into MusicBrainz.
+            _logger.Info("Pre-import tag: {SourceId} came from a digital source but MusicBrainz has no Digital Media release for '{Album}' — keeping Lidarr's pick",
+                sourceId, album.Title);
             return (releases, null);
         }
 
-        // Both distances logged so a bad swap can be traced back to the ranking.
-        _logger.Info("Pre-import tag: preferring Digital Media release '{Digital}' (distance {DigitalDistance:F3}) over '{Kept}' (distance {KeptDistance:F3}) for {SourceId}",
-            digital.Title, Confidence(matched), winner.AlbumRelease?.Title ?? "<unknown>", Confidence(winner), sourceId);
-        return (digitalReleases, digital);
+        LocalAlbumRelease? winner = releases.FirstOrDefault(r => Confidence(r) <= confidenceThreshold && r.TrackMapping != null);
+        if (DigitalReleaseSelector.IsDigital(winner?.AlbumRelease))
+            return (releases, null);
+
+        foreach (AlbumRelease candidate in digital.Take(MaxDigitalAttempts))
+        {
+            IdentificationOverrides overrides = new() { Artist = artist, Album = album, AlbumRelease = candidate };
+            List<LocalAlbumRelease> attempt = _identificationService.Identify(localTracks, overrides, config);
+
+            LocalAlbumRelease? matched = attempt.FirstOrDefault(r => Confidence(r) <= confidenceThreshold && r.TrackMapping != null);
+            if (matched == null)
+            {
+                _logger.Debug("Pre-import tag: digital release '{Digital}' ({DigitalTracks} tracks) missed {Threshold:F3} for {SourceId}",
+                    candidate.Title, candidate.TrackCount, confidenceThreshold, sourceId);
+                continue;
+            }
+
+            // Both distances logged so a swap can be traced back to the ranking.
+            _logger.Info("Pre-import tag: steering {SourceId} onto Digital Media release '{Digital}' (distance {DigitalDistance:F3}) instead of '{Kept}' (distance {KeptDistance:F3})",
+                sourceId, candidate.Title, Confidence(matched), winner?.AlbumRelease?.Title ?? "<unknown>", winner is null ? 1.0 : Confidence(winner));
+            return (attempt, candidate);
+        }
+
+        _logger.Warn("Pre-import tag: {SourceId} came from a digital source but none of the {Count} Digital Media release(s) for '{Album}' mapped within {Threshold:F3} — keeping '{Kept}'",
+            sourceId, digital.Count, album.Title, confidenceThreshold, winner?.AlbumRelease?.Title ?? "<unknown>");
+        return (releases, null);
     }
 
     private static double Confidence(LocalAlbumRelease release) => release.Distance?.NormalizedDistance() ?? 1.0;

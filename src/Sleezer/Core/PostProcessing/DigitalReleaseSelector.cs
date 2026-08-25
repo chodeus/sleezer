@@ -3,10 +3,10 @@ using NzbDrone.Core.Music;
 namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
 {
     /// <summary>
-    /// Picks a Digital Media release for a download that came from a digital store.
-    /// Lidarr ranks candidates by track-count distance alone, and CD pressings usually
-    /// outnumber digital ones at the same track count, so a store download lands on a CD
-    /// release — which is then written into MUSICBRAINZ_ALBUMID and steers every later import.
+    /// Ranks the Digital Media releases of an album for a download that came from a digital
+    /// store, where the product cannot be a CD or vinyl pressing. Lidarr ranks candidates by
+    /// track-count distance alone, so a CD pressing that ties wins — and the pick is then
+    /// written into MUSICBRAINZ_ALBUMID, which steers every later import.
     /// </summary>
     public static class DigitalReleaseSelector
     {
@@ -20,22 +20,17 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
             && media.All(m => string.Equals(m.Format, DigitalMediaFormat, StringComparison.OrdinalIgnoreCase));
 
         /// <summary>
-        /// The digital release closest in track count to what actually downloaded, or null
-        /// when the current pick is already digital or nothing digital is on offer.
+        /// Every Digital Media release, closest track count first. Empty when MusicBrainz
+        /// holds no digital release for the album — the albums that want a Harmony import.
         /// </summary>
-        public static AlbumRelease? Choose(IEnumerable<AlbumRelease>? releases, AlbumRelease? current, int localTrackCount)
-        {
-            if (IsDigital(current))
-                return null;
-
-            return releases?
+        public static IReadOnlyList<AlbumRelease> Rank(IEnumerable<AlbumRelease>? releases, int localTrackCount) =>
+        [
+            .. (releases ?? [])
                 .Where(IsDigital)
-                .Where(r => current == null || !string.Equals(r.ForeignReleaseId, current.ForeignReleaseId, StringComparison.Ordinal))
                 // Stable id as the tiebreak so an album never flips between two
                 // equally-close digital pressings from one run to the next.
                 .OrderBy(r => Math.Abs(r.TrackCount - localTrackCount))
                 .ThenBy(r => r.ForeignReleaseId, StringComparer.Ordinal)
-                .FirstOrDefault();
-        }
+        ];
     }
 }
