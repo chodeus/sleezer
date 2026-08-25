@@ -153,13 +153,27 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            var resolvedDownload = await _apiClient.ResolveStatdownloadUrlAsync(
-                cookies, downloadUrl, formatKey).ConfigureAwait(false);
+            // Temp file is prepared before the probe, not after: the probe streams into it
+            // for the case where Bandcamp answers with the archive instead of a URL.
+            PrepareOutputDirectory(item.OutputPath);
+            var tempFile = Path.Combine(item.OutputPath, $"{item.DownloadId}.tmp");
+
+            BandcampResolvedDownload? resolvedDownload;
+            try
+            {
+                resolvedDownload = await _apiClient.ResolveStatdownloadUrlAsync(
+                    cookies, downloadUrl, formatKey, tempFile, cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                TryDeleteFile(tempFile);
+                throw;
+            }
 
             var rawResolvedUrl = resolvedDownload?.DownloadUrl;
             var resolvedUrl = rawResolvedUrl != null ? NormalizeUrl(rawResolvedUrl) : null;
 
-            if (string.IsNullOrWhiteSpace(resolvedUrl) && resolvedDownload?.DirectResponse == null)
+            if (string.IsNullOrWhiteSpace(resolvedUrl) && resolvedDownload?.ArchiveWritten != true)
             {
                 // Fall back to using the download URL directly
                 resolvedUrl = downloadUrl;
@@ -174,17 +188,11 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            // Ensure output directory exists and doesn't contain stale unreadable files from prior attempts.
-            PrepareOutputDirectory(item.OutputPath);
-
-            var tempFile = Path.Combine(item.OutputPath, $"{item.DownloadId}.tmp");
-
             try
             {
-                if (resolvedDownload?.DirectResponse != null)
+                if (resolvedDownload?.ArchiveWritten == true)
                 {
-                    await WriteResponseToFileAsync(resolvedDownload.DirectResponse, tempFile, item, cancellationToken)
-                        .ConfigureAwait(false);
+                    RecordWrittenArchive(tempFile, item);
                 }
                 else
                 {
@@ -217,33 +225,20 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
                 item.DownloadId, item.OutputPath);
         }
 
-        /// <summary>
-        /// Downloads a file from the resolved URL to a local temp file.
-        /// Lidarr's HttpResponse buffers the full response into byte[], so we write
-        /// ResponseData to disk in one shot. Progress jumps to 1.0 on completion.
-        /// </summary>
-        // The direct-response path already holds the body in memory (it was fetched
-        // while resolving), so there is nothing left to stream — unlike DownloadToFileAsync,
-        // which now writes straight from the socket.
-        private async Task WriteResponseToFileAsync(
-            HttpResponse response,
-            string tempFilePath,
-            BandcampDownloadItem item,
-            CancellationToken cancellationToken)
+        /// <summary>Sizes the item from the archive the statdownload probe already wrote.</summary>
+        private void RecordWrittenArchive(string tempFilePath, BandcampDownloadItem item)
         {
-            var responseData = response.ResponseData;
-            if (responseData == null || responseData.Length == 0)
+            var written = new FileInfo(tempFilePath).Length;
+            if (written == 0)
             {
                 throw new DownloadException("Download response contained no data.");
             }
 
-            await File.WriteAllBytesAsync(tempFilePath, responseData, cancellationToken).ConfigureAwait(false);
-
-            item.TotalSize = responseData.Length;
-            item.DownloadedBytes = responseData.Length;
+            item.TotalSize = written;
+            item.DownloadedBytes = written;
             item.Progress = 1.0;
 
-            _logger.Debug("Bandcamp download proxy [{0}]: File download complete ({1} bytes)",
+            _logger.Debug("Bandcamp download proxy [{0}]: Archive arrived with the statdownload probe ({1} bytes)",
                 item.DownloadId, item.DownloadedBytes);
         }
 
