@@ -186,10 +186,12 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
             item.Status = BandcampDownloadStatus.Downloading;
             _logger.Debug("Bandcamp download proxy [{0}]: Phase 5 — Downloading archive", item.DownloadId);
 
-            cancellationToken.ThrowIfCancellationRequested();
-
             try
             {
+                // Inside the guard: the probe has already written tempFile, so cancelling
+                // here has to clean up rather than orphan it.
+                cancellationToken.ThrowIfCancellationRequested();
+
                 if (resolvedDownload?.ArchiveWritten == true)
                 {
                     RecordWrittenArchive(tempFile, item);
