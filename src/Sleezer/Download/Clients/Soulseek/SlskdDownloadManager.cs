@@ -1220,6 +1220,9 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             return;
         }
 
+        if (sharedSettings == null)
+            _logger.Warn("[post-process] {ItemId}: no FFmpeg metadata definition found — skipping scan and tag without an explicit setting", item.ID);
+
         bool scanEnabled = sharedSettings?.CorruptionScanClients?.Contains((int)PostProcessClient.Slskd) ?? false;
         bool tagEnabled = sharedSettings?.PreImportTaggingClients?.Contains((int)PostProcessClient.Slskd) ?? false;
         bool mergeNeeded = item.IsMultiDirectory && !item.DiscFoldersMerged;
