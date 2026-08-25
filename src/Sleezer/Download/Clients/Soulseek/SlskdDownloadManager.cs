@@ -1,5 +1,6 @@
 using NLog;
 using NzbDrone.Common.Disk;
+using NzbDrone.Common.Extensions;
 using NzbDrone.Common.Instrumentation;
 using NzbDrone.Core.Download;
 using NzbDrone.Core.Download.Clients;
@@ -1380,7 +1381,11 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             foreach (string leaf in item.RemoteDirectoryLeaves())
             {
                 string source = Path.Combine(localRoot, leaf);
-                bool leafIsAlbumFolder = string.Equals(Path.GetFullPath(source), Path.GetFullPath(albumFolder), StringComparison.OrdinalIgnoreCase);
+                // PathEquals, not OrdinalIgnoreCase: on Linux /downloads/CD1 and /downloads/cd1
+                // are different folders, and equating them skips a real disc while still
+                // recording the merge complete. It also normalizes unicode, which peer-supplied
+                // leaf names carry.
+                bool leafIsAlbumFolder = Path.GetFullPath(source).PathEquals(Path.GetFullPath(albumFolder));
 
                 if (!_diskProvider.FolderExists(source))
                 {
