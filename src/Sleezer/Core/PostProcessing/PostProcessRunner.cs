@@ -48,12 +48,16 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
                 return false;
             }
 
-            // Absent definition is not the same as "the operator turned both toggles off",
-            // and Lidarr seeds one at startup, so reaching here is abnormal. Not fatal —
-            // ffmpeg is optional and Tidal reads this path before every download — but it
-            // must not be silent, because the effect is an unscanned import.
+            // Absent definition is not the same as "the operator turned both toggles off":
+            // the ordinary unconfigured state is a seeded definition with empty client
+            // lists. Lidarr seeds one per provider at startup, so null means we cannot tell
+            // what was asked for — fail rather than import unverified.
             if (sharedSettings == null)
-                logger.Warn("[post-process] {Client} item {ID}: no FFmpeg metadata definition found — skipping scan and tag without an explicit setting", request.Client, request.DownloadId);
+            {
+                logger.Error("[post-process] {Client} item {ID}: no FFmpeg metadata definition found; failing the item rather than importing it unverified",
+                    request.Client, request.DownloadId);
+                return false;
+            }
 
             bool scanEnabled = sharedSettings?.CorruptionScanClients?.Contains((int)request.Client) ?? false;
             bool tagEnabled = sharedSettings?.PreImportTaggingClients?.Contains((int)request.Client) ?? false;

@@ -1221,7 +1221,11 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }
 
         if (sharedSettings == null)
-            _logger.Warn("[post-process] {ItemId}: no FFmpeg metadata definition found — skipping scan and tag without an explicit setting", item.ID);
+        {
+            item.PostProcessFailure = "Post-processing settings are missing";
+            _logger.Error("[post-process] {ItemId}: no FFmpeg metadata definition found; failing the item rather than importing it unverified", item.ID);
+            return;
+        }
 
         bool scanEnabled = sharedSettings?.CorruptionScanClients?.Contains((int)PostProcessClient.Slskd) ?? false;
         bool tagEnabled = sharedSettings?.PreImportTaggingClients?.Contains((int)PostProcessClient.Slskd) ?? false;
