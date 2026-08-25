@@ -49,6 +49,10 @@
          only the pure Compare half is exercised here. -->
     <Compile Include="..\..\src\Sleezer\Core\PostProcessing\AudioQualityVerifier.cs"
              LinkBase="SourceUnderTest" />
+    <!-- Digital-vs-CD release choice for store downloads (#102). Pure: AlbumRelease
+         and Medium come from the Lidarr.Core reference below. -->
+    <Compile Include="..\..\src\Sleezer\Core\PostProcessing\DigitalReleaseSelector.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Blocklisting\BaseBlocklist.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Blocklisting\Blocklists.cs"

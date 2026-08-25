@@ -26,7 +26,8 @@ public interface IPreImportTagger
         bool stripFeaturedArtists,
         CancellationToken ct,
         bool verifyAllWithFingerprint = false,
-        bool fingerprintTitleFallback = false);
+        bool fingerprintTitleFallback = false,
+        bool preferDigitalMedia = false);
 }
 
 public class PreImportTagger : IPreImportTagger
@@ -142,11 +143,12 @@ public class PreImportTagger : IPreImportTagger
         bool stripFeaturedArtists,
         CancellationToken ct,
         bool verifyAllWithFingerprint = false,
-        bool fingerprintTitleFallback = false)
+        bool fingerprintTitleFallback = false,
+        bool preferDigitalMedia = false)
     {
         try
         {
-            return await TagInternalAsync(album, artist, albumRelease, sourceId, completedFolderPath, confidenceThreshold, stripFeaturedArtists, verifyAllWithFingerprint, fingerprintTitleFallback, ct);
+            return await TagInternalAsync(album, artist, albumRelease, sourceId, completedFolderPath, confidenceThreshold, stripFeaturedArtists, verifyAllWithFingerprint, fingerprintTitleFallback, preferDigitalMedia, ct);
         }
         catch (Exception ex)
         {
@@ -165,6 +167,7 @@ public class PreImportTagger : IPreImportTagger
         bool stripFeaturedArtists,
         bool verifyAllWithFingerprint,
         bool fingerprintTitleFallback,
+        bool preferDigitalMedia,
         CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
@@ -266,7 +269,7 @@ public class PreImportTagger : IPreImportTagger
         // matching can't disambiguate, while still letting the common case
         // benefit from CandidateService's track-count ranking.
         if (albumRelease == null && !releases.Any(r =>
-                (r.Distance?.NormalizedDistance() ?? 1.0) <= confidenceThreshold && r.TrackMapping != null))
+                Confidence(r) <= confidenceThreshold && r.TrackMapping != null))
         {
             AlbumRelease? fallback = album.AlbumReleases?.Value?.FirstOrDefault(r => r.Monitored)
                                      ?? album.AlbumReleases?.Value?.FirstOrDefault();
@@ -279,6 +282,9 @@ public class PreImportTagger : IPreImportTagger
                 releases = _identificationService.Identify(localTracks, overrides, config);
             }
         }
+
+        if (preferDigitalMedia && albumRelease == null)
+            (releases, albumRelease) = PreferDigitalRelease(album, artist, localTracks, releases, config, confidenceThreshold, sourceId);
 
         // One batched AcoustID round trip up front rather than one per file.
         Dictionary<string, string>? knownRecordings = null;
@@ -295,7 +301,7 @@ public class PreImportTagger : IPreImportTagger
 
         foreach (LocalAlbumRelease release in releases)
         {
-            double albumDistance = release.Distance?.NormalizedDistance() ?? 1.0;
+            double albumDistance = Confidence(release);
             if (albumDistance > confidenceThreshold || release.TrackMapping == null)
             {
                 skipped += release.LocalTracks.Count;
@@ -361,6 +367,46 @@ public class PreImportTagger : IPreImportTagger
             sourceId, tagged, titleTagged, skipped, errored);
         return new TaggingResult(tagged, skipped, errored, taggedFiles);
     }
+
+    /// <summary>
+    /// Re-identifies against the closest Digital Media release, keeping the result only if
+    /// it still matches within confidence. Being digital never overrides the threshold.
+    /// </summary>
+    private (List<LocalAlbumRelease> Releases, AlbumRelease? Chosen) PreferDigitalRelease(
+        Album album,
+        Artist artist,
+        List<LocalTrack> localTracks,
+        List<LocalAlbumRelease> releases,
+        ImportDecisionMakerConfig config,
+        double confidenceThreshold,
+        string sourceId)
+    {
+        LocalAlbumRelease? winner = releases.FirstOrDefault(r => Confidence(r) <= confidenceThreshold && r.TrackMapping != null);
+        if (winner == null)
+            return (releases, null);
+
+        AlbumRelease? digital = DigitalReleaseSelector.Choose(album.AlbumReleases?.Value, winner.AlbumRelease, localTracks.Count);
+        if (digital == null)
+            return (releases, null);
+
+        IdentificationOverrides overrides = new() { Artist = artist, Album = album, AlbumRelease = digital };
+        List<LocalAlbumRelease> digitalReleases = _identificationService.Identify(localTracks, overrides, config);
+
+        LocalAlbumRelease? matched = digitalReleases.FirstOrDefault(r => Confidence(r) <= confidenceThreshold && r.TrackMapping != null);
+        if (matched == null)
+        {
+            _logger.Debug("Pre-import tag: digital release '{Digital}' ({DigitalTracks} tracks) did not match within {Threshold:F3} for {SourceId}; keeping '{Kept}'",
+                digital.Title, digital.TrackCount, confidenceThreshold, sourceId, winner.AlbumRelease?.Title ?? "<unknown>");
+            return (releases, null);
+        }
+
+        // Both distances logged so a bad swap can be traced back to the ranking.
+        _logger.Info("Pre-import tag: preferring Digital Media release '{Digital}' (distance {DigitalDistance:F3}) over '{Kept}' (distance {KeptDistance:F3}) for {SourceId}",
+            digital.Title, Confidence(matched), winner.AlbumRelease?.Title ?? "<unknown>", Confidence(winner), sourceId);
+        return (digitalReleases, digital);
+    }
+
+    private static double Confidence(LocalAlbumRelease release) => release.Distance?.NormalizedDistance() ?? 1.0;
 
     private static bool IsTitleFallbackEligible(Album album)
     {

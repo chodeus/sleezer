@@ -1368,7 +1368,8 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                         sharedSettings?.StripFeaturedArtists ?? false,
                         cts.Token,
                         verifyAllWithFingerprint: settings.VerifyImportsWithFingerprint,
-                        fingerprintTitleFallback: true);
+                        fingerprintTitleFallback: true,
+                        preferDigitalMedia: sharedSettings?.PreferDigitalReleaseClients?.Contains((int)PostProcessClient.Slskd) ?? false);
 
                     // Refresh ownership identities after tagging — see
                     // SlskdDownloadItem._taggedFileSizes.
