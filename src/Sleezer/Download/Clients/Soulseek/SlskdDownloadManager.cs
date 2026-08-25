@@ -1495,9 +1495,13 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             finally { gate.Release(); }
         }).ToArray();
 
-        foreach (Task<(string path, CorruptionScanner.Result result)> t in tasks)
+        // Await everything before inspecting: iterating with await rethrows on the first
+        // failure and leaves `using` to dispose the gate while siblings are still waiting
+        // on it, turning one scan error into a pile of unobserved ObjectDisposedExceptions.
+        (string path, CorruptionScanner.Result result)[] scanned = await Task.WhenAll(tasks);
+
+        foreach ((string path, CorruptionScanner.Result result) in scanned)
         {
-            (string path, CorruptionScanner.Result result) = await t;
             if (!result.IsCorrupt)
                 continue;
 
