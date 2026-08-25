@@ -3,9 +3,8 @@ using NLog;
 using NzbDrone.Common.Disk;
 using NzbDrone.Core.Extras.Metadata;
 using NzbDrone.Core.Music;
-using NzbDrone.Plugin.Sleezer.Core.Model;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Metadata.FFmpeg;
-using XabeFFmpeg = Xabe.FFmpeg.FFmpeg;
 
 namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
 {
@@ -22,18 +21,14 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
         IDiskProvider diskProvider,
         Logger logger)
     {
-        private const int CorruptionScanTimeoutSeconds = 120;
-        private const double TagConfidenceThreshold = 0.15;
+        // Per-file ffmpeg decode timeout. 120s handles any real track; a corrupt file
+        // that hangs ffmpeg gets killed at this limit.
+        internal const int CorruptionScanTimeoutSeconds = 120;
 
-        private static readonly HashSet<string> AudioExtensions = new(StringComparer.OrdinalIgnoreCase)
-        {
-            ".flac", ".mp3", ".m4a", ".ogg", ".opus", ".wav",
-            ".wma", ".aac", ".aiff", ".aif", ".ape", ".wv",
-            ".alac", ".m4b", ".m4p", ".mp2", ".mpc", ".dsf", ".dff"
-        };
+        // Stricter than Lidarr's importer (~0.25): a mis-tag is more permanent than a skip.
+        internal const double TagConfidenceThreshold = 0.15;
 
-        // null = never resolved. Lets a mid-run FFmpeg path change be picked up.
-        private string? _lastResolvedFfmpegPath;
+        private readonly FFmpegPathResolver _ffmpeg = new(logger);
 
         /// <summary>
         /// Runs tagging then scanning for one completed download. Returns false when the
@@ -105,11 +100,14 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
             return false;
         }
 
-        public FFmpegSettings? GetSharedSettings()
+        public FFmpegSettings? GetSharedSettings() => ReadSharedSettings(metadataFactory);
+
+        /// <summary>The one reader for the shared post-processing settings.</summary>
+        public static FFmpegSettings? ReadSharedSettings(IMetadataFactory factory)
         {
             try
             {
-                return metadataFactory.All()
+                return factory.All()
                     .Where(d => d.Settings is FFmpegSettings)
                     .Select(d => d.Settings as FFmpegSettings)
                     .FirstOrDefault(s => s != null);
@@ -123,70 +121,9 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
             }
         }
 
-        /// <summary>
-        /// Applies the configured FFmpeg directory without downloading anything. Callers
-        /// on a Lidarr request thread want this; the post-process path wants the async
-        /// version below, which will also fetch the binaries.
-        /// </summary>
-
-        /// <summary>
-        /// Points Xabe.FFmpeg at the configured directory and fetches the binaries when
-        /// they are missing, so the corruption scan has an ffmpeg to call.
-        /// </summary>
-        public Task EnsureFFmpegResolvedAsync(CancellationToken ct) => ApplyFFmpegPath(ct);
-
-        private async Task ApplyFFmpegPath(CancellationToken ct)
-        {
-            string? configuredPath = GetSharedSettings()?.FFmpegPath;
-
-            // Throttled (24h), best-effort refresh from chodeus/ffmpeg-static. Observed
-            // rather than discarded: an unhandled fault here is otherwise invisible.
-            if (!string.IsNullOrWhiteSpace(configuredPath))
-            {
-                // Awaited rather than detached: this already runs on the post-process
-                // task, it is internally throttled to once a day, and a detached task
-                // outliving the request is what the review flagged.
-                try
-                {
-                    await FFmpegInstaller.EnsureUpToDateAsync(configuredPath, logger, ct);
-                }
-                catch (Exception ex)
-                {
-                    logger.Debug(ex, "[post-process] FFmpeg update check failed");
-                }
-            }
-
-            if (string.Equals(configuredPath, _lastResolvedFfmpegPath, StringComparison.Ordinal))
-                return;
-
-            try
-            {
-                if (string.IsNullOrWhiteSpace(configuredPath))
-                {
-                    logger.Debug("[post-process] No FFmpeg path configured; the corruption scan will skip files it cannot decode.");
-                }
-                else
-                {
-                    XabeFFmpeg.SetExecutablesPath(configuredPath);
-                    AudioMetadataHandler.ResetFFmpegInstallationCheck();
-
-                    if (!AudioMetadataHandler.CheckFFmpegInstalled())
-                    {
-                        logger.Info("[post-process] FFmpeg binaries missing at {Path}; downloading from chodeus/ffmpeg-static", configuredPath);
-                        await AudioMetadataHandler.InstallFFmpeg(configuredPath);
-                        AudioMetadataHandler.ResetFFmpegInstallationCheck();
-                    }
-
-                    logger.Info("[post-process] FFmpeg path applied: {Path}", configuredPath);
-                }
-            }
-            catch (Exception ex)
-            {
-                logger.Warn(ex, "[post-process] Failed to apply ffmpeg path {Path}; the corruption scan may not run", configuredPath);
-            }
-
-            _lastResolvedFfmpegPath = configuredPath;
-        }
+        /// <summary>Applies the configured FFmpeg directory, fetching the binaries if missing.</summary>
+        public Task EnsureFFmpegResolvedAsync(CancellationToken ct) =>
+            _ffmpeg.ResolveAsync(GetSharedSettings()?.FFmpegPath, ct);
 
         private async Task TagAsync(PostProcessRequest request, FFmpegSettings? sharedSettings, CancellationToken ct)
         {
@@ -221,7 +158,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
         {
             List<CorruptionStrike> strikes = [];
 
-            string[] audioFiles = [.. diskProvider.GetFiles(folder, recursive: true).Where(p => AudioExtensions.Contains(Path.GetExtension(p)))];
+            string[] audioFiles = [.. diskProvider.GetFiles(folder, recursive: true).Where(AudioFormatHelper.IsPostProcessAudioFile)];
             if (audioFiles.Length == 0)
                 return strikes;
 

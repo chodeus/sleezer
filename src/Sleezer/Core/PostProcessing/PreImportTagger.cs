@@ -10,6 +10,7 @@ using NzbDrone.Core.Music;
 using NzbDrone.Core.Parser;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Core.Qualities;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Indexers.Soulseek;
 
 namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing;
@@ -31,13 +32,6 @@ public interface IPreImportTagger
 
 public class PreImportTagger : IPreImportTagger
 {
-    private static readonly string[] AudioExtensions =
-    [
-        ".flac", ".mp3", ".m4a", ".ogg", ".opus", ".wav",
-        ".wma", ".aac", ".aiff", ".aif", ".ape", ".wv",
-        ".alac", ".m4b", ".m4p", ".mp2", ".mpc", ".dsf", ".dff"
-    ];
-
     private const double FingerprintScoreThreshold = 0.5;
 
     private readonly IIdentificationService _identificationService;
@@ -592,8 +586,7 @@ public class PreImportTagger : IPreImportTagger
         {
             foreach (string file in _diskProvider.GetFiles(folderPath, recursive: true))
             {
-                string ext = Path.GetExtension(file);
-                if (AudioExtensions.Any(e => string.Equals(ext, e, StringComparison.OrdinalIgnoreCase)))
+                if (AudioFormatHelper.IsPostProcessAudioFile(file))
                     result.Add(file);
             }
         }

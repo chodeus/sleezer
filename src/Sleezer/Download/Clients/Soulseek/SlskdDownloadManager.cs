@@ -19,7 +19,6 @@ using NzbDrone.Plugin.Sleezer.Core.PostProcessing;
 using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek.Models;
 using NzbDrone.Plugin.Sleezer.Indexers.Soulseek;
 using NzbDrone.Plugin.Sleezer.Metadata.FFmpeg;
-using XabeFFmpeg = Xabe.FFmpeg.FFmpeg;
 
 namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
 
@@ -60,10 +59,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     private readonly ISlskdCorruptionHandler _corruptionHandler;
     private readonly IMetadataFactory _metadataFactory;
     private readonly ISlskdWatchdog _watchdog;
-    // Track the last FFmpeg path we resolved against so a user changing the
-    // FFmpeg metadata path mid-run is picked up on the next scan, not at next
-    // Lidarr restart. null = never resolved.
-    private string? _lastResolvedFfmpegPath;
+    private readonly FFmpegPathResolver _ffmpeg;
 
     /// <summary>
     /// Tracks per-item post-processing completion so the owning item's status
@@ -97,72 +93,8 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         _corruptionHandler = corruptionHandler;
         _metadataFactory = metadataFactory;
         _watchdog = watchdog;
+        _ffmpeg = new FFmpegPathResolver(logger);
         _retryHandler = new SlskdRetryHandler(apiClient, NzbDroneLogger.GetLogger(typeof(SlskdRetryHandler)));
-    }
-
-    /// <summary>
-    /// Resolves ffmpeg from the configured FFmpeg metadata provider, mirroring
-    /// the path it validated against. Runs once per process lifetime so we
-    /// don't re-read settings on every scan. The FFmpeg metadata provider is
-    /// NzbDrone.Plugin.Sleezer's canonical ffmpeg configurator — this keeps the
-    /// corruption scanner from needing a duplicate FFmpeg Path setting on the
-    /// slskd client.
-    /// </summary>
-    private void EnsureFFmpegResolved()
-    {
-        string? configuredPath = null;
-        try
-        {
-            configuredPath = GetSharedPostProcessingSettings()?.FFmpegPath;
-        }
-        catch (Exception ex)
-        {
-            _logger.Debug(ex, "[post-process] Failed to read FFmpeg metadata settings");
-        }
-
-        // Throttled (24h), best-effort auto-update of the cached ffmpeg from
-        // chodeus/ffmpeg-static. Fire-and-forget so it never blocks the scan;
-        // it no-ops when the path is unset or we've checked recently.
-        if (!string.IsNullOrWhiteSpace(configuredPath))
-            _ = FFmpegInstaller.EnsureUpToDateAsync(configuredPath, _logger, CancellationToken.None);
-
-        // Re-resolve only when the configured path actually changes. Avoids
-        // probing the filesystem on every scan while still picking up settings
-        // changes without requiring a Lidarr restart.
-        if (string.Equals(configuredPath, _lastResolvedFfmpegPath, StringComparison.Ordinal))
-            return;
-
-        try
-        {
-            if (!string.IsNullOrWhiteSpace(configuredPath))
-            {
-                XabeFFmpeg.SetExecutablesPath(configuredPath);
-                AudioMetadataHandler.ResetFFmpegInstallationCheck();
-                _logger.Info("[post-process] FFmpeg path applied: {Path}", configuredPath);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.Debug(ex, "[post-process] Failed to apply ffmpeg path {Path}", configuredPath);
-        }
-
-        _lastResolvedFfmpegPath = configuredPath;
-    }
-
-    private FFmpegSettings? GetSharedPostProcessingSettings()
-    {
-        try
-        {
-            return _metadataFactory.All()
-                .Where(d => d.Settings is FFmpegSettings)
-                .Select(d => d.Settings as FFmpegSettings)
-                .FirstOrDefault(s => s != null);
-        }
-        catch (Exception ex)
-        {
-            _logger.Debug(ex, "[post-process] Failed to read shared post-processing settings; treating toggles as disabled.");
-            return null;
-        }
     }
 
     public async Task<string> DownloadAsync(RemoteAlbum remoteAlbum, int definitionId, SlskdProviderSettings settings)
@@ -294,6 +226,8 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 SlskdStatusResolver.DownloadStatus resolved = SlskdStatusResolver.Resolve(item, timeout, now);
                 if (resolved.Status == DownloadItemStatus.Completed)
                     resolved = FailWhenCompletedFilesVanished(item, settings, resolved, now);
+                if (resolved.Status == DownloadItemStatus.Completed && item.PostProcessFailure is { } postProcessFailure)
+                    resolved = resolved with { Status = DownloadItemStatus.Failed, Message = postProcessFailure };
                 clientItem = new()
                 {
                     DownloadId = item.ID,
@@ -518,7 +452,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
         foreach (string file in files)
         {
-            if (!IsAudioExtension(file))
+            if (!AudioFormatHelper.IsPostProcessAudioFile(file))
                 continue;
 
             if (IsConclusivelyOwned(file, ownedFileSizes))
@@ -583,7 +517,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             try
             {
                 candidates.Add((candidate, _diskProvider.GetFiles(candidate, recursive: true)
-                    .Count(f => IsAudioExtension(f) && IsConclusivelyOwned(f, ownedFileSizes))));
+                    .Count(f => AudioFormatHelper.IsPostProcessAudioFile(f) && IsConclusivelyOwned(f, ownedFileSizes))));
             }
             catch (Exception ex)
             {
@@ -1050,7 +984,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 item.CompletedFolderCheckedAtUtc = utcNow;
 
                 bool hasAudio = _diskProvider.FolderExists(folder) &&
-                                _diskProvider.GetFiles(folder, recursive: true).Any(IsAudioExtension);
+                                _diskProvider.GetFiles(folder, recursive: true).Any(AudioFormatHelper.IsPostProcessAudioFile);
                 if (hasAudio)
                 {
                     item.CompletedFolderMissingSince = null;
@@ -1217,7 +1151,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     {
         try
         {
-            string[] audioFiles = [.. _diskProvider.GetFiles(folderPath, recursive: true).Where(IsAudioExtension)];
+            string[] audioFiles = [.. _diskProvider.GetFiles(folderPath, recursive: true).Where(AudioFormatHelper.IsPostProcessAudioFile)];
             if (audioFiles.Length == 0)
                 return;
 
@@ -1255,13 +1189,6 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }
     }
 
-    private const int CorruptionScanTimeoutSeconds = 120;
-
-    // Confidence threshold for pre-import tagging. 0.15 is stricter than
-    // Lidarr's importer (~0.25) since a mis-tag is more permanent than
-    // a skip-tag.
-    private const double TagConfidenceThreshold = 0.15;
-
     private void EnqueuePostProcess(SlskdDownloadItem item, SlskdProviderSettings settings)
     {
         // Guard against duplicate post-process tasks: slskd can emit both
@@ -1278,7 +1205,20 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             return;
         }
 
-        FFmpegSettings? sharedSettings = GetSharedPostProcessingSettings();
+        FFmpegSettings? sharedSettings;
+        try
+        {
+            sharedSettings = PostProcessRunner.ReadSharedSettings(_metadataFactory);
+        }
+        catch (Exception ex)
+        {
+            // Fail closed: the old null return was indistinguishable from "both toggles
+            // off", so a transient read imported an album that was never scanned.
+            item.PostProcessFailure = "Post-processing settings could not be read";
+            _logger.Error(ex, "[post-process] {ItemId}: settings unreadable; failing the item rather than importing it unscanned", item.ID);
+            return;
+        }
+
         bool scanEnabled = sharedSettings?.CorruptionScanClients?.Contains((int)PostProcessClient.Slskd) ?? false;
         bool tagEnabled = sharedSettings?.PreImportTaggingClients?.Contains((int)PostProcessClient.Slskd) ?? false;
         bool mergeNeeded = item.IsMultiDirectory && !item.DiscFoldersMerged;
@@ -1328,7 +1268,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 if (scanEnabled)
                 {
                     // 1. Corruption scan across every audio file in the folder.
-                    List<SlskdCorruptionStrike> strikes = await ScanFolderForCorruptionAsync(item, folderPath, cts.Token);
+                    List<SlskdCorruptionStrike> strikes = await ScanFolderForCorruptionAsync(item, folderPath, sharedSettings?.FFmpegPath, cts.Token);
 
                     if (strikes.Count > 0)
                     {
@@ -1364,7 +1304,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                         albumRelease: null,
                         item.ID,
                         folderPath,
-                        TagConfidenceThreshold,
+                        PostProcessRunner.TagConfidenceThreshold,
                         sharedSettings?.StripFeaturedArtists ?? false,
                         cts.Token,
                         verifyAllWithFingerprint: settings.VerifyImportsWithFingerprint,
@@ -1485,18 +1425,19 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     private async Task<List<SlskdCorruptionStrike>> ScanFolderForCorruptionAsync(
         SlskdDownloadItem item,
         string folderPath,
+        string? ffmpegPath,
         CancellationToken ct)
     {
         List<SlskdCorruptionStrike> strikes = new();
 
-        // Re-apply the FFmpeg metadata provider's path if set (Xabe's global state
-        // resets on Lidarr restart; the provider's Test only writes it for the current run).
-        EnsureFFmpegResolved();
+        // Re-apply the path every scan: Xabe's global state resets on Lidarr restart, and
+        // the provider's Test only writes it for the current run.
+        await _ffmpeg.ResolveAsync(ffmpegPath, ct);
 
         // Only scan audio files. Non-audio artifacts (covers, nfos, logs) would
         // fail TagLib parsing and incorrectly flag the whole album as corrupt.
         string[] audioFiles = _diskProvider.GetFiles(folderPath, recursive: true)
-            .Where(IsAudioExtension)
+            .Where(AudioFormatHelper.IsPostProcessAudioFile)
             .ToArray();
         if (audioFiles.Length == 0)
         {
@@ -1517,7 +1458,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             await gate.WaitAsync(ct);
             try
             {
-                CorruptionScanner.Result r = await _corruptionScanner.ScanAsync(path, CorruptionScanTimeoutSeconds, ct);
+                CorruptionScanner.Result r = await _corruptionScanner.ScanAsync(path, PostProcessRunner.CorruptionScanTimeoutSeconds, ct);
                 return (path, r);
             }
             finally { gate.Release(); }
@@ -1551,16 +1492,6 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         OsPath remote = new(settings.DownloadPath);
         return _remotePathMappingService.RemapRemoteToLocal(settings.Host, remote);
     }
-
-    private static readonly HashSet<string> AudioExtensions = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ".flac", ".mp3", ".m4a", ".ogg", ".opus", ".wav",
-        ".wma", ".aac", ".aiff", ".aif", ".ape", ".wv",
-        ".alac", ".m4b", ".m4p", ".mp2", ".mpc", ".dsf", ".dff"
-    };
-
-    private static bool IsAudioExtension(string path) =>
-        AudioExtensions.Contains(Path.GetExtension(path));
 
     private void EmitCompletionSpan(SlskdDownloadItem item, SlskdStatusResolver.DownloadStatus resolved)
     {
