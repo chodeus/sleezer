@@ -1380,8 +1380,23 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             foreach (string leaf in item.RemoteDirectoryLeaves())
             {
                 string source = Path.Combine(localRoot, leaf);
+                bool leafIsAlbumFolder = string.Equals(Path.GetFullPath(source), Path.GetFullPath(albumFolder), StringComparison.OrdinalIgnoreCase);
+
                 if (!_diskProvider.FolderExists(source))
+                {
+                    // An absent source is normal once an earlier pass moved it — but only if
+                    // the album folder actually holds it now. Neither present means the disc
+                    // never arrived, and recording a merge would hide that. A wholly missing
+                    // album folder is left to FailWhenCompletedFilesVanished, which relocates
+                    // before condemning.
+                    if (!leafIsAlbumFolder && !_diskProvider.FolderExists(Path.Combine(albumFolder, leaf)))
+                    {
+                        allMoved = false;
+                        _logger.Warn("[merge] {ItemId}: disc folder '{Leaf}' is in neither the download root nor the album folder", item.ID, leaf);
+                    }
+
                     continue;
+                }
 
                 if (!IsStrictDescendantOfRoot(source, localRoot))
                 {
@@ -1389,7 +1404,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                     continue;
                 }
 
-                if (string.Equals(Path.GetFullPath(source), Path.GetFullPath(albumFolder), StringComparison.OrdinalIgnoreCase))
+                if (leafIsAlbumFolder)
                     continue;
 
                 string target = Path.Combine(albumFolder, leaf);
