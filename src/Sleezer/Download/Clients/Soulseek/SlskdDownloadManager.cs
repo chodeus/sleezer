@@ -1248,7 +1248,11 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
                     if (!item.DiscFoldersMerged)
                     {
-                        _logger.Warn("[post-process] {ItemId}: skipping scan/tag — disc-folder merge incomplete", item.ID);
+                        // Fail closed: the folder is missing discs, and _postProcessed means
+                        // no later pass will merge them. FailWhenCompletedFilesVanished does
+                        // not catch this — the discs that did move leave audio behind.
+                        item.PostProcessFailure = "Disc-folder merge incomplete; the album is missing discs";
+                        _logger.Warn("[post-process] {ItemId}: failing — disc-folder merge incomplete, scan/tag skipped", item.ID);
                         return;
                     }
                 }
