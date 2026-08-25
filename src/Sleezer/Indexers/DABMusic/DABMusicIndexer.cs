@@ -5,10 +5,11 @@ using NzbDrone.Core.Configuration;
 using NzbDrone.Core.Indexers;
 using NzbDrone.Core.Parser;
 using NzbDrone.Core.ThingiProvider;
+using NzbDrone.Plugin.Sleezer.Core.Replacements;
 
 namespace NzbDrone.Plugin.Sleezer.Indexers.DABMusic
 {
-    public class DABMusicIndexer : HttpIndexerBase<DABMusicIndexerSettings>
+    public class DABMusicIndexer : SleezerHttpIndexerBase<DABMusicIndexerSettings>
     {
         private readonly IDABMusicRequestGenerator _requestGenerator;
         private readonly IDABMusicParser _parser;
