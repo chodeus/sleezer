@@ -1483,26 +1483,8 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         _logger.Info("[post-process] {ItemId}: scanning {Count} audio file(s) in {FolderPath}", item.ID, audioFiles.Length, folderPath);
         System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
 
-        // Concurrency tuned to machine. Ffmpeg is CPU-bound so we cap at half
-        // the core count to leave headroom for the rest of Lidarr.
-        int concurrency = Math.Max(2, Environment.ProcessorCount / 2);
-        using SemaphoreSlim gate = new(concurrency);
-
-        Task<(string path, CorruptionScanner.Result result)>[] tasks = audioFiles.Select(async path =>
-        {
-            await gate.WaitAsync(ct);
-            try
-            {
-                CorruptionScanner.Result r = await _corruptionScanner.ScanAsync(path, PostProcessRunner.CorruptionScanTimeoutSeconds, ct);
-                return (path, r);
-            }
-            finally { gate.Release(); }
-        }).ToArray();
-
-        // Await everything before inspecting: iterating with await rethrows on the first
-        // failure and leaves `using` to dispose the gate while siblings are still waiting
-        // on it, turning one scan error into a pile of unobserved ObjectDisposedExceptions.
-        (string path, CorruptionScanner.Result result)[] scanned = await Task.WhenAll(tasks);
+        (string path, CorruptionScanner.Result result)[] scanned =
+            await CorruptionScanPass.RunAsync(_corruptionScanner, audioFiles, ct);
 
         foreach ((string path, CorruptionScanner.Result result) in scanned)
         {

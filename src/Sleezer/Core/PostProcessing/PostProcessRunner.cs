@@ -173,26 +173,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
             if (audioFiles.Length == 0)
                 return strikes;
 
-            int concurrency = Math.Max(2, Environment.ProcessorCount / 2);
-            using SemaphoreSlim gate = new(concurrency);
-
-            Task<(string Path, CorruptionScanner.Result Result)>[] tasks = [.. audioFiles.Select(async path =>
-            {
-                await gate.WaitAsync(ct);
-                try
-                {
-                    return (path, await corruptionScanner.ScanAsync(path, CorruptionScanTimeoutSeconds, ct));
-                }
-                finally
-                {
-                    gate.Release();
-                }
-            })];
-
-            // Await everything before inspecting: iterating with await would rethrow on
-            // the first failure and leave `using` to dispose the gate while sibling
-            // tasks are still waiting on it.
-            var scanned = await Task.WhenAll(tasks);
+            var scanned = await CorruptionScanPass.RunAsync(corruptionScanner, audioFiles, ct);
 
             foreach ((string path, CorruptionScanner.Result result) in scanned)
             {
