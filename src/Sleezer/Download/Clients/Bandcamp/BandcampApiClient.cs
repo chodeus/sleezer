@@ -533,7 +533,7 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
 
             if (await IsZipArchiveAsync(probePath, cancellationToken).ConfigureAwait(false))
             {
-                _logger.Debug("Bandcamp API: Statdownload returned archive bytes directly");
+                _logger.Info("Bandcamp API: Statdownload returned the archive itself rather than a URL");
                 return new BandcampResolvedDownload { ArchiveWritten = true };
             }
 
@@ -547,7 +547,7 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
                     .Replace("\\/", "/")
                     .Replace("\\u0026", "&");
 
-                _logger.Debug("Bandcamp API: Resolved statdownload URL successfully");
+                _logger.Info("Bandcamp API: Statdownload resolved to a download URL");
                 return new BandcampResolvedDownload
                 {
                     DownloadUrl = resolvedUrl
@@ -558,14 +558,14 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
             // or redirect — check if the content looks like a URL
             if (content.StartsWith("http", StringComparison.OrdinalIgnoreCase))
             {
-                _logger.Debug("Bandcamp API: Statdownload returned direct URL");
+                _logger.Info("Bandcamp API: Statdownload returned a URL as plain text");
                 return new BandcampResolvedDownload
                 {
                     DownloadUrl = content.Trim()
                 };
             }
 
-            _logger.Debug("Bandcamp API: Failed to parse statdownload response");
+            _logger.Info("Bandcamp API: Could not parse the statdownload response; falling back to the download URL");
             return null;
         }
 

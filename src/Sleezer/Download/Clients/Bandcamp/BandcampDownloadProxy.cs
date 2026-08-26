@@ -240,7 +240,7 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
             item.DownloadedBytes = written;
             item.Progress = 1.0;
 
-            _logger.Debug("Bandcamp download proxy [{0}]: Archive arrived with the statdownload probe ({1} bytes)",
+            _logger.Info("Bandcamp download proxy [{0}]: Archive arrived with the statdownload probe ({1} bytes)",
                 item.DownloadId, item.DownloadedBytes);
         }
 
@@ -271,7 +271,7 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
             item.DownloadedBytes = written;
             item.Progress = 1.0;
 
-            _logger.Debug("Bandcamp download proxy [{0}]: File download complete ({1} bytes)",
+            _logger.Info("Bandcamp download proxy [{0}]: File download complete ({1} bytes)",
                 item.DownloadId, item.DownloadedBytes);
         }
 
