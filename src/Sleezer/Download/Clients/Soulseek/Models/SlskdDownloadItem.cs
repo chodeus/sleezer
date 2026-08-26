@@ -43,6 +43,9 @@ public class SlskdDownloadItem
     public DownloadItemStatus? LastReportedStatus { get; set; }
     public bool DiscFoldersMerged { get; set; }
 
+    /// <summary>Why post-processing could not run at all; reported as a failure by GetItems.</summary>
+    public string? PostProcessFailure { get; set; }
+
     /// <summary>
     /// When a Completed item's resolved folder first turned up with no audio
     /// in it — grace-period anchor before the item is failed as vanished.

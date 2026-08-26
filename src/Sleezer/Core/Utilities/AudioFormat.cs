@@ -213,6 +213,19 @@
         public static bool IsAudioFilename(string? filename) =>
             GetAudioCodecFromExtension(Path.GetExtension(filename ?? string.Empty)) != AudioFormat.Unknown;
 
+        // Deliberately NOT GetAudioCodecFromExtension's map: that one exists to name a
+        // codec, so it carries .mid/.ac3 and omits the lossless containers TagLib opens.
+        private static readonly HashSet<string> PostProcessExtensions = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ".flac", ".mp3", ".m4a", ".ogg", ".opus", ".wav",
+            ".wma", ".aac", ".aiff", ".aif", ".ape", ".wv",
+            ".alac", ".m4b", ".m4p", ".mp2", ".mpc", ".dsf", ".dff"
+        };
+
+        /// <summary>True for the files the corruption scan and pre-import tagger will open.</summary>
+        public static bool IsPostProcessAudioFile(string? path) =>
+            PostProcessExtensions.Contains(Path.GetExtension(path ?? string.Empty));
+
         /// <summary>
         /// Returns the default bitrate for a given audio format.
         /// </summary>
