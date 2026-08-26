@@ -153,36 +153,6 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
         public NzbDroneValidationResult Validate() => new(Validator.Validate(this));
     }
 
-    public enum PostProcessClient
-    {
-        [FieldOption(Label = "Deezer")]
-        Deezer = 1,
-
-        [FieldOption(Label = "Tidal")]
-        Tidal = 2,
-
-        [FieldOption(Label = "Slskd (Soulseek)")]
-        Slskd = 3,
-
-        [FieldOption(Label = "Qobuz")]
-        Qobuz = 4,
-
-        [FieldOption(Label = "Bandcamp")]
-        Bandcamp = 5,
-
-        [FieldOption(Label = "Lucida")]
-        Lucida = 6,
-
-        [FieldOption(Label = "DABMusic")]
-        DABMusic = 7,
-
-        [FieldOption(Label = "TripleTriple")]
-        TripleTriple = 8,
-
-        [FieldOption(Label = "SubSonic")]
-        SubSonic = 9,
-    }
-
     public enum TargetAudioFormat
     {
         [FieldOption(Label = "AAC", Hint = "Convert to AAC format.")]
