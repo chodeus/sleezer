@@ -90,6 +90,10 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Utilities\AudioFormat.cs"
              LinkBase="SourceUnderTest" />
+    <!-- Same-title album collision guard (#105). ReleaseInfo and AlbumSearchCriteria
+         come from the Lidarr.Core reference below. -->
+    <Compile Include="..\..\src\Sleezer\Core\Utilities\AlbumYearGuard.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Utilities\DirectoryEmptiness.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Utilities\EmptyDownloadDirectorySweeper.cs"
