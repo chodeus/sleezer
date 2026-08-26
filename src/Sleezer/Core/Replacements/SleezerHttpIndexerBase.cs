@@ -23,9 +23,14 @@ namespace NzbDrone.Plugin.Sleezer.Core.Replacements
         {
         }
 
+        /// <summary>Indexer-specific filtering, applied before the shared guards and the count.</summary>
+        protected virtual IList<ReleaseInfo> FilterReleases(IList<ReleaseInfo> releases, AlbumSearchCriteria searchCriteria) => releases;
+
         public override async Task<IList<ReleaseInfo>> Fetch(AlbumSearchCriteria searchCriteria)
         {
-            IList<ReleaseInfo> releases = AlbumYearGuard.Apply(await base.Fetch(searchCriteria), searchCriteria, Name, _logger);
+            // Subclass filter first, so the count below is what the caller actually receives.
+            IList<ReleaseInfo> releases = AlbumYearGuard.Apply(
+                FilterReleases(await base.Fetch(searchCriteria), searchCriteria), searchCriteria, Name, _logger);
 
             // Slskd accounts for its own searches; this is the same answer for the rest.
             _logger.Info("{Indexer}: {Count} result(s) for '{Artist} - {Album}'",
