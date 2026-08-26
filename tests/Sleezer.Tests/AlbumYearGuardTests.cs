@@ -113,7 +113,7 @@ public class AlbumYearGuardTests
     public void A_future_dated_release_is_real_data_not_the_sentinel()
     {
         int nextYear = DateTime.UtcNow.Year + 1;
-        ReleaseInfo announced = new() { Title = "announced", PublishDate = DateTime.UtcNow.AddMonths(6) };
+        ReleaseInfo announced = new() { Title = "announced", PublishDate = new DateTime(nextYear, 6, 1, 0, 0, 0, DateTimeKind.Utc) };
 
         IList<ReleaseInfo> kept = AlbumYearGuard.Apply(
             [announced, R("old", nextYear - 5)], C(nextYear), "Qobuz", Log);
