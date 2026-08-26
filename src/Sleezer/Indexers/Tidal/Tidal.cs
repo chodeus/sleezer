@@ -12,10 +12,11 @@ using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Tidal;
 using TidalSharp;
 using TidalSharp.Data;
+using NzbDrone.Plugin.Sleezer.Core.Replacements;
 
 namespace NzbDrone.Core.Indexers.Tidal
 {
-    public class Tidal : HttpIndexerBase<TidalIndexerSettings>
+    public class Tidal : SleezerHttpIndexerBase<TidalIndexerSettings>
     {
         public override string Name => "Tidal";
         public override string Protocol => nameof(TidalDownloadProtocol);

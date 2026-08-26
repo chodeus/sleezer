@@ -8,10 +8,11 @@ using NzbDrone.Core.ThingiProvider;
 using System.Text;
 using System.Text.Json;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
+using NzbDrone.Plugin.Sleezer.Core.Replacements;
 
 namespace NzbDrone.Plugin.Sleezer.Indexers.SubSonic
 {
-    public class SubSonicIndexer : HttpIndexerBase<SubSonicIndexerSettings>
+    public class SubSonicIndexer : SleezerHttpIndexerBase<SubSonicIndexerSettings>
     {
         private readonly ISubSonicRequestGenerator _requestGenerator;
         private readonly ISubSonicParser _parser;

@@ -10,11 +10,13 @@ using NzbDrone.Core.Indexers.Exceptions;
 using NzbDrone.Core.IndexerSearch.Definitions;
 using NzbDrone.Core.Parser;
 using NzbDrone.Core.Parser.Model;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Qobuz;
+using NzbDrone.Plugin.Sleezer.Core.Replacements;
 
 namespace NzbDrone.Core.Indexers.Qobuz
 {
-    public class Qobuz : HttpIndexerBase<QobuzIndexerSettings>
+    public class Qobuz : SleezerHttpIndexerBase<QobuzIndexerSettings>
     {
         public override string Name => "Qobuz";
         public override string Protocol => nameof(QobuzDownloadProtocol);

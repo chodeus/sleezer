@@ -14,6 +14,8 @@ using NzbDrone.Core.Indexers.Exceptions;
 using NzbDrone.Core.IndexerSearch.Definitions;
 using NzbDrone.Core.Parser;
 using NzbDrone.Core.Parser.Model;
+using NzbDrone.Plugin.Sleezer.Core.Replacements;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
 namespace NzbDrone.Core.Indexers.Bandcamp
 {
@@ -26,7 +28,7 @@ namespace NzbDrone.Core.Indexers.Bandcamp
     /// bandcampsync's load_purchases flow. Public search should only be added as a
     /// fallback when we can prove a result has a downloadable URL.
     /// </summary>
-    public class BandcampIndexer : HttpIndexerBase<BandcampIndexerSettings>
+    public class BandcampIndexer : SleezerHttpIndexerBase<BandcampIndexerSettings>
     {
         private readonly BandcampApiClient _apiClient;
 
@@ -72,7 +74,8 @@ namespace NzbDrone.Core.Indexers.Bandcamp
 
             var releases = await FetchCollectionReleases(searchCriteria).ConfigureAwait(false);
 
-            return CleanupReleases(releases);
+            // Applied here rather than inherited: this override never calls base.Fetch.
+            return AlbumYearGuard.Apply(CleanupReleases(releases), searchCriteria, Name, _logger);
         }
 
         public override async Task<IList<ReleaseInfo>> Fetch(ArtistSearchCriteria searchCriteria)

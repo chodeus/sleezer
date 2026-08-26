@@ -6,10 +6,11 @@ using NzbDrone.Core.Configuration;
 using NzbDrone.Core.Download.Clients.Deezer;
 using NzbDrone.Core.Parser;
 using NzbDrone.Plugin.Sleezer.Deezer;
+using NzbDrone.Plugin.Sleezer.Core.Replacements;
 
 namespace NzbDrone.Core.Indexers.Deezer
 {
-    public class Deezer : HttpIndexerBase<DeezerIndexerSettings>
+    public class Deezer : SleezerHttpIndexerBase<DeezerIndexerSettings>
     {
         public override string Name => "Deezer";
         public override string Protocol => nameof(DeezerDownloadProtocol);
