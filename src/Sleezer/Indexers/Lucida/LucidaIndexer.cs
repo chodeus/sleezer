@@ -6,10 +6,11 @@ using NzbDrone.Core.Indexers;
 using NzbDrone.Core.Parser;
 using NzbDrone.Core.ThingiProvider;
 using System.Text.RegularExpressions;
+using NzbDrone.Plugin.Sleezer.Core.Replacements;
 
 namespace NzbDrone.Plugin.Sleezer.Indexers.Lucida
 {
-    public partial class LucidaIndexer : HttpIndexerBase<LucidaIndexerSettings>
+    public partial class LucidaIndexer : SleezerHttpIndexerBase<LucidaIndexerSettings>
     {
         private readonly ILucidaRequestGenerator _requestGenerator;
         private readonly ILucidaParser _parser;

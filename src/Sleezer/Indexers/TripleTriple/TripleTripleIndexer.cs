@@ -7,10 +7,11 @@ using NzbDrone.Core.Parser;
 using NzbDrone.Core.ThingiProvider;
 using System.Text.Json;
 using NzbDrone.Plugin.Sleezer.Download.Base;
+using NzbDrone.Plugin.Sleezer.Core.Replacements;
 
 namespace NzbDrone.Plugin.Sleezer.Indexers.TripleTriple
 {
-    public class TripleTripleIndexer : HttpIndexerBase<TripleTripleIndexerSettings>
+    public class TripleTripleIndexer : SleezerHttpIndexerBase<TripleTripleIndexerSettings>
     {
         private readonly ITripleTripleRequestGenerator _requestGenerator;
         private readonly ITripleTripleParser _parser;

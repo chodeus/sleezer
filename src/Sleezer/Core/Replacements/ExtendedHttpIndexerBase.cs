@@ -61,7 +61,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Replacements
             if (!SupportsSearch)
                 return Array.Empty<ReleaseInfo>();
 
-            return await FetchReleases(g => g.GetSearchRequests(searchCriteria));
+            return AlbumYearGuard.Apply(await FetchReleases(g => g.GetSearchRequests(searchCriteria)), searchCriteria, Name, _logger);
         }
 
         public override async Task<IList<ReleaseInfo>> Fetch(ArtistSearchCriteria searchCriteria)
