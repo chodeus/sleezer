@@ -34,10 +34,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
 
     public static class PostProcessClientExtensions
     {
-        /// <summary>
-        /// True when the client is a digital storefront, so whatever it delivers can only be
-        /// a digital release.
-        /// </summary>
+        /// <summary>True when the client is a storefront, so its product can only be digital.</summary>
         public static bool IsDigitalStorefront(this PostProcessClient client) => client switch
         {
             PostProcessClient.Qobuz or
@@ -48,9 +45,8 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
             PostProcessClient.DABMusic or
             PostProcessClient.TripleTriple => true,
 
-            // Slskd is peer-to-peer and SubSonic is a personal library — either can serve a
-            // CD rip, so steering them onto a digital release is the same error reversed.
-            // Unlisted defaults to false: a new peer source must opt in, not inherit this.
+            // Fail closed: a client added later must be classified deliberately. Slskd and
+            // SubSonic can both serve a genuine CD rip.
             _ => false
         };
     }

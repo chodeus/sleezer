@@ -262,6 +262,11 @@ public class PreImportTagger : IPreImportTagger
 
         List<LocalAlbumRelease> releases = _identificationService.Identify(localTracks, overrides, config);
 
+        // Before the fallback, not after: the fallback forces a release unconditionally, and
+        // assigning one here would skip the remaining ranked digital candidates.
+        if (preferDigitalMedia && albumRelease == null)
+            (releases, albumRelease) = PreferDigitalRelease(album, artist, localTracks, releases, config, confidenceThreshold, sourceId);
+
         // Fallback: if the unconstrained Identify call found no release within
         // confidence (e.g. genuinely ambiguous metadata) and the caller didn't
         // pick one for us, retry constrained to the monitored release. This
@@ -287,9 +292,6 @@ public class PreImportTagger : IPreImportTagger
                 releases = _identificationService.Identify(localTracks, overrides, config);
             }
         }
-
-        if (preferDigitalMedia && albumRelease == null)
-            (releases, albumRelease) = PreferDigitalRelease(album, artist, localTracks, releases, config, confidenceThreshold, sourceId);
 
         // One batched AcoustID round trip up front rather than one per file.
         Dictionary<string, string>? knownRecordings = null;
@@ -377,10 +379,7 @@ public class PreImportTagger : IPreImportTagger
     // album with a long digital discography cannot spin here.
     private const int MaxDigitalAttempts = 3;
 
-    /// <summary>
-    /// Re-identifies against the album's Digital Media releases, closest track count first,
-    /// keeping the first that still matches within confidence. Track mapping still decides.
-    /// </summary>
+    /// <summary>Re-identifies against digital releases, keeping the first within confidence.</summary>
     private (List<LocalAlbumRelease> Releases, AlbumRelease? Chosen) PreferDigitalRelease(
         Album album,
         Artist artist,
