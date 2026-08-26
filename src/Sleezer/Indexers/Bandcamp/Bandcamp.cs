@@ -75,7 +75,12 @@ namespace NzbDrone.Core.Indexers.Bandcamp
             var releases = await FetchCollectionReleases(searchCriteria).ConfigureAwait(false);
 
             // Applied here rather than inherited: this override never calls base.Fetch.
-            return AlbumYearGuard.Apply(CleanupReleases(releases), searchCriteria, Name, _logger);
+            var kept = AlbumYearGuard.Apply(CleanupReleases(releases), searchCriteria, Name, _logger);
+
+            _logger.Info("{Indexer}: {Count} result(s) for '{Artist} - {Album}'",
+                Name, kept.Count, searchCriteria.Artist?.Name, searchCriteria.AlbumTitle);
+
+            return kept;
         }
 
         public override async Task<IList<ReleaseInfo>> Fetch(ArtistSearchCriteria searchCriteria)

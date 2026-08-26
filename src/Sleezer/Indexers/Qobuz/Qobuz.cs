@@ -78,8 +78,8 @@ namespace NzbDrone.Core.Indexers.Qobuz
         // specific-artist searches. They're the sole trigger for an interactive-search
         // 500: with two "Various Artists" entries in the library, ArtistRepository
         // .FindByName throws MultipleArtistsFoundException and aborts the whole search.
-        public override async Task<IList<ReleaseInfo>> Fetch(AlbumSearchCriteria searchCriteria)
-            => SkipVariousArtists(await base.Fetch(searchCriteria), searchCriteria.Artist?.Name);
+        protected override IList<ReleaseInfo> FilterReleases(IList<ReleaseInfo> releases, AlbumSearchCriteria searchCriteria)
+            => SkipVariousArtists(releases, searchCriteria.Artist?.Name);
 
         public override async Task<IList<ReleaseInfo>> Fetch(ArtistSearchCriteria searchCriteria)
             => SkipVariousArtists(await base.Fetch(searchCriteria), searchCriteria.Artist?.Name);
@@ -109,7 +109,7 @@ namespace NzbDrone.Core.Indexers.Qobuz
 
             List<ReleaseInfo> kept = [.. releases.Where(r => !IsVariousArtists(r.Artist))];
             if (kept.Count != releases.Count)
-                _logger.Debug("Qobuz skipped {Count} 'Various Artists' result(s) for search '{Search}'", releases.Count - kept.Count, searchedArtist);
+                _logger.Info("Qobuz: skipped {Count} 'Various Artists' result(s) for search '{Search}'", releases.Count - kept.Count, searchedArtist);
 
             return kept;
         }

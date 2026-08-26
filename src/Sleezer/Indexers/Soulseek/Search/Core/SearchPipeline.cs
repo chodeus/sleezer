@@ -137,7 +137,9 @@ public sealed class SearchPipeline : ISlskdSearchChain
             }
         }
 
-        _logger.Debug("Dropping query containing server-blocked term with no viable rewrite: '{Query}'", query);
+        // Info, not Debug: this abandons the search outright, so zero results otherwise
+        // arrive with no explanation anywhere.
+        _logger.Info("Slskd: dropping search '{Query}' — it contains a server-blocked term and no rewrite avoided it", query);
         return string.Empty;
     }
 }
