@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Globalization;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -18,7 +19,8 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
     {
         public string? DownloadUrl { get; set; }
 
-        public HttpResponse? DirectResponse { get; set; }
+        /// <summary>The probe was the archive itself and already sits at the temp path.</summary>
+        public bool ArchiveWritten { get; set; }
     }
 
     /// <summary>
@@ -75,6 +77,10 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
         }
 
         private const int MaxDownloadRedirects = 5;
+
+        // A statdownload JSON body is a few hundred bytes; anything bigger that is not an
+        // archive is an error page we only need the start of.
+        private const int StatdownloadProbeLimitBytes = 64 * 1024;
 
         private async Task<HttpResponse> SendWithValidatedRedirectsAsync(
             string cookies, string url, Stream? destination, CancellationToken cancellationToken)
@@ -507,8 +513,10 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
         /// <param name="downloadUrl">The initial download URL (from pagedata or purchase).</param>
         /// <param name="format">The desired format (e.g., "FLAC").</param>
         /// <returns>The final download URL for the file, or null if resolution fails.</returns>
+        // Bandcamp sometimes answers this probe with the archive itself rather than a URL,
+        // so it streams to disk: a discography ZIP is routinely multi-GB.
         public async Task<BandcampResolvedDownload?> ResolveStatdownloadUrlAsync(
-            string cookies, string downloadUrl, string format)
+            string cookies, string downloadUrl, string format, string probePath, CancellationToken cancellationToken = default)
         {
             _logger.Debug("Bandcamp API: Resolving statdownload URL for format {0}", format);
 
@@ -518,11 +526,18 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
             var separator = downloadUrl.Contains('?', StringComparison.Ordinal) ? '&' : '?';
             var url = $"{downloadUrl}{separator}.format={format}&.json=true";
 
-            var builder = _httpClient.CreateRequestBuilder(url, cookies);
-            var request = builder.Build();
-            var response = await _httpClient.ExecuteAsync(request).ConfigureAwait(false);
+            await using (var probe = new FileStream(probePath, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                await SendWithValidatedRedirectsAsync(cookies, url, probe, cancellationToken).ConfigureAwait(false);
+            }
 
-            var content = response.Content ?? string.Empty;
+            if (await IsZipArchiveAsync(probePath, cancellationToken).ConfigureAwait(false))
+            {
+                _logger.Info("Bandcamp API: Statdownload returned the archive itself rather than a URL");
+                return new BandcampResolvedDownload { ArchiveWritten = true };
+            }
+
+            var content = await ReadProbePrefixAsync(probePath, cancellationToken).ConfigureAwait(false);
 
             // Parse the JSON response to extract the actual download URL
             var urlMatch = StatdownloadUrlRegex.Match(content);
@@ -532,7 +547,7 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
                     .Replace("\\/", "/")
                     .Replace("\\u0026", "&");
 
-                _logger.Debug("Bandcamp API: Resolved statdownload URL successfully");
+                _logger.Info("Bandcamp API: Statdownload resolved to a download URL");
                 return new BandcampResolvedDownload
                 {
                     DownloadUrl = resolvedUrl
@@ -543,32 +558,38 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
             // or redirect — check if the content looks like a URL
             if (content.StartsWith("http", StringComparison.OrdinalIgnoreCase))
             {
-                _logger.Debug("Bandcamp API: Statdownload returned direct URL");
+                _logger.Info("Bandcamp API: Statdownload returned a URL as plain text");
                 return new BandcampResolvedDownload
                 {
                     DownloadUrl = content.Trim()
                 };
             }
 
-            // Some Bandcamp statdownload responses stream the archive directly.
-            // In that case, keep using the statdownload URL we just probed.
-            var responseData = response.ResponseData;
-            if (responseData != null && responseData.Length >= 4)
-            {
-                // ZIP local file header: PK\x03\x04
-                if (responseData[0] == 0x50 && responseData[1] == 0x4B &&
-                    responseData[2] == 0x03 && responseData[3] == 0x04)
-                {
-                    _logger.Debug("Bandcamp API: Statdownload returned archive bytes directly");
-                    return new BandcampResolvedDownload
-                    {
-                        DirectResponse = response
-                    };
-                }
-            }
-
-            _logger.Debug("Bandcamp API: Failed to parse statdownload response");
+            _logger.Info("Bandcamp API: Could not parse the statdownload response; falling back to the download URL");
             return null;
+        }
+
+        // ZIP local file header: PK\x03\x04
+        private static async Task<bool> IsZipArchiveAsync(string path, CancellationToken cancellationToken)
+        {
+            await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+            var header = new byte[4];
+            var read = await stream.ReadAtLeastAsync(header, header.Length, throwOnEndOfStream: false, cancellationToken).ConfigureAwait(false);
+
+            return read == header.Length
+                   && header[0] == 0x50 && header[1] == 0x4B
+                   && header[2] == 0x03 && header[3] == 0x04;
+        }
+
+        // Bounded: a statdownload JSON body is a few hundred bytes, and anything larger that
+        // is not an archive is an error page we only need the start of.
+        private static async Task<string> ReadProbePrefixAsync(string path, CancellationToken cancellationToken)
+        {
+            await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+            var buffer = new byte[(int)Math.Min(stream.Length, StatdownloadProbeLimitBytes)];
+            var read = await stream.ReadAtLeastAsync(buffer, buffer.Length, throwOnEndOfStream: false, cancellationToken).ConfigureAwait(false);
+
+            return Encoding.UTF8.GetString(buffer, 0, read);
         }
 
         /// <summary>
