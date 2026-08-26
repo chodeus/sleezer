@@ -42,6 +42,11 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             if (dropped.Count == 0)
                 return releases;
 
+            // Summary at Info, detail at Debug: a dropped release is the answer to "why did
+            // it not grab that", and Lidarr logs at Info.
+            logger.Info("{Indexer}: dropped {Dropped} of {Total} result(s) not released around {TargetYear}",
+                indexerName, dropped.Count, releases.Count, targetYear);
+
             foreach (ReleaseInfo release in dropped)
             {
                 logger.Debug("{Indexer} dropped '{Title}' ({Year}) — the searched album is from {TargetYear}",

@@ -109,7 +109,7 @@ namespace NzbDrone.Core.Indexers.Qobuz
 
             List<ReleaseInfo> kept = [.. releases.Where(r => !IsVariousArtists(r.Artist))];
             if (kept.Count != releases.Count)
-                _logger.Debug("Qobuz skipped {Count} 'Various Artists' result(s) for search '{Search}'", releases.Count - kept.Count, searchedArtist);
+                _logger.Info("Qobuz: skipped {Count} 'Various Artists' result(s) for search '{Search}'", releases.Count - kept.Count, searchedArtist);
 
             return kept;
         }

@@ -24,6 +24,14 @@ namespace NzbDrone.Plugin.Sleezer.Core.Replacements
         }
 
         public override async Task<IList<ReleaseInfo>> Fetch(AlbumSearchCriteria searchCriteria)
-            => AlbumYearGuard.Apply(await base.Fetch(searchCriteria), searchCriteria, Name, _logger);
+        {
+            IList<ReleaseInfo> releases = AlbumYearGuard.Apply(await base.Fetch(searchCriteria), searchCriteria, Name, _logger);
+
+            // Slskd accounts for its own searches; this is the same answer for the rest.
+            _logger.Info("{Indexer}: {Count} result(s) for '{Artist} - {Album}'",
+                Name, releases.Count, searchCriteria.Artist?.Name, searchCriteria.AlbumTitle);
+
+            return releases;
+        }
     }
 }
