@@ -142,8 +142,10 @@ public class PreImportTagger : IPreImportTagger
         {
             return await TagInternalAsync(album, artist, albumRelease, sourceId, completedFolderPath, confidenceThreshold, stripFeaturedArtists, verifyAllWithFingerprint, fingerprintTitleFallback, ct);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            // Cancellation is not a tagging result: a timed-out pass verified nothing, so it
+            // must reach the caller's failure path rather than read as one bad tag write.
             _logger.Error(ex, "Pre-import tagging failed for {SourceId}", sourceId);
             return new TaggingResult(0, 0, 1);
         }
