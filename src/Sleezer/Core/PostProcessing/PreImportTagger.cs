@@ -358,9 +358,9 @@ public class PreImportTagger : IPreImportTagger
         // everything above failed, fall back to per-track title matching
         // against the target release (remix/variant qualifiers still conflict).
         int titleTagged = 0;
-        if (tagged == 0 && IsTitleFallbackEligible(album))
+        if (tagged == 0 && TitleFallbackGuard.IsEligibleAlbum(album))
         {
-            (titleTagged, int titleErrored, int titleSkipped) = await TryTitleDrivenTaggingAsync(localTracks, album, artist, albumRelease, stripFeaturedArtists, fingerprintTitleFallback, knownRecordings, sourceId, taggedFiles, ct);
+            (titleTagged, int titleErrored, int titleSkipped) = await TryTitleDrivenTaggingAsync(localTracks, album, artist, albumRelease, stripFeaturedArtists, fingerprintTitleFallback, preferDigitalMedia, knownRecordings, sourceId, taggedFiles, ct);
             tagged += titleTagged;
             errored += titleErrored;
             skipped += titleSkipped;
@@ -425,19 +425,6 @@ public class PreImportTagger : IPreImportTagger
 
     private static double Confidence(LocalAlbumRelease release) => release.Distance?.NormalizedDistance() ?? 1.0;
 
-    private static bool IsTitleFallbackEligible(Album album)
-    {
-        bool smallRelease = string.Equals(album.AlbumType, "Single", StringComparison.OrdinalIgnoreCase) ||
-                            string.Equals(album.AlbumType, "EP", StringComparison.OrdinalIgnoreCase);
-        if (!smallRelease)
-            return false;
-
-        // A Live/Remix/Demo single's MB TRACK titles are usually plain, so the
-        // per-pair variant guard has nothing to compare — a studio file would
-        // title-match the live cut. Fail closed for those albums.
-        return album.SecondaryTypes?.Any(t => t?.Name is "Live" or "Remix" or "Demo" or "Mixtape") != true;
-    }
-
     private async Task<(int Tagged, int Errored, int Skipped)> TryTitleDrivenTaggingAsync(
         List<LocalTrack> localTracks,
         Album album,
@@ -445,6 +432,7 @@ public class PreImportTagger : IPreImportTagger
         AlbumRelease? albumRelease,
         bool stripFeaturedArtists,
         bool fingerprintVerify,
+        bool preferDigitalMedia,
         Dictionary<string, string>? knownRecordings,
         string sourceId,
         List<TaggedFile> taggedFiles,
@@ -456,6 +444,13 @@ public class PreImportTagger : IPreImportTagger
         List<Track>? tracks = release?.Tracks?.Value;
         if (release == null || tracks is not { Count: > 0 })
             return (0, 0, 0);
+
+        if (!TitleFallbackGuard.IsSafeTarget(release, tracks.Count, localTracks.Count, preferDigitalMedia))
+        {
+            _logger.Info("Pre-import tag: '{Release}' is not a safe title-fallback target for {SourceId} — {TrackCount} tracks vs {FileCount} files, digital={IsDigital} (digital source={PreferDigital}); leaving raw tags for Lidarr",
+                release.Title, sourceId, tracks.Count, localTracks.Count, DigitalReleaseSelector.IsDigital(release), preferDigitalMedia);
+            return (0, 0, 0);
+        }
 
         string? artistName = album.Artist?.Value?.Name;
         List<string> localTitles = localTracks.Select(lt =>
