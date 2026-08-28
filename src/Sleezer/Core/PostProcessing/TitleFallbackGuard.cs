@@ -13,9 +13,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
             if (!smallRelease)
                 return false;
 
-            // A Live/Remix/Demo single's MB TRACK titles are usually plain, so the
-            // per-pair variant guard has nothing to compare — a studio file would
-            // title-match the live cut. Fail closed for those albums.
+            // Live/Remix/Demo singles carry plain MB TRACK titles, so the variant
+            // guard can't tell a studio file from the live cut — fail closed.
             return album.SecondaryTypes?.Any(t => t?.Name is "Live" or "Remix" or "Demo" or "Mixtape") != true;
         }
 
