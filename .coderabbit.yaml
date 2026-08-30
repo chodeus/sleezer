@@ -102,6 +102,41 @@ reviews:
         allowlist reopens open-redirect / token phishing. Tokens/OAuth codes must not
         be logged, persisted beyond need, or leaked via a URL a referrer would expose.
 
+    - path: ".github/scripts/*.py"
+      instructions: |
+        The Qobuz bundle canary — the only Python in the repo, and every other
+        instruction targets .cs, so it was reviewed with no rules at all.
+        - PAIRED INVARIANT: its regexes deliberately mirror
+          src/Sleezer/QobuzApiSharp/Service/QobuzApiHelper.cs. A change to either
+          side must change the other in the same PR, or the canary silently stops
+          testing what ships — flag a one-sided edit.
+        - It must FAIL LOUDLY. A bail-out that exits 0, swallows an exception, or
+          treats a network error as a pass turns a scheduled guard into a green
+          check that proves nothing. Distinguish "the bundle changed shape"
+          (a real failure) from "the fetch failed" (retry/report, not a pass).
+        - Never log or print an app_id, app_secret, seed or token it extracts.
+    - path: ".github/workflows/**"
+      instructions: |
+        Build, release, and the scheduled vendor-drift / bundle-canary guards.
+        - A scheduled guard is worthless if it cannot fail: flag continue-on-error,
+          `|| true`, or an `if:` that skips the assert on the path that matters.
+        - When a gate that used to BLOCK becomes non-blocking, audit every
+          downstream step that relied on it in the same change.
+        - Enumerate allowed states positively (== 'success' || == 'skipped'),
+          never by negation — a third state slips through `!= 'failure'`.
+        - Pin third-party actions by commit SHA, not a mutable tag.
+        - Never echo a token, and never interpolate untrusted input (PR title,
+          branch name, issue body) into a `run:` block — pass it via env.
+    - path: "{NuGet.config,*.sln}"
+      instructions: |
+        - A new NuGet package source widens the supply chain: it must be a trusted
+          feed, and packages should stay pinned. Flag an added source or a
+          disabled signature/integrity check.
+        - Projects added to the solution must match the build/release workflows,
+          or they ship untested or not at all.
+
   tools:
     gitleaks:
+      enabled: true
+    actionlint:
       enabled: true
