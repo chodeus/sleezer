@@ -33,6 +33,8 @@
     <!-- The scheduler the web download clients run on. Pulled in to pin its completion
          semantics, which is what a post-process pass has to hang off. -->
     <PackageReference Include="Shard.DownloadAssistant" Version="1.1.2" />
+    <!-- Same version as Sleezer.csproj — Blowfish for DeezerStreamDecoder. -->
+    <PackageReference Include="BouncyCastle.Cryptography" Version="2.6.1" />
   </ItemGroup>
 
   <ItemGroup>
@@ -72,6 +74,15 @@
     <Compile Include="..\..\src\Sleezer\Core\Utilities\SourceTagWriter.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Utilities\ReleaseFormatter.cs"
+             LinkBase="SourceUnderTest" />
+    <!-- Deezer stripe decode; BouncyCastle only. -->
+    <Compile Include="..\..\src\Sleezer\Core\Deezer\DeezerStreamDecoder.cs"
+             LinkBase="SourceUnderTest" />
+    <!-- Identity gate for Deezer track substitution; BCL only. -->
+    <Compile Include="..\..\src\Sleezer\Core\Deezer\DeezerFallbackGate.cs"
+             LinkBase="SourceUnderTest" />
+    <!-- Baseline Deezer tag write; TagLib + Newtonsoft via the Lidarr.Core reference. -->
+    <Compile Include="..\..\src\Sleezer\Download\Clients\Deezer\DeezerTagger.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Tidal\TidalPathSanitizer.cs"
              LinkBase="SourceUnderTest" />
