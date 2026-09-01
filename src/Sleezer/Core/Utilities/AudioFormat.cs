@@ -85,13 +85,7 @@
             { 500, 10 }   // q10 ~500kbps
         };
 
-        /// <summary>
-        /// Returns the correct file extension for a given audio codec, defaulting
-        /// to <c>.aac</c> for unknown codecs. Kept for callers (video-audio
-        /// extraction) that already produce AAC-default filenames; do NOT use this
-        /// for rename-in-place flows because an unknown codec will silently change
-        /// the on-disk extension. Use <see cref="TryGetFileExtensionForCodec"/> instead.
-        /// </summary>
+        /// <summary>Extension for a codec, <c>.aac</c> when unknown — never for rename-in-place; see <see cref="TryGetFileExtensionForCodec"/>.</summary>
         public static string GetFileExtensionForCodec(string codec) => codec switch
         {
             "aac" => ".m4a",

@@ -196,9 +196,9 @@ public class Downloader
         var trackStreamData = await GetTrackStreamData(trackId, quality, token);
         var streamManifest = new StreamManifest(trackStreamData);
 
-        // Never observed in the wild; the old decrypt path was broken, so refuse before downloading anything.
-        if (!string.IsNullOrEmpty(streamManifest.EncryptionKey))
-            throw new UnavailableMediaException($"Tidal returned an encrypted stream for track {trackId}; encrypted delivery is not supported.");
+        // Encrypted delivery is unsupported — refuse on the manifest's type, not just a present key.
+        if (!string.Equals(streamManifest.EncryptionType, "NONE", StringComparison.OrdinalIgnoreCase) || !string.IsNullOrEmpty(streamManifest.EncryptionKey))
+            throw new UnavailableMediaException($"Tidal returned an encrypted stream ({streamManifest.EncryptionType}) for track {trackId}; encrypted delivery is not supported.");
 
         var urls = streamManifest.Urls;
 

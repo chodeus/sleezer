@@ -92,6 +92,7 @@ namespace NzbDrone.Plugin.Sleezer.Deezer
             };
         }
 
+        private readonly object _refreshGate = new();
         private DateTime _lastForcedRefresh = DateTime.MinValue;
         private static readonly TimeSpan ForcedRefreshInterval = TimeSpan.FromMinutes(5);
 
@@ -99,10 +100,17 @@ namespace NzbDrone.Plugin.Sleezer.Deezer
         // upgrade is picked up without waiting for the 24h refresh in TryUpdateToken.
         internal async Task<bool> TryRefreshSessionAsync(CancellationToken token = default)
         {
-            if (string.IsNullOrEmpty(_client.ActiveARL) || DateTime.UtcNow - _lastForcedRefresh < ForcedRefreshInterval)
+            if (string.IsNullOrEmpty(_client.ActiveARL))
                 return false;
 
-            _lastForcedRefresh = DateTime.UtcNow;
+            // Reserve the slot under the lock so concurrent callers can't both pass the throttle.
+            lock (_refreshGate)
+            {
+                if (DateTime.UtcNow - _lastForcedRefresh < ForcedRefreshInterval)
+                    return false;
+                _lastForcedRefresh = DateTime.UtcNow;
+            }
+
             var startedAt = DateTime.UtcNow;
             await _client.SetARL(_client.ActiveARL).WaitAsync(ArlOperationTimeout, token);
             _lastArlUpdate = DateTime.Now;
