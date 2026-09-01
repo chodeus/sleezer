@@ -80,7 +80,7 @@ namespace NzbDrone.Plugin.Sleezer.Deezer
         {
             var options = _client.GWApi.ActiveUserData?["USER"]?["OPTIONS"];
             if (options == null)
-                return true;
+                return false;  // fail closed: no account data, no entitlement
 
             var lossless = options["web_lossless"]?.ToObject<bool?>() == true || options["mobile_lossless"]?.ToObject<bool?>() == true;
             var hq = lossless || options["web_hq"]?.ToObject<bool?>() == true || options["mobile_hq"]?.ToObject<bool?>() == true;
@@ -93,29 +93,57 @@ namespace NzbDrone.Plugin.Sleezer.Deezer
         }
 
         private readonly object _refreshGate = new();
+        private Task<bool>? _refreshInFlight;
         private DateTime _lastForcedRefresh = DateTime.MinValue;
         private static readonly TimeSpan ForcedRefreshInterval = TimeSpan.FromMinutes(5);
 
         // Capability pre-checks call this before refusing a bitrate, so a mid-session plan
         // upgrade is picked up without waiting for the 24h refresh in TryUpdateToken.
-        internal async Task<bool> TryRefreshSessionAsync(CancellationToken token = default)
+        internal Task<bool> TryRefreshSessionAsync(CancellationToken token = default)
         {
             if (string.IsNullOrEmpty(_client.ActiveARL))
-                return false;
+                return Task.FromResult(false);
 
-            // Reserve the slot under the lock so concurrent callers can't both pass the throttle.
+            Task<bool> refresh;
             lock (_refreshGate)
             {
-                if (DateTime.UtcNow - _lastForcedRefresh < ForcedRefreshInterval)
-                    return false;
-                _lastForcedRefresh = DateTime.UtcNow;
+                if (_refreshInFlight != null)
+                    refresh = _refreshInFlight;
+                else if (DateTime.UtcNow - _lastForcedRefresh < ForcedRefreshInterval)
+                    return Task.FromResult(false);
+                else
+                    refresh = _refreshInFlight = RefreshSessionAsync();
             }
 
+            // Joiners wait on the shared refresh; cancelling a joiner never cancels the refresh itself.
+            return refresh.WaitAsync(token);
+        }
+
+        // Only a completed refresh that yields user data consumes the cooldown; failures leave it open.
+        private async Task<bool> RefreshSessionAsync()
+        {
             var startedAt = DateTime.UtcNow;
-            await _client.SetARL(_client.ActiveARL).WaitAsync(ArlOperationTimeout, token);
-            _lastArlUpdate = DateTime.Now;
-            LogArlOutcome("ForcedRefresh", startedAt);
-            return true;
+            try
+            {
+                await _client.SetARL(_client.ActiveARL).WaitAsync(ArlOperationTimeout);
+                _lastArlUpdate = DateTime.Now;
+                LogArlOutcome("ForcedRefresh", startedAt);
+
+                var succeeded = _client.GWApi.ActiveUserData != null;
+                lock (_refreshGate)
+                    _lastForcedRefresh = succeeded ? DateTime.UtcNow : DateTime.MinValue;
+                return succeeded;
+            }
+            catch (Exception ex)
+            {
+                _logger.Warn(ex, "Deezer forced session refresh failed; the throttle stays open for a retry");
+                return false;
+            }
+            finally
+            {
+                lock (_refreshGate)
+                    _refreshInFlight = null;
+            }
         }
 
         private void LogArlOutcome(string operation, DateTime startedAt)
