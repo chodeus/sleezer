@@ -99,10 +99,10 @@ namespace NzbDrone.Plugin.Sleezer.Deezer
 
         // Capability pre-checks call this before refusing a bitrate, so a mid-session plan
         // upgrade is picked up without waiting for the 24h refresh in TryUpdateToken.
-        internal Task<bool> TryRefreshSessionAsync(CancellationToken token = default)
+        internal async Task<bool> TryRefreshSessionAsync(CancellationToken token = default)
         {
             if (string.IsNullOrEmpty(_client.ActiveARL))
-                return Task.FromResult(false);
+                return false;
 
             Task<bool> refresh;
             lock (_refreshGate)
@@ -110,13 +110,22 @@ namespace NzbDrone.Plugin.Sleezer.Deezer
                 if (_refreshInFlight != null)
                     refresh = _refreshInFlight;
                 else if (DateTime.UtcNow - _lastForcedRefresh < ForcedRefreshInterval)
-                    return Task.FromResult(false);
+                    return false;
                 else
                     refresh = _refreshInFlight = RefreshSessionAsync();
             }
 
-            // Joiners wait on the shared refresh; cancelling a joiner never cancels the refresh itself.
-            return refresh.WaitAsync(token);
+            // The timeout bounds only this wait; the refresh stays registered until SetARL really
+            // completes, so a retry joins it instead of overlapping a still-running SetARL.
+            try
+            {
+                return await refresh.WaitAsync(ArlOperationTimeout, token);
+            }
+            catch (TimeoutException)
+            {
+                _logger.Warn("Deezer forced session refresh did not complete within {Seconds:F0}s; continuing with cached capabilities", ArlOperationTimeout.TotalSeconds);
+                return false;
+            }
         }
 
         // Only a completed refresh that yields user data consumes the cooldown; failures leave it open.
@@ -125,7 +134,7 @@ namespace NzbDrone.Plugin.Sleezer.Deezer
             var startedAt = DateTime.UtcNow;
             try
             {
-                await _client.SetARL(_client.ActiveARL).WaitAsync(ArlOperationTimeout);
+                await _client.SetARL(_client.ActiveARL);
                 _lastArlUpdate = DateTime.Now;
                 LogArlOutcome("ForcedRefresh", startedAt);
 
