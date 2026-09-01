@@ -87,7 +87,7 @@
 
         /// <summary>
         /// Returns the correct file extension for a given audio codec, defaulting
-        /// to <c>.aac</c> for unknown codecs. Kept for callers (Lucida, video-audio
+        /// to <c>.aac</c> for unknown codecs. Kept for callers (video-audio
         /// extraction) that already produce AAC-default filenames; do NOT use this
         /// for rename-in-place flows because an unknown codec will silently change
         /// the on-disk extension. Use <see cref="TryGetFileExtensionForCodec"/> instead.

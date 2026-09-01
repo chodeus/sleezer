@@ -136,12 +136,6 @@ Three lists reuse the indexer's session, so add and save the indexer first — t
 * **Require Complete Album** (on by default) fails the whole album when any track can't be downloaded, so Lidarr retries or picks another release instead of importing a gap-toothed album.
 * The post-processing pipeline (corrupt-file scan + pre-import tagging) runs on Qobuz downloads — enable **Qobuz** in the FFmpeg provider's client pickers.
 * Qobuz supplies no lyrics; enable **Use LRCLIB as Lyric Provider** if you want them.
-* Qobuz is *not* the same as the **DABMusic** web client, which speaks the Qobuz protocol against a third-party proxy. DABMusic now appears as **DABMusic** in Delay Profiles; it previously occupied the **Qobuz** row.
-  <details>
-  <summary>Upgrading from a build before this client existed</summary>
-
-  DABMusic used to own the `Qobuz` protocol name. It is now `DABMusic`, and the `Qobuz` name belongs to this first-party client. On first start after upgrading, Lidarr adds a **DABMusic** row to each delay profile (enabled by default) and your existing **Qobuz** row now governs this client — check both are set the way you want. Blocklist entries recorded against DABMusic under the old name stop matching, so anything you had blocklisted there can be grabbed again.
-  </details>
 
 ### Bandcamp Setup 🏕️
 
@@ -203,10 +197,10 @@ A few Slskd behaviours worth knowing, all born from live-log audits of real-worl
 Sleezer also ships a family of "web-client" indexers inherited from Tubifarry. These are third-party music services that vary in uptime and quality — Sleezer isn't responsible for any of them.
 
 **Supported:**
-* **Lucida** — a multi-source music-downloading service.
-* **DABMusic** — a high-resolution audio streaming platform.
 * **T2Tunes** — a music-downloading service backed by Amazon Music.
 * **SubSonic** — a music-streaming API standard with broad compatibility.
+
+Lucida and DABMusic have been removed: both sit behind Cloudflare challenges the plugin cannot pass, so they never delivered a download. Delete any Lucida or DABMusic indexer and download-client entries left in Lidarr after upgrading.
 
 The SubSonic indexer/client is generic: any service that implements the [Subsonic API](https://www.subsonic.org/pages/api.jsp) should plug in without modification.
 
@@ -290,7 +284,7 @@ Sleezer auto-downloads a static FFmpeg from [`chodeus/ffmpeg-static`](https://gi
 
 ### Corrupt File Scan & Pre-Import Tagging 🧼
 
-These live under FFmpeg's settings because they use the bundled FFmpeg binary. They run on **every Sleezer download client** — Deezer, Tidal, Qobuz, Bandcamp, Slskd, Lucida, SubSonic, TripleTriple and DABMusic — opt-in per client. Lidarr's own torrent and Usenet clients are untouched. Only the FFmpeg *conversion* provider (previous section) applies to imports from every source.
+These live under FFmpeg's settings because they use the bundled FFmpeg binary. They run on **every Sleezer download client** — Deezer, Tidal, Qobuz, Bandcamp, Slskd, SubSonic and TripleTriple — opt-in per client. Lidarr's own torrent and Usenet clients are untouched. Only the FFmpeg *conversion* provider (previous section) applies to imports from every source.
 
 Each feature is opt-in via a chip-style picker: pick which Sleezer downloaders should get the treatment. An empty picker means the feature is off entirely. **Both pickers default empty** — nothing runs until you opt in.
 
