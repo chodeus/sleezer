@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using DeezNET;
+using DeezNET.Data;
 using NLog;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
@@ -72,6 +73,23 @@ namespace NzbDrone.Plugin.Sleezer.Deezer
                 _lastArlUpdate = DateTime.Now;
                 LogArlOutcome("TokenRefresh", startedAt);
             }
+        }
+
+        // The session owner decides streaming capability; downloaders only ask.
+        internal bool CanStream(Bitrate bitrate)
+        {
+            var options = _client.GWApi.ActiveUserData?["USER"]?["OPTIONS"];
+            if (options == null)
+                return true;
+
+            var lossless = options["web_lossless"]?.ToObject<bool?>() == true || options["mobile_lossless"]?.ToObject<bool?>() == true;
+            var hq = lossless || options["web_hq"]?.ToObject<bool?>() == true || options["mobile_hq"]?.ToObject<bool?>() == true;
+            return bitrate switch
+            {
+                Bitrate.FLAC => lossless,
+                Bitrate.MP3_320 => hq,
+                _ => true,
+            };
         }
 
         private DateTime _lastForcedRefresh = DateTime.MinValue;
