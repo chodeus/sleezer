@@ -114,9 +114,12 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
         private DeezerURL _deezerUrl = null!;
         private JToken _deezerAlbum = null!;
         private DateTime _lastARLValidityCheck = DateTime.MinValue;
+        private byte[]? _albumArt;
 
         public async Task DoDownload(DeezerSettings settings, Logger logger, CancellationToken cancellation = default)
         {
+            _albumArt ??= await TryFetchAlbumArtAsync(logger, cancellation);
+
             var fallbackCount = _tracks.Count(t => t.bitrate != Bitrate);
             if (fallbackCount > 0)
                 logger.Info("Deezer download: {FallbackCount} of {TrackCount} track(s) lack {RequestedBitrate}; using MP3 320 for those.",
@@ -226,21 +229,46 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
         {
             var page = await DeezerAPI.Instance.Client.GWApi.GetTrackPage(track, cancellation);
 
-            var songTitle = page["DATA"]!["SNG_TITLE"]!.ToString();
-            var songVersion = page["DATA"]?["VERSION"]?.ToString() ?? string.Empty;
+            try
+            {
+                await DownloadTrackAsync(page, page, trackBitrate, expectedSize, settings, logger, cancellation);
+                return;
+            }
+            catch (Exception ex) when (ex is TrackUnavailableException or GeoRestrictionException)
+            {
+                var substitute = await DeezerTrackFallback.TryResolveAsync(track, page, trackBitrate, logger, cancellation);
+                if (substitute == null)
+                    throw;
+
+                var substituteId = substitute["DATA"]!["SNG_ID"]!.Value<long>();
+                var substituteSize = DeezerTrackFallback.SizeFor(substitute["DATA"]!, trackBitrate);
+                logger.Info("Deezer track {TrackId} failed ({Reason}); downloading Deezer's own alternative {SubstituteId} instead.", track, ex.Message, substituteId);
+                await DownloadTrackAsync(substitute, page, trackBitrate, substituteSize, settings, logger, cancellation);
+            }
+        }
+
+        // streamPage supplies the bytes (id + token + size); metadataPage keeps the original
+        // album's naming and tags so a substitute can't split the album across folders.
+        private async Task DownloadTrackAsync(JToken streamPage, JToken metadataPage, Bitrate trackBitrate, long expectedSize, DeezerSettings settings, Logger logger, CancellationToken cancellation)
+        {
+            var streamId = streamPage["DATA"]!["SNG_ID"]!.Value<long>();
+            var metadataId = metadataPage["DATA"]!["SNG_ID"]!.Value<long>();
+
+            var songTitle = metadataPage["DATA"]!["SNG_TITLE"]!.ToString();
+            var songVersion = metadataPage["DATA"]?["VERSION"]?.ToString() ?? string.Empty;
             if (!string.IsNullOrWhiteSpace(songVersion))
                 songTitle = $"{songTitle} {songVersion}";
 
-            var albumTitle = page["DATA"]!["ALB_TITLE"]!.ToString();
+            var albumTitle = metadataPage["DATA"]!["ALB_TITLE"]!.ToString();
             var albumVersion = _deezerAlbum["DATA"]?["VERSION"]?.ToString() ?? string.Empty;
             if (!string.IsNullOrWhiteSpace(albumVersion))
                 albumTitle = $"{albumTitle} {albumVersion}";
 
-            var artistName = page["DATA"]!["ART_NAME"]!.ToString();
-            var duration = page["DATA"]!["DURATION"]!.Value<int>();
+            var artistName = metadataPage["DATA"]!["ART_NAME"]!.ToString();
+            var duration = metadataPage["DATA"]!["DURATION"]!.Value<int>();
 
             var ext = trackBitrate == Bitrate.FLAC ? "flac" : "mp3";
-            var outPath = Path.Combine(settings.DownloadPath, MetadataUtilities.GetFilledTemplate("%albumartist%/%album%/", ext, page, _deezerAlbum), MetadataUtilities.GetFilledTemplate("%track% - %title%.%ext%", ext, page, _deezerAlbum));
+            var outPath = Path.Combine(settings.DownloadPath, MetadataUtilities.GetFilledTemplate("%albumartist%/%album%/", ext, metadataPage, _deezerAlbum), MetadataUtilities.GetFilledTemplate("%track% - %title%.%ext%", ext, metadataPage, _deezerAlbum));
             var outDir = Path.GetDirectoryName(outPath)!;
 
             DownloadFolder = outDir;
@@ -249,21 +277,16 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
 
             try
             {
-                await DeezerAPI.Instance.Client.Downloader.WriteRawTrackToFile(track, outPath, trackBitrate, null, cancellation);
+                await DownloadWithTokenRetryAsync(streamId, streamPage, outPath, trackBitrate, logger, cancellation);
 
                 if (File.Exists(outPath) && new FileInfo(outPath).Length == 0)
                 {
                     File.Delete(outPath);
-                    throw new InvalidOperationException($"Deezer returned an empty file for track {track} at {trackBitrate}.");
+                    throw new InvalidOperationException($"Deezer returned an empty file for track {streamId} at {trackBitrate}.");
                 }
 
-                // Partial-write guard. WriteRawTrackToFile awaits the underlying
-                // HTTP read-and-write, but a network drop / container OOM /
-                // NFS hiccup can leave a non-empty truncated file behind that
-                // the empty-file check above won't catch. Compare against the
-                // expected size from Deezer's GW API; refuse anything materially
-                // smaller and let the caller fail this track loudly rather than
-                // shipping a half-track to Lidarr.
+                // Partial-write guard: a network drop can leave a truncated non-empty file
+                // the empty-file check misses — refuse anything materially under the GW size.
                 if (expectedSize > 0 && File.Exists(outPath))
                 {
                     long actualSize = new FileInfo(outPath).Length;
@@ -271,7 +294,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                     {
                         File.Delete(outPath);
                         throw new InvalidOperationException(
-                            $"Deezer track {track} at {trackBitrate} truncated: got {actualSize:N0} of expected {expectedSize:N0} bytes ({(double)actualSize / expectedSize:P0}).");
+                            $"Deezer track {streamId} at {trackBitrate} truncated: got {actualSize:N0} of expected {expectedSize:N0} bytes ({(double)actualSize / expectedSize:P0}).");
                     }
 
                     if (actualSize < expectedSize)
@@ -283,7 +306,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                         // corruption (the corruption scanner catches that
                         // separately during post-process).
                         logger.Trace("Deezer track {TrackId} at {Bitrate}: got {Actual:N0} of expected {Expected:N0} bytes ({Pct:P0}); within tolerance.",
-                            track, trackBitrate, actualSize, expectedSize, (double)actualSize / expectedSize);
+                            streamId, trackBitrate, actualSize, expectedSize, (double)actualSize / expectedSize);
                     }
                 }
             }
@@ -291,19 +314,13 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
             {
                 TryDeleteEmptyFile(outPath);
                 throw new InsufficientLicenseRightsException(
-                    $"License check failed for track {track} at {trackBitrate}: {ex.Message}", ex);
+                    $"License check failed for track {streamId} at {trackBitrate}: {ex.Message}", ex);
             }
             catch (Exception ex) when (IsGeoRestrictionError(ex))
             {
                 TryDeleteEmptyFile(outPath);
                 throw new GeoRestrictionException(
-                    $"Track {track} unavailable in your region: {ex.Message}", ex);
-            }
-            catch (Exception ex) when (IsDeezNetNoSourcesNre(ex))
-            {
-                TryDeleteEmptyFile(outPath);
-                throw new TrackUnavailableException(
-                    $"Deezer reports no media sources for track {track} (likely removed from catalog or region-locked).", ex);
+                    $"Track {streamId} unavailable in your region: {ex.Message}", ex);
             }
             catch
             {
@@ -314,7 +331,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
             var plainLyrics = string.Empty;
             List<SyncLyrics>? syncLyrics = null;
 
-            var lyrics = await DeezerAPI.Instance.Client.Downloader.FetchLyricsFromDeezer(track, cancellation);
+            var lyrics = await DeezerAPI.Instance.Client.Downloader.FetchLyricsFromDeezer(metadataId, cancellation);
             if (lyrics.HasValue)
             {
                 plainLyrics = lyrics.Value.plainLyrics;
@@ -335,12 +352,14 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                 }
             }
 
-            await DeezerAPI.Instance.Client.Downloader.ApplyMetadataToFile(track, outPath, 512, plainLyrics, token: cancellation);
+            // Sleezer's own baseline tagger — replaces DeezNET's ApplyMetadataToFile and its
+            // culture-sensitive date parse; PreImportTagger writes canonical tags afterwards.
+            await DeezerTagger.ApplyAsync(outPath, metadataPage, _deezerAlbum, _albumArt, plainLyrics, cancellation);
 
             SourceTagWriter.TryWrite(outPath, $"https://www.deezer.com/album/{_deezerUrl?.Id}", logger);
 
             if (syncLyrics != null)
-                await CreateLrcFile(Path.Combine(outDir, MetadataUtilities.GetFilledTemplate("%track% - %title%.%ext%", "lrc", page, _deezerAlbum)), syncLyrics);
+                await CreateLrcFile(Path.Combine(outDir, MetadataUtilities.GetFilledTemplate("%track% - %title%.%ext%", "lrc", metadataPage, _deezerAlbum)), syncLyrics);
 
             // TODO: this is currently a waste of resources, if this pr ever gets merged, it can be reenabled
             // https://github.com/Lidarr/Lidarr/pull/4370
@@ -349,11 +368,42 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                 string artOut = Path.Combine(outDir, "folder.jpg");
                 if (!File.Exists(artOut))
                 {
-                    byte[] bigArt = await DeezerAPI.Instance.Client.Downloader.GetArtBytes(page["DATA"]!["ALB_PICTURE"]!.ToString(), 1024, cancellation);
+                    byte[] bigArt = await DeezerAPI.Instance.Client.Downloader.GetArtBytes(metadataPage["DATA"]!["ALB_PICTURE"]!.ToString(), 1024, cancellation);
                     await File.WriteAllBytesAsync(artOut, bigArt, cancellation);
                 }
             }
             catch (UnavailableArtException) { } */
+        }
+
+        private static async Task DownloadWithTokenRetryAsync(long streamId, JToken streamPage, string outPath, Bitrate trackBitrate, Logger logger, CancellationToken cancellation)
+        {
+            var trackToken = streamPage["DATA"]!["TRACK_TOKEN"]!.ToString();
+            try
+            {
+                await DeezerRawTrackDownloader.DownloadAsync(streamId, trackToken, outPath, trackBitrate, cancellation);
+            }
+            catch (DeezerUrlExpiredException ex)
+            {
+                logger.Debug("Deezer track {TrackId}: {Message} Refreshing track token and retrying once.", streamId, ex.Message);
+                var freshPage = await DeezerAPI.Instance.Client.GWApi.GetTrackPage(streamId, cancellation);
+                await DeezerRawTrackDownloader.DownloadAsync(streamId, freshPage["DATA"]!["TRACK_TOKEN"]!.ToString(), outPath, trackBitrate, cancellation);
+            }
+        }
+
+        private async Task<byte[]?> TryFetchAlbumArtAsync(Logger logger, CancellationToken cancellation)
+        {
+            try
+            {
+                var picture = _deezerAlbum?["DATA"]?["ALB_PICTURE"]?.ToString();
+                if (string.IsNullOrEmpty(picture))
+                    return null;
+                return await DeezerAPI.Instance.Client.Downloader.GetArtBytes(picture, 512, cancellation);
+            }
+            catch (Exception ex)
+            {
+                logger.Debug(ex, "Deezer album art unavailable for {Title}; tagging without art.", Title);
+                return null;
+            }
         }
 
         public void EnsureValidity()
@@ -374,13 +424,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
 
             var albumPage = await DeezerAPI.Instance.Client.GWApi.GetAlbumPage(_deezerUrl.Id, cancellation);
 
-            var filesizeKey = Bitrate switch
-            {
-                Bitrate.MP3_128 => "FILESIZE_MP3_128",
-                Bitrate.MP3_320 => "FILESIZE_MP3_320",
-                Bitrate.FLAC => "FILESIZE_FLAC",
-                _ => "FILESIZE"
-            };
+            var filesizeKey = DeezerTrackFallback.FilesizeKey(Bitrate);
 
             // Per-track bitrate selection. For FLAC, fall back to MP3 320 when a track lacks FLAC — if the
             // parser emitted this release with AllowMp3FallbackForMissingFlac enabled, the user opted in.
@@ -421,30 +465,6 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                 if (msg.Contains("License token has no sufficient rights", StringComparison.OrdinalIgnoreCase))
                     return true;
                 if (cur is AggregateException agg && agg.InnerExceptions.Any(IsLicenseRightsError))
-                    return true;
-            }
-            return false;
-        }
-
-        // DeezNET 1.2.2 has a bug in GetEncryptedTrackData: it dereferences
-        // urls.Data.FirstOrDefault() before checking urls.Data for null. When
-        // Deezer returns no Data array (track removed from catalog, region-locked,
-        // expired token), it throws ArgumentNullException("Value cannot be null.
-        // (Parameter 'source')") instead of the intended NoSourcesAvailableException.
-        // Detect that exact failure mode by stack-frame signature so we can
-        // translate it into a clean TrackUnavailableException without leaving the
-        // misleading NRE-style stack in the user's logs.
-        private static bool IsDeezNetNoSourcesNre(Exception ex)
-        {
-            for (var cur = ex; cur != null; cur = cur.InnerException)
-            {
-                if (cur is ArgumentNullException ane
-                    && string.Equals(ane.ParamName, "source", StringComparison.Ordinal)
-                    && (cur.StackTrace?.Contains("DeezNET.Downloader.GetEncryptedTrackData", StringComparison.Ordinal) ?? false))
-                {
-                    return true;
-                }
-                if (cur is AggregateException agg && agg.InnerExceptions.Any(IsDeezNetNoSourcesNre))
                     return true;
             }
             return false;
