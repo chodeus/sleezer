@@ -50,8 +50,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer
 
         private static async Task DownloadCoreAsync(long trackId, string trackToken, string outPath, Bitrate bitrate, CancellationToken token)
         {
-            var url = await GetTrackUrlAsync(trackId, trackToken, bitrate, token);
-            var isEncrypted = url.AbsoluteUri.Contains("/mobile/") || url.AbsoluteUri.Contains("/media/");
+            var (url, isEncrypted) = await GetTrackUrlAsync(trackId, trackToken, bitrate, token);
             var blowfishKey = DeezerStreamDecoder.GenerateBlowfishKey(trackId.ToString(CultureInfo.InvariantCulture));
 
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
@@ -65,7 +64,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer
             await DeezerStreamDecoder.DecodeAsync(body, file, isEncrypted, blowfishKey, token);
         }
 
-        private static async Task<Uri> GetTrackUrlAsync(long trackId, string trackToken, Bitrate bitrate, CancellationToken token)
+        private static async Task<(Uri Url, bool IsEncrypted)> GetTrackUrlAsync(long trackId, string trackToken, Bitrate bitrate, CancellationToken token)
         {
             var client = DeezerAPI.Instance.Client;
             var options = client.GWApi.ActiveUserData?["USER"]?["OPTIONS"];
@@ -121,11 +120,20 @@ namespace NzbDrone.Core.Download.Clients.Deezer
                 throw ErrorToException(itemError);
             }
 
-            var sourceUrl = data?["media"]?.FirstOrDefault()?["sources"]?.FirstOrDefault()?["url"]?.ToString();
+            var media = data?["media"]?.FirstOrDefault();
+            var sourceUrl = media?["sources"]?.FirstOrDefault()?["url"]?.ToString();
             if (string.IsNullOrEmpty(sourceUrl))
                 throw new TrackUnavailableException($"Deezer reports no media sources for track {trackId} at {bitrate} (removed from catalog, or region-locked).");
 
-            return new Uri(sourceUrl);
+            var url = new Uri(sourceUrl);
+
+            // Trust the response's own cipher; the URL-path heuristic is only the fallback.
+            var cipherType = media?["cipher"]?["type"]?.ToString();
+            var isEncrypted = cipherType != null
+                ? cipherType.StartsWith("BF_CBC", StringComparison.Ordinal)
+                : url.AbsoluteUri.Contains("/mobile/") || url.AbsoluteUri.Contains("/media/");
+
+            return (url, isEncrypted);
         }
 
         // "License token has no sufficient rights" contains "token" but neither "expired" nor "invalid".

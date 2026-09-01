@@ -64,6 +64,20 @@ public class DeezerFallbackGateTests
         Assert.Contains("explicit", reason);
     }
 
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData("Angel", null)]
+    [InlineData(null, "Angel")]
+    [InlineData("Angel", "   ")]
+    public void Missing_isrc_rejects_missing_titles(string? originalTitle, string? candidateTitle)
+    {
+        var original = new FallbackCandidate(null, originalTitle, null, 213, Explicit: false);
+        var candidate = new FallbackCandidate(null, candidateTitle, null, 213, Explicit: false);
+
+        Assert.False(DeezerFallbackGate.Accept(original, candidate, out var reason));
+        Assert.Contains("title", reason);
+    }
+
     [Fact]
     public void Missing_isrc_rejects_title_mismatch()
     {

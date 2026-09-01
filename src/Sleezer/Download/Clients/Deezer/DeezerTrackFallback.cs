@@ -56,7 +56,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer
                 {
                     albumPage = await DeezerAPI.Instance.Client.GWApi.GetAlbumPage(albumId, ct);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     logger.Debug(ex, "Deezer fallback: could not load alternative album {AlbumId} for track {TrackId}", albumId, originalId);
                     continue;
@@ -95,7 +95,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer
             {
                 page = await DeezerAPI.Instance.Client.GWApi.GetTrackPage(candidateId, ct);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 logger.Debug(ex, "Deezer fallback: could not load candidate track {CandidateId} via {Route}", candidateId, route);
                 return null;

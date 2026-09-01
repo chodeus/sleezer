@@ -25,6 +25,12 @@ namespace NzbDrone.Plugin.Sleezer.Core.Deezer
                 return false;
             }
 
+            if (string.IsNullOrWhiteSpace(original.Title) || string.IsNullOrWhiteSpace(candidate.Title))
+            {
+                reason = "title missing; identity cannot be established without an ISRC";
+                return false;
+            }
+
             if (!TitleEquals(original.Title, candidate.Title))
             {
                 reason = $"title mismatch ('{original.Title}' vs '{candidate.Title}')";

@@ -137,7 +137,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                         await DoTrackDownload(trackId, trackBitrate, trackSize, settings, logger, cancellation);
                         DownloadedSize += trackSize;
                     }
-                    catch (TaskCanceledException)
+                    catch (OperationCanceledException)
                     {
                         logger.Trace("Track download cancelled: {TrackId}", trackId);
                     }
@@ -153,11 +153,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                     }
                     catch (TrackUnavailableException ex)
                     {
-                        // Demoted from Error to Warn and stripped of stack: this is
-                        // an upstream "track has no sources" condition, not a
-                        // Sleezer crash. The DeezNET-NRE translation layer in
-                        // DoTrackDownload turns the misleading ArgumentNullException
-                        // into this clean message.
+                        // Upstream "no sources" condition, not a Sleezer crash — Warn without stack.
                         logger.Warn("Deezer track {TrackId} unavailable: {Reason}", trackId, ex.Message);
                         FailedTracks++;
                     }
