@@ -196,6 +196,10 @@ public class Downloader
         var trackStreamData = await GetTrackStreamData(trackId, quality, token);
         var streamManifest = new StreamManifest(trackStreamData);
 
+        // Never observed in the wild; the old decrypt path was broken, so refuse before downloading anything.
+        if (!string.IsNullOrEmpty(streamManifest.EncryptionKey))
+            throw new UnavailableMediaException($"Tidal returned an encrypted stream for track {trackId}; encrypted delivery is not supported.");
+
         var urls = streamManifest.Urls;
 
         var outStream = new MemoryStream();
@@ -210,19 +214,6 @@ public class Downloader
 
             outStream.Write(response.ResponseData);
             onChunkDownloaded?.Invoke(i+1);
-        }
-
-        // TODO: test decryption, don't know of any tracks yet that need it
-
-        if (!string.IsNullOrEmpty(streamManifest.EncryptionKey))
-        {
-            var (key, nonce) = Decryption.DecryptSecurityToken(streamManifest.EncryptionKey);
-            var decryptedStream = new MemoryStream();
-            Decryption.DecryptStream(outStream, decryptedStream, key, nonce);
-
-            decryptedStream.Seek(0, SeekOrigin.Begin);
-            await outStream.DisposeAsync();
-            return (decryptedStream, streamManifest);
         }
 
         outStream.Seek(0, SeekOrigin.Begin);

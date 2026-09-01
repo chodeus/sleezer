@@ -74,6 +74,24 @@ namespace NzbDrone.Plugin.Sleezer.Deezer
             }
         }
 
+        private DateTime _lastForcedRefresh = DateTime.MinValue;
+        private static readonly TimeSpan ForcedRefreshInterval = TimeSpan.FromMinutes(5);
+
+        // Capability pre-checks call this before refusing a bitrate, so a mid-session plan
+        // upgrade is picked up without waiting for the 24h refresh in TryUpdateToken.
+        internal async Task<bool> TryRefreshSessionAsync(CancellationToken token = default)
+        {
+            if (string.IsNullOrEmpty(_client.ActiveARL) || DateTime.UtcNow - _lastForcedRefresh < ForcedRefreshInterval)
+                return false;
+
+            _lastForcedRefresh = DateTime.UtcNow;
+            var startedAt = DateTime.UtcNow;
+            await _client.SetARL(_client.ActiveARL).WaitAsync(ArlOperationTimeout, token);
+            _lastArlUpdate = DateTime.Now;
+            LogArlOutcome("ForcedRefresh", startedAt);
+            return true;
+        }
+
         private void LogArlOutcome(string operation, DateTime startedAt)
         {
             var elapsedMs = (long)(DateTime.UtcNow - startedAt).TotalMilliseconds;

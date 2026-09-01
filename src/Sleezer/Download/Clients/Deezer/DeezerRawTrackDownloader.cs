@@ -73,12 +73,20 @@ namespace NzbDrone.Core.Download.Clients.Deezer
                 throw new InvalidOperationException("No Deezer license token available — the ARL session is not initialized or was rejected.");
 
             // Pre-flight from account options (deezer-py parity); the media API still enforces server-side.
-            var lossless = options?["web_lossless"]?.ToObject<bool?>() == true || options?["mobile_lossless"]?.ToObject<bool?>() == true;
-            var hq = lossless || options?["web_hq"]?.ToObject<bool?>() == true || options?["mobile_hq"]?.ToObject<bool?>() == true;
-            if (bitrate == Bitrate.FLAC && !lossless)
-                throw new InsufficientLicenseRightsException($"Deezer account has no lossless streaming — cannot download track {trackId} as FLAC. A Premium/HiFi ARL is required.");
-            if (bitrate == Bitrate.MP3_320 && !hq)
-                throw new InsufficientLicenseRightsException($"Deezer account has no high-quality streaming — cannot download track {trackId} as MP3 320.");
+            if (!CanStream(options, bitrate))
+            {
+                // Cached options lag a plan upgrade — refresh the session once before refusing.
+                if (await DeezerAPI.Instance.TryRefreshSessionAsync(token))
+                {
+                    options = client.GWApi.ActiveUserData?["USER"]?["OPTIONS"];
+                    licenseToken = options?["license_token"]?.ToString() ?? licenseToken;
+                }
+
+                if (!CanStream(options, bitrate))
+                    throw new InsufficientLicenseRightsException(bitrate == Bitrate.FLAC
+                        ? $"Deezer account has no lossless streaming — cannot download track {trackId} as FLAC. A Premium/HiFi ARL is required."
+                        : $"Deezer account has no high-quality streaming — cannot download track {trackId} as MP3 320.");
+            }
 
             var requestBody = new JObject
             {
@@ -134,6 +142,21 @@ namespace NzbDrone.Core.Download.Clients.Deezer
                 : url.AbsoluteUri.Contains("/mobile/") || url.AbsoluteUri.Contains("/media/");
 
             return (url, isEncrypted);
+        }
+
+        private static bool CanStream(JToken? options, Bitrate bitrate)
+        {
+            if (options == null)
+                return true;
+
+            var lossless = options["web_lossless"]?.ToObject<bool?>() == true || options["mobile_lossless"]?.ToObject<bool?>() == true;
+            var hq = lossless || options["web_hq"]?.ToObject<bool?>() == true || options["mobile_hq"]?.ToObject<bool?>() == true;
+            return bitrate switch
+            {
+                Bitrate.FLAC => lossless,
+                Bitrate.MP3_320 => hq,
+                _ => true,
+            };
         }
 
         // "License token has no sufficient rights" contains "token" but neither "expired" nor "invalid".
