@@ -151,6 +151,8 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\DecisionEngine\StoreMatchSpecification.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Download\Clients\Deezer\DeezerSchema.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Indexers\Soulseek\SlskdItemsParser.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Indexers\Soulseek\ISlskdItemsParser.cs"

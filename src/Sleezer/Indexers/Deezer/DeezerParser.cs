@@ -58,6 +58,18 @@ namespace NzbDrone.Core.Indexers.Deezer
                     ex.Data["DeezerResponseSnippet"] = bodySnippet;
                     throw ex;
                 }
+
+                // An empty data array is normal for the fielded first tier, but Deezer also
+                // returns one under burst load while reporting a non-zero total or an error.
+                if (jsonResponse.Data.Count == 0)
+                {
+                    if (wrapper?.Error?.HasValues == true || jsonResponse.Total > 0)
+                        _logger.Warn("Deezer returned no results but reported {Total} total — body snippet: {Body}", jsonResponse.Total, SnippetForLog(response.Content));
+                    else
+                        _logger.Debug("Deezer returned no results and reported none.");
+
+                    return [];
+                }
             }
 
             var sw = Stopwatch.StartNew();
@@ -106,7 +118,10 @@ namespace NzbDrone.Core.Indexers.Deezer
             var flacOrMp3320CoversAll = songs.All(d => d["FILESIZE_FLAC"]!.Value<long>() > 0 || d["FILESIZE_MP3_320"]!.Value<long>() > 0);
 
             if (Settings.HideAlbumsWithMissing && missing128)
+            {
+                _logger.Debug("Deezer hid album {AlbumId} '{Title}' — not every track is available", result.AlbumId, result.AlbumTitle);
                 return null;
+            }
 
             // Album-level explicit status is sometimes wrong; cross-check against per-track EXPLICIT_LYRICS
             // when the album claims non-explicit but most tracks disagree.
@@ -126,7 +141,10 @@ namespace NzbDrone.Core.Indexers.Deezer
             }
 
             if (Settings.HideCleanReleases && explicitType == ExplicitStatus.Clean)
+            {
+                _logger.Debug("Deezer hid album {AlbumId} '{Title}' — clean release", result.AlbumId, result.AlbumTitle);
                 return null;
+            }
 
             var size128 = songs.Sum(d => d["FILESIZE_MP3_128"]!.Value<long>());
             var size320 = songs.Sum(d => d["FILESIZE_MP3_320"]!.Value<long>());
