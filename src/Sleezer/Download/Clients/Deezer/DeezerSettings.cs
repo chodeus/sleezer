@@ -27,6 +27,9 @@ namespace NzbDrone.Core.Download.Clients.Deezer
         [FieldDefinition(2, Label = "Use LRCLIB as Backup Lyric Provider", HelpText = "If Deezer does not have plain or synced lyrics for a track, the plugin will attempt to get them from LRCLIB.", Type = FieldType.Checkbox)]
         public bool UseLRCLIB { get; set; } = false;
 
+        [FieldDefinition(3, Label = "Allow Track Substitution", HelpText = "When a track is unavailable, download Deezer's own alternative for the same recording (matched by ISRC, or an exact title/version/duration match). Never a search — a different recording is always refused.", Type = FieldType.Checkbox)]
+        public bool AllowTrackSubstitution { get; set; } = true;
+
         public NzbDroneValidationResult Validate()
         {
             return new NzbDroneValidationResult(Validator.Validate(this));

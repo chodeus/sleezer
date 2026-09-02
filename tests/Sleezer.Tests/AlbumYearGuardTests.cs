@@ -81,10 +81,8 @@ public class AlbumYearGuardTests
         Assert.Equal(2, kept.Count);
     }
 
-    // Every parser stamps UtcNow when it has no usable date, and on the AlbumData-based
-    // indexers (Lucida, SubSonic, TripleTriple, slskd) that is most releases — a
-    // year-precision date is deliberately discarded to avoid tripping EarlyReleaseSpecification.
-    // Treating those as "this year" would drop correct results wholesale.
+    // Parsers stamp UtcNow when they have no usable date (most AlbumData-based releases);
+    // treating that as "this year" would drop correct results wholesale.
     private static ReleaseInfo Undated(string title) => new() { Title = title, PublishDate = DateTime.UtcNow };
 
     [Fact]

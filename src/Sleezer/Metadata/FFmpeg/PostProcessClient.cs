@@ -19,12 +19,6 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
         [FieldOption(Label = "Bandcamp")]
         Bandcamp = 5,
 
-        [FieldOption(Label = "Lucida")]
-        Lucida = 6,
-
-        [FieldOption(Label = "DABMusic")]
-        DABMusic = 7,
-
         [FieldOption(Label = "TripleTriple")]
         TripleTriple = 8,
 
@@ -41,8 +35,6 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
             PostProcessClient.Tidal or
             PostProcessClient.Deezer or
             PostProcessClient.Bandcamp or
-            PostProcessClient.Lucida or
-            PostProcessClient.DABMusic or
             PostProcessClient.TripleTriple => true,
 
             // Fail closed: a client added later must be classified deliberately. Slskd and

@@ -230,7 +230,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                 await DownloadTrackAsync(page, page, trackBitrate, expectedSize, settings, logger, cancellation);
                 return;
             }
-            catch (Exception ex) when (ex is TrackUnavailableException or GeoRestrictionException)
+            catch (Exception ex) when (settings.AllowTrackSubstitution && ex is (TrackUnavailableException or GeoRestrictionException))
             {
                 var substitute = await DeezerTrackFallback.TryResolveAsync(track, page, trackBitrate, logger, cancellation);
                 if (substitute == null)

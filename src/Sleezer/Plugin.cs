@@ -38,8 +38,6 @@ namespace NzbDrone.Plugin.Sleezer
         private static Type[] ProtocolTypes =>
             [typeof(DeezerDownloadProtocol),
             typeof(SoulseekDownloadProtocol),
-            typeof(LucidaDownloadProtocol),
-            typeof(DABMusicDownloadProtocol),
             typeof(QobuzDownloadProtocol),
             typeof(SubSonicDownloadProtocol),
             typeof(AmazonMusicDownloadProtocol),
@@ -58,36 +56,25 @@ namespace NzbDrone.Plugin.Sleezer
             CheckDelayProfiles(repo, downloadProtocols);
         }
 
-        // Renames rather than drops the row: CheckDelayProfiles would reseed a dropped
-        // DABMusic entry with Allowed = true, re-enabling what the operator denied.
-        private void MigrateLegacyDabMusicProtocol(IDelayProfileRepository repo)
+        // Retired protocols leave rows behind that Lidarr keeps rendering by name.
+        private void RemoveRetiredProtocols(IDelayProfileRepository repo)
         {
-            const string legacy = nameof(QobuzDownloadProtocol);
-            const string renamed = nameof(DABMusicDownloadProtocol);
+            string[] retired = ["LucidaDownloadProtocol", "DABMusicDownloadProtocol"];
 
             foreach (DelayProfile profile in repo.All())
             {
-                // A DABMusic row means this profile is already migrated, so any remaining
-                // QobuzDownloadProtocol row belongs to the first-party client. Matching it
-                // here would delete the operator's Qobuz setting on every restart, because
-                // CheckDelayProfiles seeds that row under exactly the legacy name and title.
-                if (profile.Items.Any(x => x.Protocol == renamed))
+                int removed = profile.Items.RemoveAll(x => retired.Contains(x.Protocol));
+                if (removed == 0)
                     continue;
 
-                DelayProfileProtocolItem? stale = profile.Items.FirstOrDefault(x => x.Protocol == legacy && x.Name == "Qobuz");
-                if (stale == null)
-                    continue;
-
-                _logger.Info("Migrating DABMusic delay-profile entry (ID: {ProfileId}); allowed={Allowed}", profile.Id, stale.Allowed);
-                stale.Protocol = renamed;
-                stale.Name = "DABMusic";
+                _logger.Info("Removed {Count} retired protocol row(s) from delay profile {ProfileId}", removed, profile.Id);
                 repo.Update(profile);
             }
         }
 
         private void CheckDelayProfiles(IDelayProfileRepository repo, IEnumerable<IDownloadProtocol> downloadProtocols)
         {
-            MigrateLegacyDabMusicProtocol(repo);
+            RemoveRetiredProtocols(repo);
 
             foreach (IDownloadProtocol protocol in downloadProtocols.Where(x => ProtocolTypes.Any(y => y == x.GetType())))
             {
