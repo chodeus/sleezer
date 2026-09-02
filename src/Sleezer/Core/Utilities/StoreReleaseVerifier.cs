@@ -194,7 +194,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
                     [.. aliases.Select(Normalize).Where(a => a.Length > 0)],
                     StoreReleaseVerifier.IsVariousArtists(criteria.Artist.Name),
                     album?.Title ?? criteria.AlbumTitle,
-                    album?.SecondaryTypes?.Select(t => t.Name).ToList() ?? [],
+                    VariantQualifiers.ForgivenVariants(album),
                     [.. releases.Select(r => (r.TrackCount, DurationSeconds(r)))]);
             }
 

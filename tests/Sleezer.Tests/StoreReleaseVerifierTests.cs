@@ -206,6 +206,42 @@ public class StoreReleaseVerifierTests
     private static IList<ReleaseInfo> Apply(AlbumSearchCriteria criteria, params ReleaseInfo[] releases) =>
         StoreReleaseVerifier.Apply(releases.ToList(), criteria, "Test", Logger);
 
+    // Live 2026-09-02: Oliver Heldens "Last All Night (Koala)" — the group title is
+    // plain but its monitored release is six remix tracks, so the store's "(Remixes)"
+    // product IS the album and must not be dropped as a variant.
+    [Fact]
+    public void A_remix_tracklist_vouches_for_a_remix_product()
+    {
+        var criteria = CriteriaWithTracklist(
+            "Oliver Heldens",
+            "Last All Night (Koala)",
+            ["Last All Night (Koala) (Toyboy & Robin remix)",
+             "Last All Night (Koala) (Toyboy & Robin dub)",
+             "Last All Night (Koala) (Low Steppa remix)",
+             "Last All Night (Koala) (TC4 remix)",
+             "Last All Night (Koala) (Reso remix)"]);
+
+        var release = Store("Oliver Heldens", "Last All Night (Koala)", trackCount: 5, candidateTitle: "Last All Night (Koala) (Remixes)");
+
+        Assert.Single(Apply(criteria, release));
+    }
+
+    // Negative control for the rule above: a plain tracklist vouches for nothing, so an
+    // uncalled-for remix product is still dropped.
+    [Fact]
+    public void A_plain_tracklist_does_not_vouch_for_a_remix_product()
+    {
+        var criteria = CriteriaWithTracklist(
+            "Oliver Heldens",
+            "Last All Night (Koala)",
+            ["Last All Night (Koala)", "Koala", "Last All Night (Koala) (extended)",
+             "Bunnydance", "Gecko"]);
+
+        var release = Store("Oliver Heldens", "Last All Night (Koala)", trackCount: 5, candidateTitle: "Last All Night (Koala) (Remixes)");
+
+        Assert.Empty(Apply(criteria, release));
+    }
+
     private static AlbumSearchCriteria Criteria(
         string artist,
         string album,
@@ -236,6 +272,15 @@ public class StoreReleaseVerifierTests
                 }
             ],
         };
+    }
+
+    // A monitored release carrying a real tracklist — the vouching path needs track titles.
+    private static AlbumSearchCriteria CriteriaWithTracklist(string artist, string album, string[] trackTitles)
+    {
+        var criteria = Criteria(artist, album, trackCount: trackTitles.Length);
+        var release = criteria.Albums[0].AlbumReleases.Value[0];
+        release.Tracks = new LazyLoaded<List<Track>>([.. trackTitles.Select(t => new Track { Title = t })]);
+        return criteria;
     }
 
     private static StoreReleaseInfo Store(string artist, string album, int trackCount = 0, int durationSeconds = 0, string? candidateTitle = null) => new()

@@ -199,7 +199,7 @@ public class PreImportTagger : IPreImportTagger
         // remix" download was tagged as the plain single and imported over the
         // original). Fail closed: leave the raw tags for Lidarr to judge.
         string folderLeaf = Path.GetFileName(folderPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-        if (VariantQualifiers.RemixSignaturesConflict(album.Title, folderLeaf, album.SecondaryTypes?.Select(t => t.Name).ToList()))
+        if (VariantQualifiers.RemixSignaturesConflict(album.Title, folderLeaf, VariantQualifiers.ForgivenVariants(album)))
         {
             _logger.Info("Pre-import tag: remix qualifier mismatch between album '{Album}' and folder '{Folder}' — skipping tagging for {FileCount} files in \"{SourceId}\"",
                 album.Title, folderLeaf, audioFiles.Count, sourceId);
