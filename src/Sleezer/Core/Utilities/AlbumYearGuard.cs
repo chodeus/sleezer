@@ -1,6 +1,7 @@
 using NLog;
 using NzbDrone.Core.IndexerSearch.Definitions;
 using NzbDrone.Core.Parser.Model;
+using NzbDrone.Plugin.Sleezer.Core.Model;
 
 namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 {
@@ -19,8 +20,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         {
             int targetYear = criteria?.AlbumYear ?? 0;
 
-            // Interactive search is the operator looking for themselves — show everything.
-            if (releases.Count == 0 || targetYear <= 0 || criteria!.InteractiveSearch)
+            if (releases.Count == 0 || targetYear <= 0)
                 return releases;
 
             DateTime nowUtc = DateTime.UtcNow;
@@ -30,30 +30,33 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             if (!releases.Any(r => !IsUndated(r, nowUtc) && r.PublishDate.Year == targetYear))
                 return releases;
 
-            List<ReleaseInfo> kept = [];
-            List<ReleaseInfo> dropped = [];
+            List<ReleaseInfo> flagged = [];
             foreach (ReleaseInfo release in releases)
             {
                 // Unjudgeable, not wrong — and on the AlbumData indexers that is most of them.
-                bool judgeable = !IsUndated(release, nowUtc);
-                (judgeable && Math.Abs(release.PublishDate.Year - targetYear) > ToleranceYears ? dropped : kept).Add(release);
+                if (IsUndated(release, nowUtc) || Math.Abs(release.PublishDate.Year - targetYear) <= ToleranceYears)
+                    continue;
+
+                flagged.Add(release);
+                if (release is StoreReleaseInfo store)
+                    store.Rejection ??= $"released {release.PublishDate.Year}; the searched album is from {targetYear}";
             }
 
-            if (dropped.Count == 0)
+            if (flagged.Count == 0)
                 return releases;
 
-            // Summary at Info, detail at Debug: a dropped release is the answer to "why did
+            // Summary at Info, detail at Debug: a flagged release is the answer to "why did
             // it not grab that", and Lidarr logs at Info.
-            logger.Info("{Indexer}: dropped {Dropped} of {Total} result(s) not released around {TargetYear}",
-                indexerName, dropped.Count, releases.Count, targetYear);
+            logger.Info("{Indexer}: flagged {Flagged} of {Total} result(s) not released around {TargetYear}",
+                indexerName, flagged.Count, releases.Count, targetYear);
 
-            foreach (ReleaseInfo release in dropped)
+            foreach (ReleaseInfo release in flagged)
             {
-                logger.Debug("{Indexer} dropped '{Title}' ({Year}) — the searched album is from {TargetYear}",
+                logger.Debug("{Indexer} flagged '{Title}' ({Year}) — the searched album is from {TargetYear}",
                     indexerName, release.Title, release.PublishDate.Year, targetYear);
             }
 
-            return kept;
+            return releases;
         }
 
         private static bool IsUndated(ReleaseInfo release, DateTime nowUtc)

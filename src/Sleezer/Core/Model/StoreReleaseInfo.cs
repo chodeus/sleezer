@@ -14,5 +14,9 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
         public int TrackCount { get; set; }
         public int TotalDurationSeconds { get; set; }
         public IReadOnlyList<int>? TrackDurationsSeconds { get; set; }
+
+        // Set by StoreReleaseVerifier / AlbumYearGuard, turned into a rejection by
+        // Core/DecisionEngine/StoreMatchSpecification.
+        public string? Rejection { get; set; }
     }
 }

@@ -66,7 +66,7 @@ namespace NzbDrone.Core.Indexers.Qobuz
         [FieldDefinition(7, Type = FieldType.Number, Label = "Early Download Limit", Unit = "days", HelpText = "Time before release date Lidarr will download from this indexer, empty is no limit", Advanced = true)]
         public int? EarlyReleaseLimit { get; set; }
 
-        [FieldDefinition(8, Label = "Strict Matching", Type = FieldType.Checkbox, HelpText = "Verify each result's artist, title, track count and length against the MusicBrainz release, and reject remix, live, acoustic and extended variants unless the album itself is one. Interactive search still shows everything except Various Artists compilations.")]
+        [FieldDefinition(8, Label = "Strict Matching", Type = FieldType.Checkbox, HelpText = "Verify each result's artist, title, track count and length against the MusicBrainz release, and reject remix, live, acoustic and extended variants unless the album itself is one. Failing results are not hidden: they reach Lidarr carrying the reason, so automatic search skips them while interactive search shows why and still lets you grab one. Various Artists compilations are dropped outright. Also covers the release-year check.")]
         public bool StrictMatching { get; set; } = true;
 
         // Hardcoded to the Qobuz API host; only present because IIndexerSettings demands it.

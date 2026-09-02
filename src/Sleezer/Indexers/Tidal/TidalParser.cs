@@ -11,6 +11,7 @@ using NzbDrone.Plugin.Sleezer.Core.Tidal;
 using NzbDrone.Plugin.Sleezer.Tidal;
 using TidalSharp.Data;
 using TidalSharp.Exceptions;
+using NzbDrone.Plugin.Sleezer.Core.Model;
 
 namespace NzbDrone.Core.Indexers.Tidal
 {
@@ -134,7 +135,9 @@ namespace NzbDrone.Core.Indexers.Tidal
             }
 
             var url = x.Url;
-            var result = new ReleaseInfo
+            // StoreReleaseInfo so a verification verdict can ride to StoreMatchSpecification;
+            // the count/duration facts stay unset, so those checks skip as before.
+            var result = new StoreReleaseInfo
             {
                 Guid = $"Tidal-{x.Id}-{bitrate}",
                 Artist = x.Artists.First().Name,

@@ -27,6 +27,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         private static readonly Regex LeadingArticle = new(@"^(the|a|an)\s+", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex Spaces = new(@"\s+", RegexOptions.Compiled);
 
+        /// <summary>Annotates results that fail verification; only Various Artists hits are removed.</summary>
         public static IList<ReleaseInfo> Apply(IList<ReleaseInfo> releases, AlbumSearchCriteria? criteria, string indexerName, Logger logger)
         {
             if (releases.Count == 0 || criteria?.Artist == null)
@@ -34,35 +35,37 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 
             var target = Target.From(criteria);
             List<ReleaseInfo> kept = [];
-            List<(ReleaseInfo Release, string Category, string Detail)> dropped = [];
+            List<string> categories = [];
 
             foreach (var release in releases)
             {
                 var verdict = Judge(release, target);
                 if (verdict == null)
+                {
                     kept.Add(release);
-                else
-                    dropped.Add((release, verdict.Value.Category, verdict.Value.Detail));
+                    continue;
+                }
+
+                categories.Add(verdict.Value.Category);
+                logger.Debug("{Indexer} flagged '{Title}' — {Detail}", indexerName, release.Title, verdict.Value.Detail);
+
+                // A Various Artists hit is removed outright: Lidarr's ParsingService resolves the
+                // credit through ArtistRepository.FindByName, which throws when the library holds
+                // two Various Artists entries, so letting one through costs an error per search.
+                if (verdict.Value.Category == VariousArtistsCategory)
+                    continue;
+
+                if (release is StoreReleaseInfo store)
+                    store.Rejection ??= verdict.Value.Detail;
+
+                kept.Add(release);
             }
 
-            if (dropped.Count == 0)
+            if (categories.Count == 0)
                 return releases;
 
-            var summary = string.Join(", ", dropped.GroupBy(d => d.Category).Select(g => $"{g.Count()} {g.Key}"));
-            var verb = criteria.InteractiveSearch ? "flagged" : "dropped";
-            foreach (var (release, _, detail) in dropped)
-                logger.Debug("{Indexer} {Verb} '{Title}' — {Detail}", indexerName, verb, release.Title, detail);
-
-            // Interactive search is the operator looking for themselves — show everything except
-            // Various Artists hits, which crash ArtistRepository.FindByName when two VA entries exist.
-            if (criteria.InteractiveSearch)
-            {
-                logger.Info("{Indexer}: {Count} of {Total} result(s) would be dropped by automatic search — {Summary}", indexerName, dropped.Count, releases.Count, summary);
-                var variousArtists = dropped.Where(d => d.Category == VariousArtistsCategory).Select(d => d.Release).ToHashSet();
-                return variousArtists.Count == 0 ? releases : [.. releases.Where(r => !variousArtists.Contains(r))];
-            }
-
-            logger.Info("{Indexer}: dropped {Count} of {Total} result(s) — {Summary}", indexerName, dropped.Count, releases.Count, summary);
+            var summary = string.Join(", ", categories.GroupBy(c => c).Select(g => $"{g.Count()} {g.Key}"));
+            logger.Info("{Indexer}: {Count} of {Total} result(s) failed verification — {Summary}", indexerName, categories.Count, releases.Count, summary);
             return kept;
         }
 
@@ -187,7 +190,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         }
 
         /// <summary>One MusicBrainz release of the searched album; Release backs the lazy tracklist read.</summary>
-        private sealed record TargetRelease(int TrackCount, int DurationSeconds, AlbumRelease Release)
+        private readonly record struct TargetRelease(int TrackCount, int DurationSeconds, AlbumRelease Release)
         {
             public bool IsAllVariantTracklist()
             {

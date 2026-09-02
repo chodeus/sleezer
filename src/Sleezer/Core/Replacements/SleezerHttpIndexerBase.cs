@@ -33,9 +33,10 @@ namespace NzbDrone.Plugin.Sleezer.Core.Replacements
             IList<ReleaseInfo> releases = FilterReleases(await base.Fetch(searchCriteria), searchCriteria);
 
             if (Settings is not IStoreMatchingSettings { StrictMatching: false })
+            {
                 releases = StoreReleaseVerifier.Apply(releases, searchCriteria, Name, _logger);
-
-            releases = AlbumYearGuard.Apply(releases, searchCriteria, Name, _logger);
+                releases = AlbumYearGuard.Apply(releases, searchCriteria, Name, _logger);
+            }
 
             // Slskd accounts for its own searches; this is the same answer for the rest.
             _logger.Info("{Indexer}: {Count} result(s) for '{Artist} - {Album}'",
