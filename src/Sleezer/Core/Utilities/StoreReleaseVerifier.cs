@@ -13,7 +13,7 @@ using NzbDrone.Plugin.Sleezer.Indexers.Soulseek;
 
 namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 {
-    /// <summary>Drops store results that are not the searched album: wrong artist or title, a variant the album doesn't call for, or a different track count or length.</summary>
+    /// <summary>Flags store results that are not the searched album: wrong artist or title, a variant the album doesn't call for, or a different track count or length.</summary>
     public static class StoreReleaseVerifier
     {
         private const int ArtistFuzzyFloor = 90;

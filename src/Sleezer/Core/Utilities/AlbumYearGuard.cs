@@ -5,11 +5,11 @@ using NzbDrone.Plugin.Sleezer.Core.Model;
 
 namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 {
-    /// <summary>Drops results for a different album that shares the searched title.</summary>
+    /// <summary>Flags results for a different album that shares the searched title.</summary>
     public static class AlbumYearGuard
     {
         // Store and MusicBrainz dates disagree by a year often enough that an exact-only
-        // rule would drop correct results; two years apart is a different record.
+        // rule would flag correct results.
         private const int ToleranceYears = 1;
 
         // Beyond this the catalogue is not "shifted", it is a different record: live 2026-09-02
