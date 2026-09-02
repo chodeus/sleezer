@@ -96,7 +96,25 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             if (store.TotalDurationSeconds > 0 && DurationMismatch(store, target) is { } detail)
                 return ("duration", detail);
 
+            if (!VariantQualifiers.HasVariantQualifier(candidateTitle) && OnlyVariantEditionsFit(store, target) is { } noPlain)
+                return ("variant", noPlain);
+
             return null;
+        }
+
+        // A plain candidate needs a plain edition to land on. When every release its track
+        // count fits is an all-variant tracklist, Lidarr would attach the file to one of
+        // those and label it as the variant — the live "Chase the Sun" case.
+        private static string? OnlyVariantEditionsFit(StoreReleaseInfo store, Target target)
+        {
+            var fitting = target.Releases
+                .Where(r => store.TrackCount <= 0 || TrackCountCompatible(store.TrackCount, r.TrackCount))
+                .ToList();
+
+            if (fitting.Count == 0 || !fitting.All(r => r.IsAllVariantTracklist()))
+                return null;
+
+            return $"MusicBrainz has no plain edition of that length — every {store.TrackCount}-track release is a variant";
         }
 
         private static bool ArtistMatches(string candidate, Target target)
@@ -168,6 +186,16 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             return Spaces.Replace(text, " ").Trim();
         }
 
+        /// <summary>One MusicBrainz release of the searched album; Release backs the lazy tracklist read.</summary>
+        private sealed record TargetRelease(int TrackCount, int DurationSeconds, AlbumRelease Release)
+        {
+            public bool IsAllVariantTracklist()
+            {
+                var titles = VariantQualifiers.TracklistOf(Release);
+                return titles.Count > 0 && titles.All(VariantQualifiers.IsVariantTrack);
+            }
+        }
+
         private sealed record Target(
             string ArtistName,
             string ArtistNormalized,
@@ -176,7 +204,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             bool IsVariousArtists,
             string Title,
             IReadOnlyCollection<string> SecondaryTypes,
-            IReadOnlyList<(int TrackCount, int DurationSeconds)> Releases)
+            IReadOnlyList<TargetRelease> Releases)
         {
             public string TrackCountSummary => string.Join("/", Releases.Select(r => r.TrackCount).Distinct().OrderBy(c => c));
 
@@ -195,7 +223,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
                     StoreReleaseVerifier.IsVariousArtists(criteria.Artist.Name),
                     album?.Title ?? criteria.AlbumTitle,
                     VariantQualifiers.ForgivenVariants(album),
-                    [.. releases.Select(r => (r.TrackCount, DurationSeconds(r)))]);
+                    [.. releases.Select(r => new TargetRelease(r.TrackCount, DurationSeconds(r), r))]);
             }
 
             private static int DurationSeconds(AlbumRelease release)

@@ -242,6 +242,42 @@ public class StoreReleaseVerifierTests
         Assert.Empty(Apply(criteria, release));
     }
 
+    // Live 2026-09-02: Hardwell "Chase the Sun" — MusicBrainz held a 2-track edition, a
+    // 1-track extended mix and a 1-track remix, but no plain 1-track single, so Lidarr
+    // attached the correct plain download to the remix release and named it as the remix.
+    [Fact]
+    public void A_plain_product_is_rejected_when_only_variant_editions_fit()
+    {
+        var criteria = CriteriaWithReleases("Hardwell", "Chase the Sun",
+            (["Chase the Sun (extended mix)", "Chase the Sun"], true),
+            (["Chase the Sun (extended mix)"], false),
+            (["Chase the Sun (Jac & Harri remix)"], false));
+
+        Assert.Empty(Apply(criteria, Store("Hardwell", "Chase the Sun", trackCount: 1)));
+    }
+
+    // False-positive control: a single whose only edition is a "(radio edit)" is a plain
+    // product, not a variant one — an edit is the main track of most singles.
+    [Fact]
+    public void A_radio_edit_tracklist_is_not_a_variant_edition()
+    {
+        var criteria = CriteriaWithReleases("Whigfield", "Saturday Night",
+            (["Saturday Night (radio edit)"], true));
+
+        Assert.Single(Apply(criteria, Store("Whigfield", "Saturday Night", trackCount: 1)));
+    }
+
+    // False-positive control: one bonus remix on an otherwise plain album must not make
+    // the whole edition count as a variant.
+    [Fact]
+    public void One_bonus_remix_does_not_make_an_edition_variant_only()
+    {
+        var criteria = CriteriaWithReleases("Biscits", "algorhythm",
+            (["algorhythm", "bringing me down", "always knew (Some Remix)"], true));
+
+        Assert.Single(Apply(criteria, Store("Biscits", "algorhythm", trackCount: 3)));
+    }
+
     private static AlbumSearchCriteria Criteria(
         string artist,
         string album,
@@ -280,6 +316,22 @@ public class StoreReleaseVerifierTests
         var criteria = Criteria(artist, album, trackCount: trackTitles.Length);
         var release = criteria.Albums[0].AlbumReleases.Value[0];
         release.Tracks = new LazyLoaded<List<Track>>([.. trackTitles.Select(t => new Track { Title = t })]);
+        return criteria;
+    }
+
+    // Several releases, each with its own tracklist — the plain-edition rule reads them.
+    private static AlbumSearchCriteria CriteriaWithReleases(string artist, string album, params (string[] Tracks, bool Monitored)[] releases)
+    {
+        var criteria = Criteria(artist, album);
+        criteria.Albums[0].AlbumReleases = new LazyLoaded<List<AlbumRelease>>(
+        [
+            .. releases.Select(r => new AlbumRelease
+            {
+                TrackCount = r.Tracks.Length,
+                Monitored = r.Monitored,
+                Tracks = new LazyLoaded<List<Track>>([.. r.Tracks.Select(t => new Track { Title = t })]),
+            })
+        ]);
         return criteria;
     }
 
