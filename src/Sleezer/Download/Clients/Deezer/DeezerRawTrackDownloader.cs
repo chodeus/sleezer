@@ -8,6 +8,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using DeezNET.Data;
 using Newtonsoft.Json.Linq;
+using NLog;
+using NzbDrone.Common.Instrumentation;
 using NzbDrone.Core.Download.Clients.Deezer.Queue;
 using NzbDrone.Plugin.Sleezer.Core.Deezer;
 using NzbDrone.Plugin.Sleezer.Deezer;
@@ -31,6 +33,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer
         private static readonly TimeSpan PerTrackTimeout = TimeSpan.FromMinutes(30);
 
         private static readonly HttpClient _client = new();
+        private static readonly Logger _logger = NzbDroneLogger.GetLogger(typeof(DeezerRawTrackDownloader));
 
         public static async Task DownloadAsync(long trackId, string trackToken, string outPath, Bitrate bitrate, CancellationToken token = default)
         {
@@ -76,10 +79,14 @@ namespace NzbDrone.Core.Download.Clients.Deezer
             if (!DeezerAPI.Instance.CanStream(bitrate))
             {
                 // Cached options lag a plan upgrade — refresh the session once before refusing.
-                if (await DeezerAPI.Instance.TryRefreshSessionAsync(token))
+                var refresh = await DeezerAPI.Instance.TryRefreshSessionAsync(token);
+                if (refresh == SessionRefreshResult.Refreshed)
                     licenseToken = client.GWApi.ActiveUserData?["USER"]?["OPTIONS"]?["license_token"]?.ToString() ?? licenseToken;
 
-                if (!DeezerAPI.Instance.CanStream(bitrate))
+                // A transient refresh failure is not a denial — let the media API decide.
+                if (refresh == SessionRefreshResult.Failed)
+                    _logger.Warn("Deezer session refresh failed; cannot verify {Bitrate} entitlement for track {TrackId} locally, deferring to the media API", bitrate, trackId);
+                else if (!DeezerAPI.Instance.CanStream(bitrate))
                     throw new InsufficientLicenseRightsException(bitrate == Bitrate.FLAC
                         ? $"Deezer account has no lossless streaming — cannot download track {trackId} as FLAC. A Premium/HiFi ARL is required."
                         : $"Deezer account has no high-quality streaming — cannot download track {trackId} as MP3 320.");

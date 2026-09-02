@@ -12,6 +12,9 @@ using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
 namespace NzbDrone.Plugin.Sleezer.Deezer
 {
+    // Failed is transient (timeout, network, no user data) — callers must not treat it as a denial.
+    internal enum SessionRefreshResult { Refreshed, Throttled, Failed }
+
     public class DeezerAPI
     {
         // Upper bound for blocking ARL init / refresh. Deezer's GW endpoint usually responds
@@ -93,24 +96,24 @@ namespace NzbDrone.Plugin.Sleezer.Deezer
         }
 
         private readonly object _refreshGate = new();
-        private Task<bool>? _refreshInFlight;
+        private Task<SessionRefreshResult>? _refreshInFlight;
         private DateTime _lastForcedRefresh = DateTime.MinValue;
         private static readonly TimeSpan ForcedRefreshInterval = TimeSpan.FromMinutes(5);
 
         // Capability pre-checks call this before refusing a bitrate, so a mid-session plan
         // upgrade is picked up without waiting for the 24h refresh in TryUpdateToken.
-        internal async Task<bool> TryRefreshSessionAsync(CancellationToken token = default)
+        internal async Task<SessionRefreshResult> TryRefreshSessionAsync(CancellationToken token = default)
         {
             if (string.IsNullOrEmpty(_client.ActiveARL))
-                return false;
+                return SessionRefreshResult.Failed;
 
-            Task<bool> refresh;
+            Task<SessionRefreshResult> refresh;
             lock (_refreshGate)
             {
                 if (_refreshInFlight != null)
                     refresh = _refreshInFlight;
                 else if (DateTime.UtcNow - _lastForcedRefresh < ForcedRefreshInterval)
-                    return false;
+                    return SessionRefreshResult.Throttled;
                 else
                     refresh = _refreshInFlight = RefreshSessionAsync();
             }
@@ -123,13 +126,13 @@ namespace NzbDrone.Plugin.Sleezer.Deezer
             }
             catch (TimeoutException)
             {
-                _logger.Warn("Deezer forced session refresh did not complete within {Seconds:F0}s; continuing with cached capabilities", ArlOperationTimeout.TotalSeconds);
-                return false;
+                _logger.Warn("Deezer forced session refresh did not complete within {Seconds:F0}s", ArlOperationTimeout.TotalSeconds);
+                return SessionRefreshResult.Failed;
             }
         }
 
         // Only a completed refresh that yields user data consumes the cooldown; failures leave it open.
-        private async Task<bool> RefreshSessionAsync()
+        private async Task<SessionRefreshResult> RefreshSessionAsync()
         {
             var startedAt = DateTime.UtcNow;
             try
@@ -141,12 +144,12 @@ namespace NzbDrone.Plugin.Sleezer.Deezer
                 var succeeded = _client.GWApi.ActiveUserData != null;
                 lock (_refreshGate)
                     _lastForcedRefresh = succeeded ? DateTime.UtcNow : DateTime.MinValue;
-                return succeeded;
+                return succeeded ? SessionRefreshResult.Refreshed : SessionRefreshResult.Failed;
             }
             catch (Exception ex)
             {
                 _logger.Warn(ex, "Deezer forced session refresh failed; the throttle stays open for a retry");
-                return false;
+                return SessionRefreshResult.Failed;
             }
             finally
             {
