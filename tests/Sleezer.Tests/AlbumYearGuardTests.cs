@@ -81,6 +81,29 @@ public class AlbumYearGuardTests
         Assert.Equal(["wrong"], Flagged(kept));
     }
 
+    // Live 2026-09-02: Whigfield "Saturday Night" (1993) — no store carries a 1993 copy, so the
+    // exact-match engagement disabled the guard entirely and a 2013 re-recording was grabbed.
+    [Fact]
+    public void Flags_a_far_dated_catalogue_with_no_exact_match()
+    {
+        IList<ReleaseInfo> kept = AlbumYearGuard.Apply(
+            [R("re-recording", 2013), R("reissue", 2013)], C(1993), "Deezer", Log);
+
+        Assert.Equal(["re-recording", "reissue"], Flagged(kept));
+    }
+
+    // The shifted-catalogue protection still holds at its edge: five years off is left alone,
+    // six is a different record.
+    [Theory]
+    [InlineData(5, 0)]
+    [InlineData(6, 1)]
+    public void A_shifted_catalogue_is_left_alone_up_to_the_band(int offset, int expectedFlagged)
+    {
+        IList<ReleaseInfo> kept = AlbumYearGuard.Apply([R("only", 2018 + offset)], C(2018), "Qobuz", Log);
+
+        Assert.Equal(expectedFlagged, Flagged(kept).Length);
+    }
+
     [Fact]
     public void Skips_when_the_album_has_no_known_year()
     {

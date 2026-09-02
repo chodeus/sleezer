@@ -12,6 +12,10 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         // rule would drop correct results; two years apart is a different record.
         private const int ToleranceYears = 1;
 
+        // Beyond this the catalogue is not "shifted", it is a different record: live 2026-09-02
+        // a 2013 re-recording was grabbed for a 1993 single no store dates to 1993.
+        private const int ShiftedCatalogueYears = 5;
+
         // Parsers stamp UtcNow when they have no usable date, so a stamp this fresh is that
         // sentinel, not a real release date.
         private static readonly TimeSpan JustStamped = TimeSpan.FromHours(1);
@@ -25,9 +29,15 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 
             DateTime nowUtc = DateTime.UtcNow;
 
-            // Only engage when something demonstrably matches. A catalogue whose store years
-            // are uniformly a year or two off MusicBrainz must be left alone, not emptied.
-            if (!releases.Any(r => !IsUndated(r, nowUtc) && r.PublishDate.Year == targetYear))
+            // A catalogue whose store years are uniformly a little off MusicBrainz must be left
+            // alone rather than flagged wholesale — but "a little" has a limit, or an old single
+            // no store dates correctly gets no year check at all and a re-recording walks in.
+            List<int> distances = [.. releases.Where(r => !IsUndated(r, nowUtc)).Select(r => Math.Abs(r.PublishDate.Year - targetYear))];
+            if (distances.Count == 0)
+                return releases;
+
+            int nearest = distances.Min();
+            if (nearest > ToleranceYears && nearest <= ShiftedCatalogueYears)
                 return releases;
 
             List<ReleaseInfo> flagged = [];
