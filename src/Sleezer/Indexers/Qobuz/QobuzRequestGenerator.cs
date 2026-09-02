@@ -1,11 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.RegularExpressions;
 using NLog;
 using NzbDrone.Common.Http;
 using NzbDrone.Core.Indexers.Exceptions;
 using NzbDrone.Core.IndexerSearch.Definitions;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Qobuz;
 
 namespace NzbDrone.Core.Indexers.Qobuz
@@ -17,31 +17,6 @@ namespace NzbDrone.Core.Indexers.Qobuz
         // Qobuz.IsFullPage stops paging as soon as a page returns fewer than PageSize
         // distinct albums, so this is only a worst-case ceiling.
         private const int MaxPages = 5;
-
-        // Tier-2 cleaning. Qobuz's /album/search is token-AND, so a bracketed group or a
-        // trailing edition qualifier that Qobuz doesn't carry in its own title drops the
-        // result to zero. These strip that noise back to the core title.
-        private static readonly Regex BracketedGroups = new(@"\s*[\(\[][^\)\]]*[\)\]]", RegexOptions.Compiled);
-
-        // A colon/dash subtitle mentioning soundtrack words is dropped wholesale:
-        // MusicBrainz's "The Hack: Original Television Soundtrack" is just "The Hack" on
-        // Qobuz, and TrailingQualifier alone can't reach it ("Television" breaks its
-        // original/motion-picture/soundtrack prefix chain).
-        private static readonly Regex SubtitleQualifier = new(
-            @"\s*[:\-–—]\s[^:]*\b(?:sound\s?tracks?|score|OST|music\s+from)\b.*$",
-            RegexOptions.IgnoreCase | RegexOptions.Compiled);
-
-        private static readonly Regex TrailingQualifier = new(
-            @"\s*[:\-–—]?\s*\b(?:" +
-            @"(?:original\s+)?(?:motion\s+picture\s+)?(?:sound\s?tracks?|score)" +
-            @"|OST" +
-            @"|(?:\d+(?:st|nd|rd|th)?\s+)?anniversary\s+edition" +
-            @"|special\s+edition" +
-            @"|deluxe|expanded|remaster\w*|bonus\s+track\w*|EP|single" +
-            @")\b.*$",
-            RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
-
-        private static readonly Regex CollapseSpaces = new(@"\s{2,}", RegexOptions.Compiled);
 
         public QobuzIndexerSettings Settings { get; set; } = null!;
         public Logger Logger { get; set; } = null!;
@@ -60,37 +35,34 @@ namespace NzbDrone.Core.Indexers.Qobuz
         {
             var chain = new IndexerPageableRequestChain();
 
-            // Tier 1: the raw artist + album query, which already works for the vast
-            // majority of searches. HttpIndexerBase only advances to the next tier when
-            // the current one returns nothing.
-            var tier1 = $"{searchCriteria.ArtistQuery} {searchCriteria.AlbumQuery}";
+            // Tier 1: the raw artist + entity title (AlbumQuery's "+Disambiguation" token never
+            // matches). HttpIndexerBase only advances to the next tier when this returns nothing.
+            var entityTitle = searchCriteria.Albums?.FirstOrDefault()?.Title ?? searchCriteria.AlbumTitle;
+            var tier1 = $"{searchCriteria.ArtistQuery} {entityTitle}";
             chain.AddTier(GetRequests(tier1));
 
-            if (string.IsNullOrWhiteSpace(searchCriteria.AlbumTitle) || string.IsNullOrWhiteSpace(searchCriteria.ArtistQuery))
+            if (string.IsNullOrWhiteSpace(entityTitle) || string.IsNullOrWhiteSpace(searchCriteria.ArtistQuery))
                 return chain;
 
-            // Tier 2: strip punctuation and trailing edition/soundtrack qualifiers so the
-            // core title survives token-AND matching (MB "Batman: Original Motion Picture
-            // Score" -> "Batman", which Qobuz lists as "Batman (Original Motion Picture
-            // Soundtrack)"). Added only when it differs, to avoid a redundant request.
-            var artist = CleanForTokenSearch(searchCriteria.CleanArtistQuery);
-            var album = CleanForTokenSearch(SearchCriteriaBase.GetQueryTitle(StripQualifiers(searchCriteria.AlbumTitle)));
+            // Tier 2: punctuation and edition/soundtrack qualifiers stripped so the core title
+            // survives token-AND matching. Added only when it differs from tier 1.
+            var artist = StoreQueryCleaner.CleanForTokenSearch(searchCriteria.CleanArtistQuery);
+            var album = StoreQueryCleaner.CleanForTokenSearch(SearchCriteriaBase.GetQueryTitle(StoreQueryCleaner.StripQualifiers(entityTitle)));
             var tier2 = $"{artist} {album}";
 
             if (!string.Equals(tier2, tier1, StringComparison.OrdinalIgnoreCase))
                 chain.AddTier(GetRequests(tier2));
 
-            // Tier 3: MB split-release titles like "A / B" — Qobuz usually carries the
-            // halves as separate releases, so search each. All halves share one tier so
-            // their results come back together.
-            if (!searchCriteria.AlbumTitle.Contains(" / ", StringComparison.Ordinal))
+            // Tier 3: MB split-release titles like "A / B" — Qobuz usually carries the halves
+            // as separate releases, so search each; all halves share one tier.
+            if (!entityTitle.Contains(" / ", StringComparison.Ordinal))
                 return chain;
 
             List<string> partQueries =
             [
-                .. searchCriteria.AlbumTitle
+                .. entityTitle
                     .Split(" / ", StringSplitOptions.RemoveEmptyEntries)
-                    .Select(part => CleanForTokenSearch(SearchCriteriaBase.GetQueryTitle(StripQualifiers(part))))
+                    .Select(part => StoreQueryCleaner.CleanForTokenSearch(SearchCriteriaBase.GetQueryTitle(StoreQueryCleaner.StripQualifiers(part))))
                     .Where(part => !string.IsNullOrWhiteSpace(part))
                     .Select(part => $"{artist} {part}")
                     .Where(query => !string.Equals(query, tier1, StringComparison.OrdinalIgnoreCase)
@@ -115,32 +87,6 @@ namespace NzbDrone.Core.Indexers.Qobuz
             chain.AddTier(GetRequests(searchCriteria.ArtistQuery));
 
             return chain;
-        }
-
-        // '+' back to spaces (GetAPIUrl would send %2B) and apostrophes to spaces —
-        // Qobuz does not unify apostrophe variants attached to digits.
-        private static string CleanForTokenSearch(string query)
-        {
-            if (string.IsNullOrWhiteSpace(query))
-                return query;
-
-            var cleaned = query.Replace('+', ' ').Replace('\'', ' ');
-            return CollapseSpaces.Replace(cleaned, " ").Trim();
-        }
-
-        // Reduces a MusicBrainz album title to its core. Returns the original if stripping
-        // would leave nothing (an album literally named "Deluxe").
-        private static string StripQualifiers(string title)
-        {
-            if (string.IsNullOrWhiteSpace(title))
-                return title;
-
-            var stripped = BracketedGroups.Replace(title, string.Empty);
-            stripped = SubtitleQualifier.Replace(stripped, string.Empty);
-            stripped = TrailingQualifier.Replace(stripped, string.Empty);
-            stripped = CollapseSpaces.Replace(stripped, " ").Trim(' ', ':', '-', '–', '—');
-
-            return string.IsNullOrWhiteSpace(stripped) ? title : stripped;
         }
 
         private IEnumerable<IndexerRequest> GetRequests(string searchParameters)

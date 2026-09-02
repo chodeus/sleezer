@@ -5,6 +5,7 @@ using NzbDrone.Core.Indexers;
 using NzbDrone.Core.IndexerSearch.Definitions;
 using NzbDrone.Core.Parser;
 using NzbDrone.Core.Parser.Model;
+using NzbDrone.Plugin.Sleezer.Core.Model;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
 namespace NzbDrone.Plugin.Sleezer.Core.Replacements
@@ -29,8 +30,12 @@ namespace NzbDrone.Plugin.Sleezer.Core.Replacements
         public override async Task<IList<ReleaseInfo>> Fetch(AlbumSearchCriteria searchCriteria)
         {
             // Subclass filter first, so the count below is what the caller actually receives.
-            IList<ReleaseInfo> releases = AlbumYearGuard.Apply(
-                FilterReleases(await base.Fetch(searchCriteria), searchCriteria), searchCriteria, Name, _logger);
+            IList<ReleaseInfo> releases = FilterReleases(await base.Fetch(searchCriteria), searchCriteria);
+
+            if (Settings is not IStoreMatchingSettings { StrictMatching: false })
+                releases = StoreReleaseVerifier.Apply(releases, searchCriteria, Name, _logger);
+
+            releases = AlbumYearGuard.Apply(releases, searchCriteria, Name, _logger);
 
             // Slskd accounts for its own searches; this is the same answer for the rest.
             _logger.Info("{Indexer}: {Count} result(s) for '{Artist} - {Album}'",

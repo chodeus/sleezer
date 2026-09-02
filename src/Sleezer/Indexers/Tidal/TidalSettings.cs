@@ -2,6 +2,7 @@ using System;
 using FluentValidation;
 using NzbDrone.Core.Annotations;
 using NzbDrone.Core.Validation;
+using NzbDrone.Plugin.Sleezer.Core.Model;
 
 namespace NzbDrone.Core.Indexers.Tidal
 {
@@ -14,7 +15,7 @@ namespace NzbDrone.Core.Indexers.Tidal
         }
     }
 
-    public class TidalIndexerSettings : IIndexerSettings
+    public class TidalIndexerSettings : IIndexerSettings, IStoreMatchingSettings
     {
         private static readonly TidalIndexerSettingsValidator Validator = new();
 
@@ -54,6 +55,9 @@ namespace NzbDrone.Core.Indexers.Tidal
 
         [FieldDefinition(12, Type = FieldType.Number, Label = "Early Download Limit", Unit = "days", HelpText = "Time before release date Lidarr will download from this indexer, empty is no limit", Advanced = true)]
         public int? EarlyReleaseLimit { get; set; }
+
+        [FieldDefinition(13, Label = "Strict Matching", Type = FieldType.Checkbox, HelpText = "Verify each result's artist and title against the MusicBrainz release, and reject remix, live, acoustic and extended variants unless the album itself is one. Interactive search still shows everything except Various Artists compilations.")]
+        public bool StrictMatching { get; set; } = true;
 
         [FieldDefinition(99, Label = "Authenticate with Tidal", Type = FieldType.OAuth)]
         public string SignIn { get; set; }

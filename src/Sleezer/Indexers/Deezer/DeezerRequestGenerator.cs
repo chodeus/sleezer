@@ -1,8 +1,11 @@
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using Newtonsoft.Json.Linq;
 using NLog;
 using NzbDrone.Common.Http;
 using NzbDrone.Core.IndexerSearch.Definitions;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Deezer;
 
 namespace NzbDrone.Core.Indexers.Deezer
@@ -61,8 +64,17 @@ namespace NzbDrone.Core.Indexers.Deezer
         {
             var chain = new IndexerPageableRequestChain();
 
-            chain.AddTier(GetRequests($"artist:\"{searchCriteria.ArtistQuery}\" album:\"{searchCriteria.AlbumQuery}\""));
-            chain.AddTier(GetRequests($"{searchCriteria.ArtistQuery} {searchCriteria.AlbumQuery}"));
+            // Entity title, not AlbumQuery — its fused "+Disambiguation" token returns nothing inside a quoted field.
+            var title = searchCriteria.Albums?.FirstOrDefault()?.Title ?? searchCriteria.AlbumTitle;
+            var artist = StoreQueryCleaner.WithoutQuotes(searchCriteria.ArtistQuery);
+            chain.AddTier(GetRequests($"artist:\"{artist}\" album:\"{StoreQueryCleaner.WithoutQuotes(title)}\""));
+
+            var stripped = StoreQueryCleaner.StripQualifiers(title);
+            if (!string.Equals(stripped, title, StringComparison.OrdinalIgnoreCase))
+                chain.AddTier(GetRequests($"artist:\"{artist}\" album:\"{StoreQueryCleaner.WithoutQuotes(stripped)}\""));
+
+            chain.AddTier(GetRequests(StoreQueryCleaner.CleanForTokenSearch(
+                $"{searchCriteria.CleanArtistQuery} {SearchCriteriaBase.GetQueryTitle(stripped)}")));
 
             return chain;
         }
@@ -71,7 +83,7 @@ namespace NzbDrone.Core.Indexers.Deezer
         {
             var chain = new IndexerPageableRequestChain();
 
-            chain.AddTier(GetRequests($"artist:\"{searchCriteria.ArtistQuery}\""));
+            chain.AddTier(GetRequests($"artist:\"{StoreQueryCleaner.WithoutQuotes(searchCriteria.ArtistQuery)}\""));
             chain.AddTier(GetRequests(searchCriteria.ArtistQuery));
 
             return chain;

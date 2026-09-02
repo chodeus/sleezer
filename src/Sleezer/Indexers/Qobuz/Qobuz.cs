@@ -74,13 +74,8 @@ namespace NzbDrone.Core.Indexers.Qobuz
             return null!;
         }
 
-        // Qobuz's /album/search appends "Various Artists" compilations to many
-        // specific-artist searches. They're the sole trigger for an interactive-search
-        // 500: with two "Various Artists" entries in the library, ArtistRepository
-        // .FindByName throws MultipleArtistsFoundException and aborts the whole search.
-        protected override IList<ReleaseInfo> FilterReleases(IList<ReleaseInfo> releases, AlbumSearchCriteria searchCriteria)
-            => SkipVariousArtists(releases, searchCriteria.Artist?.Name);
-
+        // Album searches leave "Various Artists" to StoreReleaseVerifier's artist rule; artist
+        // searches still need it — two VA library entries make ArtistRepository.FindByName throw.
         public override async Task<IList<ReleaseInfo>> Fetch(ArtistSearchCriteria searchCriteria)
             => SkipVariousArtists(await base.Fetch(searchCriteria), searchCriteria.Artist?.Name);
 

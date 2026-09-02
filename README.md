@@ -33,6 +33,7 @@ Sleezer talks to Deezer directly (no Deemix middleman) using the `DeezNET` libra
 #### ARL tips
 
 * If your downloads suddenly start failing, rotate the ARL before anything else. Most "Deezer broke" reports are single-ARL bans.
+* **Strict Matching** (on by default) verifies every result against the MusicBrainz release before Lidarr sees it: artist, title, track count and total length must line up, and remix, live, acoustic and extended variants are rejected unless the album itself is one. Interactive search still shows everything except Various Artists compilations (two such library entries crash Lidarr's artist lookup) and logs what automatic search would drop. Turn it off per indexer if a catalogue's metadata is systematically odd.
 * Leaving the ARL field blank uses Sleezer's public-ARL rotation — works but slower and occasionally stale.
 
 ### Tidal Setup 🌊
@@ -136,6 +137,7 @@ Three lists reuse the indexer's session, so add and save the indexer first — t
 * **Require Complete Album** (on by default) fails the whole album when any track can't be downloaded, so Lidarr retries or picks another release instead of importing a gap-toothed album.
 * The post-processing pipeline (corrupt-file scan + pre-import tagging) runs on Qobuz downloads — enable **Qobuz** in the FFmpeg provider's client pickers.
 * Qobuz supplies no lyrics; enable **Use LRCLIB as Lyric Provider** if you want them.
+* **Strict Matching** (on by default) verifies every result against the MusicBrainz release before Lidarr sees it: artist, title, track count and total length must line up, and remix, live, acoustic and extended variants are rejected unless the album itself is one. Interactive search still shows everything except Various Artists compilations (two such library entries crash Lidarr's artist lookup) and logs what automatic search would drop. Turn it off per indexer if a catalogue's metadata is systematically odd.
 
 ### Bandcamp Setup 🏕️
 
