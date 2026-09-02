@@ -83,7 +83,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
                 if (!TitleMatches(candidateTitle, target.Title))
                     return ("title", $"'{candidateTitle}' is not '{target.Title}'");
 
-                if (SlskdTextProcessor.RemixSignaturesConflict(target.Title, candidateTitle, target.SecondaryTypes))
+                if (VariantQualifiers.RemixSignaturesConflict(target.Title, candidateTitle, target.SecondaryTypes))
                     return ("variant", $"'{candidateTitle}' is a variant the album does not call for");
             }
 

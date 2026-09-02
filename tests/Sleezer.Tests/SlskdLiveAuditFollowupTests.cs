@@ -4,6 +4,7 @@ using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
 using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek.Models;
 using NzbDrone.Plugin.Sleezer.Indexers.Soulseek;
 using Xunit;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
 namespace Sleezer.Tests;
 
@@ -27,7 +28,7 @@ public class RemixSignatureTests
     [InlineData("Album (2014) [FLAC]", null)]
     public void ExtractRemixSignature_identifies_remix_qualifiers(string title, string? expected)
     {
-        Assert.Equal(expected, SlskdTextProcessor.ExtractRemixSignature(title));
+        Assert.Equal(expected, VariantQualifiers.ExtractRemixSignature(title));
     }
 
     [Theory]
@@ -47,7 +48,7 @@ public class RemixSignatureTests
     [InlineData("Song", "Song (A Cappella)", true)]
     public void RemixSignaturesConflict_separates_remixes_from_originals(string searchAlbum, string folder, bool expected)
     {
-        Assert.Equal(expected, SlskdTextProcessor.RemixSignaturesConflict(searchAlbum, folder));
+        Assert.Equal(expected, VariantQualifiers.RemixSignaturesConflict(searchAlbum, folder));
     }
 
     [Theory]
@@ -68,7 +69,7 @@ public class RemixSignatureTests
     [InlineData("Some Album", "Some Album (Remixes)", new string[0], true)]                                     // no metadata: remix candidate stays refused
     public void RemixSignaturesConflict_uses_secondary_types_asymmetrically(string searchAlbum, string folder, string[] types, bool expected)
     {
-        Assert.Equal(expected, SlskdTextProcessor.RemixSignaturesConflict(searchAlbum, folder, types));
+        Assert.Equal(expected, VariantQualifiers.RemixSignaturesConflict(searchAlbum, folder, types));
     }
 }
 
@@ -261,16 +262,16 @@ public class VariantProfileTests
     [InlineData("One More Light Live", "Linkin Park - One More Light Live [FLAC]", false)]  // trailing qualifier survives suffixes
     public void RemixSignaturesConflict_covers_variant_dimensions(string searchAlbum, string folder, bool expected)
     {
-        Assert.Equal(expected, SlskdTextProcessor.RemixSignaturesConflict(searchAlbum, folder));
+        Assert.Equal(expected, VariantQualifiers.RemixSignaturesConflict(searchAlbum, folder));
     }
 
     [Fact]
     public void ExtractVariantProfile_reads_qualifier_zones_only()
     {
-        SlskdTextProcessor.VariantProfile profile = SlskdTextProcessor.ExtractVariantProfile("Live Forever");
+        VariantQualifiers.VariantProfile profile = VariantQualifiers.ExtractVariantProfile("Live Forever");
         Assert.False(profile.Live);
 
-        profile = SlskdTextProcessor.ExtractVariantProfile("Definitely Maybe (Live at Knebworth) [FLAC]");
+        profile = VariantQualifiers.ExtractVariantProfile("Definitely Maybe (Live at Knebworth) [FLAC]");
         Assert.True(profile.Live);
     }
 }
