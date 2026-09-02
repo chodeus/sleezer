@@ -46,6 +46,16 @@ namespace NzbDrone.Core.Indexers.Deezer
                 var wrapper = new HttpResponse<DeezerSearchResponseWrapper>(response.HttpResponse).Resource;
                 jsonResponse = wrapper?.Results!;
 
+                // A reported error is a failed request, not an empty catalogue: returning [] here
+                // would read as "album not found" and cost a retry Lidarr never schedules.
+                if (wrapper?.Error?.HasValues == true)
+                {
+                    var errorSnippet = SnippetForLog(response.Content);
+                    var failure = new InvalidOperationException($"Deezer rejected the search request: {wrapper.Error.ToString(Newtonsoft.Json.Formatting.None)}");
+                    failure.Data["DeezerResponseSnippet"] = errorSnippet;
+                    throw failure;
+                }
+
                 // When Deezer rejects the request (typically: api_token was "null" because the ARL never produced
                 // an ActiveUserData session), the GW endpoint returns a 200 with results.data missing entirely.
                 // Throwing a clear message here replaces a downstream LINQ NRE ("Value cannot be null. Parameter 'source'")
@@ -58,16 +68,6 @@ namespace NzbDrone.Core.Indexers.Deezer
                         "Deezer rejected the search request — ARL is missing or invalid. Re-authenticate at deezer.com, copy a fresh `arl` cookie, and restart Lidarr.");
                     ex.Data["DeezerResponseSnippet"] = bodySnippet;
                     throw ex;
-                }
-
-                // A reported error is a failed request, not an empty catalogue: returning [] here
-                // would read as "album not found" and cost a retry Lidarr never schedules.
-                if (wrapper?.Error?.HasValues == true)
-                {
-                    var errorSnippet = SnippetForLog(response.Content);
-                    var failure = new InvalidOperationException($"Deezer rejected the search request: {wrapper.Error.ToString(Newtonsoft.Json.Formatting.None)}");
-                    failure.Data["DeezerResponseSnippet"] = errorSnippet;
-                    throw failure;
                 }
 
                 // An empty result set is otherwise ordinary — the fielded first tier misses often,

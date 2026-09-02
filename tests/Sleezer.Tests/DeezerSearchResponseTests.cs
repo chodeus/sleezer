@@ -37,6 +37,18 @@ public class DeezerSearchResponseTests
         Assert.Null(wrapper.Error);
     }
 
+    // A rejected request often arrives with BOTH a populated error and no results.data. The
+    // parser must read the error first: the ARL guard's message would otherwise blame the
+    // credentials for whatever Deezer actually reported.
+    [Fact]
+    public void A_rejected_request_carries_an_error_and_no_results_data()
+    {
+        var wrapper = Parse("""{"error":{"VALID_TOKEN_REQUIRED":"Invalid CSRF token"},"results":{}}""");
+
+        Assert.True(wrapper.Error?.HasValues);
+        Assert.Null(wrapper.Results?.Data);
+    }
+
     // The other half of the anomaly test: no results but a non-zero total.
     [Fact]
     public void Total_is_readable_alongside_an_empty_data_array()
