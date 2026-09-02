@@ -37,8 +37,18 @@ public class StoreMatchSpecificationTests
         Assert.True(Accepted(new StoreReleaseInfo { Title = "x", Rejection = string.Empty }));
     }
 
-    // The type is the guarantee: only Sleezer's store parsers build StoreReleaseInfo, so a
-    // torrent or Usenet result can never be rejected by this specification.
+    // Slskd shares derive from TorrentInfo for their priority, so they carry the verdict
+    // through the interface instead — without this they would lose the year check entirely.
+    [Fact]
+    public void A_flagged_slskd_share_is_rejected_too()
+    {
+        var share = new ShareInfo { Title = "x", Rejection = "released 2013; the searched album is from 1993" };
+
+        Assert.False(Spec.IsSatisfiedBy(new RemoteAlbum { Release = share }, null).Accepted);
+    }
+
+    // The type is the guarantee: only Sleezer's own parsers implement IVerifiableRelease, so
+    // a torrent or Usenet result can never be rejected by this specification.
     [Fact]
     public void A_release_from_another_indexer_is_accepted()
     {

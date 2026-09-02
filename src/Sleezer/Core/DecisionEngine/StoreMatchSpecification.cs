@@ -18,11 +18,11 @@ namespace NzbDrone.Plugin.Sleezer.Core.DecisionEngine
         // would park them in the pending queue instead.
         public RejectionType Type => RejectionType.Permanent;
 
-        // Keys on the type, not the indexer name — only Sleezer's own store parsers
-        // construct StoreReleaseInfo, so torrent and Usenet results can never match.
+        // Keys on the type, not the indexer name — only Sleezer's own parsers implement
+        // IVerifiableRelease, so torrent and Usenet results can never match.
         public Decision IsSatisfiedBy(RemoteAlbum subject, SearchCriteriaBase searchCriteria)
         {
-            return subject?.Release is StoreReleaseInfo { Rejection: { Length: > 0 } reason }
+            return subject?.Release is IVerifiableRelease { Rejection: { Length: > 0 } reason }
                 ? Decision.Reject(reason)
                 : Decision.Accept();
         }

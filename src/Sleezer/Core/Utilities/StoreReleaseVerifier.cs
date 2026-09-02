@@ -55,8 +55,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
                 if (verdict.Value.Category == VariousArtistsCategory)
                     continue;
 
-                if (release is StoreReleaseInfo store)
-                    store.Rejection ??= verdict.Value.Detail;
+                if (release is IVerifiableRelease verifiable)
+                    verifiable.Rejection ??= verdict.Value.Detail;
 
                 kept.Add(release);
             }

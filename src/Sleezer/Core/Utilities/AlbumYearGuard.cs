@@ -48,8 +48,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
                     continue;
 
                 flagged.Add(release);
-                if (release is StoreReleaseInfo store)
-                    store.Rejection ??= $"released {release.PublishDate.Year}; the searched album is from {targetYear}";
+                if (release is IVerifiableRelease verifiable)
+                    verifiable.Rejection ??= $"released {release.PublishDate.Year}; the searched album is from {targetYear}";
             }
 
             if (flagged.Count == 0)
