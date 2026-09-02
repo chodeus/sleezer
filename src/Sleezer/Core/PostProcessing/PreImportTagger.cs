@@ -447,7 +447,9 @@ public class PreImportTagger : IPreImportTagger
 
         if (!TitleFallbackGuard.IsSafeTarget(release, tracks.Count, localTracks.Count, preferDigitalMedia))
         {
-            _logger.Info("Pre-import tag: '{Release}' is not a safe title-fallback target for {SourceId} — {TrackCount} tracks vs {FileCount} files, digital={IsDigital} (digital source={PreferDigital}); leaving raw tags for Lidarr",
+            // A tracklist that does not fit the download usually means Lidarr is about to
+            // attach the files to the wrong release, so this is worth seeing.
+            _logger.Warn("Pre-import tag: '{Release}' is not a safe title-fallback target for {SourceId} — {TrackCount} tracks vs {FileCount} files, digital={IsDigital} (digital source={PreferDigital}); leaving raw tags for Lidarr",
                 release.Title, sourceId, tracks.Count, localTracks.Count, DigitalReleaseSelector.IsDigital(release), preferDigitalMedia);
             return (0, 0, 0);
         }

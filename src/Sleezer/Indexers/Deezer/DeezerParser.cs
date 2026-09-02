@@ -163,16 +163,18 @@ namespace NzbDrone.Core.Indexers.Deezer
             if (!missing128)
                 torrentInfos.Add(ToReleaseInfo(result, 1, size128, explicitType, facts));
 
+            var options = DeezerAPI.Instance.Client.GWApi.ActiveUserData?["USER"]?["OPTIONS"];
+            var hasHq = options?["web_hq"]?.Value<bool>() == true;
+            var hasLossless = options?["web_lossless"]?.Value<bool>() == true;
+
             // MP3 320 — only if user can stream HQ AND all tracks have MP3 320
-            if (!missing320 && DeezerAPI.Instance.Client.GWApi.ActiveUserData?["USER"]?["OPTIONS"]?["web_hq"]?.Value<bool>() == true)
+            if (!missing320 && hasHq)
             {
                 torrentInfos.Add(ToReleaseInfo(result, 3, size320, explicitType, facts));
             }
 
             // FLAC — only if user has lossless AND all tracks have FLAC,
             // OR (with fallback opt-in) every track is available in at least one of FLAC/MP3 320 and user has both HQ streaming and lossless.
-            var hasLossless = DeezerAPI.Instance.Client.GWApi.ActiveUserData?["USER"]?["OPTIONS"]?["web_lossless"]?.Value<bool>() == true;
-            var hasHq = DeezerAPI.Instance.Client.GWApi.ActiveUserData?["USER"]?["OPTIONS"]?["web_hq"]?.Value<bool>() == true;
             if (!missingFlac && hasLossless)
             {
                 torrentInfos.Add(ToReleaseInfo(result, 9, sizeFlac, explicitType, facts));
