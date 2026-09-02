@@ -157,6 +157,8 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Deezer\DeezerTrackRights.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Core\Deezer\DeezerSearchResponseReader.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Indexers\Soulseek\SlskdItemsParser.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Indexers\Soulseek\ISlskdItemsParser.cs"

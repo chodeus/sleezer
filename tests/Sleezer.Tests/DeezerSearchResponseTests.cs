@@ -1,5 +1,6 @@
 using Newtonsoft.Json;
 using NzbDrone.Core.Download.Clients.Deezer;
+using NzbDrone.Plugin.Sleezer.Core.Deezer;
 using Xunit;
 
 namespace Sleezer.Tests;
@@ -37,16 +38,36 @@ public class DeezerSearchResponseTests
         Assert.Null(wrapper.Error);
     }
 
-    // A rejected request often arrives with BOTH a populated error and no results.data. The
-    // parser must read the error first: the ARL guard's message would otherwise blame the
-    // credentials for whatever Deezer actually reported.
+    // A rejected request usually carries BOTH an error and no results.data, and the ARL
+    // guard would otherwise blame the credentials for whatever Deezer actually reported.
     [Fact]
-    public void A_rejected_request_carries_an_error_and_no_results_data()
+    public void A_reported_error_is_read_before_the_arl_guard()
     {
         var wrapper = Parse("""{"error":{"VALID_TOKEN_REQUIRED":"Invalid CSRF token"},"results":{}}""");
 
-        Assert.True(wrapper.Error?.HasValues);
-        Assert.Null(wrapper.Results?.Data);
+        var ex = Assert.Throws<InvalidOperationException>(() => DeezerSearchResponseReader.Read(wrapper, "<body>"));
+
+        Assert.Contains("VALID_TOKEN_REQUIRED", ex.Message);
+        Assert.DoesNotContain("ARL", ex.Message);
+        Assert.Equal("<body>", ex.Data["DeezerResponseSnippet"]);
+    }
+
+    // Missing results.data with nothing else said is the shape a dead ARL produces.
+    [Fact]
+    public void Missing_results_data_alone_still_blames_the_arl()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => DeezerSearchResponseReader.Read(Parse("""{"error":[],"results":{}}"""), "<body>"));
+
+        Assert.Contains("ARL is missing or invalid", ex.Message);
+    }
+
+    [Fact]
+    public void An_empty_data_array_is_an_ordinary_empty_result()
+    {
+        var wrapper = Parse("""{"error":[],"results":{"data":[],"total":0}}""");
+
+        Assert.Equal(DeezerSearchResponseReader.Outcome.Empty, DeezerSearchResponseReader.Read(wrapper, "<body>"));
     }
 
     // The other half of the anomaly test: no results but a non-zero total.
