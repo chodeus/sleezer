@@ -39,6 +39,10 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             return string.IsNullOrWhiteSpace(stripped) ? title : stripped;
         }
 
+        /// <summary>Drops literal double quotes — Deezer's artist:"…" / album:"…" field syntax has no escape for them.</summary>
+        public static string WithoutQuotes(string value) =>
+            string.IsNullOrEmpty(value) ? value : CollapseSpaces.Replace(value.Replace('"', ' '), " ").Trim();
+
         /// <summary>'+' and apostrophes become spaces — token-AND searches don't unify them.</summary>
         public static string CleanForTokenSearch(string query)
         {

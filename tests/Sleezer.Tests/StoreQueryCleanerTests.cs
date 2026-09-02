@@ -27,6 +27,17 @@ public class StoreQueryCleanerTests
         Assert.Equal(title, StoreQueryCleaner.StripQualifiers(title));
     }
 
+    // Deezer's artist:"…" / album:"…" syntax has no escape, so a literal quote must never reach it.
+    [Theory]
+    [InlineData("Songs from \"Frozen\"", "Songs from Frozen")]
+    [InlineData("\"Weird Al\" Yankovic", "Weird Al Yankovic")]
+    [InlineData("No quotes", "No quotes")]
+    [InlineData("", "")]
+    public void WithoutQuotes_removes_literal_double_quotes(string value, string expected)
+    {
+        Assert.Equal(expected, StoreQueryCleaner.WithoutQuotes(value));
+    }
+
     [Theory]
     [InlineData("Rock+Roll's  Here", "Rock Roll s Here")]
     [InlineData("  plain  ", "plain")]

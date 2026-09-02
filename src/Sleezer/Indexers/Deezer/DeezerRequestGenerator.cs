@@ -66,12 +66,12 @@ namespace NzbDrone.Core.Indexers.Deezer
 
             // Entity title, not AlbumQuery — its fused "+Disambiguation" token returns nothing inside a quoted field.
             var title = searchCriteria.Albums?.FirstOrDefault()?.Title ?? searchCriteria.AlbumTitle;
-            var artist = searchCriteria.ArtistQuery;
-            chain.AddTier(GetRequests($"artist:\"{Fielded(artist)}\" album:\"{Fielded(title)}\""));
+            var artist = StoreQueryCleaner.WithoutQuotes(searchCriteria.ArtistQuery);
+            chain.AddTier(GetRequests($"artist:\"{artist}\" album:\"{StoreQueryCleaner.WithoutQuotes(title)}\""));
 
             var stripped = StoreQueryCleaner.StripQualifiers(title);
             if (!string.Equals(stripped, title, StringComparison.OrdinalIgnoreCase))
-                chain.AddTier(GetRequests($"artist:\"{Fielded(artist)}\" album:\"{Fielded(stripped)}\""));
+                chain.AddTier(GetRequests($"artist:\"{artist}\" album:\"{StoreQueryCleaner.WithoutQuotes(stripped)}\""));
 
             chain.AddTier(GetRequests(StoreQueryCleaner.CleanForTokenSearch(
                 $"{searchCriteria.CleanArtistQuery} {SearchCriteriaBase.GetQueryTitle(stripped)}")));
@@ -83,14 +83,11 @@ namespace NzbDrone.Core.Indexers.Deezer
         {
             var chain = new IndexerPageableRequestChain();
 
-            chain.AddTier(GetRequests($"artist:\"{searchCriteria.ArtistQuery}\""));
+            chain.AddTier(GetRequests($"artist:\"{StoreQueryCleaner.WithoutQuotes(searchCriteria.ArtistQuery)}\""));
             chain.AddTier(GetRequests(searchCriteria.ArtistQuery));
 
             return chain;
         }
-
-        // Deezer's field syntax has no escape for a literal quote, so a value like `Songs from "Frozen"` loses them.
-        private static string Fielded(string value) => value.Replace("\"", " ").Trim();
 
         private IEnumerable<IndexerRequest> GetRequests(string searchParameters)
         {
