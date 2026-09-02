@@ -81,6 +81,13 @@
     <!-- Identity gate for Deezer track substitution; BCL only. -->
     <Compile Include="..\..\src\Sleezer\Core\Deezer\DeezerFallbackGate.cs"
              LinkBase="SourceUnderTest" />
+    <!-- Store-result verification: FuzzySharp + SlskdTextProcessor (both already here) + Lidarr.Core types. -->
+    <Compile Include="..\..\src\Sleezer\Core\Model\StoreReleaseInfo.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Core\Utilities\StoreQueryCleaner.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Core\Utilities\StoreReleaseVerifier.cs"
+             LinkBase="SourceUnderTest" />
     <!-- Baseline Deezer tag write; TagLib + Newtonsoft via the Lidarr.Core reference. -->
     <Compile Include="..\..\src\Sleezer\Download\Clients\Deezer\DeezerTagger.cs"
              LinkBase="SourceUnderTest" />

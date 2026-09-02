@@ -10,6 +10,7 @@ using NzbDrone.Common.Http;
 using NzbDrone.Core.Download.Clients.Deezer;
 using NzbDrone.Core.Parser.Model;
 using System.Collections.Concurrent;
+using NzbDrone.Plugin.Sleezer.Core.Model;
 using NzbDrone.Plugin.Sleezer.Deezer;
 using System.Globalization;
 
@@ -131,14 +132,17 @@ namespace NzbDrone.Core.Indexers.Deezer
             var size320 = songs.Sum(d => d["FILESIZE_MP3_320"]!.Value<long>());
             var sizeFlac = songs.Sum(d => d["FILESIZE_FLAC"]!.Value<long>());
 
+            var durations = songs.Select(d => d["DURATION"]?.Value<int>() ?? 0).ToList();
+            var facts = new AlbumFacts(durations.Count, durations.Sum(), durations);
+
             // MP3 128 — always available baseline (unless filtered by HideAlbumsWithMissing above)
             if (!missing128)
-                torrentInfos.Add(ToReleaseInfo(result, 1, size128, explicitType));
+                torrentInfos.Add(ToReleaseInfo(result, 1, size128, explicitType, facts));
 
             // MP3 320 — only if user can stream HQ AND all tracks have MP3 320
             if (!missing320 && DeezerAPI.Instance.Client.GWApi.ActiveUserData?["USER"]?["OPTIONS"]?["web_hq"]?.Value<bool>() == true)
             {
-                torrentInfos.Add(ToReleaseInfo(result, 3, size320, explicitType));
+                torrentInfos.Add(ToReleaseInfo(result, 3, size320, explicitType, facts));
             }
 
             // FLAC — only if user has lossless AND all tracks have FLAC,
@@ -147,7 +151,7 @@ namespace NzbDrone.Core.Indexers.Deezer
             var hasHq = DeezerAPI.Instance.Client.GWApi.ActiveUserData?["USER"]?["OPTIONS"]?["web_hq"]?.Value<bool>() == true;
             if (!missingFlac && hasLossless)
             {
-                torrentInfos.Add(ToReleaseInfo(result, 9, sizeFlac, explicitType));
+                torrentInfos.Add(ToReleaseInfo(result, 9, sizeFlac, explicitType, facts));
             }
             else if (missingFlac && Settings.AllowMp3FallbackForMissingFlac && flacOrMp3320CoversAll && hasLossless && hasHq)
             {
@@ -157,13 +161,15 @@ namespace NzbDrone.Core.Indexers.Deezer
                     var flacBytes = d["FILESIZE_FLAC"]!.Value<long>();
                     return flacBytes > 0 ? flacBytes : d["FILESIZE_MP3_320"]!.Value<long>();
                 });
-                torrentInfos.Add(ToReleaseInfo(result, 9, sizeMixed, explicitType));
+                torrentInfos.Add(ToReleaseInfo(result, 9, sizeMixed, explicitType, facts));
             }
 
             return torrentInfos;
         }
 
-        private static ReleaseInfo ToReleaseInfo(DeezerGwAlbum x, int bitrate, long size, ExplicitStatus explicitType)
+        private sealed record AlbumFacts(int TrackCount, int TotalDurationSeconds, IReadOnlyList<int> Durations);
+
+        private static ReleaseInfo ToReleaseInfo(DeezerGwAlbum x, int bitrate, long size, ExplicitStatus explicitType, AlbumFacts facts)
         {
             var publishDate = DateTime.UtcNow;
             var year = 0;
@@ -180,7 +186,7 @@ namespace NzbDrone.Core.Indexers.Deezer
 
             var url = $"https://deezer.com/album/{x.AlbumId}";
 
-            var result = new ReleaseInfo
+            var result = new StoreReleaseInfo
             {
                 Guid = $"Deezer-{x.AlbumId}-{bitrate}",
                 Artist = x.ArtistName,
@@ -188,7 +194,12 @@ namespace NzbDrone.Core.Indexers.Deezer
                 DownloadUrl = url,
                 InfoUrl = url,
                 PublishDate = publishDate,
-                DownloadProtocol = nameof(DeezerDownloadProtocol)
+                DownloadProtocol = nameof(DeezerDownloadProtocol),
+                ArtistId = x.ArtistId,
+                CandidateTitle = string.IsNullOrWhiteSpace(x.Version) ? x.AlbumTitle : $"{x.AlbumTitle} {x.Version.Trim()}",
+                TrackCount = facts.TrackCount,
+                TotalDurationSeconds = facts.TotalDurationSeconds,
+                TrackDurationsSeconds = facts.Durations,
             };
 
             string format;

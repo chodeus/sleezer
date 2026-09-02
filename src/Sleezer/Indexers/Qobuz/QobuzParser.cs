@@ -8,6 +8,7 @@ using Newtonsoft.Json.Linq;
 using NLog;
 using NzbDrone.Common.Http;
 using NzbDrone.Core.Parser.Model;
+using NzbDrone.Plugin.Sleezer.Core.Model;
 using NzbDrone.Plugin.Sleezer.Qobuz;
 using QobuzApiSharp.Models.Content;
 
@@ -181,7 +182,7 @@ namespace NzbDrone.Core.Indexers.Qobuz
 
             var url = LocalizeUrl(x.Url);
 
-            var result = new ReleaseInfo
+            var result = new StoreReleaseInfo
             {
                 Guid = $"Qobuz-{x.Id}-{bitrate}",
                 Artist = x.Artist?.Name,
@@ -189,7 +190,11 @@ namespace NzbDrone.Core.Indexers.Qobuz
                 DownloadUrl = url,
                 InfoUrl = url,
                 PublishDate = publishDate,
-                DownloadProtocol = nameof(QobuzDownloadProtocol)
+                DownloadProtocol = nameof(QobuzDownloadProtocol),
+                ArtistId = x.Artist?.Id is { } artistId ? artistId.ToString() : null,
+                CandidateTitle = x.CompleteTitle,
+                TrackCount = x.TracksCount ?? 0,
+                TotalDurationSeconds = (int)(x.Duration ?? 0),
             };
 
             string format;
