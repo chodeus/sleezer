@@ -128,22 +128,27 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         }
 
         private static bool TrackCountMatches(int count, Target target) =>
-            target.Releases.Any(r => Math.Abs(count - r.TrackCount) <= TrackCountSlack
-                                     && Math.Abs(count - r.TrackCount) <= Math.Max(r.TrackCount, 1) * TrackCountRatioSlack);
+            target.Releases.Any(r => TrackCountCompatible(count, r.TrackCount));
 
+        private static bool TrackCountCompatible(int count, int releaseCount) =>
+            Math.Abs(count - releaseCount) <= TrackCountSlack
+            && Math.Abs(count - releaseCount) <= Math.Max(releaseCount, 1) * TrackCountRatioSlack;
+
+        // Judged against every release the track count is compatible with (all of them when the
+        // store gave no count); one within tolerance is enough.
         private static string? DurationMismatch(StoreReleaseInfo store, Target target)
         {
-            var closest = target.Releases
-                .Where(r => r.DurationSeconds > 0)
-                .OrderBy(r => Math.Abs(r.TrackCount - store.TrackCount))
-                .ThenBy(r => Math.Abs(r.DurationSeconds - store.TotalDurationSeconds))
-                .FirstOrDefault();
-            if (closest.DurationSeconds <= 0)
+            var candidates = target.Releases
+                .Where(r => r.DurationSeconds > 0 && (store.TrackCount <= 0 || TrackCountCompatible(store.TrackCount, r.TrackCount)))
+                .ToList();
+            if (candidates.Count == 0)
                 return null;
 
-            var tolerance = closest.DurationSeconds * DurationRatioSlack + DurationSecondsSlack;
-            var delta = Math.Abs(store.TotalDurationSeconds - closest.DurationSeconds);
-            return delta <= tolerance ? null : $"runs {store.TotalDurationSeconds}s vs MusicBrainz {closest.DurationSeconds}s";
+            if (candidates.Any(r => Math.Abs(store.TotalDurationSeconds - r.DurationSeconds) <= r.DurationSeconds * DurationRatioSlack + DurationSecondsSlack))
+                return null;
+
+            var nearest = candidates.MinBy(r => Math.Abs(store.TotalDurationSeconds - r.DurationSeconds));
+            return $"runs {store.TotalDurationSeconds}s vs MusicBrainz {nearest.DurationSeconds}s";
         }
 
         private static bool IsVariousArtists(string? artist)

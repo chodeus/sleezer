@@ -160,8 +160,35 @@ public class StoreReleaseVerifierTests
     {
         var criteria = Criteria("Afrojack", "Chain Gang");
         criteria.InteractiveSearch = true;
+        var wrongArtist = Store("Hardwell", "Chain Gang");
+        var extendedMix = Store("Afrojack", "Chain Gang (Extended Mix)");
 
-        Assert.Equal(2, Apply(criteria, Store("Hardwell", "Chain Gang"), Store("Afrojack", "Chain Gang (Extended Mix)")).Count);
+        var kept = Apply(criteria, wrongArtist, extendedMix);
+
+        Assert.Contains(wrongArtist, kept);
+        Assert.Contains(extendedMix, kept);
+        Assert.Equal(2, kept.Count);
+    }
+
+    [Fact]
+    public void Duration_is_judged_against_every_compatible_release()
+    {
+        // Two MusicBrainz editions: 12 tracks at 2500s and 13 at 3300s. A 12-track store album
+        // at 3300s is count-compatible with both; judged only against the nearest count it would
+        // be 800s out and wrongly dropped — the 13-track edition is the one it matches.
+        var criteria = Criteria("Artist", "Album", trackCount: 12, durationSeconds: 2500);
+        criteria.Albums[0].AlbumReleases.Value.Add(new AlbumRelease { TrackCount = 13, Duration = 3300 * 1000 });
+
+        Assert.Single(Apply(criteria, Store("Artist", "Album", trackCount: 12, durationSeconds: 3300)));
+    }
+
+    [Fact]
+    public void Unknown_store_track_count_is_judged_against_all_releases()
+    {
+        var criteria = Criteria("Artist", "Album", trackCount: 1, durationSeconds: 200);
+        criteria.Albums[0].AlbumReleases.Value.Add(new AlbumRelease { TrackCount = 12, Duration = 3000 * 1000 });
+
+        Assert.Single(Apply(criteria, Store("Artist", "Album", trackCount: 0, durationSeconds: 3000)));
     }
 
     // Two "Various Artists" library entries make ArtistRepository.FindByName throw mid-search,

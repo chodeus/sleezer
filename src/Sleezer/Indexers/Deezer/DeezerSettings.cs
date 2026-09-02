@@ -40,7 +40,7 @@ namespace NzbDrone.Core.Indexers.Deezer
         [FieldDefinition(4, Type = FieldType.Number, Label = "Early Download Limit", Unit = "days", HelpText = "Time before release date Lidarr will download from this indexer, empty is no limit", Advanced = true)]
         public int? EarlyReleaseLimit { get; set; }
 
-        [FieldDefinition(5, Label = "Strict Matching", Type = FieldType.Checkbox, HelpText = "Verify each result's artist, title, track count and length against the MusicBrainz release, and reject remix, live, acoustic and extended variants unless the album itself is one. Interactive search still shows everything.")]
+        [FieldDefinition(5, Label = "Strict Matching", Type = FieldType.Checkbox, HelpText = "Verify each result's artist, title, track count and length against the MusicBrainz release, and reject remix, live, acoustic and extended variants unless the album itself is one. Interactive search still shows everything except Various Artists compilations.")]
         public bool StrictMatching { get; set; } = true;
 
         // this is hardcoded so this doesn't need to exist except that it's required by the interface
