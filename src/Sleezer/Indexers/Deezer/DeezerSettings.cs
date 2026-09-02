@@ -28,7 +28,7 @@ namespace NzbDrone.Core.Indexers.Deezer
             set => _arl = value?.Trim() ?? "";
         }
 
-        [FieldDefinition(1, Label = "Hide Albums With Missing Tracks", HelpText = "If an album has any unavailable tracks on Deezer, they will not be provided when searching.", Type = FieldType.Checkbox)]
+        [FieldDefinition(1, Label = "Hide Albums With Missing Tracks", HelpText = "Hide albums with any track Deezer will not serve this account — unavailable at every bitrate, or not licensed in your country. A blocked track otherwise fails part-way through the download.", Type = FieldType.Checkbox)]
         public bool HideAlbumsWithMissing { get; set; } = true;
 
         [FieldDefinition(2, Label = "Hide Clean Releases", HelpText = "Skip albums labelled as 'Clean' (explicit content censored). Non-clean releases are labelled [Explicit] in the title so you can filter with release profiles.", Type = FieldType.Checkbox)]

@@ -10,6 +10,7 @@ using NzbDrone.Common.Http;
 using NzbDrone.Core.Download.Clients.Deezer;
 using NzbDrone.Core.Parser.Model;
 using System.Collections.Concurrent;
+using NzbDrone.Plugin.Sleezer.Core.Deezer;
 using NzbDrone.Plugin.Sleezer.Core.Model;
 using NzbDrone.Plugin.Sleezer.Deezer;
 using System.Globalization;
@@ -117,9 +118,14 @@ namespace NzbDrone.Core.Indexers.Deezer
             // otherwise we can't cover the album even with fallback enabled.
             var flacOrMp3320CoversAll = songs.All(d => d["FILESIZE_FLAC"]!.Value<long>() > 0 || d["FILESIZE_MP3_320"]!.Value<long>() > 0);
 
-            if (Settings.HideAlbumsWithMissing && missing128)
+            // A track Deezer will not stream to this account is unavailable exactly like a
+            // zero-filesize one; catching it here saves a grab that fails mid-download.
+            var blocked = songs.Where(d => DeezerTrackRights.Streamable(d) == false).ToList();
+
+            if (Settings.HideAlbumsWithMissing && (missing128 || blocked.Count > 0))
             {
-                _logger.Debug("Deezer hid album {AlbumId} '{Title}' — not every track is available", result.AlbumId, result.AlbumTitle);
+                _logger.Debug("Deezer hid album {AlbumId} '{Title}' — {Blocked} track(s) not streamable in your country, missing formats: {Missing}",
+                    result.AlbumId, result.AlbumTitle, blocked.Count, missing128);
                 return null;
             }
 
