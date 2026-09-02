@@ -173,9 +173,8 @@ public class StoreReleaseVerifierTests
     [Fact]
     public void Duration_is_judged_against_every_compatible_release()
     {
-        // Two MusicBrainz editions: 12 tracks at 2500s and 13 at 3300s. A 12-track store album
-        // at 3300s is count-compatible with both; judged only against the nearest count it would
-        // be 800s out and wrongly dropped — the 13-track edition is the one it matches.
+        // The store release is track-count compatible with both MusicBrainz editions;
+        // it passes because its duration matches the 13-track one, not the nearest-count one.
         var criteria = Criteria("Artist", "Album", trackCount: 12, durationSeconds: 2500);
         criteria.Albums[0].AlbumReleases.Value.Add(new AlbumRelease { TrackCount = 13, Duration = 3300 * 1000 });
 
