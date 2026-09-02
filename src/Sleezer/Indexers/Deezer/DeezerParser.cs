@@ -60,15 +60,21 @@ namespace NzbDrone.Core.Indexers.Deezer
                     throw ex;
                 }
 
-                // An empty data array is normal for the fielded first tier, but Deezer also
-                // returns one under burst load while reporting a non-zero total or an error.
+                // A reported error is a failed request, not an empty catalogue: returning [] here
+                // would read as "album not found" and cost a retry Lidarr never schedules.
+                if (wrapper?.Error?.HasValues == true)
+                {
+                    var errorSnippet = SnippetForLog(response.Content);
+                    var failure = new InvalidOperationException($"Deezer rejected the search request: {wrapper.Error.ToString(Newtonsoft.Json.Formatting.None)}");
+                    failure.Data["DeezerResponseSnippet"] = errorSnippet;
+                    throw failure;
+                }
+
+                // An empty result set is otherwise ordinary — the fielded first tier misses often,
+                // and paging past the last page returns one too.
                 if (jsonResponse.Data.Count == 0)
                 {
-                    if (wrapper?.Error?.HasValues == true || jsonResponse.Total > 0)
-                        _logger.Warn("Deezer returned no results but reported {Total} total — body snippet: {Body}", jsonResponse.Total, SnippetForLog(response.Content));
-                    else
-                        _logger.Debug("Deezer returned no results and reported none.");
-
+                    _logger.Debug("Deezer returned no results for this request.");
                     return [];
                 }
             }

@@ -4,9 +4,7 @@ using Xunit;
 
 namespace Sleezer.Tests;
 
-// Deezer computes RIGHTS server-side for the session's country, so a track the account cannot
-// stream reads false here. Live 2026-09-02: The Streets "Dry Your Eyes" carries a live B-side
-// Deezer sells only in Germany, which failed mid-download instead of at search time.
+// Deezer computes RIGHTS for the session's country, so a track it will not serve reads false.
 public class DeezerTrackRightsTests
 {
     [Fact]

@@ -293,6 +293,17 @@ public class StoreReleaseVerifierTests
         Assert.True(Accepted(criteria, Store("Whigfield", "Saturday Night", trackCount: 1)));
     }
 
+    // Tidal, SubSonic and Bandcamp report no track count, and missing data is unjudgeable:
+    // without a count the rule has nothing to fit and must not reject.
+    [Fact]
+    public void A_candidate_with_no_track_count_is_not_rejected_for_lacking_a_plain_edition()
+    {
+        var criteria = CriteriaWithReleases("Hardwell", "Chase the Sun",
+            (["Chase the Sun (Jac & Harri remix)"], true));
+
+        Assert.True(Accepted(criteria, Store("Hardwell", "Chase the Sun")));
+    }
+
     // False-positive control: one bonus remix on an otherwise plain album must not make
     // the whole edition count as a variant.
     [Fact]

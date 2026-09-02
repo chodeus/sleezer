@@ -12,8 +12,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         // rule would flag correct results.
         private const int ToleranceYears = 1;
 
-        // Beyond this the catalogue is not "shifted", it is a different record: live 2026-09-02
-        // a 2013 re-recording was grabbed for a 1993 single no store dates to 1993.
+        // Beyond this the catalogue is not shifted, it is a different record.
         private const int ShiftedCatalogueYears = 5;
 
         // Parsers stamp UtcNow when they have no usable date, so a stamp this fresh is that

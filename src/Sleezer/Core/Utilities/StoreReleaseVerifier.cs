@@ -99,19 +99,18 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             if (store.TotalDurationSeconds > 0 && DurationMismatch(store, target) is { } detail)
                 return ("duration", detail);
 
-            if (!VariantQualifiers.HasVariantQualifier(candidateTitle) && OnlyVariantEditionsFit(store, target) is { } noPlain)
+            if (store.TrackCount > 0 && !VariantQualifiers.HasVariantQualifier(candidateTitle) && OnlyVariantEditionsFit(store, target) is { } noPlain)
                 return ("variant", noPlain);
 
             return null;
         }
 
-        // A plain candidate needs a plain edition to land on. When every release its track
-        // count fits is an all-variant tracklist, Lidarr would attach the file to one of
-        // those and label it as the variant — the live "Chase the Sun" case.
+        // Lidarr attaches a download to whichever release fits the file count, so with no
+        // plain edition of that length a plain product lands on a variant and is named as one.
         private static string? OnlyVariantEditionsFit(StoreReleaseInfo store, Target target)
         {
             var fitting = target.Releases
-                .Where(r => store.TrackCount <= 0 || TrackCountCompatible(store.TrackCount, r.TrackCount))
+                .Where(r => TrackCountCompatible(store.TrackCount, r.TrackCount))
                 .ToList();
 
             if (fitting.Count == 0 || !fitting.All(r => r.IsAllVariantTracklist()))

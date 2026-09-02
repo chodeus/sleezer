@@ -81,8 +81,7 @@ public class AlbumYearGuardTests
         Assert.Equal(["wrong"], Flagged(kept));
     }
 
-    // Live 2026-09-02: Whigfield "Saturday Night" (1993) — no store carries a 1993 copy, so the
-    // exact-match engagement disabled the guard entirely and a 2013 re-recording was grabbed.
+    // No store carries a 1993 copy, so exact-match engagement disabled the guard entirely.
     [Fact]
     public void Flags_a_far_dated_catalogue_with_no_exact_match()
     {
