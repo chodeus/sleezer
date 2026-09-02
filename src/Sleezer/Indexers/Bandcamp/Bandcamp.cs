@@ -16,6 +16,7 @@ using NzbDrone.Core.Parser;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Plugin.Sleezer.Core.Replacements;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
+using NzbDrone.Plugin.Sleezer.Core.Model;
 
 namespace NzbDrone.Core.Indexers.Bandcamp
 {
@@ -289,7 +290,7 @@ namespace NzbDrone.Core.Indexers.Bandcamp
             var publishDate = ParsePublishDate(item.ReleaseDate);
             var downloadUrl = AddFormatFragment(item.DownloadPageUrl!, formatKey);
 
-            return new ReleaseInfo
+            return new StoreReleaseInfo
             {
                 Guid = $"bandcamp-{item.ItemUrl}-{formatKey}",
                 Title = title,

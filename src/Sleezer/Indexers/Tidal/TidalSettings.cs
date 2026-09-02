@@ -56,7 +56,7 @@ namespace NzbDrone.Core.Indexers.Tidal
         [FieldDefinition(12, Type = FieldType.Number, Label = "Early Download Limit", Unit = "days", HelpText = "Time before release date Lidarr will download from this indexer, empty is no limit", Advanced = true)]
         public int? EarlyReleaseLimit { get; set; }
 
-        [FieldDefinition(13, Label = "Strict Matching", Type = FieldType.Checkbox, HelpText = "Verify each result's artist and title against the MusicBrainz release, and reject remix, live, acoustic and extended variants unless the album itself is one. Interactive search still shows everything except Various Artists compilations.")]
+        [FieldDefinition(13, Label = "Strict Matching", Type = FieldType.Checkbox, HelpText = "Verify each result's artist and title against the MusicBrainz release, and reject remix, live, acoustic and extended variants unless the album itself is one. Failing results are not hidden: they reach Lidarr carrying the reason, so automatic search skips them while interactive search shows why and still lets you grab one. Various Artists compilations are dropped outright. Also covers the release-year check.")]
         public bool StrictMatching { get; set; } = true;
 
         [FieldDefinition(99, Label = "Authenticate with Tidal", Type = FieldType.OAuth)]

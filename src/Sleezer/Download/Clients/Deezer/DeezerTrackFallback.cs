@@ -43,9 +43,8 @@ namespace NzbDrone.Core.Download.Clients.Deezer
                 if (probed >= MaxAlternativeAlbums)
                     break;
 
-                var rights = album["RIGHTS"];
-                var streamable = rights?["STREAM_SUB_AVAILABLE"]?.ToObject<bool?>() == true
-                    || rights?["STREAM_ADS_AVAILABLE"]?.ToObject<bool?>() == true;
+                // Fail closed here: a substitute with no RIGHTS block is not worth probing.
+                var streamable = DeezerTrackRights.Streamable(album) == true;
                 var albumId = album["ALB_ID"]?.Value<long>() ?? 0;
                 if (!streamable || albumId <= 0)
                     continue;

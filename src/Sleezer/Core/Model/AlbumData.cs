@@ -56,7 +56,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
         /// <summary>
         /// Converts AlbumData into a ReleaseInfo object.
         /// </summary>
-        public ReleaseInfo ToReleaseInfo() => FillReleaseInfo(new ReleaseInfo());
+        public ReleaseInfo ToReleaseInfo() => FillReleaseInfo(new StoreReleaseInfo());
 
         /// <summary>
         /// Slskd variant of <see cref="ToReleaseInfo"/>. ShareInfo derives from

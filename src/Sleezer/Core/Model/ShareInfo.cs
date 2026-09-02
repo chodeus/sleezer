@@ -9,7 +9,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
     /// ranking signal Lidarr's decision comparer actually consumes. Plain
     /// ReleaseInfo silently discarded the priority entirely.
     /// </summary>
-    public class ShareInfo : TorrentInfo
+    public class ShareInfo : TorrentInfo, IVerifiableRelease
     {
         /// <summary>
         /// True when the source directory fuzzy-matched the searched
@@ -17,5 +17,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
         /// actually found the wanted album or just returned bystander folders.
         /// </summary>
         public bool MatchedSearchCriteria { get; set; }
+
+        public string? Rejection { get; set; }
     }
 }

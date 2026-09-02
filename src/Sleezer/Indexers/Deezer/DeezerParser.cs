@@ -10,6 +10,7 @@ using NzbDrone.Common.Http;
 using NzbDrone.Core.Download.Clients.Deezer;
 using NzbDrone.Core.Parser.Model;
 using System.Collections.Concurrent;
+using NzbDrone.Plugin.Sleezer.Core.Deezer;
 using NzbDrone.Plugin.Sleezer.Core.Model;
 using NzbDrone.Plugin.Sleezer.Deezer;
 using System.Globalization;
@@ -45,18 +46,10 @@ namespace NzbDrone.Core.Indexers.Deezer
                 var wrapper = new HttpResponse<DeezerSearchResponseWrapper>(response.HttpResponse).Resource;
                 jsonResponse = wrapper?.Results!;
 
-                // When Deezer rejects the request (typically: api_token was "null" because the ARL never produced
-                // an ActiveUserData session), the GW endpoint returns a 200 with results.data missing entirely.
-                // Throwing a clear message here replaces a downstream LINQ NRE ("Value cannot be null. Parameter 'source'")
-                // that the indexer test surfaces as "Unable to connect to indexer".
-                if (jsonResponse?.Data == null)
+                if (DeezerSearchResponseReader.Read(wrapper, SnippetForLog(response.Content)) == DeezerSearchResponseReader.Outcome.Empty)
                 {
-                    var bodySnippet = SnippetForLog(response.Content);
-                    _logger.Debug("Deezer search.music response had no results.data — body snippet: {Body}", bodySnippet);
-                    var ex = new InvalidOperationException(
-                        "Deezer rejected the search request — ARL is missing or invalid. Re-authenticate at deezer.com, copy a fresh `arl` cookie, and restart Lidarr.");
-                    ex.Data["DeezerResponseSnippet"] = bodySnippet;
-                    throw ex;
+                    _logger.Debug("Deezer returned no results for this request.");
+                    return [];
                 }
             }
 
@@ -105,8 +98,16 @@ namespace NzbDrone.Core.Indexers.Deezer
             // otherwise we can't cover the album even with fallback enabled.
             var flacOrMp3320CoversAll = songs.All(d => d["FILESIZE_FLAC"]!.Value<long>() > 0 || d["FILESIZE_MP3_320"]!.Value<long>() > 0);
 
-            if (Settings.HideAlbumsWithMissing && missing128)
+            // A track Deezer will not stream to this account is unavailable exactly like a
+            // zero-filesize one; catching it here saves a grab that fails mid-download.
+            var blocked = songs.Where(d => DeezerTrackRights.Streamable(d) == false).ToList();
+
+            if (Settings.HideAlbumsWithMissing && (missing128 || blocked.Count > 0))
+            {
+                _logger.Debug("Deezer hid album {AlbumId} '{Title}' — {Blocked} track(s) not streamable in your country, missing formats: {Missing}",
+                    result.AlbumId, result.AlbumTitle, blocked.Count, missing128);
                 return null;
+            }
 
             // Album-level explicit status is sometimes wrong; cross-check against per-track EXPLICIT_LYRICS
             // when the album claims non-explicit but most tracks disagree.
@@ -126,7 +127,10 @@ namespace NzbDrone.Core.Indexers.Deezer
             }
 
             if (Settings.HideCleanReleases && explicitType == ExplicitStatus.Clean)
+            {
+                _logger.Debug("Deezer hid album {AlbumId} '{Title}' — clean release", result.AlbumId, result.AlbumTitle);
                 return null;
+            }
 
             var size128 = songs.Sum(d => d["FILESIZE_MP3_128"]!.Value<long>());
             var size320 = songs.Sum(d => d["FILESIZE_MP3_320"]!.Value<long>());
@@ -139,16 +143,18 @@ namespace NzbDrone.Core.Indexers.Deezer
             if (!missing128)
                 torrentInfos.Add(ToReleaseInfo(result, 1, size128, explicitType, facts));
 
+            var options = DeezerAPI.Instance.Client.GWApi.ActiveUserData?["USER"]?["OPTIONS"];
+            var hasHq = options?["web_hq"]?.Value<bool>() == true;
+            var hasLossless = options?["web_lossless"]?.Value<bool>() == true;
+
             // MP3 320 — only if user can stream HQ AND all tracks have MP3 320
-            if (!missing320 && DeezerAPI.Instance.Client.GWApi.ActiveUserData?["USER"]?["OPTIONS"]?["web_hq"]?.Value<bool>() == true)
+            if (!missing320 && hasHq)
             {
                 torrentInfos.Add(ToReleaseInfo(result, 3, size320, explicitType, facts));
             }
 
             // FLAC — only if user has lossless AND all tracks have FLAC,
             // OR (with fallback opt-in) every track is available in at least one of FLAC/MP3 320 and user has both HQ streaming and lossless.
-            var hasLossless = DeezerAPI.Instance.Client.GWApi.ActiveUserData?["USER"]?["OPTIONS"]?["web_lossless"]?.Value<bool>() == true;
-            var hasHq = DeezerAPI.Instance.Client.GWApi.ActiveUserData?["USER"]?["OPTIONS"]?["web_hq"]?.Value<bool>() == true;
             if (!missingFlac && hasLossless)
             {
                 torrentInfos.Add(ToReleaseInfo(result, 9, sizeFlac, explicitType, facts));

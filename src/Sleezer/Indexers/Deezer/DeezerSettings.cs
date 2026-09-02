@@ -28,7 +28,7 @@ namespace NzbDrone.Core.Indexers.Deezer
             set => _arl = value?.Trim() ?? "";
         }
 
-        [FieldDefinition(1, Label = "Hide Albums With Missing Tracks", HelpText = "If an album has any unavailable tracks on Deezer, they will not be provided when searching.", Type = FieldType.Checkbox)]
+        [FieldDefinition(1, Label = "Hide Albums With Missing Tracks", HelpText = "Hide albums with any track Deezer will not serve this account — unavailable at every bitrate, or not licensed in your country. A blocked track otherwise fails part-way through the download.", Type = FieldType.Checkbox)]
         public bool HideAlbumsWithMissing { get; set; } = true;
 
         [FieldDefinition(2, Label = "Hide Clean Releases", HelpText = "Skip albums labelled as 'Clean' (explicit content censored). Non-clean releases are labelled [Explicit] in the title so you can filter with release profiles.", Type = FieldType.Checkbox)]
@@ -40,7 +40,7 @@ namespace NzbDrone.Core.Indexers.Deezer
         [FieldDefinition(4, Type = FieldType.Number, Label = "Early Download Limit", Unit = "days", HelpText = "Time before release date Lidarr will download from this indexer, empty is no limit", Advanced = true)]
         public int? EarlyReleaseLimit { get; set; }
 
-        [FieldDefinition(5, Label = "Strict Matching", Type = FieldType.Checkbox, HelpText = "Verify each result's artist, title, track count and length against the MusicBrainz release, and reject remix, live, acoustic and extended variants unless the album itself is one. Interactive search still shows everything except Various Artists compilations.")]
+        [FieldDefinition(5, Label = "Strict Matching", Type = FieldType.Checkbox, HelpText = "Verify each result's artist, title, track count and length against the MusicBrainz release, and reject remix, live, acoustic and extended variants unless the album itself is one. Failing results are not hidden: they reach Lidarr carrying the reason, so automatic search skips them while interactive search shows why and still lets you grab one. Various Artists compilations are dropped outright. Also covers the release-year check.")]
         public bool StrictMatching { get; set; } = true;
 
         // this is hardcoded so this doesn't need to exist except that it's required by the interface

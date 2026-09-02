@@ -13,7 +13,7 @@ using NzbDrone.Plugin.Sleezer.Indexers.Soulseek;
 
 namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 {
-    /// <summary>Drops store results that are not the searched album: wrong artist or title, a variant the album doesn't call for, or a different track count or length.</summary>
+    /// <summary>Flags store results that are not the searched album: wrong artist or title, a variant the album doesn't call for, or a different track count or length.</summary>
     public static class StoreReleaseVerifier
     {
         private const int ArtistFuzzyFloor = 90;
@@ -27,6 +27,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         private static readonly Regex LeadingArticle = new(@"^(the|a|an)\s+", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex Spaces = new(@"\s+", RegexOptions.Compiled);
 
+        /// <summary>Annotates results that fail verification; only Various Artists hits are removed.</summary>
         public static IList<ReleaseInfo> Apply(IList<ReleaseInfo> releases, AlbumSearchCriteria? criteria, string indexerName, Logger logger)
         {
             if (releases.Count == 0 || criteria?.Artist == null)
@@ -34,35 +35,37 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 
             var target = Target.From(criteria);
             List<ReleaseInfo> kept = [];
-            List<(ReleaseInfo Release, string Category, string Detail)> dropped = [];
+            List<string> categories = [];
 
             foreach (var release in releases)
             {
                 var verdict = Judge(release, target);
                 if (verdict == null)
+                {
                     kept.Add(release);
-                else
-                    dropped.Add((release, verdict.Value.Category, verdict.Value.Detail));
+                    continue;
+                }
+
+                categories.Add(verdict.Value.Category);
+                logger.Debug("{Indexer} flagged '{Title}' — {Detail}", indexerName, release.Title, verdict.Value.Detail);
+
+                // A Various Artists hit is removed outright: Lidarr's ParsingService resolves the
+                // credit through ArtistRepository.FindByName, which throws when the library holds
+                // two Various Artists entries, so letting one through costs an error per search.
+                if (verdict.Value.Category == VariousArtistsCategory)
+                    continue;
+
+                if (release is IVerifiableRelease verifiable)
+                    verifiable.Rejection ??= verdict.Value.Detail;
+
+                kept.Add(release);
             }
 
-            if (dropped.Count == 0)
+            if (categories.Count == 0)
                 return releases;
 
-            var summary = string.Join(", ", dropped.GroupBy(d => d.Category).Select(g => $"{g.Count()} {g.Key}"));
-            var verb = criteria.InteractiveSearch ? "flagged" : "dropped";
-            foreach (var (release, _, detail) in dropped)
-                logger.Debug("{Indexer} {Verb} '{Title}' — {Detail}", indexerName, verb, release.Title, detail);
-
-            // Interactive search is the operator looking for themselves — show everything except
-            // Various Artists hits, which crash ArtistRepository.FindByName when two VA entries exist.
-            if (criteria.InteractiveSearch)
-            {
-                logger.Info("{Indexer}: {Count} of {Total} result(s) would be dropped by automatic search — {Summary}", indexerName, dropped.Count, releases.Count, summary);
-                var variousArtists = dropped.Where(d => d.Category == VariousArtistsCategory).Select(d => d.Release).ToHashSet();
-                return variousArtists.Count == 0 ? releases : [.. releases.Where(r => !variousArtists.Contains(r))];
-            }
-
-            logger.Info("{Indexer}: dropped {Count} of {Total} result(s) — {Summary}", indexerName, dropped.Count, releases.Count, summary);
+            var summary = string.Join(", ", categories.GroupBy(c => c).Select(g => $"{g.Count()} {g.Key}"));
+            logger.Info("{Indexer}: {Count} of {Total} result(s) failed verification — {Summary}", indexerName, categories.Count, releases.Count, summary);
             return kept;
         }
 
@@ -83,7 +86,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
                 if (!TitleMatches(candidateTitle, target.Title))
                     return ("title", $"'{candidateTitle}' is not '{target.Title}'");
 
-                if (SlskdTextProcessor.RemixSignaturesConflict(target.Title, candidateTitle, target.SecondaryTypes))
+                if (VariantQualifiers.RemixSignaturesConflict(target.Title, candidateTitle, target.SecondaryTypes))
                     return ("variant", $"'{candidateTitle}' is a variant the album does not call for");
             }
 
@@ -96,7 +99,24 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             if (store.TotalDurationSeconds > 0 && DurationMismatch(store, target) is { } detail)
                 return ("duration", detail);
 
+            if (store.TrackCount > 0 && !VariantQualifiers.HasVariantQualifier(candidateTitle) && OnlyVariantEditionsFit(store, target) is { } noPlain)
+                return ("variant", noPlain);
+
             return null;
+        }
+
+        // Lidarr attaches a download to whichever release fits the file count, so with no
+        // plain edition of that length a plain product lands on a variant and is named as one.
+        private static string? OnlyVariantEditionsFit(StoreReleaseInfo store, Target target)
+        {
+            var fitting = target.Releases
+                .Where(r => TrackCountCompatible(store.TrackCount, r.TrackCount))
+                .ToList();
+
+            if (fitting.Count == 0 || !fitting.All(r => r.IsAllVariantTracklist()))
+                return null;
+
+            return $"MusicBrainz has no plain edition of that length — every {store.TrackCount}-track release is a variant";
         }
 
         private static bool ArtistMatches(string candidate, Target target)
@@ -168,6 +188,16 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             return Spaces.Replace(text, " ").Trim();
         }
 
+        /// <summary>One MusicBrainz release of the searched album; Release backs the lazy tracklist read.</summary>
+        private readonly record struct TargetRelease(int TrackCount, int DurationSeconds, AlbumRelease Release)
+        {
+            public bool IsAllVariantTracklist()
+            {
+                var titles = VariantQualifiers.TracklistOf(Release);
+                return titles.Count > 0 && titles.All(VariantQualifiers.IsVariantTrack);
+            }
+        }
+
         private sealed record Target(
             string ArtistName,
             string ArtistNormalized,
@@ -176,7 +206,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             bool IsVariousArtists,
             string Title,
             IReadOnlyCollection<string> SecondaryTypes,
-            IReadOnlyList<(int TrackCount, int DurationSeconds)> Releases)
+            IReadOnlyList<TargetRelease> Releases)
         {
             public string TrackCountSummary => string.Join("/", Releases.Select(r => r.TrackCount).Distinct().OrderBy(c => c));
 
@@ -194,8 +224,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
                     [.. aliases.Select(Normalize).Where(a => a.Length > 0)],
                     StoreReleaseVerifier.IsVariousArtists(criteria.Artist.Name),
                     album?.Title ?? criteria.AlbumTitle,
-                    album?.SecondaryTypes?.Select(t => t.Name).ToList() ?? [],
-                    [.. releases.Select(r => (r.TrackCount, DurationSeconds(r)))]);
+                    VariantQualifiers.ForgivenVariants(album),
+                    [.. releases.Select(r => new TargetRelease(r.TrackCount, DurationSeconds(r), r))]);
             }
 
             private static int DurationSeconds(AlbumRelease release)

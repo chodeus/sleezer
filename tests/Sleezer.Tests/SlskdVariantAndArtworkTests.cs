@@ -3,6 +3,7 @@ using NzbDrone.Plugin.Sleezer.Core.Model;
 using NzbDrone.Plugin.Sleezer.Core.PostProcessing;
 using NzbDrone.Plugin.Sleezer.Indexers.Soulseek;
 using Xunit;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
 namespace Sleezer.Tests;
 
@@ -80,7 +81,7 @@ public class VariantQualifierDetectionTests
     [InlineData("", false)]
     public void Qualifier_detection_matches_the_variant_profile(string title, bool expected)
     {
-        Assert.Equal(expected, SlskdTextProcessor.HasVariantQualifier(title));
+        Assert.Equal(expected, VariantQualifiers.HasVariantQualifier(title));
     }
 }
 
@@ -196,9 +197,9 @@ public class RadioEditTrackMatchingTests
     [Fact]
     public void Live_files_do_not_conflict_with_plain_titles_when_the_release_is_live()
     {
-        Assert.False(SlskdTextProcessor.RemixSignaturesConflict(
+        Assert.False(VariantQualifiers.RemixSignaturesConflict(
             "Unchained", "Unchained (live at the Tokyo Dome June 21, 2013)", ["Live"]));
-        Assert.True(SlskdTextProcessor.RemixSignaturesConflict(
+        Assert.True(VariantQualifiers.RemixSignaturesConflict(
             "Unchained", "Unchained (live at the Tokyo Dome June 21, 2013)", null));
     }
 
@@ -222,8 +223,8 @@ public class RadioEditTrackMatchingTests
     [Fact]
     public void A_generic_parent_alone_still_reports_a_conflict()
     {
-        Assert.True(SlskdTextProcessor.RemixSignaturesConflict("Tokyo Dome Live", "Music", ["Live"]));
-        Assert.True(SlskdTextProcessor.RemixSignaturesConflict("Live at Wembley", "Music", null));
+        Assert.True(VariantQualifiers.RemixSignaturesConflict("Tokyo Dome Live", "Music", ["Live"]));
+        Assert.True(VariantQualifiers.RemixSignaturesConflict("Live at Wembley", "Music", null));
     }
 }
 
@@ -302,10 +303,10 @@ public class FolderVariantComponentTests
     public void The_union_only_adds_qualifiers_it_never_cancels_one()
     {
         // parent plain, leaf qualified -> union stays qualified (conflict vs plain search)
-        Assert.True(SlskdTextProcessor.RemixSignaturesConflict("Some Album", ["Some Album (Live)", "Music"], null));
+        Assert.True(VariantQualifiers.RemixSignaturesConflict("Some Album", ["Some Album (Live)", "Music"], null));
         // leaf plain, parent qualified -> union still qualified
-        Assert.True(SlskdTextProcessor.RemixSignaturesConflict("Some Album", ["FLAC", "Some Album (Live)"], null));
+        Assert.True(VariantQualifiers.RemixSignaturesConflict("Some Album", ["FLAC", "Some Album (Live)"], null));
         // both plain -> no conflict
-        Assert.False(SlskdTextProcessor.RemixSignaturesConflict("Some Album", ["Some Album", "Music"], null));
+        Assert.False(VariantQualifiers.RemixSignaturesConflict("Some Album", ["Some Album", "Music"], null));
     }
 }

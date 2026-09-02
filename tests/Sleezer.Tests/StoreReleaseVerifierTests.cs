@@ -28,7 +28,7 @@ public class StoreReleaseVerifierTests
     {
         var criteria = Criteria("Afrojack", "Chain Gang");
 
-        Assert.Empty(Apply(criteria, Store("Hardwell", "Chain Gang")));
+        Assert.True(Rejected(criteria, Store("Hardwell", "Chain Gang")));
     }
 
     [Theory]
@@ -39,7 +39,7 @@ public class StoreReleaseVerifierTests
     {
         var criteria = Criteria("Afrojack", "Chain Gang");
 
-        Assert.Single(Apply(criteria, Store(storeArtist, "Chain Gang")));
+        Assert.True(Accepted(criteria, Store(storeArtist, "Chain Gang")));
     }
 
     [Fact]
@@ -47,7 +47,7 @@ public class StoreReleaseVerifierTests
     {
         var criteria = Criteria("Chase & Status", "Boiler Room", aliases: ["Chase and Status"]);
 
-        Assert.Single(Apply(criteria, Store("Chase and Status", "Boiler Room")));
+        Assert.True(Accepted(criteria, Store("Chase and Status", "Boiler Room")));
     }
 
     [Fact]
@@ -63,7 +63,7 @@ public class StoreReleaseVerifierTests
     {
         var criteria = Criteria("Various Artists", "Ministry of Sound Annual");
 
-        Assert.Single(Apply(criteria, Store("Ministry of Sound", "Ministry of Sound Annual")));
+        Assert.True(Accepted(criteria, Store("Ministry of Sound", "Ministry of Sound Annual")));
     }
 
     [Theory]
@@ -74,7 +74,7 @@ public class StoreReleaseVerifierTests
     {
         var criteria = Criteria("Afrojack", "Chain Gang");
 
-        Assert.Single(Apply(criteria, Store("Afrojack", storeTitle)));
+        Assert.True(Accepted(criteria, Store("Afrojack", storeTitle)));
     }
 
     [Theory]
@@ -85,7 +85,7 @@ public class StoreReleaseVerifierTests
     {
         var criteria = Criteria("The Ian Carey Project", "Get Shaky");
 
-        Assert.Empty(Apply(criteria, Store("The Ian Carey Project", storeTitle)));
+        Assert.True(Rejected(criteria, Store("The Ian Carey Project", storeTitle)));
     }
 
     [Fact]
@@ -94,7 +94,7 @@ public class StoreReleaseVerifierTests
         var criteria = Criteria("Afrojack", "Chain Gang");
         var release = Store("Afrojack", "Chain Gang", candidateTitle: "Chain Gang (Extended Mix)");
 
-        Assert.Empty(Apply(criteria, release));
+        Assert.True(Rejected(criteria, release));
     }
 
     [Fact]
@@ -102,7 +102,7 @@ public class StoreReleaseVerifierTests
     {
         var criteria = Criteria("Zomboy", "Valley of Violence (Borgore remix)");
 
-        Assert.Empty(Apply(criteria, Store("Zomboy", "Valley of Violence")));
+        Assert.True(Rejected(criteria, Store("Zomboy", "Valley of Violence")));
     }
 
     [Fact]
@@ -110,7 +110,7 @@ public class StoreReleaseVerifierTests
     {
         var criteria = Criteria("Zomboy", "Valley of Violence (Borgore remix)");
 
-        Assert.Single(Apply(criteria, Store("Zomboy", "Valley of Violence (Borgore Remix)")));
+        Assert.True(Accepted(criteria, Store("Zomboy", "Valley of Violence (Borgore Remix)")));
     }
 
     [Fact]
@@ -118,7 +118,7 @@ public class StoreReleaseVerifierTests
     {
         var criteria = Criteria("Hardwell", "Apollo", secondaryTypes: [SecondaryAlbumType.Remix]);
 
-        Assert.Single(Apply(criteria, Store("Hardwell", "Apollo (The Remixes)")));
+        Assert.True(Accepted(criteria, Store("Hardwell", "Apollo (The Remixes)")));
     }
 
     [Theory]
@@ -130,7 +130,7 @@ public class StoreReleaseVerifierTests
         var criteria = Criteria("Biscits", "Dominator", trackCount: mbTracks, durationSeconds: 0);
         var release = Store("Biscits", "Dominator", trackCount: storeTracks);
 
-        Assert.Equal(kept ? 1 : 0, Apply(criteria, release).Count);
+        Assert.Equal(kept, Accepted(criteria, release));
     }
 
     [Theory]
@@ -142,7 +142,7 @@ public class StoreReleaseVerifierTests
         var criteria = Criteria("Afrojack", "Chain Gang", trackCount: 1, durationSeconds: mbSeconds);
         var release = Store("Afrojack", "Chain Gang", trackCount: 1, durationSeconds: storeSeconds);
 
-        Assert.Equal(kept ? 1 : 0, Apply(criteria, release).Count);
+        Assert.Equal(kept, Accepted(criteria, release));
     }
 
     [Fact]
@@ -155,19 +155,31 @@ public class StoreReleaseVerifierTests
         Assert.Equal(2, Apply(criteria, plain, partial).Count);
     }
 
-    [Fact]
-    public void Interactive_search_shows_everything()
+    // Lidarr owns the interactive/automatic distinction now: both modes get the same list,
+    // and the reason rides along for StoreMatchSpecification to reject on.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Failed_results_are_returned_with_a_reason_in_both_modes(bool interactive)
     {
         var criteria = Criteria("Afrojack", "Chain Gang");
-        criteria.InteractiveSearch = true;
-        var wrongArtist = Store("Hardwell", "Chain Gang");
-        var extendedMix = Store("Afrojack", "Chain Gang (Extended Mix)");
+        criteria.InteractiveSearch = interactive;
+        var extendedMix = Store("Afrojack", "Chain Gang", candidateTitle: "Chain Gang (Extended Mix)");
 
-        var kept = Apply(criteria, wrongArtist, extendedMix);
+        var kept = Apply(criteria, extendedMix);
 
-        Assert.Contains(wrongArtist, kept);
-        Assert.Contains(extendedMix, kept);
-        Assert.Equal(2, kept.Count);
+        Assert.Same(extendedMix, Assert.Single(kept));
+        Assert.False(string.IsNullOrEmpty(extendedMix.Rejection));
+    }
+
+    // A release from a non-store indexer carries no verdict and must pass through untouched.
+    [Fact]
+    public void A_plain_release_info_is_never_annotated()
+    {
+        var criteria = Criteria("Afrojack", "Chain Gang");
+        var plain = new ReleaseInfo { Title = "x", Artist = "Hardwell", Album = "Chain Gang" };
+
+        Assert.Same(plain, Assert.Single(Apply(criteria, plain)));
     }
 
     [Fact]
@@ -178,7 +190,7 @@ public class StoreReleaseVerifierTests
         var criteria = Criteria("Artist", "Album", trackCount: 12, durationSeconds: 2500);
         criteria.Albums[0].AlbumReleases.Value.Add(new AlbumRelease { TrackCount = 13, Duration = 3300 * 1000 });
 
-        Assert.Single(Apply(criteria, Store("Artist", "Album", trackCount: 12, durationSeconds: 3300)));
+        Assert.True(Accepted(criteria, Store("Artist", "Album", trackCount: 12, durationSeconds: 3300)));
     }
 
     [Fact]
@@ -187,7 +199,7 @@ public class StoreReleaseVerifierTests
         var criteria = Criteria("Artist", "Album", trackCount: 1, durationSeconds: 200);
         criteria.Albums[0].AlbumReleases.Value.Add(new AlbumRelease { TrackCount = 12, Duration = 3000 * 1000 });
 
-        Assert.Single(Apply(criteria, Store("Artist", "Album", trackCount: 0, durationSeconds: 3000)));
+        Assert.True(Accepted(criteria, Store("Artist", "Album", trackCount: 0, durationSeconds: 3000)));
     }
 
     // Two "Various Artists" library entries make ArtistRepository.FindByName throw mid-search,
@@ -205,6 +217,103 @@ public class StoreReleaseVerifierTests
 
     private static IList<ReleaseInfo> Apply(AlbumSearchCriteria criteria, params ReleaseInfo[] releases) =>
         StoreReleaseVerifier.Apply(releases.ToList(), criteria, "Test", Logger);
+
+    // A verified result comes back clean; a failed one comes back carrying the reason,
+    // which StoreMatchSpecification turns into a Lidarr rejection.
+    private static bool Accepted(AlbumSearchCriteria criteria, ReleaseInfo release)
+    {
+        var kept = Apply(criteria, release);
+        return kept.Count == 1 && (kept[0] as StoreReleaseInfo)?.Rejection == null;
+    }
+
+    private static bool Rejected(AlbumSearchCriteria criteria, ReleaseInfo release)
+    {
+        var kept = Apply(criteria, release);
+        return kept.Count == 1 && !string.IsNullOrEmpty((kept[0] as StoreReleaseInfo)?.Rejection);
+    }
+
+    // Live 2026-09-02: Oliver Heldens "Last All Night (Koala)" — the group title is
+    // plain but its monitored release is six remix tracks, so the store's "(Remixes)"
+    // product IS the album and must not be dropped as a variant.
+    [Fact]
+    public void A_remix_tracklist_vouches_for_a_remix_product()
+    {
+        var criteria = CriteriaWithTracklist(
+            "Oliver Heldens",
+            "Last All Night (Koala)",
+            ["Last All Night (Koala) (Toyboy & Robin remix)",
+             "Last All Night (Koala) (Toyboy & Robin dub)",
+             "Last All Night (Koala) (Low Steppa remix)",
+             "Last All Night (Koala) (TC4 remix)",
+             "Last All Night (Koala) (Reso remix)"]);
+
+        var release = Store("Oliver Heldens", "Last All Night (Koala)", trackCount: 5, candidateTitle: "Last All Night (Koala) (Remixes)");
+
+        Assert.True(Accepted(criteria, release));
+    }
+
+    // Negative control for the rule above: a plain tracklist vouches for nothing, so an
+    // uncalled-for remix product is still dropped.
+    [Fact]
+    public void A_plain_tracklist_does_not_vouch_for_a_remix_product()
+    {
+        var criteria = CriteriaWithTracklist(
+            "Oliver Heldens",
+            "Last All Night (Koala)",
+            ["Last All Night (Koala)", "Koala", "Last All Night (Koala) (extended)",
+             "Bunnydance", "Gecko"]);
+
+        var release = Store("Oliver Heldens", "Last All Night (Koala)", trackCount: 5, candidateTitle: "Last All Night (Koala) (Remixes)");
+
+        Assert.True(Rejected(criteria, release));
+    }
+
+    // Live 2026-09-02: Hardwell "Chase the Sun" — MusicBrainz held a 2-track edition, a
+    // 1-track extended mix and a 1-track remix, but no plain 1-track single, so Lidarr
+    // attached the correct plain download to the remix release and named it as the remix.
+    [Fact]
+    public void A_plain_product_is_rejected_when_only_variant_editions_fit()
+    {
+        var criteria = CriteriaWithReleases("Hardwell", "Chase the Sun",
+            (["Chase the Sun (extended mix)", "Chase the Sun"], true),
+            (["Chase the Sun (extended mix)"], false),
+            (["Chase the Sun (Jac & Harri remix)"], false));
+
+        Assert.True(Rejected(criteria, Store("Hardwell", "Chase the Sun", trackCount: 1)));
+    }
+
+    // False-positive control: a single whose only edition is a "(radio edit)" is a plain
+    // product, not a variant one — an edit is the main track of most singles.
+    [Fact]
+    public void A_radio_edit_tracklist_is_not_a_variant_edition()
+    {
+        var criteria = CriteriaWithReleases("Whigfield", "Saturday Night",
+            (["Saturday Night (radio edit)"], true));
+
+        Assert.True(Accepted(criteria, Store("Whigfield", "Saturday Night", trackCount: 1)));
+    }
+
+    // Tidal, SubSonic and Bandcamp report no track count, and missing data is unjudgeable:
+    // without a count the rule has nothing to fit and must not reject.
+    [Fact]
+    public void A_candidate_with_no_track_count_is_not_rejected_for_lacking_a_plain_edition()
+    {
+        var criteria = CriteriaWithReleases("Hardwell", "Chase the Sun",
+            (["Chase the Sun (Jac & Harri remix)"], true));
+
+        Assert.True(Accepted(criteria, Store("Hardwell", "Chase the Sun")));
+    }
+
+    // False-positive control: one bonus remix on an otherwise plain album must not make
+    // the whole edition count as a variant.
+    [Fact]
+    public void One_bonus_remix_does_not_make_an_edition_variant_only()
+    {
+        var criteria = CriteriaWithReleases("Biscits", "algorhythm",
+            (["algorhythm", "bringing me down", "always knew (Some Remix)"], true));
+
+        Assert.True(Accepted(criteria, Store("Biscits", "algorhythm", trackCount: 3)));
+    }
 
     private static AlbumSearchCriteria Criteria(
         string artist,
@@ -236,6 +345,31 @@ public class StoreReleaseVerifierTests
                 }
             ],
         };
+    }
+
+    // A monitored release carrying a real tracklist — the vouching path needs track titles.
+    private static AlbumSearchCriteria CriteriaWithTracklist(string artist, string album, string[] trackTitles)
+    {
+        var criteria = Criteria(artist, album, trackCount: trackTitles.Length);
+        var release = criteria.Albums[0].AlbumReleases.Value[0];
+        release.Tracks = new LazyLoaded<List<Track>>([.. trackTitles.Select(t => new Track { Title = t })]);
+        return criteria;
+    }
+
+    // Several releases, each with its own tracklist — the plain-edition rule reads them.
+    private static AlbumSearchCriteria CriteriaWithReleases(string artist, string album, params (string[] Tracks, bool Monitored)[] releases)
+    {
+        var criteria = Criteria(artist, album);
+        criteria.Albums[0].AlbumReleases = new LazyLoaded<List<AlbumRelease>>(
+        [
+            .. releases.Select(r => new AlbumRelease
+            {
+                TrackCount = r.Tracks.Length,
+                Monitored = r.Monitored,
+                Tracks = new LazyLoaded<List<Track>>([.. r.Tracks.Select(t => new Track { Title = t })]),
+            })
+        ]);
+        return criteria;
     }
 
     private static StoreReleaseInfo Store(string artist, string album, int trackCount = 0, int durationSeconds = 0, string? candidateTitle = null) => new()

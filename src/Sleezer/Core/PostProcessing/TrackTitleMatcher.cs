@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using FuzzySharp;
 using NzbDrone.Plugin.Sleezer.Indexers.Soulseek;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
 namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing;
 
@@ -38,7 +39,7 @@ public static partial class TrackTitleMatcher
 
             for (int j = 0; j < wanted.Length; j++)
             {
-                if (wanted[j].Length == 0 || SlskdTextProcessor.RemixSignaturesConflict(wantedTitles[j], localTitles[i]))
+                if (wanted[j].Length == 0 || VariantQualifiers.RemixSignaturesConflict(wantedTitles[j], localTitles[i]))
                     continue;
                 if (DigitTokensDiffer(locals[i], wanted[j]) || LeftoverTokenCount(locals[i], wanted[j]) >= 2)
                     continue;

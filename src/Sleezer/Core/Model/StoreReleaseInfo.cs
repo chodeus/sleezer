@@ -4,7 +4,7 @@ using NzbDrone.Core.Parser.Model;
 namespace NzbDrone.Plugin.Sleezer.Core.Model
 {
     /// <summary>A store search hit carrying the album facts StoreReleaseVerifier checks against MusicBrainz.</summary>
-    public class StoreReleaseInfo : ReleaseInfo
+    public class StoreReleaseInfo : ReleaseInfo, IVerifiableRelease
     {
         public string? ArtistId { get; set; }
 
@@ -14,5 +14,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
         public int TrackCount { get; set; }
         public int TotalDurationSeconds { get; set; }
         public IReadOnlyList<int>? TrackDurationsSeconds { get; set; }
+
+        public string? Rejection { get; set; }
     }
 }

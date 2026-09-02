@@ -199,7 +199,7 @@ public class PreImportTagger : IPreImportTagger
         // remix" download was tagged as the plain single and imported over the
         // original). Fail closed: leave the raw tags for Lidarr to judge.
         string folderLeaf = Path.GetFileName(folderPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-        if (SlskdTextProcessor.RemixSignaturesConflict(album.Title, folderLeaf, album.SecondaryTypes?.Select(t => t.Name).ToList()))
+        if (VariantQualifiers.RemixSignaturesConflict(album.Title, folderLeaf, VariantQualifiers.ForgivenVariants(album)))
         {
             _logger.Info("Pre-import tag: remix qualifier mismatch between album '{Album}' and folder '{Folder}' — skipping tagging for {FileCount} files in \"{SourceId}\"",
                 album.Title, folderLeaf, audioFiles.Count, sourceId);
@@ -447,7 +447,9 @@ public class PreImportTagger : IPreImportTagger
 
         if (!TitleFallbackGuard.IsSafeTarget(release, tracks.Count, localTracks.Count, preferDigitalMedia))
         {
-            _logger.Info("Pre-import tag: '{Release}' is not a safe title-fallback target for {SourceId} — {TrackCount} tracks vs {FileCount} files, digital={IsDigital} (digital source={PreferDigital}); leaving raw tags for Lidarr",
+            // A tracklist that does not fit the download usually means Lidarr is about to
+            // attach the files to the wrong release, so this is worth seeing.
+            _logger.Warn("Pre-import tag: '{Release}' is not a safe title-fallback target for {SourceId} — {TrackCount} tracks vs {FileCount} files, digital={IsDigital} (digital source={PreferDigital}); leaving raw tags for Lidarr",
                 release.Title, sourceId, tracks.Count, localTracks.Count, DigitalReleaseSelector.IsDigital(release), preferDigitalMedia);
             return (0, 0, 0);
         }

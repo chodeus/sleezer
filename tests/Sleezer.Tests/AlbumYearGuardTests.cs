@@ -2,6 +2,7 @@ using NzbDrone.Common.Instrumentation;
 using NzbDrone.Core.IndexerSearch.Definitions;
 using NzbDrone.Core.Music;
 using NzbDrone.Core.Parser.Model;
+using NzbDrone.Plugin.Sleezer.Core.Model;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using Xunit;
 
@@ -14,7 +15,7 @@ public class AlbumYearGuardTests
 {
     private static readonly NLog.Logger Log = NzbDroneLogger.GetLogger(typeof(AlbumYearGuardTests));
 
-    private static ReleaseInfo R(string title, int year) => new()
+    private static StoreReleaseInfo R(string title, int year) => new()
     {
         Title = title,
         // Year 0 means "no date at all"; the parsers use UtcNow as their unknown sentinel.
@@ -32,13 +33,19 @@ public class AlbumYearGuardTests
 
     private static string[] Titles(IList<ReleaseInfo> releases) => [.. releases.Select(r => r.Title)];
 
+    // Flagged releases are still returned; the reason rides on the release for
+    // StoreMatchSpecification to reject on.
+    private static string[] Flagged(IList<ReleaseInfo> releases) =>
+        [.. releases.OfType<StoreReleaseInfo>().Where(r => !string.IsNullOrEmpty(r.Rejection)).Select(r => r.Title)];
+
     [Fact]
-    public void Drops_the_same_titled_album_from_another_year()
+    public void Flags_the_same_titled_album_from_another_year()
     {
         IList<ReleaseInfo> kept = AlbumYearGuard.Apply(
             [R("Shared Title (2022) [album]", 2022), R("Shared Title (2018) [ep]", 2018)], C(2018), "Qobuz", Log);
 
-        Assert.Equal(["Shared Title (2018) [ep]"], Titles(kept));
+        Assert.Equal(2, kept.Count);
+        Assert.Equal(["Shared Title (2022) [album]"], Flagged(kept));
     }
 
     // The store and MusicBrainz disagree by a year often enough that ±1 must survive.
@@ -63,13 +70,37 @@ public class AlbumYearGuardTests
         Assert.Equal(3, AlbumYearGuard.Apply(all, C(2018), "Qobuz", Log).Count);
     }
 
+    // Lidarr owns the interactive/automatic distinction now, so the guard flags in both modes.
     [Fact]
-    public void Leaves_interactive_search_untouched()
+    public void Flags_on_interactive_search_too()
     {
         IList<ReleaseInfo> kept = AlbumYearGuard.Apply(
             [R("wrong", 2022), R("right", 2018)], C(2018, interactive: true), "Qobuz", Log);
 
         Assert.Equal(2, kept.Count);
+        Assert.Equal(["wrong"], Flagged(kept));
+    }
+
+    // No store carries a 1993 copy, so exact-match engagement disabled the guard entirely.
+    [Fact]
+    public void Flags_a_far_dated_catalogue_with_no_exact_match()
+    {
+        IList<ReleaseInfo> kept = AlbumYearGuard.Apply(
+            [R("re-recording", 2013), R("reissue", 2013)], C(1993), "Deezer", Log);
+
+        Assert.Equal(["re-recording", "reissue"], Flagged(kept));
+    }
+
+    // The shifted-catalogue protection still holds at its edge: five years off is left alone,
+    // six is a different record.
+    [Theory]
+    [InlineData(5, 0)]
+    [InlineData(6, 1)]
+    public void A_shifted_catalogue_is_left_alone_up_to_the_band(int offset, int expectedFlagged)
+    {
+        IList<ReleaseInfo> kept = AlbumYearGuard.Apply([R("only", 2018 + offset)], C(2018), "Qobuz", Log);
+
+        Assert.Equal(expectedFlagged, Flagged(kept).Length);
     }
 
     [Fact]
@@ -83,15 +114,16 @@ public class AlbumYearGuardTests
 
     // Parsers stamp UtcNow when they have no usable date (most AlbumData-based releases);
     // treating that as "this year" would drop correct results wholesale.
-    private static ReleaseInfo Undated(string title) => new() { Title = title, PublishDate = DateTime.UtcNow };
+    private static StoreReleaseInfo Undated(string title) => new() { Title = title, PublishDate = DateTime.UtcNow };
 
     [Fact]
-    public void An_undated_release_is_never_dropped()
+    public void An_undated_release_is_never_flagged()
     {
         IList<ReleaseInfo> kept = AlbumYearGuard.Apply(
             [R("right", 2018), Undated("no date"), R("wrong", 2022)], C(2018), "Slskd", Log);
 
-        Assert.Equal(["right", "no date"], Titles(kept));
+        Assert.Equal(["right", "no date", "wrong"], Titles(kept));
+        Assert.Equal(["wrong"], Flagged(kept));
     }
 
     // ...and must not be the thing that makes the guard engage, or a search for a
@@ -111,12 +143,12 @@ public class AlbumYearGuardTests
     public void A_future_dated_release_is_real_data_not_the_sentinel()
     {
         int nextYear = DateTime.UtcNow.Year + 1;
-        ReleaseInfo announced = new() { Title = "announced", PublishDate = new DateTime(nextYear, 6, 1, 0, 0, 0, DateTimeKind.Utc) };
+        StoreReleaseInfo announced = new() { Title = "announced", PublishDate = new DateTime(nextYear, 6, 1, 0, 0, 0, DateTimeKind.Utc) };
 
         IList<ReleaseInfo> kept = AlbumYearGuard.Apply(
             [announced, R("old", nextYear - 5)], C(nextYear), "Qobuz", Log);
 
-        Assert.Equal(["announced"], Titles(kept));
+        Assert.Equal(["old"], Flagged(kept));
     }
 
     [Fact]
@@ -126,9 +158,9 @@ public class AlbumYearGuardTests
         Assert.Single(AlbumYearGuard.Apply([R("x", 2018)], null, "Qobuz", Log));
     }
 
-    // Every candidate matching means nothing is dropped and the original list comes back.
+    // Every candidate matching means nothing is flagged and the original list comes back.
     [Fact]
-    public void Returns_the_original_list_when_nothing_is_dropped()
+    public void Returns_the_original_list_when_nothing_is_flagged()
     {
         ReleaseInfo[] all = [R("a", 2018), R("b", 2018)];
 

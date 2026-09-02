@@ -1,11 +1,17 @@
 using System.Collections.Generic;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace NzbDrone.Core.Download.Clients.Deezer
 {
     public class DeezerSearchResponseWrapper
     {
         public DeezerSearchResponse Results { get; set; } = null!;
+
+        // Deezer answers a rejected request with 200 + a populated top-level error;
+        // an empty JSON array here means "no error".
+        public JToken? Error { get; set; }
+
     }
 
     public class DeezerSearchResponse

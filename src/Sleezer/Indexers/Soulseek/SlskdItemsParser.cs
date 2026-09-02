@@ -142,7 +142,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 string[] pathComponents = SplitPathIntoComponents(directory.Key);
                 string candidateLeaf = pathComponents.Length > 0 ? pathComponents[^1] : directory.Key;
                 string? candidateParent = pathComponents.Length >= 2 ? pathComponents[^2] : null;
-                if (SlskdTextProcessor.RemixSignaturesConflict(searchData.Album, [candidateLeaf, candidateParent], searchData.TargetVariantTypes))
+                if (VariantQualifiers.RemixSignaturesConflict(searchData.Album, [candidateLeaf, candidateParent], searchData.TargetVariantTypes))
                 {
                     _logger.Trace("Remix qualifier mismatch: search '{Album}' vs folder '{Folder}'", searchData.Album, candidateLeaf);
                     isAlbumMatch = false;
@@ -709,7 +709,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             // Raw title kept alongside the normalized one: normalization strips the
             // brackets a variant qualifier lives in ("(Radio Edit)").
             List<(string Raw, string Norm, bool Qualified)> titles = expectedTracks
-                .Select(t => (Raw: t, Norm: NormalizeString(t), Qualified: SlskdTextProcessor.HasVariantQualifier(t)))
+                .Select(t => (Raw: t, Norm: NormalizeString(t), Qualified: VariantQualifiers.HasVariantQualifier(t)))
                 .Where(t => t.Norm.Length >= 4)
                 .ToList();
             if (titles.Count == 0)
@@ -722,7 +722,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 .Select(f =>
                 {
                     string raw = TrackNumberPrefixRegex().Replace(Path.GetFileNameWithoutExtension((f.Filename ?? string.Empty).Replace('\\', '/')), string.Empty);
-                    return (File: f, Name: NormalizeString(raw), Raw: raw, Qualified: SlskdTextProcessor.HasVariantQualifier(raw));
+                    return (File: f, Name: NormalizeString(raw), Raw: raw, Qualified: VariantQualifiers.HasVariantQualifier(raw));
                 })
                 .Where(x => x.Name.Length > 0)
                 .ToList();
@@ -744,7 +744,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                     // A wanted title is contained in its own variant ("Proposition"
                     // in "Proposition (Radio Edit)"); target types forgive valid ones.
                     if ((title.Qualified || named[i].Qualified) &&
-                        SlskdTextProcessor.RemixSignaturesConflict(title.Raw, named[i].Raw, targetVariantTypes))
+                        VariantQualifiers.RemixSignaturesConflict(title.Raw, named[i].Raw, targetVariantTypes))
                         continue;
 
                     claimed.Add(i);

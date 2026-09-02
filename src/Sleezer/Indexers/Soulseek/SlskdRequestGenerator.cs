@@ -77,7 +77,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 ProcessedSearches: _processedSearches,
                 SearchCriteria: searchCriteria)
             {
-                TargetVariantTypes = album?.SecondaryTypes?.Select(t => t.Name).ToList() ?? [],
+                TargetVariantTypes = [.. VariantQualifiers.ForgivenVariants(album)],
                 AlbumType = album?.AlbumType
             };
 
@@ -112,7 +112,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 ProcessedSearches: _processedSearches,
                 SearchCriteria: searchCriteria)
             {
-                TargetVariantTypes = album?.SecondaryTypes?.Select(t => t.Name).ToList() ?? [],
+                TargetVariantTypes = [.. VariantQualifiers.ForgivenVariants(album)],
                 AlbumType = album?.AlbumType
             };
 
