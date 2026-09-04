@@ -2,8 +2,13 @@
 language: "en-US"
 
 reviews:
-  profile: "chill"
+  # assertive: chill passed a diff clean that assertive flagged with two Major findings (2026-09-03); the "**" rule keeps style nits out
+  profile: "assertive"
   request_changes_workflow: false
+  pre_merge_checks:
+    # off: the 80% docstring-coverage warning contradicts the one-line-docstring rule under "**"
+    docstrings:
+      mode: "off"
   auto_review:
     enabled: true
     drafts: false
@@ -80,9 +85,17 @@ reviews:
         exceptions); async tests that are not awaited; and shared mutable state leaking
         between cases. Ignore StyleCop-style nits.
 
-    - path: "**/*.{csproj,props}"
+    - path: "**/*.{csproj,props,targets}"
       instructions: |
-        Dependency / CVE hygiene. The plugin's OWN direct dependencies must stay
+        Build definition and dependency / CVE hygiene.
+        ILRepack.targets hand-lists the assemblies merged into the shipped
+        plugin DLL: a new PackageReference that is not added to InputAssemblies
+        is silently absent at runtime, and Internalize="true" hides merged public
+        types — flag a csproj dependency change with no matching targets edit.
+        PreBuild.targets never runs in CI (Condition CI != true); PluginInfo
+        .targets interpolates MSBuild properties raw into C# string literals, so
+        a value with a quote or backslash breaks compilation.
+        The plugin's OWN direct dependencies must stay
         auditable — CI runs `dotnet list package --vulnerable` against
         src/Sleezer/Sleezer.csproj before release. Do NOT add anything that disables
         auditing of the plugin's own project: no `<NuGetAudit>false</NuGetAudit>`, no
@@ -141,9 +154,16 @@ reviews:
           what a non-obvious block does, or the gotcha it guards. No why/history
           essays, no before/after narrative, no restating the code, no section
           banners. Docstrings: one line unless the signature genuinely cannot
-          carry it.
+          carry it. Never ask for a docstring to be added; a missing docstring
+          is not a finding.
         - The 1-2 line cap wins even inside an already heavily-commented file —
           matching local density is not licence to exceed it.
+        - A comment, docstring, help text, column header, log message or UI label
+          that disagrees with what the code does is a correctness finding, not a
+          stale-comment nit: report it and say which side is wrong.
+        - Do not flag stylistic preferences that are consistent across the file
+          (naming, quoting, import order, formatting, line length). Report
+          correctness, security, data-loss and the classes named above.
 
   tools:
     gitleaks:
