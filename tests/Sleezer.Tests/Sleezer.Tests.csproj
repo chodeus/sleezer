@@ -101,6 +101,15 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Qobuz\QobuzURL.cs"
              LinkBase="SourceUnderTest" />
+    <!-- Qobuz per-attempt outcome; the vendored model + exception it reads are Newtonsoft only. -->
+    <Compile Include="..\..\src\Sleezer\Core\Qobuz\QobuzTrackAttempt.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\QobuzApiSharp\Models\Content\Track\FileUrl.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\QobuzApiSharp\Models\QobuzApiStatusResponse.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\QobuzApiSharp\Exceptions\ApiErrorResponseException.cs"
+             LinkBase="SourceUnderTest" />
     <!-- Slskd retry-exhaustion state machine and its transitive deps. Lidarr.Core
          supplies DownloadItemStatus via the project reference below. -->
     <Compile Include="..\..\src\Sleezer\Download\Clients\Soulseek\Models\SlskdFileState.cs"

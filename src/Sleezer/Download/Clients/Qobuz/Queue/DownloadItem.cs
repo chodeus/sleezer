@@ -10,7 +10,6 @@ using NzbDrone.Core.Parser.Model;
 using NzbDrone.Plugin.Sleezer.Core.Qobuz;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Qobuz;
-using QobuzApiSharp.Exceptions;
 using QobuzApiSharp.Models.Content;
 
 using NzbDrone.Plugin.Sleezer.Core.Download;
@@ -201,7 +200,7 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
             }
         }
 
-        // Returns true when the track is on disk, or when it failed terminally and no
+        // Returns true when the track is on disk, or was counted failed or skipped, so no
         // further quality should be attempted.
         private async Task<bool> TryDownloadAtQuality(Track track, AudioQuality quality, QobuzSettings settings, Logger logger, CancellationToken cancellation)
         {
@@ -220,12 +219,19 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
                 {
                     throw;
                 }
-                catch (ApiErrorResponseException ex) when (ex.ResponseStatusCode == "404")
+                catch (Exception ex) when (QobuzTrackAttempt.Classify(ex, attempt, MaxAttemptsPerQuality) == QobuzAttemptOutcome.Skip)
+                {
+                    // Counted as skipped so Require Complete Album decides, not the failure path.
+                    logger.Warn(ex, "Qobuz track {TrackId} ({TrackTitle}) is not available in full; skipping", track.Id, track.Title);
+                    Interlocked.Increment(ref _skippedTracks);
+                    return true;
+                }
+                catch (Exception ex) when (QobuzTrackAttempt.Classify(ex, attempt, MaxAttemptsPerQuality) == QobuzAttemptOutcome.TryNextQuality)
                 {
                     logger.Warn(ex, "Qobuz track {TrackId} ({TrackTitle}) has no file at {Quality}", track.Id, track.Title, quality);
                     return false;
                 }
-                catch (Exception ex) when (attempt < MaxAttemptsPerQuality)
+                catch (Exception ex) when (QobuzTrackAttempt.Classify(ex, attempt, MaxAttemptsPerQuality) == QobuzAttemptOutcome.Retry)
                 {
                     logger.Warn(ex, "Qobuz track {TrackId} ({TrackTitle}) failed at {Quality} (attempt {Attempt}/{Max}); retrying",
                         track.Id, track.Title, quality, attempt, MaxAttemptsPerQuality);
