@@ -145,7 +145,7 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
             }
 
             if (SkippedTracks > 0)
-                logger.Warn("Qobuz completed {Title} with {Skipped} track(s) Qobuz does not offer individually", Title, SkippedTracks);
+                logger.Warn("Qobuz completed {Title} with {Skipped} track(s) skipped", Title, SkippedTracks);
 
             await WriteCoverSidecar(settings, logger, cancellation);
             Status = DownloadItemStatus.Completed;

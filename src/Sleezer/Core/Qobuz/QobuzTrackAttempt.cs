@@ -10,7 +10,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Qobuz
         public static void EnsureFullTrack(FileUrl urls, string trackId)
         {
             if (urls.Sample ?? false)
-                throw new QobuzSampleException($"Qobuz served only a 30-second sample of track {trackId}; the account cannot stream it in full.");
+                throw new QobuzSampleException($"Qobuz served only a 30-second sample of track {trackId}.");
         }
 
         public static QobuzAttemptOutcome Classify(Exception ex, int attempt, int maxAttempts) => ex switch
