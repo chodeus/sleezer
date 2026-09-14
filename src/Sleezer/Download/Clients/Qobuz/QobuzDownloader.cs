@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
+using NzbDrone.Plugin.Sleezer.Core.Qobuz;
 
 // ImagesTools is the plugin's only image scaler; it lives in the Deezer namespace
 // for historical reasons (see CLAUDE.md namespace notes), not because it's Deezer-only.
@@ -164,8 +165,7 @@ namespace NzbDrone.Core.Download.Clients.Qobuz
             var urls = s.GetTrackFileUrl(trackId, ((int)bitrate).ToString())
                 ?? throw new InvalidOperationException($"Qobuz track {trackId} has no media source at {bitrate}.");
 
-            if (urls.Sample ?? false)
-                throw new InvalidOperationException($"Qobuz returned a 30-second sample for track {trackId} — the account's subscription does not cover {bitrate}.");
+            QobuzTrackAttempt.EnsureFullTrack(urls, trackId);
 
             HttpRequestMessage message = new(HttpMethod.Get, urls.Url);
 
