@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using NzbDrone.Common.Extensions;
 
 namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 {
@@ -25,6 +26,26 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 
         private static readonly Regex CollapseSpaces = new(@"\s{2,}", RegexOptions.Compiled);
 
+        // Version words the stores keep in a `version` field their search does not index. Query
+        // side only: StoreReleaseVerifier compares titles with StripQualifiers and must keep them.
+        private static readonly Regex VersionSubtitle = new(
+            @"\s*[:\-–—]\s[^:]*\b(?:re[-‐]?mix(?:es|ed)?|rework(?:s|ed)?|mix(?:es)?|edits?|version|live|acoustic|instrumentals?" +
+            @"|remaster\w*|anniversary|deluxe|expanded|edition|reissue|demos?|mono|stereo)\b.*$",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        private static readonly Regex TrailingVersion = new(
+            @"\s*[:\-–—]?\s*\b(?:the\s+)?(?:re[-‐]?mix(?:es|ed)?|rework(?:s|ed)?)\b.*$",
+            RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
+
+        // "S.H.I.E.L.D.": the stores match "SHIELD", not the "S H I E L D" punctuation stripping yields.
+        private static readonly Regex DottedAcronym = new(@"(?<!\w)(?:\p{L}\.){2,}\p{L}?(?!\w)", RegexOptions.Compiled);
+
+        // "Imagine: The Evolution Documentary" is listed as "Imagine".
+        private static readonly Regex TrailingSubtitle = new(@"^(.*\S)\s*:\s+\S.*$", RegexOptions.Singleline | RegexOptions.Compiled);
+
+        private static readonly Regex Apostrophes = new(@"['`´‘’]", RegexOptions.Compiled);
+        private static readonly Regex NonAlphanumeric = new(@"[^a-z0-9]+", RegexOptions.Compiled);
+
         /// <summary>Strips bracketed groups and edition/soundtrack qualifiers; keeps the original when nothing would remain.</summary>
         public static string StripQualifiers(string title)
         {
@@ -37,6 +58,45 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             stripped = CollapseSpaces.Replace(stripped, " ").Trim(' ', ':', '-', '–', '—');
 
             return string.IsNullOrWhiteSpace(stripped) ? title : stripped;
+        }
+
+        /// <summary>StripQualifiers plus the remix/live/edition words a store search cannot see; keeps the original when nothing would remain.</summary>
+        public static string StripForSearch(string title)
+        {
+            if (string.IsNullOrWhiteSpace(title))
+                return title;
+
+            var stripped = VersionSubtitle.Replace(StripQualifiers(title), string.Empty);
+            stripped = TrailingVersion.Replace(stripped, string.Empty);
+            stripped = CollapseSpaces.Replace(stripped, " ").Trim(' ', ':', '-', '–', '—');
+
+            return string.IsNullOrWhiteSpace(stripped) ? title : stripped;
+        }
+
+        /// <summary>"S.H.I.E.L.D." becomes "SHIELD"; token searches do not unify the two forms.</summary>
+        public static string CollapseAcronyms(string value) =>
+            string.IsNullOrEmpty(value) ? value : DottedAcronym.Replace(value, m => m.Value.Replace(".", string.Empty));
+
+        /// <summary>Drops a trailing ": subtitle"; the stores keep those in the version field too.</summary>
+        public static string StripTrailingSubtitle(string title)
+        {
+            if (string.IsNullOrWhiteSpace(title))
+                return title;
+
+            var match = TrailingSubtitle.Match(title);
+            return match.Success ? match.Groups[1].Value : title;
+        }
+
+        /// <summary>Normalised core of a title, so "Vespertine (Deluxe Edition)" and "Vespertine" compare equal; null when nothing remains.</summary>
+        public static string? CoreKey(string title)
+        {
+            if (string.IsNullOrWhiteSpace(title))
+                return null;
+
+            var core = Apostrophes.Replace(StripForSearch(title), string.Empty).RemoveAccent().ToLowerInvariant();
+            core = NonAlphanumeric.Replace(core, " ").Trim();
+
+            return core.Length == 0 ? null : core;
         }
 
         /// <summary>Drops literal double quotes — Deezer's artist:"…" / album:"…" field syntax has no escape for them.</summary>

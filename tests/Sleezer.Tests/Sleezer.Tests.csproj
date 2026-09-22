@@ -86,6 +86,9 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Utilities\StoreQueryCleaner.cs"
              LinkBase="SourceUnderTest" />
+    <!-- Qobuz album-search query plan (#124). Pure: StoreQueryCleaner + SearchCriteriaBase from Lidarr.Core. -->
+    <Compile Include="..\..\src\Sleezer\Indexers\Qobuz\QobuzQueryPlan.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Utilities\StoreReleaseVerifier.cs"
              LinkBase="SourceUnderTest" />
     <!-- Baseline Deezer tag write; TagLib + Newtonsoft via the Lidarr.Core reference. -->

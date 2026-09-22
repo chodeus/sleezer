@@ -26,56 +26,33 @@ namespace NzbDrone.Core.Indexers.Qobuz
             // Qobuz has no new-release feed; this only exists so saving the indexer
             // settings has something to test against.
             var pageableRequests = new IndexerPageableRequestChain();
-            pageableRequests.Add(GetRequests("never gonna give you up"));
+            pageableRequests.Add(GetRequests("never gonna give you up", null, false));
 
             return pageableRequests;
         }
 
         public IndexerPageableRequestChain GetSearchRequests(AlbumSearchCriteria searchCriteria)
         {
-            var chain = new IndexerPageableRequestChain();
-
-            // Tier 1: the raw artist + entity title (AlbumQuery's "+Disambiguation" token never
-            // matches). HttpIndexerBase only advances to the next tier when this returns nothing.
             var entityTitle = searchCriteria.Albums?.FirstOrDefault()?.Title ?? searchCriteria.AlbumTitle;
-            var tier1 = $"{searchCriteria.ArtistQuery} {entityTitle}";
-            chain.AddTier(GetRequests(tier1));
-
-            if (string.IsNullOrWhiteSpace(entityTitle) || string.IsNullOrWhiteSpace(searchCriteria.ArtistQuery))
-                return chain;
-
-            // Tier 2: punctuation and edition/soundtrack qualifiers stripped so the core title
-            // survives token-AND matching. Added only when it differs from tier 1.
-            var artist = StoreQueryCleaner.CleanForTokenSearch(searchCriteria.CleanArtistQuery);
-            var album = StoreQueryCleaner.CleanForTokenSearch(SearchCriteriaBase.GetQueryTitle(StoreQueryCleaner.StripQualifiers(entityTitle)));
-            var tier2 = $"{artist} {album}";
-
-            if (!string.Equals(tier2, tier1, StringComparison.OrdinalIgnoreCase))
-                chain.AddTier(GetRequests(tier2));
-
-            // Tier 3: MB split-release titles like "A / B" — Qobuz usually carries the halves
-            // as separate releases, so search each; all halves share one tier.
-            if (!entityTitle.Contains(" / ", StringComparison.Ordinal))
-                return chain;
-
-            List<string> partQueries =
-            [
-                .. entityTitle
-                    .Split(" / ", StringSplitOptions.RemoveEmptyEntries)
-                    .Select(part => StoreQueryCleaner.CleanForTokenSearch(SearchCriteriaBase.GetQueryTitle(StoreQueryCleaner.StripQualifiers(part))))
-                    .Where(part => !string.IsNullOrWhiteSpace(part))
-                    .Select(part => $"{artist} {part}")
-                    .Where(query => !string.Equals(query, tier1, StringComparison.OrdinalIgnoreCase)
-                                    && !string.Equals(query, tier2, StringComparison.OrdinalIgnoreCase))
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-            ];
-
-            for (var i = 0; i < partQueries.Count; i++)
+            var context = new QobuzSearchContext
             {
-                if (i == 0)
-                    chain.AddTier(GetRequests(partQueries[i]));
+                ArtistCleanName = searchCriteria.Artist?.CleanName,
+                CoreTitle = StoreQueryCleaner.CoreKey(entityTitle)
+            };
+
+            var chain = new IndexerPageableRequestChain();
+            var tier = 0;
+
+            // HttpIndexerBase runs every query of a tier in order and only moves on when the tier returned nothing.
+            foreach (var query in QobuzQueryPlan.Build(searchCriteria.ArtistQuery, searchCriteria.CleanArtistQuery, entityTitle))
+            {
+                if (query.Tier != tier)
+                {
+                    chain.AddTier(GetRequests(query.Query, context, query.Gated));
+                    tier = query.Tier;
+                }
                 else
-                    chain.Add(GetRequests(partQueries[i]));
+                    chain.Add(GetRequests(query.Query, context, query.Gated));
             }
 
             return chain;
@@ -84,13 +61,20 @@ namespace NzbDrone.Core.Indexers.Qobuz
         public IndexerPageableRequestChain GetSearchRequests(ArtistSearchCriteria searchCriteria)
         {
             var chain = new IndexerPageableRequestChain();
-            chain.AddTier(GetRequests(searchCriteria.ArtistQuery));
+            chain.AddTier(GetRequests(searchCriteria.ArtistQuery, new QobuzSearchContext { ArtistCleanName = searchCriteria.Artist?.CleanName }, false));
 
             return chain;
         }
 
-        private IEnumerable<IndexerRequest> GetRequests(string searchParameters)
+        private IEnumerable<IndexerRequest> GetRequests(string searchParameters, QobuzSearchContext? context, bool gated)
         {
+            // Enumerated only when HttpIndexerBase reaches it, after the earlier queries of the tier ran.
+            if (gated && context is { MatchFound: true })
+            {
+                Logger.Debug("Qobuz: skipping fallback query '{Query}' — the raw query already found the album", searchParameters);
+                yield break;
+            }
+
             QobuzAPI api = QobuzAPI.Instance
                 ?? throw new ApiKeyException("Qobuz API is not initialised. Save the Qobuz indexer settings first.");
 
@@ -111,7 +95,7 @@ namespace NzbDrone.Core.Indexers.Qobuz
                     ["offset"] = $"{page * PageSize}",
                 };
 
-                var req = new IndexerRequest(api.GetAPIUrl("/album/search", data), HttpAccept.Json);
+                var req = new QobuzIndexerRequest(api.GetAPIUrl("/album/search", data), context);
                 req.HttpRequest.Method = System.Net.Http.HttpMethod.Get;
                 req.HttpRequest.Headers.Add("X-App-ID", api.Client.AppId);
                 req.HttpRequest.Headers.Add("X-User-Auth-Token", api.Login.AuthToken);

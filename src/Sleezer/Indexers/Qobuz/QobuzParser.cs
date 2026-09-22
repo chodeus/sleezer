@@ -7,8 +7,10 @@ using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 using NLog;
 using NzbDrone.Common.Http;
+using NzbDrone.Core.Parser;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Plugin.Sleezer.Core.Model;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Qobuz;
 using QobuzApiSharp.Models.Content;
 
@@ -53,6 +55,10 @@ namespace NzbDrone.Core.Indexers.Qobuz
                         before - albums.Count, QobuzAPI.Instance?.CountryCode);
             }
 
+            // Lets the gated fallback query skip: the album we searched for is on this page.
+            if (response.Request is QobuzIndexerRequest { Context: { MatchFound: false } context } && albums.Any(a => IsSearchedAlbum(a, context)))
+                context.MatchFound = true;
+
             Dictionary<string, string> releaseTypes = ResolveReleaseTypes(albums);
 
             return
@@ -71,6 +77,13 @@ namespace NzbDrone.Core.Indexers.Qobuz
             "24bit 192kHz" => 2,
             _ => 3
         };
+
+        // Same primary artist, same core title.
+        private static bool IsSearchedAlbum(Album album, QobuzSearchContext context) =>
+            context.CoreTitle != null
+            && context.ArtistCleanName != null
+            && album.Artist?.Name?.CleanArtistName() == context.ArtistCleanName
+            && StoreQueryCleaner.CoreKey(album.CompleteTitle) == context.CoreTitle;
 
         // Qobuz populates release_type on /album/get but not always on /album/search.
         // Take it from the search payload when it's there and only pay for a detail call
