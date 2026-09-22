@@ -39,9 +39,11 @@ public class StoredProviderSettingsTests
         Assert.Equal(60, StoredProviderSettings.For<Config>([], "Wanted").Interval);
     }
 
+    // Defaults here would run on settings that failed to load, not on an absent definition.
     [Fact]
-    public void Defaults_when_the_stored_settings_are_another_type()
+    public void Fails_closed_when_the_stored_settings_are_another_type()
     {
-        Assert.Equal(60, StoredProviderSettings.For<Config>([D("Wanted", NullConfig.Instance)], "Wanted").Interval);
+        Assert.Throws<InvalidOperationException>(
+            () => StoredProviderSettings.For<Config>([D("Wanted", NullConfig.Instance)], "Wanted"));
     }
 }

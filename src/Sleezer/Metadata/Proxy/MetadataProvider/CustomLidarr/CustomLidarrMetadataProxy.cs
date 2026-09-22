@@ -62,9 +62,11 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.CustomLidarr
 
         public IHttpRequestBuilderFactory GetRequestBuilder()
         {
-            if (Settings?.MetadataSource?.IsNotNullOrWhiteSpace() == true && ActiveSettings.CanProxySpotify)
+            CustomLidarrMetadataProxySettings settings = ActiveSettings;
+
+            if (settings.MetadataSource.IsNotNullOrWhiteSpace() && settings.CanProxySpotify)
             {
-                return new HttpRequestBuilder(Settings?.MetadataSource.TrimEnd("/") + "/{route}").KeepAlive().CreateFactory();
+                return new HttpRequestBuilder(settings.MetadataSource.TrimEnd("/") + "/{route}").KeepAlive().CreateFactory();
             }
             else if (_configService.MetadataSource.IsNotNullOrWhiteSpace())
             {

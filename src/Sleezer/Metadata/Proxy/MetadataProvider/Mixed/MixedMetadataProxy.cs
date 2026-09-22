@@ -265,9 +265,12 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
 
         internal List<ProxyCandidate> GetCandidateProxies(Func<ISupportMetadataMixing, MetadataSupportLevel> supportSelector, Type interfaceType)
         {
+            // Resolved once for the whole ranking pass: without a Definition every read is a database query.
+            MixedMetadataProxySettings settings = ActiveSettings;
+
             List<ProxyCandidate> candidates = ProxyService.Value.ActiveProxies
                 .Where(p => p != this && (p is ISupportMetadataMixing || SupportsInterface(p, interfaceType)))
-                .Select(p => CreateProxyCandidate(p, supportSelector))
+                .Select(p => CreateProxyCandidate(p, supportSelector, settings))
                 .Where(c => c.Support != MetadataSupportLevel.Unsupported)
                 .ToList();
 
@@ -278,10 +281,10 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
             return [.. candidates.OrderByDescending(c => c.Support).ThenBy(c => c.Priority)];
         }
 
-        private ProxyCandidate CreateProxyCandidate(IProxy proxy, Func<ISupportMetadataMixing, MetadataSupportLevel> supportSelector) => new()
+        private static ProxyCandidate CreateProxyCandidate(IProxy proxy, Func<ISupportMetadataMixing, MetadataSupportLevel> supportSelector, MixedMetadataProxySettings settings) => new()
         {
             Proxy = proxy,
-            Priority = GetPriority(proxy.Name ?? string.Empty),
+            Priority = GetPriority(proxy.Name ?? string.Empty, settings),
             Support = (proxy is ISupportMetadataMixing mixingProxy) ? supportSelector(mixingProxy) : MetadataSupportLevel.Supported
         };
 
@@ -321,12 +324,12 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
 
         #region Utility Methods
 
-        private int GetPriority(string proxyName)
+        private static int GetPriority(string proxyName, MixedMetadataProxySettings settings)
         {
-            if (string.IsNullOrWhiteSpace(proxyName) || ActiveSettings.Priotities == null)
+            if (string.IsNullOrWhiteSpace(proxyName) || settings.Priotities == null)
                 return DEFAULT_PRIORITY;
 
-            KeyValuePair<string, string> matchingPriority = ActiveSettings.Priotities
+            KeyValuePair<string, string> matchingPriority = settings.Priotities
                 .FirstOrDefault(x => string.Equals(x.Key, proxyName, StringComparison.OrdinalIgnoreCase));
 
             return !string.IsNullOrWhiteSpace(matchingPriority.Value) && int.TryParse(matchingPriority.Value, out int priority)
