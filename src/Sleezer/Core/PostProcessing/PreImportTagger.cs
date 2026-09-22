@@ -456,7 +456,7 @@ public class PreImportTagger : IPreImportTagger
         if (release == null || tracks is not { Count: > 0 })
             return (0, 0, 0);
 
-        if (!TitleFallbackGuard.IsSafeTarget(release, tracks.Count, localTracks.Count, preferDigitalMedia))
+        if (!TitleFallbackGuard.IsSafeTarget(release, localTracks.Count, preferDigitalMedia))
         {
             // A tracklist that does not fit the download usually means Lidarr is about to
             // attach the files to the wrong release, so this is worth seeing.
