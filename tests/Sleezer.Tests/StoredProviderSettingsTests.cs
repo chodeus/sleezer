@@ -6,8 +6,7 @@ using Xunit;
 
 namespace Sleezer.Tests;
 
-// Issue #126: Search Sniper's interval and run settings came from a process-wide static set by
-// the settings constructor — whichever object was built last, including the UI's schema defaults.
+// Covers the resolver behind every provider's ActiveSettings.
 public class StoredProviderSettingsTests
 {
     private sealed class Config : IProviderConfig

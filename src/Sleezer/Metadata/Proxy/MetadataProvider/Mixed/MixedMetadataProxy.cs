@@ -30,7 +30,8 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
         private readonly IMetadataRepository _metadataRepository;
 
         // Resolved without a Definition when another proxy calls in, so read the stored one.
-        private MixedMetadataProxySettings ActiveSettings => Settings ?? StoredProviderSettings.For<MixedMetadataProxySettings>(_metadataRepository.All(), nameof(MixedMetadataProxy));
+        // Resolve once per operation and pass it down: without a Definition every read is a database query.
+        internal MixedMetadataProxySettings ActiveSettings => Settings ?? StoredProviderSettings.For<MixedMetadataProxySettings>(_metadataRepository.All(), nameof(MixedMetadataProxy));
         internal readonly IProvideAdaptiveThreshold _adaptiveThreshold;
 
         public MixedMetadataProxy(Lazy<IProxyService> proxyService, IProvideAdaptiveThreshold adaptiveThreshold, IArtistService artistService, IMetadataRepository metadataRepository, Logger logger) : base(proxyService, logger)
@@ -46,7 +47,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
 
         public Tuple<string, Album, List<ArtistMetadata>> GetAlbumInfo(string id)
         {
-            List<ProxyCandidate> candidates = GetCandidateProxies(x => x.CanHandleId(id), typeof(IProvideAlbumInfo));
+            List<ProxyCandidate> candidates = GetCandidateProxies(x => x.CanHandleId(id), typeof(IProvideAlbumInfo), ActiveSettings);
 
             if (candidates.Count == 0)
                 throw new NotImplementedException($"No proxy available to handle album id: {id}");
@@ -116,19 +117,24 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
                 interfaceType: typeof(ISearchForNewEntity)
             ).ExecuteSearch();
 
-        private List<Artist> ExecuteArtistSearch(string lidarrId, int metadataProfileId, Artist? baseArtist, HashSet<IProxy> usedProxies) =>
-            new ProxyDecisionHandler<Artist>(
+        private List<Artist> ExecuteArtistSearch(string lidarrId, int metadataProfileId, Artist? baseArtist, HashSet<IProxy> usedProxies)
+        {
+            // Captured for the selector, which runs once per candidate.
+            MixedMetadataProxySettings settings = ActiveSettings;
+
+            return new ProxyDecisionHandler<Artist>(
                 mixedProxy: this,
                 searchExecutor: proxy => ExecuteSingleProxyArtistSearch(proxy, lidarrId, metadataProfileId, baseArtist, usedProxies),
                 containsItem: ContainsArtistInfo,
                 isValidQuery: null,
-                supportSelector: s => DetermineSupportLevel(s, lidarrId, baseArtist),
+                supportSelector: s => DetermineSupportLevel(s, lidarrId, baseArtist, settings),
                 interfaceType: typeof(IProvideArtistInfo)
                 ).ExecuteSearch();
+        }
 
         public IHttpRequestBuilderFactory GetRequestBuilder()
         {
-            List<ProxyCandidate> candidates = GetCandidateProxies(_ => MetadataSupportLevel.Supported, typeof(IMetadataRequestBuilder));
+            List<ProxyCandidate> candidates = GetCandidateProxies(_ => MetadataSupportLevel.Supported, typeof(IMetadataRequestBuilder), ActiveSettings);
 
             if (candidates.Count == 0)
                 throw new InvalidOperationException("No proxy available to handle IMetadataRequestBuilder");
@@ -140,8 +146,10 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
 
         private void InitializeAdaptiveThreshold()
         {
-            if (ActiveSettings.DynamicThresholdMode == true)
-                _adaptiveThreshold.LoadConfig(ActiveSettings.WeightsPath);
+            MixedMetadataProxySettings settings = ActiveSettings;
+
+            if (settings.DynamicThresholdMode == true)
+                _adaptiveThreshold.LoadConfig(settings.WeightsPath);
         }
 
         private List<Artist> ExecuteSingleProxyArtistSearch(IProxy proxy, string lidarrId, int metadataProfileId, Artist? baseArtist, HashSet<IProxy> usedProxies)
@@ -189,14 +197,14 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
             return null;
         }
 
-        private MetadataSupportLevel DetermineSupportLevel(ISupportMetadataMixing supportMixing, string lidarrId, Artist? baseArtist)
+        private MetadataSupportLevel DetermineSupportLevel(ISupportMetadataMixing supportMixing, string lidarrId, Artist? baseArtist, MixedMetadataProxySettings settings)
         {
             if (supportMixing.CanHandleId(lidarrId) == MetadataSupportLevel.Supported)
                 return MetadataSupportLevel.Supported;
 
-            if (ActiveSettings.PopulateWithMultipleProxies == true)
+            if (settings.PopulateWithMultipleProxies == true)
             {
-                if (supportMixing.SupportsLink(baseArtist?.Metadata?.Value?.Links ?? []) != null || ActiveSettings.TryFindArtist == true)
+                if (supportMixing.SupportsLink(baseArtist?.Metadata?.Value?.Links ?? []) != null || settings.TryFindArtist == true)
                     return MetadataSupportLevel.ImplicitSupported;
             }
 
@@ -263,11 +271,8 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
             validArtists.Where(a => a != mergedArtist).ToList()
             .ForEach(artist => MergeArtists(mergedArtist, artist));
 
-        internal List<ProxyCandidate> GetCandidateProxies(Func<ISupportMetadataMixing, MetadataSupportLevel> supportSelector, Type interfaceType)
+        internal List<ProxyCandidate> GetCandidateProxies(Func<ISupportMetadataMixing, MetadataSupportLevel> supportSelector, Type interfaceType, MixedMetadataProxySettings settings)
         {
-            // Resolved once for the whole ranking pass: without a Definition every read is a database query.
-            MixedMetadataProxySettings settings = ActiveSettings;
-
             List<ProxyCandidate> candidates = ProxyService.Value.ActiveProxies
                 .Where(p => p != this && (p is ISupportMetadataMixing || SupportsInterface(p, interfaceType)))
                 .Select(p => CreateProxyCandidate(p, supportSelector, settings))
@@ -298,7 +303,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
         private HashSet<string> GetChanged(Func<IProxy, HashSet<string>> func)
         {
             HashSet<string> result = [];
-            List<ProxyCandidate> candidates = GetCandidateProxies(x => x.CanHandleChanged(), null!);
+            List<ProxyCandidate> candidates = GetCandidateProxies(x => x.CanHandleChanged(), null!, ActiveSettings);
 
             foreach (IProxy? proxy in candidates.Select(c => c.Proxy))
             {
@@ -317,8 +322,8 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
             return result;
         }
 
-        internal int CalculateThreshold(string proxyName, int aggregatedCount) =>
-            ActiveSettings.DynamicThresholdMode == true
+        internal int CalculateThreshold(string proxyName, int aggregatedCount, MixedMetadataProxySettings settings) =>
+            settings.DynamicThresholdMode == true
                 ? _adaptiveThreshold.GetDynamicThreshold(proxyName, aggregatedCount)
                 : GetThreshold(aggregatedCount);
 
