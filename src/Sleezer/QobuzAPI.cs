@@ -96,6 +96,9 @@ namespace NzbDrone.Plugin.Sleezer.Qobuz
 
         public Login? Login => _login;
 
+        /// <summary>The signed-in session's token; EnsureSignedIn guarantees one before a request is built.</summary>
+        public string AuthToken => _login?.AuthToken ?? throw new ApiKeyException("Qobuz session is not signed in.");
+
         /// <summary>The App ID/Secret this client was constructed with — blank when auto-detected.</summary>
         public string ConfiguredAppId => _configuredAppId;
 

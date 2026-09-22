@@ -105,7 +105,7 @@ namespace NzbDrone.Core.Indexers.Qobuz
                 var req = new IndexerRequest(api.GetAPIUrl("/album/search", data), HttpAccept.Json);
                 req.HttpRequest.Method = System.Net.Http.HttpMethod.Get;
                 req.HttpRequest.Headers.Add("X-App-ID", api.Client.AppId);
-                req.HttpRequest.Headers.Add("X-User-Auth-Token", api.Login.AuthToken);
+                req.HttpRequest.Headers.Add("X-User-Auth-Token", api.AuthToken);
                 yield return req;
             }
         }
