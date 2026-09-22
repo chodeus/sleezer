@@ -10,13 +10,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks
 {
     public interface IScheduledTaskService
     {
-        IEnumerable<IProvideScheduledTask> ActiveTaskProviders { get; }
-
         void InitializeTasks();
-
-        void EnableTask(IProvideScheduledTask provider);
-
-        void DisableTask(IProvideScheduledTask provider);
     }
 
     public class ScheduledTaskService(
@@ -28,8 +22,6 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks
         // Keyed by command type: a provider resolved fresh from a saved definition must
         // match the one registered at startup.
         private readonly Dictionary<string, IProvideScheduledTask> _registeredTasks = [];
-
-        public IEnumerable<IProvideScheduledTask> ActiveTaskProviders => _registeredTasks.Values;
 
         public void InitializeTasks()
         {
@@ -93,7 +85,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks
             }
         }
 
-        public void EnableTask(IProvideScheduledTask provider)
+        private void EnableTask(IProvideScheduledTask provider)
         {
             if (provider.IntervalMinutes <= 0)
             {
@@ -117,7 +109,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks
                 _logger.Info($"Enabled scheduled task: {(provider as IProvider)?.Name} (Interval: {provider.IntervalMinutes}m, Priority: {provider.Priority})");
         }
 
-        public void DisableTask(IProvideScheduledTask provider)
+        private void DisableTask(IProvideScheduledTask provider)
         {
             string typeName = provider.CommandType.FullName!;
 
