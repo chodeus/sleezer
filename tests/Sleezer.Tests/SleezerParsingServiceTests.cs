@@ -17,7 +17,7 @@ public class SleezerParsingServiceTests
     private static ParsedAlbumInfo Parsed(string artistName) => new() { ArtistName = artistName };
 
     private static IParsingService Subject(IArtistService artists) =>
-        new SleezerParsingService(null!, artists, null!, null!, Log);
+        new SleezerParsingService(new ParsingService(null!, artists, null!, null!, Log), Log);
 
     [Fact]
     public void GetArtist_returns_null_when_the_clean_name_is_shared()

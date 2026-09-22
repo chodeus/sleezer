@@ -71,7 +71,8 @@ public class AmbiguousArtistImportTests
     }
 
     private static IParsingService Patched() =>
-        new SleezerParsingService(null!, new CollidingArtistService(), new FakeAlbumService([Grabbed]), null!, Log);
+        new SleezerParsingService(
+            new ParsingService(null!, new CollidingArtistService(), new FakeAlbumService([Grabbed]), null!, Log), Log);
 
     private static IParsingService Unpatched() =>
         new ParsingService(null!, new CollidingArtistService(), new FakeAlbumService([Grabbed]), null!, Log);
