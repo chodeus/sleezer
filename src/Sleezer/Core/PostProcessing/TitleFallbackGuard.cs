@@ -21,21 +21,13 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
         /// <summary>True when release-scoped tags may be written to this download by title alone.</summary>
         // A title match proves one track, but Lidarr's writer emits the whole release identity —
         // album_id (5.0) and recording_id (10.0) then outweigh the raw store tags at import.
-        public static bool IsSafeTarget(
-            AlbumRelease? release,
-            int releaseTrackCount,
-            int localTrackCount,
-            bool preferDigitalMedia)
+        public static bool IsSafeTarget(AlbumRelease? release, int localTrackCount, bool preferDigitalMedia)
         {
-            if (release == null)
-                return false;
-
             // A storefront download cannot be a CD or vinyl pressing.
             if (preferDigitalMedia && !DigitalReleaseSelector.IsDigital(release))
                 return false;
 
-            // TRACKNUMBER/TOTALTRACKS come from the release; a different length writes them wrong.
-            return releaseTrackCount == localTrackCount;
+            return DigitalReleaseSelector.FitsDownload(release, localTrackCount);
         }
     }
 }
