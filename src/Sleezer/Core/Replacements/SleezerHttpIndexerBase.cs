@@ -3,6 +3,7 @@ using NzbDrone.Common.Http;
 using NzbDrone.Core.Configuration;
 using NzbDrone.Core.Indexers;
 using NzbDrone.Core.IndexerSearch.Definitions;
+using NzbDrone.Core.Music;
 using NzbDrone.Core.Parser;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Plugin.Sleezer.Core.Model;
@@ -14,14 +15,18 @@ namespace NzbDrone.Plugin.Sleezer.Core.Replacements
     public abstract class SleezerHttpIndexerBase<TSettings> : HttpIndexerBase<TSettings>
         where TSettings : IIndexerSettings, new()
     {
+        private readonly IArtistService _artistService;
+
         protected SleezerHttpIndexerBase(
             IHttpClient httpClient,
             IIndexerStatusService indexerStatusService,
             IConfigService configService,
             IParsingService parsingService,
+            IArtistService artistService,
             Logger logger)
             : base(httpClient, indexerStatusService, configService, parsingService, logger)
         {
+            _artistService = artistService;
         }
 
         /// <summary>Indexer-specific filtering, applied before the shared guards and the count.</summary>
@@ -38,11 +43,20 @@ namespace NzbDrone.Plugin.Sleezer.Core.Replacements
                 releases = AlbumYearGuard.Apply(releases, searchCriteria, Name, _logger);
             }
 
+            releases = GuardAmbiguousArtists(releases, searchCriteria.Artist);
+
             // Slskd accounts for its own searches; this is the same answer for the rest.
             _logger.Info("{Indexer}: {Count} result(s) for '{Artist} - {Album}'",
                 Name, releases.Count, searchCriteria.Artist?.Name, searchCriteria.AlbumTitle);
 
             return releases;
         }
+
+        public override async Task<IList<ReleaseInfo>> Fetch(ArtistSearchCriteria searchCriteria) =>
+            GuardAmbiguousArtists(await base.Fetch(searchCriteria), searchCriteria.Artist);
+
+        // After paging and the verifier, so a drop here cannot end pagination early.
+        private IList<ReleaseInfo> GuardAmbiguousArtists(IList<ReleaseInfo> releases, Artist? searched) =>
+            releases.Count == 0 ? releases : AmbiguousArtistGuard.Apply(releases, searched, _artistService.GetAllArtists(), Name, _logger);
     }
 }

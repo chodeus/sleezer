@@ -17,6 +17,7 @@ using NzbDrone.Core.Parser.Model;
 using NzbDrone.Plugin.Sleezer.Core.Replacements;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Core.Model;
+using NzbDrone.Core.Music;
 
 namespace NzbDrone.Core.Indexers.Bandcamp
 {
@@ -45,8 +46,9 @@ namespace NzbDrone.Core.Indexers.Bandcamp
                                IIndexerStatusService indexerStatusService,
                                IConfigService configService,
                                IParsingService parsingService,
+                               IArtistService artistService,
                                Logger logger)
-            : base(httpClient, indexerStatusService, configService, parsingService, logger)
+            : base(httpClient, indexerStatusService, configService, parsingService, artistService, logger)
         {
             _apiClient = apiClient;
         }

@@ -11,6 +11,9 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
         // Title plus the store's version qualifier — Deezer keeps "(Extended Mix)" in a separate field.
         public string? CandidateTitle { get; set; }
 
+        // Artists the store credits as main artists; AmbiguousArtistGuard retitles on these.
+        public IReadOnlyList<string> MainArtists { get; set; } = [];
+
         public int TrackCount { get; set; }
         public int TotalDurationSeconds { get; set; }
         public IReadOnlyList<int>? TrackDurationsSeconds { get; set; }

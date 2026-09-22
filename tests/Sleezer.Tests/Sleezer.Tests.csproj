@@ -88,6 +88,9 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Utilities\StoreReleaseVerifier.cs"
              LinkBase="SourceUnderTest" />
+    <!-- Two library artists with one CleanName fail a whole search (#124). Lidarr.Core's parser + Artist. -->
+    <Compile Include="..\..\src\Sleezer\Core\Utilities\AmbiguousArtistGuard.cs"
+             LinkBase="SourceUnderTest" />
     <!-- Baseline Deezer tag write; TagLib + Newtonsoft via the Lidarr.Core reference. -->
     <Compile Include="..\..\src\Sleezer\Download\Clients\Deezer\DeezerTagger.cs"
              LinkBase="SourceUnderTest" />

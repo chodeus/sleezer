@@ -13,6 +13,7 @@ using NzbDrone.Plugin.Sleezer.Tidal;
 using TidalSharp;
 using TidalSharp.Data;
 using NzbDrone.Plugin.Sleezer.Core.Replacements;
+using NzbDrone.Core.Music;
 
 namespace NzbDrone.Core.Indexers.Tidal
 {
@@ -50,8 +51,9 @@ namespace NzbDrone.Core.Indexers.Tidal
             IIndexerRepository indexerRepository,
             IConfigService configService,
             IParsingService parsingService,
+            IArtistService artistService,
             Logger logger)
-            : base(httpClient, indexerStatusService, configService, parsingService, logger)
+            : base(httpClient, indexerStatusService, configService, parsingService, artistService, logger)
         {
             _indexerRepository = indexerRepository;
         }
