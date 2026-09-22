@@ -3,6 +3,7 @@ using NzbDrone.Core.Music;
 using NzbDrone.Core.Parser;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Plugin.Sleezer.Core.Replacements;
+using Sleezer.Tests.Fakes;
 using Xunit;
 
 namespace Sleezer.Tests;
@@ -73,31 +74,5 @@ public class SleezerParsingServiceTests
     private sealed class SingleArtistService(Artist artist) : FakeArtistService
     {
         public override Artist FindByName(string title) => artist;
-    }
-
-    // Only the two lookups ParsingService reaches on these paths are implemented.
-    private abstract class FakeArtistService : IArtistService
-    {
-        public abstract Artist FindByName(string title);
-
-        public Artist FindByNameInexact(string title) => null!;
-
-        public Artist GetArtist(int artistId) => throw new NotSupportedException();
-        public Artist GetArtistByMetadataId(int artistMetadataId) => throw new NotSupportedException();
-        public List<Artist> GetArtists(IEnumerable<int> artistIds) => throw new NotSupportedException();
-        public Artist AddArtist(Artist newArtist, bool doRefresh) => throw new NotSupportedException();
-        public List<Artist> AddArtists(List<Artist> newArtists, bool doRefresh) => throw new NotSupportedException();
-        public Artist FindById(string foreignArtistId) => throw new NotSupportedException();
-        public List<Artist> GetCandidates(string title) => throw new NotSupportedException();
-        public void DeleteArtist(int artistId, bool deleteFiles, bool addImportListExclusion = false) => throw new NotSupportedException();
-        public void DeleteArtists(List<int> artistIds, bool deleteFiles, bool addImportListExclusion = false) => throw new NotSupportedException();
-        public List<Artist> GetAllArtists() => throw new NotSupportedException();
-        public Dictionary<int, List<int>> GetAllArtistsTags() => throw new NotSupportedException();
-        public List<Artist> AllForTag(int tagId) => throw new NotSupportedException();
-        public Artist UpdateArtist(Artist artist, bool publishUpdatedEvent = true) => throw new NotSupportedException();
-        public List<Artist> UpdateArtists(List<Artist> artist, bool useExistingRelativeFolder) => throw new NotSupportedException();
-        public Dictionary<int, string> AllArtistPaths() => throw new NotSupportedException();
-        public bool ArtistPathExists(string folder) => throw new NotSupportedException();
-        public void RemoveAddOptions(Artist artist) => throw new NotSupportedException();
     }
 }
