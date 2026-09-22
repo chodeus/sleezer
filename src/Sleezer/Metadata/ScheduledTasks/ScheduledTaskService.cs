@@ -30,19 +30,27 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks
         {
             _logger.Trace("Initializing scheduled task system");
 
-            IProvideScheduledTask[] taskProviders = _metadataFactory.GetAvailableProviders()
-                .OfType<IProvideScheduledTask>()
-                .Where(ValidateTaskProvider)
-                .DistinctBy(x => x.CommandType.FullName)
-                .ToArray();
+            int registered;
+            int available;
 
+            // Collected inside the lock: a delete arriving between the read and the loop would
+            // find nothing registered to disable, and startup would then register it anyway.
             lock (_gate)
             {
+                IProvideScheduledTask[] taskProviders = _metadataFactory.GetAvailableProviders()
+                    .OfType<IProvideScheduledTask>()
+                    .Where(ValidateTaskProvider)
+                    .DistinctBy(x => x.CommandType.FullName)
+                    .ToArray();
+
                 foreach (IProvideScheduledTask provider in taskProviders.Where(x => (x as IProvider)?.Definition?.Enable == true))
                     EnableTask(provider);
+
+                registered = _registeredTasks.Count;
+                available = taskProviders.Length;
             }
 
-            _logger.Debug($"Initialized scheduled task system: {_registeredTasks.Count} active tasks, {taskProviders.Length} total task providers");
+            _logger.Debug($"Initialized scheduled task system: {registered} active tasks, {available} total task providers");
         }
 
         public void Handle(ProviderUpdatedEvent<IMetadata> message) => Apply(message.Definition);
@@ -94,6 +102,14 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks
 
             try
             {
+                // Startup resolves through ProviderFactory.Active(), which drops definitions whose
+                // settings do not validate; an event must not register what startup would skip.
+                if (!metadataDefinition.Settings.Validate().IsValid)
+                {
+                    _logger.Warn($"Settings for {metadataDefinition.Implementation} are not valid; its scheduled task is not registered");
+                    return null;
+                }
+
                 // Ordinary metadata providers resolve fine and are simply not task providers.
                 return _metadataFactory.GetInstance(metadataDefinition) is IProvideScheduledTask provider && ValidateTaskProvider(provider)
                     ? provider
