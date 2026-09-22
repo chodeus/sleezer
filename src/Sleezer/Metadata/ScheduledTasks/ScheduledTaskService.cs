@@ -56,7 +56,13 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks
         private void Apply(ProviderDefinition definition)
         {
             if (ResolveTaskProvider(definition) is not { } taskProvider)
+            {
+                // A provider that stopped resolving must not keep firing the task it registered.
+                if (_registeredTasks.Values.FirstOrDefault(x => (x as IProvider)?.Definition?.Id == definition.Id) is { } stale)
+                    DisableTask(stale);
+
                 return;
+            }
 
             _logger.Trace($"Provider event for: {(taskProvider as IProvider)?.Name}, Enabled: {definition.Enable}");
 
