@@ -36,8 +36,7 @@ public class DigitalReleaseSelectorTests
         Assert.Empty(DigitalReleaseSelector.Rank([R("cd", 12, "CD"), R("vinyl", 12, "12\" Vinyl")], 12));
     }
 
-    // 18 files against a 24-track digital scored 0.085 — under the 0.15 threshold, because
-    // missing_tracks weighs only 0.6 — and the 18-track CD matched at 0.000 lost to it.
+    // Same rule as the tag-loop guard in PreImportTagger: a different length never fits.
     [Fact]
     public void Drops_a_digital_pressing_of_a_different_length()
     {
