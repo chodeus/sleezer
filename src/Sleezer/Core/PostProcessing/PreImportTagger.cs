@@ -314,6 +314,17 @@ public class PreImportTagger : IPreImportTagger
             }
 
             release.AlbumRelease ??= albumRelease;
+
+            // A storefront download is complete, so a length mismatch is the wrong edition —
+            // stamping it hands every other release the album_id penalty at import.
+            if (preferDigitalMedia && release.AlbumRelease is { } chosen && !DigitalReleaseSelector.FitsDownload(chosen, release.LocalTracks.Count))
+            {
+                skipped += release.LocalTracks.Count;
+                _logger.Info("Pre-import tag: '{Release}' has {ReleaseTracks} track(s) but {SourceId} has {LocalTracks} — different edition, leaving the store tags for Lidarr",
+                    chosen.Title, chosen.TrackCount, sourceId, release.LocalTracks.Count);
+                continue;
+            }
+
             _logger.Debug("Pre-import tag: matched release '{Release}' for {SourceId} with album distance {Distance:F3}; tagging {TrackCount} track(s)",
                 release.AlbumRelease?.Title ?? "<unknown>", sourceId, albumDistance, release.TrackMapping.Mapping.Count);
 
@@ -371,8 +382,8 @@ public class PreImportTagger : IPreImportTagger
         return new TaggingResult(tagged, skipped, errored, taggedFiles);
     }
 
-    // A near-miss on the standard edition should still try the deluxe; bounded so an
-    // album with a long digital discography cannot spin here.
+    // Bounded so an album with many same-length digital pressings (regional editions)
+    // cannot spin here.
     private const int MaxDigitalAttempts = 3;
 
     /// <summary>Re-identifies against digital releases, keeping the first within confidence.</summary>
@@ -388,10 +399,10 @@ public class PreImportTagger : IPreImportTagger
         IReadOnlyList<AlbumRelease> digital = DigitalReleaseSelector.Rank(album.AlbumReleases?.Value, localTracks.Count);
         if (digital.Count == 0)
         {
-            // Actionable: a digital download with no digital release is an album that wants
-            // a Harmony import into MusicBrainz.
-            _logger.Info("Pre-import tag: {SourceId} came from a digital source but MusicBrainz has no Digital Media release for '{Album}' — keeping Lidarr's pick",
-                sourceId, album.Title);
+            // Actionable: a digital download with no digital release of its length is an
+            // album that wants a Harmony import into MusicBrainz.
+            _logger.Info("Pre-import tag: {SourceId} came from a digital source but MusicBrainz has no {TrackCount}-track Digital Media release for '{Album}' — keeping Lidarr's pick",
+                sourceId, localTracks.Count, album.Title);
             return (releases, null);
         }
 
@@ -445,7 +456,7 @@ public class PreImportTagger : IPreImportTagger
         if (release == null || tracks is not { Count: > 0 })
             return (0, 0, 0);
 
-        if (!TitleFallbackGuard.IsSafeTarget(release, tracks.Count, localTracks.Count, preferDigitalMedia))
+        if (!TitleFallbackGuard.IsSafeTarget(release, localTracks.Count, preferDigitalMedia))
         {
             // A tracklist that does not fit the download usually means Lidarr is about to
             // attach the files to the wrong release, so this is worth seeing.
