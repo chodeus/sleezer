@@ -3,8 +3,8 @@ using Xunit;
 
 namespace Sleezer.Tests;
 
-// A tier-1 hit on the wrong edition or another artist used to mask the cleaned query entirely,
-// so "Words Remixes" — which Qobuz lists as "Words" — never matched.
+// Qobuz keeps version words in a field its search does not index, so the cleaned query is what
+// finds "Words Remixes"; the gate only skips it once the raw query has answered.
 public class QobuzQueryPlanTests
 {
     [Fact]

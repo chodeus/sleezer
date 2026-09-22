@@ -87,16 +87,18 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             return match.Success ? match.Groups[1].Value : title;
         }
 
-        /// <summary>Normalised core of a title, so "Vespertine (Deluxe Edition)" and "Vespertine" compare equal; null when nothing remains.</summary>
-        public static string? CoreKey(string title)
+        /// <summary>Normalised title, edition qualifier kept, so a remix or live edition never reads as the studio one; null when nothing remains.</summary>
+        // Deliberately not StripForSearch: that is the query rule, and reusing it here would let a
+        // lesser edition satisfy a search for a remix one.
+        public static string? MatchKey(string title)
         {
             if (string.IsNullOrWhiteSpace(title))
                 return null;
 
-            var core = Apostrophes.Replace(StripForSearch(title), string.Empty).RemoveAccent().ToLowerInvariant();
-            core = NonAlphanumeric.Replace(core, " ").Trim();
+            var key = Apostrophes.Replace(title, string.Empty).RemoveAccent().ToLowerInvariant();
+            key = NonAlphanumeric.Replace(key, " ").Trim();
 
-            return core.Length == 0 ? null : core;
+            return key.Length == 0 ? null : key;
         }
 
         /// <summary>Drops literal double quotes — Deezer's artist:"…" / album:"…" field syntax has no escape for them.</summary>

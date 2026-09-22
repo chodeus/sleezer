@@ -88,11 +88,13 @@ public class StoreQueryCleanerTests
         Assert.Equal(expected, StoreQueryCleaner.StripTrailingSubtitle(title));
     }
 
+    // Gates the fallback query, so it must keep apart what StripForSearch deliberately folds together.
     [Fact]
-    public void CoreKey_equates_editions_and_ignores_case_accents_and_punctuation()
+    public void MatchKey_keeps_editions_apart_and_ignores_case_accents_and_punctuation()
     {
-        Assert.Equal(StoreQueryCleaner.CoreKey("Vespertine"), StoreQueryCleaner.CoreKey("Vespertine (Deluxe Edition)"));
-        Assert.Equal("cafe del mar", StoreQueryCleaner.CoreKey("Café del Mar!"));
-        Assert.Null(StoreQueryCleaner.CoreKey("   "));
+        Assert.NotEqual(StoreQueryCleaner.MatchKey("Turn It Up"), StoreQueryCleaner.MatchKey("Turn It Up (Remixes)"));
+        Assert.Equal(StoreQueryCleaner.MatchKey("Vespertine"), StoreQueryCleaner.MatchKey("vespertine!"));
+        Assert.Equal("cafe del mar", StoreQueryCleaner.MatchKey("Café del Mar!"));
+        Assert.Null(StoreQueryCleaner.MatchKey("   "));
     }
 }

@@ -37,7 +37,7 @@ namespace NzbDrone.Core.Indexers.Qobuz
             var context = new QobuzSearchContext
             {
                 ArtistCleanName = searchCriteria.Artist?.CleanName,
-                CoreTitle = StoreQueryCleaner.CoreKey(entityTitle)
+                MatchTitle = StoreQueryCleaner.MatchKey(entityTitle)
             };
 
             var chain = new IndexerPageableRequestChain();

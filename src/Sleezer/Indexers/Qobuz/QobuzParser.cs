@@ -78,12 +78,13 @@ namespace NzbDrone.Core.Indexers.Qobuz
             _ => 3
         };
 
-        // Same primary artist, same core title.
+        // Same primary artist, same title including its edition — CompleteTitle carries Qobuz's
+        // version, so a plain single cannot answer a search for the remixes.
         private static bool IsSearchedAlbum(Album album, QobuzSearchContext context) =>
-            context.CoreTitle != null
+            context.MatchTitle != null
             && context.ArtistCleanName != null
             && album.Artist?.Name?.CleanArtistName() == context.ArtistCleanName
-            && StoreQueryCleaner.CoreKey(album.CompleteTitle) == context.CoreTitle;
+            && StoreQueryCleaner.MatchKey(album.CompleteTitle) == context.MatchTitle;
 
         // Qobuz populates release_type on /album/get but not always on /album/search.
         // Take it from the search payload when it's there and only pay for a detail call

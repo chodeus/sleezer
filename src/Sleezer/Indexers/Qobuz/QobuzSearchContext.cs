@@ -7,8 +7,8 @@ namespace NzbDrone.Core.Indexers.Qobuz
     {
         public string? ArtistCleanName { get; init; }
 
-        // Normalised core of the wanted album title; null for an artist search.
-        public string? CoreTitle { get; init; }
+        // Normalised title of the wanted album, edition included; null for an artist search.
+        public string? MatchTitle { get; init; }
 
         public bool MatchFound { get; set; }
     }
