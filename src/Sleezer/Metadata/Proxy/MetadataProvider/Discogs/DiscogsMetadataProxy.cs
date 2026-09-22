@@ -1,5 +1,6 @@
 ﻿using NLog;
 using NzbDrone.Core.Extras.Metadata;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Core.MetadataSource;
 using NzbDrone.Core.Music;
 using System.Text.RegularExpressions;
@@ -17,14 +18,16 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Discogs
     {
         private readonly IDiscogsProxy _discogsProxy;
         private readonly Logger _logger;
+        private readonly IMetadataRepository _metadataRepository;
 
         public override string Name => "Discogs";
-        private DiscogsMetadataProxySettings ActiveSettings => Settings ?? DiscogsMetadataProxySettings.Instance!;
+        private DiscogsMetadataProxySettings ActiveSettings => Settings ?? StoredProviderSettings.For<DiscogsMetadataProxySettings>(_metadataRepository.All(), nameof(DiscogsMetadataProxy));
 
-        public DiscogsMetadataProxy(DiscogsProxy discogsProxy, Logger logger)
+        public DiscogsMetadataProxy(DiscogsProxy discogsProxy, IMetadataRepository metadataRepository, Logger logger)
         {
             _discogsProxy = discogsProxy;
             _logger = logger;
+            _metadataRepository = metadataRepository;
         }
 
         public List<Album> SearchForNewAlbum(string title, string artist) => _discogsProxy.SearchNewAlbum(ActiveSettings, title, artist);
