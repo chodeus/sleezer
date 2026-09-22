@@ -33,7 +33,6 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
         private static readonly MixedMetadataProxySettingsValidator Validator = new();
 
         private readonly IEnumerable<KeyValuePair<string, string>> _priotities;
-        public static MixedMetadataProxySettings? Instance { get; private set; }
 
         public MixedMetadataProxySettings()
         {
@@ -43,7 +42,6 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
                 .Select(x => new KeyValuePair<string, string>(x.Name, x is SkyHookMetadataProxy ? "0" : "50"))
                 .ToList() ?? Enumerable.Empty<KeyValuePair<string, string>>();
             _customConversion = _priotities.ToList();
-            Instance = this;
             ArtistQueryTimeoutSeconds = 30;
             MaxThreshold = 15;
         }

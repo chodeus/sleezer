@@ -75,6 +75,9 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Utilities\ReleaseFormatter.cs"
              LinkBase="SourceUnderTest" />
+    <!-- Settings for a provider instance resolved without a definition (#126). Lidarr.Core only. -->
+    <Compile Include="..\..\src\Sleezer\Core\Utilities\StoredProviderSettings.cs"
+             LinkBase="SourceUnderTest" />
     <!-- Deezer stripe decode; BouncyCastle only. -->
     <Compile Include="..\..\src\Sleezer\Core\Deezer\DeezerStreamDecoder.cs"
              LinkBase="SourceUnderTest" />
