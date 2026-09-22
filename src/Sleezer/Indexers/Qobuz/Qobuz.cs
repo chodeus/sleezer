@@ -6,7 +6,6 @@ using FluentValidation.Results;
 using NLog;
 using NzbDrone.Common.Http;
 using NzbDrone.Core.Configuration;
-using NzbDrone.Core.Indexers.Exceptions;
 using NzbDrone.Core.IndexerSearch.Definitions;
 using NzbDrone.Core.Parser;
 using NzbDrone.Core.Parser.Model;
@@ -79,23 +78,8 @@ namespace NzbDrone.Core.Indexers.Qobuz
         public override async Task<IList<ReleaseInfo>> Fetch(ArtistSearchCriteria searchCriteria)
             => SkipVariousArtists(await base.Fetch(searchCriteria), searchCriteria.Artist?.Name);
 
-        private void EnsureSignedIn()
-        {
-            // Compared as configured, never against what QobuzApiService resolved: a blank
-            // setting never equals a resolved one, so every search would re-authenticate.
-            bool clientNeedsRebuild = QobuzAPI.Instance == null
-                || QobuzAPI.Instance.ConfiguredAppId != (Settings.AppID ?? string.Empty)
-                || QobuzAPI.Instance.ConfiguredAppSecret != (Settings.AppSecret ?? string.Empty);
-
-            QobuzAPI.Initialize(Settings.AppID, Settings.AppSecret, _logger, clientNeedsRebuild);
-
-            if (QobuzAPI.Instance!.Login != null
-                && QobuzAPI.Instance.CredentialFingerprint == QobuzAPI.FingerprintOf(Settings))
-                return;
-
-            if (!QobuzAPI.Instance.SignIn(Settings))
-                throw new ApiKeyException("Qobuz sign-in failed. Check the User ID and Auth Token in the indexer settings.");
-        }
+        // Locked and revalidated inside QobuzAPI, so concurrent searches share one session.
+        private void EnsureSignedIn() => QobuzAPI.EnsureSignedIn(Settings, _logger);
 
         private IList<ReleaseInfo> SkipVariousArtists(IList<ReleaseInfo> releases, string? searchedArtist)
         {

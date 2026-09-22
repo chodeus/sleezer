@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using NLog;
 using NzbDrone.Common.Http;
-using NzbDrone.Core.Indexers.Exceptions;
 using NzbDrone.Core.IndexerSearch.Definitions;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Qobuz;
@@ -91,16 +90,8 @@ namespace NzbDrone.Core.Indexers.Qobuz
 
         private IEnumerable<IndexerRequest> GetRequests(string searchParameters)
         {
-            QobuzAPI api = QobuzAPI.Instance
-                ?? throw new ApiKeyException("Qobuz API is not initialised. Save the Qobuz indexer settings first.");
-
-            // A scraped app secret can go stale between searches when Qobuz rotates it;
-            // re-signing in re-reads bundle.js.
-            if (!api.Client.IsAppSecretValid())
-                api.SignIn(Settings);
-
-            if (api.Login == null)
-                throw new ApiKeyException("Qobuz login failed. Check your credentials in the indexer settings.");
+            // Enumerated lazily, so a session that went stale mid-search is re-signed here.
+            QobuzAPI api = QobuzAPI.EnsureSignedIn(Settings, Logger);
 
             for (var page = 0; page < MaxPages; page++)
             {

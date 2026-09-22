@@ -3,6 +3,7 @@ using System.Linq;
 using System.Net;
 using System.Text;
 using NLog;
+using NzbDrone.Core.Indexers.Exceptions;
 using NzbDrone.Core.Indexers.Qobuz;
 using QobuzApiSharp.Exceptions;
 using QobuzApiSharp.Models.User;
@@ -29,14 +30,66 @@ namespace NzbDrone.Plugin.Sleezer.Qobuz
             _client = CreateClient(appId, appSecret);
         }
 
-        /// <summary>Creates the singleton, or replaces it when credentials changed.</summary>
-        public static void Initialize(string? appId, string? appSecret, Logger logger, bool forceRecreate = false)
-        {
-            if (Instance != null && !forceRecreate)
-                return;
+        private static readonly object SignInLock = new();
+        private static readonly TimeSpan ValidationInterval = TimeSpan.FromMinutes(5);
+        private static DateTime _lastValidated = DateTime.MinValue;
 
-            // Must not dispose the outgoing client: a download in flight still holds it.
-            Instance = new QobuzAPI(appId, appSecret, logger);
+        /// <summary>The signed-in singleton for these settings: rebuilt when the app credentials change, re-signed when the session stops working.</summary>
+        // One locked path for every search: an unlocked rebuild let a concurrent search see the
+        // half-built instance, find no Login and fail, which put the indexer into backoff.
+        public static QobuzAPI EnsureSignedIn(QobuzIndexerSettings settings, Logger logger)
+        {
+            lock (SignInLock)
+            {
+                // Compared as configured, never against what QobuzApiService resolved: a blank
+                // setting never equals a resolved one, so every search would re-authenticate.
+                if (Instance == null
+                    || Instance.ConfiguredAppId != (settings.AppID ?? string.Empty)
+                    || Instance.ConfiguredAppSecret != (settings.AppSecret ?? string.Empty))
+                {
+                    // Must not dispose the outgoing client: a download in flight still holds it.
+                    Instance = new QobuzAPI(settings.AppID, settings.AppSecret, logger);
+                    _lastValidated = DateTime.MinValue;
+                }
+
+                QobuzAPI api = Instance;
+                if (api._credentialFingerprint == FingerprintOf(settings) && api.SessionIsValid())
+                    return api;
+
+                // A second attempt re-reads bundle.js when a scraped app secret has gone stale.
+                if (!api.SignIn(settings) && !api.SignIn(settings))
+                    throw new ApiKeyException("Qobuz sign-in failed. Check the User ID and Auth Token in the indexer settings.");
+
+                return api;
+            }
+        }
+
+        /// <summary>True while the session checked out within the last five minutes; re-checks the app secret after that.</summary>
+        private bool SessionIsValid()
+        {
+            lock (SignInLock)
+            {
+                if (_login == null)
+                    return false;
+
+                if (DateTime.UtcNow - _lastValidated <= ValidationInterval)
+                    return true;
+
+                try
+                {
+                    if (!_client.IsAppSecretValid())
+                        return false;
+                }
+                catch (Exception ex)
+                {
+                    // A transient failure is not a rejected secret; the next call re-checks.
+                    _logger.Debug("Qobuz session check failed with {ExceptionType}; keeping the session", ex.GetType().Name);
+                    return true;
+                }
+
+                _lastValidated = DateTime.UtcNow;
+                return true;
+            }
         }
 
         public QobuzApiService Client => _client;
@@ -69,6 +122,12 @@ namespace NzbDrone.Plugin.Sleezer.Qobuz
 
         public bool SignIn(QobuzIndexerSettings settings)
         {
+            lock (SignInLock)
+                return SignInCore(settings);
+        }
+
+        private bool SignInCore(QobuzIndexerSettings settings)
+        {
             bool hasEmailPassword = !string.IsNullOrEmpty(settings.Email) && !string.IsNullOrEmpty(settings.MD5Password);
             bool hasToken = !string.IsNullOrEmpty(settings.UserID) && !string.IsNullOrEmpty(settings.UserAuthToken);
 
@@ -87,6 +146,7 @@ namespace NzbDrone.Plugin.Sleezer.Qobuz
                     : _client.LoginWithEmail(settings.Email, settings.MD5Password);
 
                 _credentialFingerprint = FingerprintOf(settings);
+                _lastValidated = DateTime.UtcNow;
                 _logger.Info("Qobuz signed in — user {UserId} country {Country} appId {AppId}",
                     _login?.User?.Id, CountryCode, _client.AppId);
                 return true;

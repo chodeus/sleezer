@@ -37,7 +37,7 @@ it is the source of truth, not the prose.
     "name": "Lidarr.Plugin.Qobuz",
     "path": "src/Sleezer/Indexers/Qobuz/, src/Sleezer/Download/Clients/Qobuz/, src/Sleezer/ImportLists/Qobuz/",
     "upstream": "https://github.com/DaveBinM/Lidarr.Plugin.Qobuz",
-    "commit": "a3bd3139aa4306d59451dd0c474df92b06b5ab2e",
+    "commit": "8ccfca3e661692e1c32c02b92aba8c834ec8cb45",
     "vendored": "2026-08-22",
     "track": true
   },
@@ -130,6 +130,11 @@ internals diverged enough that a patch will rarely apply:
 - Import lists fixed: the favourite-albums list only set `Artist`, and all three
   could loop forever on an empty page.
 - Sleezer logging conventions and nullable annotations throughout.
+- Upstream `8ccfca3e6` (2026-09-16) was ported by mechanism, not diffed: the gated cleaned
+  query and version-word stripping (`QobuzQueryPlan`, `StoreQueryCleaner.StripForSearch`),
+  the two-library-artists guard (`AmbiguousArtistGuard`, in the shared indexer base), and the
+  locked, revalidated session (`QobuzAPI.EnsureSignedIn`). Its release-type throttling was
+  not taken — this parser already reads `release_type` from the search payload.
 
 ### lidarr-plugin-bandcamp — adopted, no longer tracked
 
