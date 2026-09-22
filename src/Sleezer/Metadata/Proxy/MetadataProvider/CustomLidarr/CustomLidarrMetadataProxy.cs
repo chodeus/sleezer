@@ -3,6 +3,7 @@ using NzbDrone.Common.Extensions;
 using NzbDrone.Common.Http;
 using NzbDrone.Core.Configuration;
 using NzbDrone.Core.Extras.Metadata;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Core.MetadataSource;
 using NzbDrone.Core.Music;
 using System.Text.RegularExpressions;
@@ -22,15 +23,17 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.CustomLidarr
         private readonly ICustomLidarrProxy _customLidarrProxy;
         private readonly IConfigService _configService;
         private readonly ILidarrCloudRequestBuilder _defaultRequestFactory;
+        private readonly IMetadataRepository _metadataRepository;
 
         public override string Name => "Lidarr Custom";
-        private static CustomLidarrMetadataProxySettings ActiveSettings => CustomLidarrMetadataProxySettings.Instance!;
+        private CustomLidarrMetadataProxySettings ActiveSettings => Settings ?? StoredProviderSettings.For<CustomLidarrMetadataProxySettings>(_metadataRepository.All(), nameof(CustomLidarrMetadataProxy));
 
-        public CustomLidarrMetadataProxy(IConfigService configService, ILidarrCloudRequestBuilder defaultRequestBuilder, ICustomLidarrProxy customLidarrProxy)
+        public CustomLidarrMetadataProxy(IConfigService configService, ILidarrCloudRequestBuilder defaultRequestBuilder, ICustomLidarrProxy customLidarrProxy, IMetadataRepository metadataRepository)
         {
             _customLidarrProxy = customLidarrProxy;
             _configService = configService;
             _defaultRequestFactory = defaultRequestBuilder;
+            _metadataRepository = metadataRepository;
         }
 
         public List<Album> SearchForNewAlbum(string title, string artist) =>

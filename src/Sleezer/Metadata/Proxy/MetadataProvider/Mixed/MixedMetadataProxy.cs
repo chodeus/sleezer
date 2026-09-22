@@ -2,8 +2,10 @@
 using NLog;
 using NzbDrone.Common.Http;
 using NzbDrone.Core.Datastore;
+using NzbDrone.Core.Extras.Metadata;
 using NzbDrone.Core.MetadataSource;
 using NzbDrone.Core.Music;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using System.Reflection;
 
 namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
@@ -25,12 +27,17 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
         private const int MIN_QUERY_LENGTH = 5;
 
         private readonly IArtistService _artistService;
+        private readonly IMetadataRepository _metadataRepository;
+
+        // Resolved without a Definition when another proxy calls in, so read the stored one.
+        private MixedMetadataProxySettings ActiveSettings => Settings ?? StoredProviderSettings.For<MixedMetadataProxySettings>(_metadataRepository.All(), nameof(MixedMetadataProxy));
         internal readonly IProvideAdaptiveThreshold _adaptiveThreshold;
 
-        public MixedMetadataProxy(Lazy<IProxyService> proxyService, IProvideAdaptiveThreshold adaptiveThreshold, IArtistService artistService, Logger logger) : base(proxyService, logger)
+        public MixedMetadataProxy(Lazy<IProxyService> proxyService, IProvideAdaptiveThreshold adaptiveThreshold, IArtistService artistService, IMetadataRepository metadataRepository, Logger logger) : base(proxyService, logger)
         {
             _adaptiveThreshold = adaptiveThreshold;
             _artistService = artistService;
+            _metadataRepository = metadataRepository;
 
             InitializeAdaptiveThreshold();
         }
@@ -133,8 +140,8 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
 
         private void InitializeAdaptiveThreshold()
         {
-            if (MixedMetadataProxySettings.Instance?.DynamicThresholdMode == true)
-                _adaptiveThreshold.LoadConfig(MixedMetadataProxySettings.Instance?.WeightsPath);
+            if (ActiveSettings.DynamicThresholdMode == true)
+                _adaptiveThreshold.LoadConfig(ActiveSettings.WeightsPath);
         }
 
         private List<Artist> ExecuteSingleProxyArtistSearch(IProxy proxy, string lidarrId, int metadataProfileId, Artist? baseArtist, HashSet<IProxy> usedProxies)
@@ -187,9 +194,9 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
             if (supportMixing.CanHandleId(lidarrId) == MetadataSupportLevel.Supported)
                 return MetadataSupportLevel.Supported;
 
-            if (MixedMetadataProxySettings.Instance?.PopulateWithMultipleProxies == true)
+            if (ActiveSettings.PopulateWithMultipleProxies == true)
             {
-                if (supportMixing.SupportsLink(baseArtist?.Metadata?.Value?.Links ?? []) != null || MixedMetadataProxySettings.Instance?.TryFindArtist == true)
+                if (supportMixing.SupportsLink(baseArtist?.Metadata?.Value?.Links ?? []) != null || ActiveSettings.TryFindArtist == true)
                     return MetadataSupportLevel.ImplicitSupported;
             }
 
@@ -271,7 +278,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
             return [.. candidates.OrderByDescending(c => c.Support).ThenBy(c => c.Priority)];
         }
 
-        private static ProxyCandidate CreateProxyCandidate(IProxy proxy, Func<ISupportMetadataMixing, MetadataSupportLevel> supportSelector) => new()
+        private ProxyCandidate CreateProxyCandidate(IProxy proxy, Func<ISupportMetadataMixing, MetadataSupportLevel> supportSelector) => new()
         {
             Proxy = proxy,
             Priority = GetPriority(proxy.Name ?? string.Empty),
@@ -308,18 +315,18 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
         }
 
         internal int CalculateThreshold(string proxyName, int aggregatedCount) =>
-            MixedMetadataProxySettings.Instance?.DynamicThresholdMode == true
+            ActiveSettings.DynamicThresholdMode == true
                 ? _adaptiveThreshold.GetDynamicThreshold(proxyName, aggregatedCount)
                 : GetThreshold(aggregatedCount);
 
         #region Utility Methods
 
-        private static int GetPriority(string proxyName)
+        private int GetPriority(string proxyName)
         {
-            if (string.IsNullOrWhiteSpace(proxyName) || MixedMetadataProxySettings.Instance?.Priotities == null)
+            if (string.IsNullOrWhiteSpace(proxyName) || ActiveSettings.Priotities == null)
                 return DEFAULT_PRIORITY;
 
-            KeyValuePair<string, string> matchingPriority = MixedMetadataProxySettings.Instance.Priotities
+            KeyValuePair<string, string> matchingPriority = ActiveSettings.Priotities
                 .FirstOrDefault(x => string.Equals(x.Key, proxyName, StringComparison.OrdinalIgnoreCase));
 
             return !string.IsNullOrWhiteSpace(matchingPriority.Value) && int.TryParse(matchingPriority.Value, out int priority)
