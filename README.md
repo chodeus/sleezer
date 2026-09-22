@@ -382,6 +382,7 @@ Best results come with artists that are linked across multiple metadata systems,
 * **FFmpeg issues** — make sure FFmpeg is on PATH, or set its location explicitly in FFmpeg settings. If it's still failing, enable Lidarr's Trace logging and look for the full ffmpeg command line in the log.
 * **Metadata not being added** — confirm your files are in a supported format. If you're using FFmpeg conversion, check the output format is one Lidarr accepts (AAC in MP4, FLAC, MP3, Opus, ALAC).
 * **"X% match" import failure on Deezer** — enable **Strip Featured Artists** (see above). This is the single biggest fix for Deezer's `(feat. X)` titles being rejected by Lidarr's 80% matcher.
+* **"Unable to import automatically, found multiple artists"** — two artists in your library reduce to the same name once Lidarr strips case, punctuation and the disambiguation comment, so it can't pick one from the folder name. Sleezer resolves the artist from the grab history instead, and the import goes through. Lidarr on its own leaves the download stuck in the queue.
 * **No release found** — confirm the indexer is enabled in Delay Profiles (the wrench icon on each profile).
 
 Enable **Debug** log level in `Settings -> General` if you're filing an issue — Sleezer logs the request/response lifecycle at Debug and ARL/API-key values are redacted.
