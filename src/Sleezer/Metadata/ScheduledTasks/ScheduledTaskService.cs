@@ -19,9 +19,12 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks
         ICacheManager _cacheManager,
         Logger _logger) : IScheduledTaskService, IHandle<ProviderUpdatedEvent<IMetadata>>, IHandle<ProviderAddedEvent<IMetadata>>, IHandle<ProviderDeletedEvent<IMetadata>>
     {
-        // Keyed by command type: a provider resolved fresh from a saved definition must
-        // match the one registered at startup.
+        // Keyed by command type; a later registration replaces the prior provider for that type.
         private readonly Dictionary<string, IProvideScheduledTask> _registeredTasks = [];
+
+        // InitializeTasks runs on an async handler while provider events arrive on other threads,
+        // and every _registeredTasks access below is a check-then-act.
+        private readonly object _gate = new();
 
         public void InitializeTasks()
         {
@@ -33,8 +36,12 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks
                 .DistinctBy(x => x.CommandType.FullName)
                 .ToArray();
 
-            foreach (IProvideScheduledTask provider in taskProviders.Where(x => (x as IProvider)?.Definition?.Enable == true))
-                EnableTask(provider);
+            lock (_gate)
+            {
+                foreach (IProvideScheduledTask provider in taskProviders.Where(x => (x as IProvider)?.Definition?.Enable == true))
+                    EnableTask(provider);
+            }
+
             _logger.Debug($"Initialized scheduled task system: {_registeredTasks.Count} active tasks, {taskProviders.Length} total task providers");
         }
 
@@ -44,38 +51,46 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks
 
         public void Handle(ProviderDeletedEvent<IMetadata> message)
         {
-            IProvideScheduledTask? taskProvider = _registeredTasks.Values.FirstOrDefault(x =>
-                (x as IProvider)?.Definition?.Id == message.ProviderId);
-
-            if (taskProvider != null)
-                DisableTask(taskProvider);
+            lock (_gate)
+            {
+                if (_registeredTasks.Values.FirstOrDefault(x => (x as IProvider)?.Definition?.Id == message.ProviderId) is { } taskProvider)
+                    DisableTask(taskProvider);
+            }
         }
 
-        // Resolved from the saved definition, never a startup snapshot: a provider that was
-        // disabled, invalid or not yet in the database when Lidarr started must still register.
+        // Resolved from the saved definition, so registration turns on Enable and the interval.
         private void Apply(ProviderDefinition definition)
         {
-            if (ResolveTaskProvider(definition) is not { } taskProvider)
+            lock (_gate)
             {
-                // A provider that stopped resolving must not keep firing the task it registered.
-                if (_registeredTasks.Values.FirstOrDefault(x => (x as IProvider)?.Definition?.Id == definition.Id) is { } stale)
-                    DisableTask(stale);
+                if (ResolveTaskProvider(definition) is not { } taskProvider)
+                {
+                    // A provider that stopped resolving must not keep firing the task it registered.
+                    if (_registeredTasks.Values.FirstOrDefault(x => (x as IProvider)?.Definition?.Id == definition.Id) is { } stale)
+                        DisableTask(stale);
 
-                return;
+                    return;
+                }
+
+                _logger.Trace($"Provider event for: {(taskProvider as IProvider)?.Name}, Enabled: {definition.Enable}");
+
+                if (definition.Enable)
+                    EnableTask(taskProvider);
+                else
+                    DisableTask(taskProvider);
             }
-
-            _logger.Trace($"Provider event for: {(taskProvider as IProvider)?.Name}, Enabled: {definition.Enable}");
-
-            if (definition.Enable)
-                EnableTask(taskProvider);
-            else
-                DisableTask(taskProvider);
         }
 
         private IProvideScheduledTask? ResolveTaskProvider(ProviderDefinition definition)
         {
-            if (definition is not MetadataDefinition metadataDefinition || metadataDefinition.Implementation == null)
+            if (definition is not MetadataDefinition metadataDefinition)
                 return null;
+
+            if (metadataDefinition.Implementation == null)
+            {
+                _logger.Warn($"Metadata definition {metadataDefinition.Id} ({metadataDefinition.Name}) has no implementation; its scheduled task is not registered");
+                return null;
+            }
 
             try
             {
@@ -119,9 +134,19 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks
         {
             string typeName = provider.CommandType.FullName!;
 
-            if (!_registeredTasks.ContainsKey(typeName))
+            if (!_registeredTasks.TryGetValue(typeName, out IProvideScheduledTask? registered))
             {
                 _logger.Debug($"Task already disabled: {(provider as IProvider)?.Name}");
+                return;
+            }
+
+            // Two definitions sharing a command type must not delete each other's task.
+            int? registeredId = (registered as IProvider)?.Definition?.Id;
+            int? callerId = (provider as IProvider)?.Definition?.Id;
+
+            if (registeredId != null && callerId != null && registeredId != callerId)
+            {
+                _logger.Debug($"Definition {callerId} does not own the task for {typeName}; leaving it registered to {registeredId}");
                 return;
             }
 
