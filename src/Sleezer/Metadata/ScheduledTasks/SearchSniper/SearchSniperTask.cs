@@ -1,6 +1,7 @@
 using FluentValidation.Results;
 using NLog;
 using NzbDrone.Core.Datastore;
+using NzbDrone.Core.Extras.Metadata;
 using NzbDrone.Core.IndexerSearch;
 using NzbDrone.Core.Messaging.Commands;
 using NzbDrone.Core.Messaging.Events;
@@ -21,6 +22,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
         private readonly IQueueService _queueService;
         private readonly IManageCommandQueue _commandQueueManager;
         private readonly IQualityProfileService _qualityProfileService;
+        private readonly IMetadataRepository _metadataRepository;
         private readonly SearchSniperRepositoryHelper _repositoryHelper;
         private readonly Logger _logger;
 
@@ -30,6 +32,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
             IQueueService queueService,
             IManageCommandQueue commandQueueManager,
             IQualityProfileService qualityProfileService,
+            IMetadataRepository metadataRepository,
             IMainDatabase database,
             IEventAggregator eventAggregator,
             Logger logger)
@@ -39,6 +42,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
             _queueService = queueService;
             _commandQueueManager = commandQueueManager;
             _qualityProfileService = qualityProfileService;
+            _metadataRepository = metadataRepository;
             _repositoryHelper = new SearchSniperRepositoryHelper(database, eventAggregator, artistService);
             _logger = logger;
         }
@@ -52,22 +56,26 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
             "Enable this metadata provider to start automatic searches.",
             ProviderMessageType.Info);
 
-        private SearchSniperTaskSettings ActiveSettings => Settings ?? SearchSniperTaskSettings.Instance!;
+        // The command executor is resolved without a Definition, so its settings come from
+        // the stored definition rather than whichever settings object was built last.
+        private SearchSniperTaskSettings ResolveSettings() =>
+            Settings ?? StoredProviderSettings.For<SearchSniperTaskSettings>(_metadataRepository.All(), nameof(SearchSniperTask));
 
-        public override int IntervalMinutes => SearchSniperTaskSettings.Instance!.RefreshInterval;
+        public override int IntervalMinutes => ResolveSettings().RefreshInterval;
 
         public override CommandPriority Priority => CommandPriority.Low;
 
         public override ValidationResult Test()
         {
             ValidationResult test = new();
-            InitializeCache();
+            SearchSniperTaskSettings settings = ResolveSettings();
+            InitializeCache(settings);
 
-            if (ActiveSettings?.RequestCacheType == (int)CacheType.Permanent && !string.IsNullOrWhiteSpace(ActiveSettings.CacheDirectory) && !Directory.Exists(ActiveSettings.CacheDirectory))
+            if (settings.RequestCacheType == (int)CacheType.Permanent && !string.IsNullOrWhiteSpace(settings.CacheDirectory) && !Directory.Exists(settings.CacheDirectory))
             {
                 try
                 {
-                    Directory.CreateDirectory(ActiveSettings.CacheDirectory);
+                    Directory.CreateDirectory(settings.CacheDirectory);
                 }
                 catch (Exception ex)
                 {
@@ -82,7 +90,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
         {
             try
             {
-                RunSearch(message);
+                RunSearch(message, ResolveSettings());
             }
             catch (Exception ex)
             {
@@ -90,39 +98,40 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
             }
         }
 
-        private void InitializeCache()
+        private static void InitializeCache(SearchSniperTaskSettings settings)
         {
-            if (ActiveSettings == null) return;
-
-            _cacheService.CacheDuration = TimeSpan.FromDays(ActiveSettings.CacheRetentionDays);
-            _cacheService.CacheType = (CacheType)ActiveSettings.RequestCacheType;
-            _cacheService.CacheDirectory = ActiveSettings.CacheDirectory;
+            _cacheService.CacheDuration = TimeSpan.FromDays(settings.CacheRetentionDays);
+            _cacheService.CacheType = (CacheType)settings.RequestCacheType;
+            _cacheService.CacheDirectory = settings.CacheDirectory;
         }
 
-        private void RunSearch(SearchSniperCommand message)
+        private void RunSearch(SearchSniperCommand message, SearchSniperTaskSettings settings)
         {
-            if (!ActiveSettings.SearchMissing && !ActiveSettings.SearchMissingTracks && !ActiveSettings.SearchQualityCutoffNotMet)
+            // Only Test() configured the shared cache before; a run must apply the saved settings itself.
+            InitializeCache(settings);
+
+            if (!settings.SearchMissing && !settings.SearchMissingTracks && !settings.SearchQualityCutoffNotMet)
             {
                 _logger.Warn("No search options enabled. Please enable at least one search criteria.");
                 return;
             }
 
-            if (ActiveSettings.StopWhenQueued > 0)
+            if (settings.StopWhenQueued > 0)
             {
-                int queueCount = GetQueueCountByWaitOnType((WaitOnType)ActiveSettings.WaitOn);
-                if (queueCount >= ActiveSettings.StopWhenQueued)
+                int queueCount = GetQueueCountByWaitOnType((WaitOnType)settings.WaitOn);
+                if (queueCount >= settings.StopWhenQueued)
                 {
-                    message.SetCompletionMessage($"Skipping Search Sniper, queue threshold reached ({queueCount} {(WaitOnType)ActiveSettings.WaitOn} items)");
-                    _logger.Info("Skipping. Queue count ({0}) of {1} items reached threshold ({2})", queueCount, (WaitOnType)ActiveSettings.WaitOn, ActiveSettings.StopWhenQueued);
+                    message.SetCompletionMessage($"Skipping Search Sniper, queue threshold reached ({queueCount} {(WaitOnType)settings.WaitOn} items)");
+                    _logger.Info("Skipping. Queue count ({0}) of {1} items reached threshold ({2})", queueCount, (WaitOnType)settings.WaitOn, settings.StopWhenQueued);
                     return;
                 }
             }
 
-            int targetCount = ActiveSettings.RandomPicksPerInterval;
+            int targetCount = settings.RandomPicksPerInterval;
             HashSet<int> queuedAlbumIds = GetQueuedAlbumIds();
             int candidateTarget = Math.Min(targetCount * 10, 500);
 
-            List<Album> eligibleAlbums = CollectEligibleAlbums(queuedAlbumIds, candidateTarget);
+            List<Album> eligibleAlbums = CollectEligibleAlbums(settings, queuedAlbumIds, candidateTarget);
 
             if (eligibleAlbums.Count == 0)
             {
@@ -146,7 +155,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
             }
         }
 
-        private List<Album> CollectEligibleAlbums(HashSet<int> queuedAlbumIds, int candidateTarget)
+        private List<Album> CollectEligibleAlbums(SearchSniperTaskSettings settings, HashSet<int> queuedAlbumIds, int candidateTarget)
         {
             Dictionary<int, Album> eligibleAlbums = [];
             Dictionary<int, List<int>>? profileCutoffs = null;
@@ -155,20 +164,20 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
             (int minId, int maxId) partialIdRange = (0, 0);
             (int minId, int maxId) cutoffIdRange = (0, 0);
 
-            if (ActiveSettings.SearchMissing)
+            if (settings.SearchMissing)
                 missingIdRange = GetMissingAlbumsIdRange();
 
-            if (ActiveSettings.SearchMissingTracks)
+            if (settings.SearchMissingTracks)
                 partialIdRange = _repositoryHelper.GetPartialAlbumsIdRange();
 
-            if (ActiveSettings.SearchQualityCutoffNotMet)
+            if (settings.SearchQualityCutoffNotMet)
             {
                 profileCutoffs = SearchSniperRepositoryHelper.BuildProfileCutoffs(_qualityProfileService.All());
                 if (profileCutoffs.Count > 0)
                     cutoffIdRange = _repositoryHelper.GetCutoffUnmetAlbumsIdRange(profileCutoffs);
             }
 
-            if (ActiveSettings.SearchMissing && missingIdRange.maxId > 0 && eligibleAlbums.Count < candidateTarget)
+            if (settings.SearchMissing && missingIdRange.maxId > 0 && eligibleAlbums.Count < candidateTarget)
             {
                 int startId = GetRandomStartId(missingIdRange.minId, missingIdRange.maxId);
                 _logger.Trace("Fetching missing albums (ID range: {0}-{1}, starting at ID: {2})...", missingIdRange.minId, missingIdRange.maxId, startId);
@@ -178,7 +187,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
                     eligibleAlbums, queuedAlbumIds, candidateTarget, startId, missingIdRange.minId);
             }
 
-            if (ActiveSettings.SearchMissingTracks && partialIdRange.maxId > 0 && eligibleAlbums.Count < candidateTarget)
+            if (settings.SearchMissingTracks && partialIdRange.maxId > 0 && eligibleAlbums.Count < candidateTarget)
             {
                 int startId = GetRandomStartId(partialIdRange.minId, partialIdRange.maxId);
                 _logger.Trace("Fetching partial albums (ID range: {0}-{1}, starting at ID: {2})...", partialIdRange.minId, partialIdRange.maxId, startId);
@@ -188,7 +197,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
                     eligibleAlbums, queuedAlbumIds, candidateTarget, startId, partialIdRange.minId);
             }
 
-            if (ActiveSettings.SearchQualityCutoffNotMet && cutoffIdRange.maxId > 0 && eligibleAlbums.Count < candidateTarget)
+            if (settings.SearchQualityCutoffNotMet && cutoffIdRange.maxId > 0 && eligibleAlbums.Count < candidateTarget)
             {
                 int startId = GetRandomStartId(cutoffIdRange.minId, cutoffIdRange.maxId);
                 _logger.Trace("Fetching cutoff unmet albums (ID range: {0}-{1}, starting at ID: {2})...", cutoffIdRange.minId, cutoffIdRange.maxId, startId);
