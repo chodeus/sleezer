@@ -35,7 +35,9 @@ namespace NzbDrone.Plugin.Sleezer.Core.Replacements
         public override async Task<IList<ReleaseInfo>> Fetch(AlbumSearchCriteria searchCriteria)
         {
             // Subclass filter first, so the count below is what the caller actually receives.
-            IList<ReleaseInfo> releases = FilterReleases(await base.Fetch(searchCriteria), searchCriteria);
+            IList<ReleaseInfo> releases;
+            using (AmbiguousArtistScope.Begin(searchCriteria.Artist, _artistService.GetAllArtists))
+                releases = FilterReleases(await base.Fetch(searchCriteria), searchCriteria);
 
             releases = StoreResultRefiner.Refine(releases, searchCriteria,
                 Settings is not IStoreMatchingSettings { StrictMatching: false }, _artistService.GetAllArtists, Name, _logger);
@@ -47,8 +49,25 @@ namespace NzbDrone.Plugin.Sleezer.Core.Replacements
             return releases;
         }
 
-        public override async Task<IList<ReleaseInfo>> Fetch(ArtistSearchCriteria searchCriteria) =>
-            GuardAmbiguousArtists(await base.Fetch(searchCriteria), searchCriteria.Artist);
+        public override async Task<IList<ReleaseInfo>> Fetch(ArtistSearchCriteria searchCriteria)
+        {
+            using (AmbiguousArtistScope.Begin(searchCriteria.Artist, _artistService.GetAllArtists))
+                return GuardAmbiguousArtists(await base.Fetch(searchCriteria), searchCriteria.Artist);
+        }
+
+        // Lidarr stops at the first tier with any valid result; a tier holding only results the guard
+        // will drop must read as empty, or the next tier never runs.
+        protected override bool IsValidRelease(ReleaseInfo release)
+        {
+            if (!base.IsValidRelease(release))
+                return false;
+
+            if (!AmbiguousArtistScope.Rejects(release))
+                return true;
+
+            _logger.Debug("{Indexer}: dropping '{Title}' — its credited artist matches more than one library artist", Name, release.Title);
+            return false;
+        }
 
         // After paging, so a drop here cannot end pagination early.
         protected IList<ReleaseInfo> GuardAmbiguousArtists(IList<ReleaseInfo> releases, Artist? searched) =>

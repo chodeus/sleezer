@@ -17,8 +17,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             if (releases.Count == 0 || string.IsNullOrWhiteSpace(searched?.CleanName))
                 return releases;
 
-            // Mirrors FindByName's throw condition.
-            HashSet<string> duplicates = [.. library.Where(a => a.CleanName != null).GroupBy(a => a.CleanName).Where(g => g.Count() > 1).Select(g => g.Key)];
+            HashSet<string> duplicates = DuplicatedCleanNames(library);
             if (duplicates.Count == 0)
                 return releases;
 
@@ -28,22 +27,21 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 
             foreach (ReleaseInfo release in releases)
             {
-                // The same parse Lidarr's DownloadDecisionMaker will do; an unparseable title never reaches FindByName.
-                string? clean = ReleaseTitleParser.ParseAlbumTitle(release.Title)?.ArtistName?.CleanArtistName();
-                if (clean == null || clean == searched.CleanName || !duplicates.Contains(clean))
+                switch (Judge(release, searched, duplicates, out string? title))
                 {
-                    kept.Add(release);
-                    continue;
+                    case Outcome.Keep:
+                        kept.Add(release);
+                        break;
+                    case Outcome.Retitle:
+                        release.Title = title;
+                        release.Artist = searched.Name;
+                        retitled++;
+                        kept.Add(release);
+                        break;
+                    default:
+                        dropped++;
+                        break;
                 }
-
-                if (TryRetitleAs(release, searched))
-                {
-                    retitled++;
-                    kept.Add(release);
-                    continue;
-                }
-
-                dropped++;
             }
 
             if (retitled > 0 || dropped > 0)
@@ -53,24 +51,42 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             return kept;
         }
 
+        /// <summary>Whether Apply would drop this result; no side effects.</summary>
+        public static bool Rejects(ReleaseInfo release, Artist searched, HashSet<string> duplicates) =>
+            Judge(release, searched, duplicates, out _) == Outcome.Drop;
+
+        // Mirrors FindByName's throw condition.
+        public static HashSet<string> DuplicatedCleanNames(IEnumerable<Artist> library) =>
+            [.. library.Where(a => a.CleanName != null).GroupBy(a => a.CleanName).Where(g => g.Count() > 1).Select(g => g.Key)];
+
+        private enum Outcome { Keep, Retitle, Drop }
+
+        private static Outcome Judge(ReleaseInfo release, Artist searched, HashSet<string> duplicates, out string? title)
+        {
+            title = null;
+
+            // The same parse Lidarr's DownloadDecisionMaker will do; an unparseable title never reaches FindByName.
+            string? clean = ReleaseTitleParser.ParseAlbumTitle(release.Title)?.ArtistName?.CleanArtistName();
+            if (clean == null || clean == searched.CleanName || !duplicates.Contains(clean))
+                return Outcome.Keep;
+
+            title = RetitleAs(release, searched);
+            return title == null ? Outcome.Drop : Outcome.Retitle;
+        }
+
         // Only where the store credits the searched artist as a main artist and the new title parses
         // back to them. Never a Various Artists credit: a compilation is not an ambiguity to resolve.
-        private static bool TryRetitleAs(ReleaseInfo release, Artist searched)
+        private static string? RetitleAs(ReleaseInfo release, Artist searched)
         {
             if (release is not StoreReleaseInfo store
                 || string.IsNullOrEmpty(release.Artist)
                 || StoreReleaseVerifier.IsVariousArtists(release.Artist)
                 || release.Title?.StartsWith(release.Artist, StringComparison.Ordinal) != true
                 || !store.MainArtists.Any(name => name.CleanArtistName() == searched.CleanName))
-                return false;
+                return null;
 
             string title = searched.Name + release.Title[release.Artist.Length..];
-            if (ReleaseTitleParser.ParseAlbumTitle(title)?.ArtistName?.CleanArtistName() != searched.CleanName)
-                return false;
-
-            release.Title = title;
-            release.Artist = searched.Name;
-            return true;
+            return ReleaseTitleParser.ParseAlbumTitle(title)?.ArtistName?.CleanArtistName() == searched.CleanName ? title : null;
         }
     }
 }
