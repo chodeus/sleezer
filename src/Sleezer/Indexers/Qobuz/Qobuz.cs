@@ -12,6 +12,7 @@ using NzbDrone.Core.Parser.Model;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Qobuz;
 using NzbDrone.Plugin.Sleezer.Core.Replacements;
+using NzbDrone.Core.Music;
 
 namespace NzbDrone.Core.Indexers.Qobuz
 {
@@ -28,8 +29,9 @@ namespace NzbDrone.Core.Indexers.Qobuz
             IIndexerStatusService indexerStatusService,
             IConfigService configService,
             IParsingService parsingService,
+            IArtistService artistService,
             Logger logger)
-            : base(httpClient, indexerStatusService, configService, parsingService, logger)
+            : base(httpClient, indexerStatusService, configService, parsingService, artistService, logger)
         {
         }
 

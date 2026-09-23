@@ -7,6 +7,7 @@ using NzbDrone.Core.Configuration;
 using NzbDrone.Core.Download.History;
 using NzbDrone.Core.History;
 using NzbDrone.Core.Indexers;
+using NzbDrone.Core.Music;
 using NzbDrone.Core.Parser;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Core.Queue;
@@ -32,8 +33,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
         internal new SlskdSettings Settings => base.Settings;
 
-        public SlskdIndexer(IHttpClient httpClient, Lazy<IIndexerFactory> indexerFactory, IIndexerStatusService indexerStatusService, ISlskdSearchChain slskdSearchChain, ISlskdItemsParser slskdItemsParser, IHistoryService historyService, IDownloadHistoryService downloadHistoryService, IQueueService queueService, IConfigService configService, IParsingService parsingService, ISlskdCorruptUserTracker corruptUserTracker, Logger logger)
-          : base(httpClient, indexerStatusService, configService, parsingService, logger)
+        public SlskdIndexer(IHttpClient httpClient, Lazy<IIndexerFactory> indexerFactory, IIndexerStatusService indexerStatusService, ISlskdSearchChain slskdSearchChain, ISlskdItemsParser slskdItemsParser, IHistoryService historyService, IDownloadHistoryService downloadHistoryService, IQueueService queueService, IConfigService configService, IParsingService parsingService, IArtistService artistService, ISlskdCorruptUserTracker corruptUserTracker, Logger logger)
+          : base(httpClient, indexerStatusService, configService, parsingService, artistService, logger)
         {
             _parseIndexerResponse = new SlskdIndexerParser(this, indexerFactory, httpClient, slskdItemsParser, historyService, downloadHistoryService, queueService, corruptUserTracker);
             _indexerRequestGenerator = new SlskdRequestGenerator(this, slskdSearchChain, httpClient);
