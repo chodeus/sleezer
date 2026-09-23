@@ -3,12 +3,10 @@ using NzbDrone.Core.Messaging.Events;
 
 namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks
 {
-    public class ScheduledTaskServiceStarter : IHandle<ApplicationStartedEvent>
+    // Async so it runs after every synchronous ApplicationStartedEvent handler — including
+    // TaskManager's purge of ScheduledTasks rows it does not own.
+    public class ScheduledTaskServiceStarter(IScheduledTaskService _taskService) : IHandleAsync<ApplicationStartedEvent>
     {
-        public static IScheduledTaskService? TaskService { get; private set; }
-
-        public ScheduledTaskServiceStarter(IScheduledTaskService scheduledTaskService) => TaskService = scheduledTaskService;
-
-        public void Handle(ApplicationStartedEvent message) => TaskService?.InitializeTasks();
+        public void HandleAsync(ApplicationStartedEvent message) => _taskService.InitializeTasks();
     }
 }
