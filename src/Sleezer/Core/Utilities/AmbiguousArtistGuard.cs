@@ -8,9 +8,8 @@ using ReleaseTitleParser = NzbDrone.Core.Parser.Parser;
 namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 {
     /// <summary>Keeps a search from failing whole when a result's credited artist matches two library artists.</summary>
-    // Lidarr resolves each result's parsed artist through ArtistRepository.FindByName, which throws
-    // MultipleArtistsFoundException when two library artists share a CleanName — a 500 that loses
-    // every result of the search, the wanted album included.
+    // ArtistRepository.FindByName throws when two library artists share a CleanName, which fails the
+    // whole search, the wanted album included, unless those results are retitled or dropped here.
     public static class AmbiguousArtistGuard
     {
         public static IList<ReleaseInfo> Apply(IList<ReleaseInfo> releases, Artist? searched, IEnumerable<Artist> library, string indexer, Logger logger)
@@ -54,9 +53,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             return kept;
         }
 
-        // "RAYE - Stay …" becomes "David Guetta - Stay …" only where the store credits the searched
-        // artist as a main artist and the rewritten title parses back to them. A Various Artists
-        // credit is never retitled: a compilation is a category, not an ambiguity to resolve.
+        // Only where the store credits the searched artist as a main artist and the new title parses
+        // back to them. Never a Various Artists credit: a compilation is not an ambiguity to resolve.
         private static bool TryRetitleAs(ReleaseInfo release, Artist searched)
         {
             if (release is not StoreReleaseInfo store
