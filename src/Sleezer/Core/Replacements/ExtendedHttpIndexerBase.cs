@@ -6,6 +6,7 @@ using NzbDrone.Core.Configuration;
 using NzbDrone.Core.Indexers;
 using NzbDrone.Core.Indexers.Exceptions;
 using NzbDrone.Core.IndexerSearch.Definitions;
+using NzbDrone.Core.Music;
 using NzbDrone.Core.Parser;
 using NzbDrone.Core.Parser.Model;
 using System.Net;
@@ -23,6 +24,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Replacements
         protected const int MaxNumResultsPerQuery = 1000;
 
         protected readonly IHttpClient _httpClient;
+        private readonly IArtistService _artistService;
         protected new readonly Logger _logger = null!;
 
         public override bool SupportsRss { get; }
@@ -40,10 +42,12 @@ namespace NzbDrone.Plugin.Sleezer.Core.Replacements
             IIndexerStatusService indexerStatusService,
             IConfigService configService,
             IParsingService parsingService,
+            IArtistService artistService,
             Logger logger)
             : base(indexerStatusService, configService, parsingService, logger)
         {
             _httpClient = httpClient;
+            _artistService = artistService;
             _logger = logger;
         }
 
@@ -61,15 +65,22 @@ namespace NzbDrone.Plugin.Sleezer.Core.Replacements
             if (!SupportsSearch)
                 return Array.Empty<ReleaseInfo>();
 
-            return AlbumYearGuard.Apply(await FetchReleases(g => g.GetSearchRequests(searchCriteria)), searchCriteria, Name, _logger);
+            IList<ReleaseInfo> releases = GuardAmbiguousArtists(await FetchReleases(g => g.GetSearchRequests(searchCriteria)), searchCriteria.Artist);
+            return AlbumYearGuard.Apply(releases, searchCriteria, Name, _logger);
         }
 
         public override async Task<IList<ReleaseInfo>> Fetch(ArtistSearchCriteria searchCriteria)
         {
-            if (!SupportsSearch) Array.Empty<ReleaseInfo>();
+            if (!SupportsSearch)
+                return Array.Empty<ReleaseInfo>();
 
-            return await FetchReleases(g => g.GetSearchRequests(searchCriteria));
+            return GuardAmbiguousArtists(await FetchReleases(g => g.GetSearchRequests(searchCriteria)), searchCriteria.Artist);
         }
+
+        // A result whose folder-derived artist shares a CleanName with another library artist makes
+        // Lidarr's FindByName throw, failing the whole search; see AmbiguousArtistGuard.
+        private IList<ReleaseInfo> GuardAmbiguousArtists(IList<ReleaseInfo> releases, Artist? searched) =>
+            releases.Count == 0 ? releases : AmbiguousArtistGuard.Apply(releases, searched, _artistService.GetAllArtists(), Name, _logger);
 
         public override HttpRequest GetDownloadRequest(string link) => new(link);
 

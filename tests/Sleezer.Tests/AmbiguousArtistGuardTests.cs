@@ -99,4 +99,17 @@ public class AmbiguousArtistGuardTests
 
         Assert.Null(release.Rejection);
     }
+
+    // Slskd emits plain ReleaseInfo with a folder-derived artist: nothing to retitle from, so a
+    // colliding name is dropped, while a result stamped with the searched artist stays.
+    [Fact]
+    public void A_plain_release_under_a_colliding_folder_artist_is_dropped_and_the_searched_one_kept()
+    {
+        ReleaseInfo folder = new() { Title = "Guest Act - Some Album (2024) [FLAC]", Artist = "Guest Act", Album = "Some Album" };
+        ReleaseInfo stamped = new() { Title = "Main Act - Some Album (2024) [FLAC]", Artist = "Main Act", Album = "Some Album" };
+
+        IList<ReleaseInfo> kept = AmbiguousArtistGuard.Apply([folder, stamped], Searched, [A("Main Act"), A("Guest Act"), A("Guest Act")], "Slskd", Log);
+
+        Assert.Same(stamped, Assert.Single(kept));
+    }
 }
