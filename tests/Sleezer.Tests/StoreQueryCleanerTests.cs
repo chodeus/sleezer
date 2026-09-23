@@ -101,5 +101,16 @@ public class StoreQueryCleanerTests
         Assert.Equal("cafe del mar", StoreQueryCleaner.MatchKey("Café del Mar!"));
         Assert.Null(StoreQueryCleaner.MatchKey("   "));
         Assert.NotEqual(StoreQueryCleaner.MatchKey("Live 東京"), StoreQueryCleaner.MatchKey("Live 大阪"));
+        Assert.Equal("cafe creme", StoreQueryCleaner.MatchKey("Café Crème"));
+    }
+
+    // Only Latin accents fold: elsewhere the combining mark is part of the word.
+    [Theory]
+    [InlineData("び", "ひ")]
+    [InlineData("ดี", "ด")]
+    [InlineData("कुल", "कल")]
+    public void MatchKey_keeps_combining_marks_outside_latin(string marked, string bare)
+    {
+        Assert.NotEqual(StoreQueryCleaner.MatchKey(bare), StoreQueryCleaner.MatchKey(marked));
     }
 }

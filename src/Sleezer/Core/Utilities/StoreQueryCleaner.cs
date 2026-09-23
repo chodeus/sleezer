@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using System.Text.RegularExpressions;
 using NzbDrone.Common.Extensions;
 
@@ -46,7 +48,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         private static readonly Regex TrailingSubtitle = new(@"^(.*?\S)\s*:\s+\S.*$", RegexOptions.Singleline | RegexOptions.Compiled);
 
         private static readonly Regex Apostrophes = new(@"['`´‘’]", RegexOptions.Compiled);
-        private static readonly Regex NonAlphanumeric = new(@"[^\p{L}\p{N}]+", RegexOptions.Compiled);
+        private static readonly Regex NonAlphanumeric = new(@"[^\p{L}\p{M}\p{N}]+", RegexOptions.Compiled);
 
         /// <summary>Strips bracketed groups and edition/soundtrack qualifiers; keeps the original when nothing would remain.</summary>
         public static string StripQualifiers(string title)
@@ -98,10 +100,36 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             if (string.IsNullOrWhiteSpace(title))
                 return null;
 
-            var key = Apostrophes.Replace(title, string.Empty).RemoveAccent().ToLowerInvariant();
+            var key = StripLatinAccents(Apostrophes.Replace(title, string.Empty)).ToLowerInvariant();
             key = NonAlphanumeric.Replace(key, " ").Trim();
 
             return key.Length == 0 ? null : key;
+        }
+
+        // Not RemoveAccent, which drops every combining mark: on Japanese, Thai or Indic text the mark
+        // changes the word, and two titles folding to one key would let the wrong album pass the gate.
+        private static string StripLatinAccents(string text)
+        {
+            var decomposed = text.Normalize(NormalizationForm.FormD);
+            var result = new StringBuilder(decomposed.Length);
+            var onLatin = false;
+
+            foreach (var c in decomposed)
+            {
+                if (CharUnicodeInfo.GetUnicodeCategory(c) == UnicodeCategory.NonSpacingMark)
+                {
+                    if (onLatin)
+                        continue;
+                }
+                else
+                {
+                    onLatin = c < '\u0250' || c is >= '\u1E00' and <= '\u1EFF';
+                }
+
+                result.Append(c);
+            }
+
+            return result.ToString().Normalize(NormalizationForm.FormC);
         }
 
         /// <summary>Drops literal double quotes — Deezer's artist:"…" / album:"…" field syntax has no escape for them.</summary>
