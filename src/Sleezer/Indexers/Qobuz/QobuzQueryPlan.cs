@@ -35,7 +35,7 @@ namespace NzbDrone.Core.Indexers.Qobuz
                 return queries;
 
             // Same tier, gated: a tier-1 hit is often the wrong edition or another artist, so this
-            // query runs unless the raw query already found the album.
+            // query runs unless an earlier query already found the album.
             Add(1, Compose(artist, Clean(entityTitle)), true);
 
             // Also tier 1 and gated: HttpIndexerBase stops at the first tier with any result, and the

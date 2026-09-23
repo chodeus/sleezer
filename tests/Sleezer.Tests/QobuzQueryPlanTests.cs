@@ -4,7 +4,7 @@ using Xunit;
 namespace Sleezer.Tests;
 
 // Qobuz keeps version words in a field its search does not index, so the cleaned query is what
-// finds "Words Remixes"; the gate only skips it once the raw query has answered.
+// finds "Words Remixes"; the gate only skips it once an earlier query has found the album.
 public class QobuzQueryPlanTests
 {
     [Fact]

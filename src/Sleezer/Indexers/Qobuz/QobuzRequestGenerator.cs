@@ -71,7 +71,7 @@ namespace NzbDrone.Core.Indexers.Qobuz
             // Enumerated only when HttpIndexerBase reaches it, after the earlier queries of the tier ran.
             if (gated && context is { MatchFound: true })
             {
-                Logger.Debug("Qobuz: skipping fallback query '{Query}' — the raw query already found the album", searchParameters);
+                Logger.Debug("Qobuz: skipping fallback query '{Query}' — an earlier query already found the album", searchParameters);
                 yield break;
             }
 
