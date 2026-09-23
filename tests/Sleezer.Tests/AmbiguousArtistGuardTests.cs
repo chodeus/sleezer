@@ -79,8 +79,8 @@ public class AmbiguousArtistGuardTests
         Assert.Empty(kept);
     }
 
-    // The base runs the guard before the verifier; the other way round the retitled result keeps
-    // the verifier's artist-mismatch Rejection and StoreMatchSpecification drops it anyway.
+    // Through StoreResultRefiner, which SleezerHttpIndexerBase.Fetch calls: with the verifier first
+    // the retitled result keeps its artist-mismatch Rejection and StoreMatchSpecification drops it.
     [Fact]
     public void A_retitled_result_passes_verification_when_the_guard_runs_first()
     {
@@ -94,11 +94,11 @@ public class AmbiguousArtistGuardTests
             Albums = [new Album { Title = "Remix Pack", SecondaryTypes = [], AlbumReleases = new LazyLoaded<List<AlbumRelease>>([]) }],
         };
 
-        IList<ReleaseInfo> guarded = AmbiguousArtistGuard.Apply([release], searched, [A("Main Act"), A("Guest Act"), A("Guest Act")], "Store", Log);
-        Assert.Same(release, Assert.Single(guarded));
-        Assert.Equal("Main Act", release.Artist);
+        IList<ReleaseInfo> refined = StoreResultRefiner.Refine(
+            [release], criteria, strictMatching: true, () => [A("Main Act"), A("Guest Act"), A("Guest Act")], "Store", Log);
 
-        Assert.Same(release, Assert.Single(StoreReleaseVerifier.Apply(guarded, criteria, "Store", Log)));
+        Assert.Same(release, Assert.Single(refined));
+        Assert.Equal("Main Act", release.Artist);
         Assert.Null(release.Rejection);
     }
 

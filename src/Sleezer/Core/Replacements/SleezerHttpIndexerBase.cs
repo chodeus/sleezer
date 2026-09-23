@@ -37,15 +37,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.Replacements
             // Subclass filter first, so the count below is what the caller actually receives.
             IList<ReleaseInfo> releases = FilterReleases(await base.Fetch(searchCriteria), searchCriteria);
 
-            // Before verification: a result retitled to the searched artist would otherwise keep the
-            // artist-mismatch Rejection the verifier set, and StoreMatchSpecification would drop it.
-            releases = GuardAmbiguousArtists(releases, searchCriteria.Artist);
-
-            if (Settings is not IStoreMatchingSettings { StrictMatching: false })
-            {
-                releases = StoreReleaseVerifier.Apply(releases, searchCriteria, Name, _logger);
-                releases = AlbumYearGuard.Apply(releases, searchCriteria, Name, _logger);
-            }
+            releases = StoreResultRefiner.Refine(releases, searchCriteria,
+                Settings is not IStoreMatchingSettings { StrictMatching: false }, _artistService.GetAllArtists, Name, _logger);
 
             // Slskd accounts for its own searches; this is the same answer for the rest.
             _logger.Info("{Indexer}: {Count} result(s) for '{Artist} - {Album}'",
