@@ -184,6 +184,12 @@ namespace NzbDrone.Core.Indexers.Qobuz
             return LocalePrefix.Replace(url, $"$1{user.CountryCode}-{user.LanguageCode}".ToLowerInvariant() + "/");
         }
 
+        private static List<string> MainArtistsOf(Album album) =>
+            album.Artists?
+                .Where(a => a?.Name != null && a.Roles?.Any(r => string.Equals(r, "main-artist", StringComparison.OrdinalIgnoreCase)) == true)
+                .Select(a => a.Name)
+                .ToList() ?? [];
+
         private static ReleaseInfo ToReleaseInfo(Album x, AudioQuality bitrate, string? releaseType)
         {
             var publishDate = DateTime.UtcNow;
@@ -207,6 +213,7 @@ namespace NzbDrone.Core.Indexers.Qobuz
                 DownloadProtocol = nameof(QobuzDownloadProtocol),
                 ArtistId = x.Artist?.Id is { } artistId ? artistId.ToString() : null,
                 CandidateTitle = x.CompleteTitle,
+                MainArtists = MainArtistsOf(x),
                 TrackCount = x.TracksCount ?? 0,
                 TotalDurationSeconds = (int)(x.Duration ?? 0),
             };

@@ -171,7 +171,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             return $"runs {store.TotalDurationSeconds}s vs MusicBrainz {nearest.DurationSeconds}s";
         }
 
-        private static bool IsVariousArtists(string? artist)
+        public static bool IsVariousArtists(string? artist)
         {
             var normalized = Normalize(artist);
             return normalized is "various artists" or "va";
