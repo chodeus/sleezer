@@ -34,8 +34,8 @@ namespace NzbDrone.Core.Indexers.Qobuz
             if (string.IsNullOrWhiteSpace(artist))
                 return queries;
 
-            // Same tier, gated: a tier-1 hit is often the wrong edition or another artist, which
-            // used to mask this query entirely; the gate skips it only when the raw query answered.
+            // Same tier, gated: a tier-1 hit is often the wrong edition or another artist, so this
+            // query runs unless the raw query already found the album.
             Add(1, Compose(artist, Clean(entityTitle)), true);
 
             // Tier 2, reached only when tier 1 returned nothing at all.
