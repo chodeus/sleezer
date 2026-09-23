@@ -37,14 +37,16 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             @"\s*[:\-–—]?\s*\b(?:the\s+)?(?:re[-‐]?mix(?:es|ed)?|rework(?:s|ed)?)\b.*$",
             RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
 
+        private static readonly Regex TrailingLiveAt = new(@"\s+\blive\s+at\b.*$", RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
+
         // "S.H.I.E.L.D.": the stores match "SHIELD", not the "S H I E L D" punctuation stripping yields.
         private static readonly Regex DottedAcronym = new(@"(?<!\w)(?:\p{L}\.){2,}\p{L}?(?!\w)", RegexOptions.Compiled);
 
         // "Imagine: The Evolution Documentary" is listed as "Imagine".
-        private static readonly Regex TrailingSubtitle = new(@"^(.*\S)\s*:\s+\S.*$", RegexOptions.Singleline | RegexOptions.Compiled);
+        private static readonly Regex TrailingSubtitle = new(@"^(.*?\S)\s*:\s+\S.*$", RegexOptions.Singleline | RegexOptions.Compiled);
 
         private static readonly Regex Apostrophes = new(@"['`´‘’]", RegexOptions.Compiled);
-        private static readonly Regex NonAlphanumeric = new(@"[^a-z0-9]+", RegexOptions.Compiled);
+        private static readonly Regex NonAlphanumeric = new(@"[^\p{L}\p{N}]+", RegexOptions.Compiled);
 
         /// <summary>Strips bracketed groups and edition/soundtrack qualifiers; keeps the original when nothing would remain.</summary>
         public static string StripQualifiers(string title)
@@ -68,6 +70,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 
             var stripped = VersionSubtitle.Replace(StripQualifiers(title), string.Empty);
             stripped = TrailingVersion.Replace(stripped, string.Empty);
+            stripped = TrailingLiveAt.Replace(stripped, string.Empty);
             stripped = CollapseSpaces.Replace(stripped, " ").Trim(' ', ':', '-', '–', '—');
 
             return string.IsNullOrWhiteSpace(stripped) ? title : stripped;

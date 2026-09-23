@@ -32,20 +32,21 @@ public class QobuzQueryPlanTests
     }
 
     [Fact]
-    public void Trailing_subtitle_is_dropped_only_in_tier_two()
+    public void Trailing_subtitle_query_shares_tier_one_but_is_gated()
     {
         List<QobuzQuery> plan = QobuzQueryPlan.Build("Artist", "Artist", "Imagine: The Evolution Documentary");
 
-        Assert.Contains(new QobuzQuery(2, "Artist Imagine", false), plan);
-        Assert.DoesNotContain(plan, q => q.Tier == 1 && q.Query == "Artist Imagine");
+        Assert.Contains(new QobuzQuery(1, "Artist Imagine", true), plan);
+        Assert.DoesNotContain(plan, q => q.Tier != 1);
     }
 
     [Fact]
-    public void Split_release_halves_share_tier_two()
+    public void Split_release_halves_share_tier_one_but_are_gated()
     {
         List<QobuzQuery> plan = QobuzQueryPlan.Build("Artist", "Artist", "Alpha / Beta");
 
-        Assert.Equal(["Artist Alpha", "Artist Beta"], plan.Where(q => q.Tier == 2).Select(q => q.Query).ToArray());
+        Assert.Contains(new QobuzQuery(1, "Artist Alpha", true), plan);
+        Assert.Contains(new QobuzQuery(1, "Artist Beta", true), plan);
     }
 
     [Fact]

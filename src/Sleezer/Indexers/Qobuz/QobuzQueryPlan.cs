@@ -38,14 +38,15 @@ namespace NzbDrone.Core.Indexers.Qobuz
             // query runs unless the raw query already found the album.
             Add(1, Compose(artist, Clean(entityTitle)), true);
 
-            // Tier 2, reached only when tier 1 returned nothing at all.
-            Add(2, Compose(artist, Clean(StoreQueryCleaner.StripTrailingSubtitle(entityTitle))), false);
+            // Also tier 1 and gated: HttpIndexerBase stops at the first tier with any result, and the
+            // raw query nearly always returns something, so a later tier would never run.
+            Add(1, Compose(artist, Clean(StoreQueryCleaner.StripTrailingSubtitle(entityTitle))), true);
 
             // MB split-release titles like "A / B" — Qobuz usually carries the halves separately.
             if (entityTitle.Contains(" / ", StringComparison.Ordinal))
             {
                 foreach (var part in entityTitle.Split(" / ", StringSplitOptions.RemoveEmptyEntries))
-                    Add(2, Compose(artist, Clean(part)), false);
+                    Add(1, Compose(artist, Clean(part)), true);
             }
 
             return queries;

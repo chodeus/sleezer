@@ -53,6 +53,9 @@ public class StoreQueryCleanerTests
     [InlineData("Words Remixes", "Words")]
     [InlineData("Guilty as Charged: The Remixes", "Guilty as Charged")]
     [InlineData("Album: Live at Wembley", "Album")]
+    [InlineData("Album Live at Wembley", "Album")]
+    [InlineData("Songs to Love and Live", "Songs to Love and Live")]
+    [InlineData("Live at Wembley", "Live at Wembley")]
     [InlineData("Plain Title", "Plain Title")]
     [InlineData("Remixes", "Remixes")]
     public void StripForSearch_drops_the_version_words_a_store_search_cannot_see(string title, string expected)
@@ -81,6 +84,7 @@ public class StoreQueryCleanerTests
 
     [Theory]
     [InlineData("Imagine: The Evolution Documentary", "Imagine")]
+    [InlineData("Imagine: The Evolution: Documentary", "Imagine")]
     [InlineData("No subtitle here", "No subtitle here")]
     [InlineData("Ratio 1:2", "Ratio 1:2")]
     public void StripTrailingSubtitle_drops_a_colon_subtitle(string title, string expected)
@@ -96,5 +100,6 @@ public class StoreQueryCleanerTests
         Assert.Equal(StoreQueryCleaner.MatchKey("Vespertine"), StoreQueryCleaner.MatchKey("vespertine!"));
         Assert.Equal("cafe del mar", StoreQueryCleaner.MatchKey("Café del Mar!"));
         Assert.Null(StoreQueryCleaner.MatchKey("   "));
+        Assert.NotEqual(StoreQueryCleaner.MatchKey("Live 東京"), StoreQueryCleaner.MatchKey("Live 大阪"));
     }
 }
