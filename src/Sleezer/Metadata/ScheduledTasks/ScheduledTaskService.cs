@@ -10,23 +10,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks
 {
     public interface IScheduledTaskService
     {
-        IEnumerable<IProvideScheduledTask> TaskProviders { get; }
-        IEnumerable<IProvideScheduledTask> ActiveTaskProviders { get; }
-
         void InitializeTasks();
-
-        void UpdateTask<T>() where T : IProvideScheduledTask;
-
-        void EnableTask(IProvideScheduledTask provider);
-
-        void DisableTask(IProvideScheduledTask provider);
-    }
-
-    public enum TaskStatusAction
-    {
-        Enabled,
-        Disabled,
-        IntervalUpdated
     }
 
     public class ScheduledTaskService(
@@ -35,68 +19,110 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks
         ICacheManager _cacheManager,
         Logger _logger) : IScheduledTaskService, IHandle<ProviderUpdatedEvent<IMetadata>>, IHandle<ProviderAddedEvent<IMetadata>>, IHandle<ProviderDeletedEvent<IMetadata>>
     {
+        // Keyed by command type; a later registration replaces the prior provider for that type.
         private readonly Dictionary<string, IProvideScheduledTask> _registeredTasks = [];
-        private readonly List<IProvideScheduledTask> _activeTaskProviders = [];
 
-        public IEnumerable<IProvideScheduledTask> TaskProviders { get; private set; } = [];
-        public IEnumerable<IProvideScheduledTask> ActiveTaskProviders => _activeTaskProviders;
+        // InitializeTasks runs on an async handler while provider events arrive on other threads,
+        // and every _registeredTasks access below is a check-then-act.
+        private readonly object _gate = new();
 
         public void InitializeTasks()
         {
             _logger.Trace("Initializing scheduled task system");
 
-            IEnumerable<IProvideScheduledTask> taskProviders = _metadataFactory.GetAvailableProviders()
-                .OfType<IProvideScheduledTask>()
-                .Where(ValidateTaskProvider)
-                .DistinctBy(x => x.CommandType.FullName)
-                .ToArray();
+            int registered;
+            int available;
 
-            TaskProviders = taskProviders;
-
-            foreach (IProvideScheduledTask provider in taskProviders.Where(x => (x as IProvider)?.Definition?.Enable == true))
-                EnableTask(provider);
-            _logger.Debug($"Initialized scheduled task system: {_activeTaskProviders.Count} active tasks, {TaskProviders.Count()} total task providers");
-        }
-
-        public void Handle(ProviderUpdatedEvent<IMetadata> message)
-        {
-            if (TaskProviders.FirstOrDefault(x =>
-            (x as IMetadata)?.Definition?.ImplementationName == message.Definition.ImplementationName)
-                is not IProvideScheduledTask taskProvider)
+            // Collected inside the lock: a delete arriving between the read and the loop would
+            // find nothing registered to disable, and startup would then register it anyway.
+            lock (_gate)
             {
-                return;
+                IProvideScheduledTask[] taskProviders = _metadataFactory.GetAvailableProviders()
+                    .OfType<IProvideScheduledTask>()
+                    .Where(ValidateTaskProvider)
+                    .DistinctBy(x => x.CommandType.FullName)
+                    .ToArray();
+
+                foreach (IProvideScheduledTask provider in taskProviders.Where(x => (x as IProvider)?.Definition?.Enable == true))
+                    EnableTask(provider);
+
+                registered = _registeredTasks.Count;
+                available = taskProviders.Length;
             }
 
-            _logger.Trace($"Provider updated event for: {(taskProvider as IProvider)?.Name}, Enabled: {message.Definition.Enable}");
-
-            if (message.Definition.Enable)
-                EnableTask(taskProvider);
-            else
-                DisableTask(taskProvider);
+            _logger.Debug($"Initialized scheduled task system: {registered} active tasks, {available} total task providers");
         }
 
-        public void Handle(ProviderAddedEvent<IMetadata> message)
-        {
-            if (message.Definition.Implementation == null)
-                return;
+        public void Handle(ProviderUpdatedEvent<IMetadata> message) => Apply(message.Definition);
 
-            IProvideScheduledTask? taskProvider = TaskProviders.FirstOrDefault(x =>
-                (x as IProvider)?.Definition?.ImplementationName == message.Definition.ImplementationName);
-
-            if (taskProvider != null && message.Definition.Enable)
-                EnableTask(taskProvider);
-        }
+        public void Handle(ProviderAddedEvent<IMetadata> message) => Apply(message.Definition);
 
         public void Handle(ProviderDeletedEvent<IMetadata> message)
         {
-            IProvideScheduledTask? taskProvider = _activeTaskProviders.FirstOrDefault(x =>
-                (x as IProvider)?.Definition?.Id == message.ProviderId);
-
-            if (taskProvider != null)
-                DisableTask(taskProvider);
+            lock (_gate)
+            {
+                if (_registeredTasks.Values.FirstOrDefault(x => (x as IProvider)?.Definition?.Id == message.ProviderId) is { } taskProvider)
+                    DisableTask(taskProvider);
+            }
         }
 
-        public void EnableTask(IProvideScheduledTask provider)
+        // Resolved from the saved definition, so registration turns on Enable and the interval.
+        private void Apply(ProviderDefinition definition)
+        {
+            lock (_gate)
+            {
+                if (ResolveTaskProvider(definition) is not { } taskProvider)
+                {
+                    // A provider that stopped resolving must not keep firing the task it registered.
+                    if (_registeredTasks.Values.FirstOrDefault(x => (x as IProvider)?.Definition?.Id == definition.Id) is { } stale)
+                        DisableTask(stale);
+
+                    return;
+                }
+
+                _logger.Trace($"Provider event for: {(taskProvider as IProvider)?.Name}, Enabled: {definition.Enable}");
+
+                if (definition.Enable)
+                    EnableTask(taskProvider);
+                else
+                    DisableTask(taskProvider);
+            }
+        }
+
+        private IProvideScheduledTask? ResolveTaskProvider(ProviderDefinition definition)
+        {
+            if (definition is not MetadataDefinition metadataDefinition)
+                return null;
+
+            if (metadataDefinition.Implementation == null)
+            {
+                _logger.Warn($"Metadata definition {metadataDefinition.Id} ({metadataDefinition.Name}) has no implementation; its scheduled task is not registered");
+                return null;
+            }
+
+            try
+            {
+                // Startup resolves through ProviderFactory.Active(), which drops definitions whose
+                // settings do not validate; an event must not register what startup would skip.
+                if (!metadataDefinition.Settings.Validate().IsValid)
+                {
+                    _logger.Warn($"Settings for {metadataDefinition.Implementation} are not valid; its scheduled task is not registered");
+                    return null;
+                }
+
+                // Ordinary metadata providers resolve fine and are simply not task providers.
+                return _metadataFactory.GetInstance(metadataDefinition) is IProvideScheduledTask provider && ValidateTaskProvider(provider)
+                    ? provider
+                    : null;
+            }
+            catch (Exception ex)
+            {
+                _logger.Warn(ex, $"Cannot resolve a scheduled task provider for {metadataDefinition.Implementation}; its task is not registered");
+                return null;
+            }
+        }
+
+        private void EnableTask(IProvideScheduledTask provider)
         {
             if (provider.IntervalMinutes <= 0)
             {
@@ -105,50 +131,74 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks
                 return;
             }
 
-            if (_activeTaskProviders.Contains(provider))
+            string typeName = provider.CommandType.FullName!;
+
+            if (_registeredTasks.ContainsKey(typeName))
             {
+                // The fresh instance carries the saved definition, so it replaces the stored one.
+                _registeredTasks[typeName] = provider;
                 _logger.Trace($"Task already enabled: {(provider as IProvider)?.Name}");
                 UpdateTaskInterval(provider);
                 return;
             }
 
-            _activeTaskProviders.Add(provider);
-            RegisterTask(provider);
-            _logger.Info($"Enabled scheduled task: {(provider as IProvider)?.Name} (Interval: {provider.IntervalMinutes}m, Priority: {provider.Priority})");
+            if (RegisterTask(provider))
+                _logger.Info($"Enabled scheduled task: {(provider as IProvider)?.Name} (Interval: {provider.IntervalMinutes}m, Priority: {provider.Priority})");
         }
 
-        public void DisableTask(IProvideScheduledTask provider)
+        private void DisableTask(IProvideScheduledTask provider)
         {
-            if (!_activeTaskProviders.Contains(provider))
+            string typeName = provider.CommandType.FullName!;
+
+            if (!_registeredTasks.TryGetValue(typeName, out IProvideScheduledTask? registered))
             {
                 _logger.Debug($"Task already disabled: {(provider as IProvider)?.Name}");
                 return;
             }
 
-            string typeName = provider.CommandType.FullName!;
+            // Two definitions sharing a command type must not delete each other's task.
+            int? registeredId = (registered as IProvider)?.Definition?.Id;
+            int? callerId = (provider as IProvider)?.Definition?.Id;
 
+            if (registeredId != null && callerId != null && registeredId != callerId)
+            {
+                _logger.Debug($"Definition {callerId} does not own the task for {typeName}; leaving it registered to {registeredId}");
+                return;
+            }
+
+            string? name = (provider as IProvider)?.Name;
+
+            // Each step runs even if another throws. The cache is what TaskManager fires from, so it
+            // goes first; a row left behind is purged by TaskManager at the next startup.
+            bool uncached = Attempt(() => RemoveFromCache(typeName), "remove the cached scheduled task", name);
+            bool deleted = Attempt(() =>
+            {
+                if (_scheduledTaskRepository.All().SingleOrDefault(t => t.TypeName == typeName) is { } existing)
+                    _scheduledTaskRepository.Delete(existing.Id);
+            }, "delete the scheduled task from the repository", name);
+            _registeredTasks.Remove(typeName);
+
+            if (uncached && deleted)
+                _logger.Info($"Disabled scheduled task: {name}");
+            else
+                _logger.Warn($"Scheduled task only partly disabled: {name} (uncached: {uncached}, row deleted: {deleted})");
+        }
+
+        private bool Attempt(Action step, string what, string? name)
+        {
             try
             {
-                ScheduledTask? existing = _scheduledTaskRepository.All().SingleOrDefault(t => t.TypeName == typeName);
-
-                if (existing != null)
-                {
-                    _scheduledTaskRepository.Delete(existing.Id);
-                    RemoveFromCache(typeName);
-                    _logger.Debug($"Deleted scheduled task from repository: {(provider as IProvider)?.Name}");
-                }
-
-                _registeredTasks.Remove(typeName);
-                _activeTaskProviders.Remove(provider);
-                _logger.Info($"Disabled scheduled task: {(provider as IProvider)?.Name}");
+                step();
+                return true;
             }
             catch (Exception ex)
             {
-                _logger.Error(ex, $"Failed to disable scheduled task: {(provider as IProvider)?.Name}");
+                _logger.Error(ex, $"Failed to {what}: {name}");
+                return false;
             }
         }
 
-        private void RegisterTask(IProvideScheduledTask provider)
+        private bool RegisterTask(IProvideScheduledTask provider)
         {
             string typeName = provider.CommandType.FullName!;
 
@@ -179,30 +229,13 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks
 
                 UpdateCache(existing ?? task);
                 _registeredTasks[typeName] = provider;
+                return true;
             }
             catch (Exception ex)
             {
                 _logger.Error(ex, $"Failed to register scheduled task: {(provider as IProvider)?.Name}");
+                return false;
             }
-        }
-
-        public void UpdateTask<T>() where T : IProvideScheduledTask
-        {
-            string typeName = typeof(T).FullName!;
-
-            if (!_registeredTasks.TryGetValue(typeName, out IProvideScheduledTask? provider))
-            {
-                _logger.Warn($"Cannot update interval: Task provider {typeName} is not registered");
-                return;
-            }
-
-            if (provider is not T)
-            {
-                _logger.Warn($"Cannot update interval: Registered provider for {typeName} is not of expected type");
-                return;
-            }
-
-            EnableTask(provider);
         }
 
         private void UpdateTaskInterval(IProvideScheduledTask provider)
