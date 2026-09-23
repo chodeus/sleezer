@@ -6,13 +6,12 @@ using NzbDrone.Core.Parser.Model;
 
 namespace NzbDrone.Plugin.Sleezer.Core.Replacements
 {
-    // ArtistRepository throws when two artists share a CleanName, and the throw jumps over the
-    // history fallbacks in TrackedDownloadService.TrackDownload and CompletedDownloadService.Check.
-    //
-    // Composed, not inherited: Lidarr's develop branch added a ParsingService constructor parameter
-    // the pinned submodule lacks, and a subclass binds the ctor it compiled against at runtime.
+    // Returns null instead of throwing when two artists share a CleanName, so the history fallbacks
+    // in TrackedDownloadService.TrackDownload and CompletedDownloadService.Check get to run.
     public class SleezerParsingService : IParsingService
     {
+        // Composed, not inherited: develop's ParsingService constructor takes a parameter the pinned
+        // submodule lacks, so a subclass would call a base constructor that does not exist at runtime.
         private readonly ParsingService _inner;
         private readonly Logger _logger;
 
@@ -73,8 +72,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.Replacements
 
         public Album GetLocalAlbum(string filename, Artist artist) => _inner.GetLocalAlbum(filename, artist);
 
-        // Info, not Debug: this replaces a queue warning the user could previously see without
-        // turning Debug logging on. The exception already names the matching artists.
+        // Info, not Debug: with the queue warning suppressed this is the only trace of the collision.
+        // The exception already names the matching artists.
         private void LogCollision(string title, MultipleArtistsFoundException e) =>
             _logger.Info(e, "Multiple artists share a clean name for '{0}'; falling back to download history", title);
     }
