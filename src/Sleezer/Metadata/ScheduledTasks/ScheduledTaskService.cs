@@ -166,23 +166,30 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks
                 return;
             }
 
+            string? name = (provider as IProvider)?.Name;
+
+            // Each step runs even if another throws. The cache is what TaskManager fires from, so it
+            // goes first; a row left behind is purged by TaskManager at the next startup.
+            Attempt(() => RemoveFromCache(typeName), "remove the cached scheduled task", name);
+            Attempt(() =>
+            {
+                if (_scheduledTaskRepository.All().SingleOrDefault(t => t.TypeName == typeName) is { } existing)
+                    _scheduledTaskRepository.Delete(existing.Id);
+            }, "delete the scheduled task from the repository", name);
+            _registeredTasks.Remove(typeName);
+
+            _logger.Info($"Disabled scheduled task: {name}");
+        }
+
+        private void Attempt(Action step, string what, string? name)
+        {
             try
             {
-                ScheduledTask? existing = _scheduledTaskRepository.All().SingleOrDefault(t => t.TypeName == typeName);
-
-                if (existing != null)
-                {
-                    _scheduledTaskRepository.Delete(existing.Id);
-                    RemoveFromCache(typeName);
-                    _logger.Debug($"Deleted scheduled task from repository: {(provider as IProvider)?.Name}");
-                }
-
-                _registeredTasks.Remove(typeName);
-                _logger.Info($"Disabled scheduled task: {(provider as IProvider)?.Name}");
+                step();
             }
             catch (Exception ex)
             {
-                _logger.Error(ex, $"Failed to disable scheduled task: {(provider as IProvider)?.Name}");
+                _logger.Error(ex, $"Failed to {what}: {name}");
             }
         }
 
