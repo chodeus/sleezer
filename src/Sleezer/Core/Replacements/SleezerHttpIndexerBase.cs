@@ -57,7 +57,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Replacements
         public override async Task<IList<ReleaseInfo>> Fetch(ArtistSearchCriteria searchCriteria) =>
             GuardAmbiguousArtists(await base.Fetch(searchCriteria), searchCriteria.Artist);
 
-        // After paging and the verifier, so a drop here cannot end pagination early.
+        // After paging, so a drop here cannot end pagination early.
         protected IList<ReleaseInfo> GuardAmbiguousArtists(IList<ReleaseInfo> releases, Artist? searched) =>
             releases.Count == 0 ? releases : AmbiguousArtistGuard.Apply(releases, searched, _artistService.GetAllArtists(), Name, _logger);
     }

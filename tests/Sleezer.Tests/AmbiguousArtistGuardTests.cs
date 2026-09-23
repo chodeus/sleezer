@@ -68,8 +68,8 @@ public class AmbiguousArtistGuardTests
         Assert.Equal("Main Act - Own Album (2024) [Lossless] [WEB]", release.Title);
     }
 
-    // Two VA entries in the library are the common case; the compilation is dropped here for an
-    // artist search and by StoreReleaseVerifier for an album search — never retitled.
+    // Two VA entries in the library are the common case: the guard drops the duplicated credit on
+    // both search paths, and StoreReleaseVerifier drops any VA hit on an album search. Never retitled.
     [Fact]
     public void Never_retitles_a_various_artists_compilation()
     {
@@ -95,8 +95,10 @@ public class AmbiguousArtistGuardTests
         };
 
         IList<ReleaseInfo> guarded = AmbiguousArtistGuard.Apply([release], searched, [A("Main Act"), A("Guest Act"), A("Guest Act")], "Store", Log);
-        StoreReleaseVerifier.Apply(guarded, criteria, "Store", Log);
+        Assert.Same(release, Assert.Single(guarded));
+        Assert.Equal("Main Act", release.Artist);
 
+        Assert.Same(release, Assert.Single(StoreReleaseVerifier.Apply(guarded, criteria, "Store", Log)));
         Assert.Null(release.Rejection);
     }
 
