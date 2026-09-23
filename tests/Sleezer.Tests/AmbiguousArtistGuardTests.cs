@@ -1,4 +1,6 @@
 using NLog;
+using NzbDrone.Core.Datastore;
+using NzbDrone.Core.IndexerSearch.Definitions;
 using NzbDrone.Core.Music;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Plugin.Sleezer.Core.Model;
@@ -75,5 +77,26 @@ public class AmbiguousArtistGuardTests
             [R("Various Artists", "Hits", "Main Act", "Guest Act")], Searched, [A("Main Act"), A("Various Artists"), A("Various Artists")], "Store", Log);
 
         Assert.Empty(kept);
+    }
+
+    // The base runs the guard before the verifier; the other way round the retitled result keeps
+    // the verifier's artist-mismatch Rejection and StoreMatchSpecification drops it anyway.
+    [Fact]
+    public void A_retitled_result_passes_verification_when_the_guard_runs_first()
+    {
+        StoreReleaseInfo release = R("Guest Act", "Remix Pack", "Main Act", "Guest Act");
+        Artist searched = A("Main Act");
+        searched.Metadata = new LazyLoaded<ArtistMetadata>(new ArtistMetadata { Name = searched.Name, Aliases = [] });
+        var criteria = new AlbumSearchCriteria
+        {
+            Artist = searched,
+            AlbumTitle = "Remix Pack",
+            Albums = [new Album { Title = "Remix Pack", SecondaryTypes = [], AlbumReleases = new LazyLoaded<List<AlbumRelease>>([]) }],
+        };
+
+        IList<ReleaseInfo> guarded = AmbiguousArtistGuard.Apply([release], searched, [A("Main Act"), A("Guest Act"), A("Guest Act")], "Store", Log);
+        StoreReleaseVerifier.Apply(guarded, criteria, "Store", Log);
+
+        Assert.Null(release.Rejection);
     }
 }
