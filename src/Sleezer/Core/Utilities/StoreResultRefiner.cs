@@ -1,6 +1,5 @@
 using NLog;
 using NzbDrone.Core.IndexerSearch.Definitions;
-using NzbDrone.Core.Music;
 using NzbDrone.Core.Parser.Model;
 
 namespace NzbDrone.Plugin.Sleezer.Core.Utilities
@@ -14,12 +13,12 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             IList<ReleaseInfo> releases,
             AlbumSearchCriteria criteria,
             bool strictMatching,
-            Func<IEnumerable<Artist>> library,
+            HashSet<string> duplicates,
             string indexerName,
             Logger logger)
         {
             if (releases.Count != 0)
-                releases = AmbiguousArtistGuard.Apply(releases, criteria.Artist, library(), indexerName, logger);
+                releases = AmbiguousArtistGuard.Apply(releases, criteria.Artist, duplicates, indexerName, logger);
 
             if (!strictMatching)
                 return releases;

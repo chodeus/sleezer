@@ -12,13 +12,12 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
     // whole search, the wanted album included, unless those results are retitled or dropped here.
     public static class AmbiguousArtistGuard
     {
-        public static IList<ReleaseInfo> Apply(IList<ReleaseInfo> releases, Artist? searched, IEnumerable<Artist> library, string indexer, Logger logger)
-        {
-            if (releases.Count == 0 || string.IsNullOrWhiteSpace(searched?.CleanName))
-                return releases;
+        public static IList<ReleaseInfo> Apply(IList<ReleaseInfo> releases, Artist? searched, IEnumerable<Artist> library, string indexer, Logger logger) =>
+            releases.Count == 0 ? releases : Apply(releases, searched, DuplicatedCleanNames(library), indexer, logger);
 
-            HashSet<string> duplicates = DuplicatedCleanNames(library);
-            if (duplicates.Count == 0)
+        public static IList<ReleaseInfo> Apply(IList<ReleaseInfo> releases, Artist? searched, HashSet<string> duplicates, string indexer, Logger logger)
+        {
+            if (releases.Count == 0 || duplicates.Count == 0 || string.IsNullOrWhiteSpace(searched?.CleanName))
                 return releases;
 
             List<ReleaseInfo> kept = new(releases.Count);

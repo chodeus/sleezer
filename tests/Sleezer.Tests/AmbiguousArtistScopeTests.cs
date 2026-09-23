@@ -58,7 +58,7 @@ public class AmbiguousArtistScopeTests
             await Task.Yield();
             using (AmbiguousArtistScope.Begin(Searched, () => library))
             {
-                bothInScope.SignalAndWait(TimeSpan.FromSeconds(5));
+                Assert.True(bothInScope.SignalAndWait(TimeSpan.FromSeconds(5)), "the two searches never overlapped");
                 await Task.Delay(20);
                 return AmbiguousArtistScope.Rejects(dropped);
             }

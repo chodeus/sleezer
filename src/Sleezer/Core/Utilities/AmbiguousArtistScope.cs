@@ -14,6 +14,9 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         private readonly Artist _searched;
         private readonly HashSet<string> _duplicates;
 
+        /// <summary>The library's duplicated CleanNames, computed once for the whole search.</summary>
+        public HashSet<string> Duplicates => _duplicates;
+
         private AmbiguousArtistScope(Artist searched, HashSet<string> duplicates)
         {
             _outer = Current.Value;
@@ -22,7 +25,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             Current.Value = this;
         }
 
-        public static IDisposable Begin(Artist? searched, Func<IEnumerable<Artist>> library)
+        public static AmbiguousArtistScope Begin(Artist? searched, Func<IEnumerable<Artist>> library)
         {
             if (string.IsNullOrWhiteSpace(searched?.CleanName))
                 return new AmbiguousArtistScope(new Artist(), []);

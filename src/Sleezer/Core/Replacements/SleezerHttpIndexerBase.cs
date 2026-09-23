@@ -35,12 +35,17 @@ namespace NzbDrone.Plugin.Sleezer.Core.Replacements
         public override async Task<IList<ReleaseInfo>> Fetch(AlbumSearchCriteria searchCriteria)
         {
             // Subclass filter first, so the count below is what the caller actually receives.
+            // One duplicate set per search, so the tier check and the guard below judge the same snapshot.
             IList<ReleaseInfo> releases;
-            using (AmbiguousArtistScope.Begin(searchCriteria.Artist, _artistService.GetAllArtists))
+            HashSet<string> duplicates;
+            using (AmbiguousArtistScope scope = AmbiguousArtistScope.Begin(searchCriteria.Artist, _artistService.GetAllArtists))
+            {
+                duplicates = scope.Duplicates;
                 releases = FilterReleases(await base.Fetch(searchCriteria), searchCriteria);
+            }
 
             releases = StoreResultRefiner.Refine(releases, searchCriteria,
-                Settings is not IStoreMatchingSettings { StrictMatching: false }, _artistService.GetAllArtists, Name, _logger);
+                Settings is not IStoreMatchingSettings { StrictMatching: false }, duplicates, Name, _logger);
 
             // Slskd accounts for its own searches; this is the same answer for the rest.
             _logger.Info("{Indexer}: {Count} result(s) for '{Artist} - {Album}'",
@@ -51,8 +56,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.Replacements
 
         public override async Task<IList<ReleaseInfo>> Fetch(ArtistSearchCriteria searchCriteria)
         {
-            using (AmbiguousArtistScope.Begin(searchCriteria.Artist, _artistService.GetAllArtists))
-                return GuardAmbiguousArtists(await base.Fetch(searchCriteria), searchCriteria.Artist);
+            using AmbiguousArtistScope scope = AmbiguousArtistScope.Begin(searchCriteria.Artist, _artistService.GetAllArtists);
+            return AmbiguousArtistGuard.Apply(await base.Fetch(searchCriteria), searchCriteria.Artist, scope.Duplicates, Name, _logger);
         }
 
         // Lidarr stops at the first tier with any valid result; a tier holding only results the guard

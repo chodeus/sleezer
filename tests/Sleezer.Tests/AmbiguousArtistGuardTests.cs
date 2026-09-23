@@ -95,7 +95,7 @@ public class AmbiguousArtistGuardTests
         };
 
         IList<ReleaseInfo> refined = StoreResultRefiner.Refine(
-            [release], criteria, strictMatching: true, () => [A("Main Act"), A("Guest Act"), A("Guest Act")], "Store", Log);
+            [release], criteria, strictMatching: true, AmbiguousArtistGuard.DuplicatedCleanNames([A("Main Act"), A("Guest Act"), A("Guest Act")]), "Store", Log);
 
         Assert.Same(release, Assert.Single(refined));
         Assert.Equal("Main Act", release.Artist);
