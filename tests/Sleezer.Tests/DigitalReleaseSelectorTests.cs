@@ -7,6 +7,8 @@ namespace Sleezer.Tests;
 // Issue #102: 22 of 24 albums carrying a Qobuz SOURCE tag sat on a non-digital release
 // while a Digital Media release existed. A store download cannot be a CD or vinyl pressing,
 // but Lidarr ranks by track-count distance alone, so a tying CD pressing wins.
+// The steer must not go the other way: a digital pressing of a different length is a
+// different edition, and stamping it locks the import onto "missing tracks".
 public class DigitalReleaseSelectorTests
 {
     private static AlbumRelease R(string id, int trackCount, params string[] formats) => new()
@@ -34,20 +36,40 @@ public class DigitalReleaseSelectorTests
         Assert.Empty(DigitalReleaseSelector.Rank([R("cd", 12, "CD"), R("vinyl", 12, "12\" Vinyl")], 12));
     }
 
-    // The whole point of returning a list: a near-miss on the standard edition must still
-    // leave the deluxe to try.
+    // Same rule as the tag-loop guard in PreImportTagger: a different length never fits.
     [Fact]
-    public void Orders_every_digital_pressing_by_track_count_proximity()
+    public void Drops_a_digital_pressing_of_a_different_length()
+    {
+        Assert.Empty(DigitalReleaseSelector.Rank([R("cd", 18, "CD"), R("deluxe", 24, "Digital Media")], 18));
+    }
+
+    [Fact]
+    public void Keeps_only_the_digital_pressings_that_fit()
     {
         IReadOnlyList<AlbumRelease> ranked = DigitalReleaseSelector.Rank(
             [R("deluxe", 18, "Digital Media"), R("standard", 12, "Digital Media"), R("ep", 4, "Digital Media")], 12);
 
-        Assert.Equal(["standard", "deluxe", "ep"], Ids(ranked));
+        Assert.Equal(["standard"], Ids(ranked));
     }
 
-    // Ties must resolve the same way every run, or an album flips between pressings.
+    [Theory]
+    [InlineData(12, 12, true)]
+    [InlineData(13, 12, false)]
+    [InlineData(12, 13, false)]
+    public void Fits_only_a_download_of_the_same_length(int releaseTrackCount, int localTrackCount, bool expected)
+    {
+        Assert.Equal(expected, DigitalReleaseSelector.FitsDownload(R("x", releaseTrackCount, "Digital Media"), localTrackCount));
+    }
+
     [Fact]
-    public void Breaks_track_count_ties_stably_by_id()
+    public void A_missing_release_never_fits()
+    {
+        Assert.False(DigitalReleaseSelector.FitsDownload(null, 12));
+    }
+
+    // Order must be the same every run, or an album flips between pressings.
+    [Fact]
+    public void Orders_fitting_pressings_stably_by_id()
     {
         AlbumRelease[] candidates = [R("bbb", 12, "Digital Media"), R("aaa", 12, "Digital Media")];
 

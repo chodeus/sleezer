@@ -27,10 +27,13 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
 
         public List<TResult> ExecuteSearch()
         {
+            // One resolve for the whole pass; the threshold below is read once per candidate.
+            MixedMetadataProxySettings settings = _mixedProxy.ActiveSettings;
+
             List<TResult> aggregatedItems = [];
             int bestPriority = int.MaxValue;
 
-            foreach (ProxyCandidate candidate in _mixedProxy.GetCandidateProxies(_supportSelector, _interfaceType))
+            foreach (ProxyCandidate candidate in _mixedProxy.GetCandidateProxies(_supportSelector, _interfaceType, settings))
             {
                 if (bestPriority == int.MaxValue)
                 {
@@ -38,7 +41,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
                 }
                 else
                 {
-                    int threshold = _mixedProxy.CalculateThreshold(candidate.Proxy.Name, aggregatedItems.Count);
+                    int threshold = _mixedProxy.CalculateThreshold(candidate.Proxy.Name, aggregatedItems.Count, settings);
                     if (candidate.Priority > bestPriority + threshold)
                     {
                         _logger.Debug($"Stopping aggregation due to threshold. Candidate proxy {candidate.Proxy.Name} with priority {candidate.Priority} exceeds threshold (threshold={threshold}).");
