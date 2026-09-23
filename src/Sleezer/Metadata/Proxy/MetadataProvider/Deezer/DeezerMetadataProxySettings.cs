@@ -62,10 +62,6 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Deezer
 
         public string BaseUrl => "https://api.deezer.com";
 
-        public DeezerMetadataProxySettings() => Instance = this;
-
-        public static DeezerMetadataProxySettings? Instance { get; private set; }
-
         public NzbDroneValidationResult Validate() => new(Validator.Validate(this));
     }
 }

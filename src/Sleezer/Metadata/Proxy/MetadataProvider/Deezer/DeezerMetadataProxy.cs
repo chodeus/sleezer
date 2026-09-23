@@ -1,5 +1,6 @@
 ﻿using NLog;
 using NzbDrone.Core.Extras.Metadata;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Core.MetadataSource;
 using NzbDrone.Core.Music;
 using System.Text.RegularExpressions;
@@ -17,14 +18,16 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Deezer
     {
         private readonly IDeezerProxy _deezerProxy;
         private readonly Logger _logger;
+        private readonly IMetadataRepository _metadataRepository;
 
         public override string Name => "Deezer";
-        private DeezerMetadataProxySettings ActiveSettings => Settings ?? DeezerMetadataProxySettings.Instance!;
+        private DeezerMetadataProxySettings ActiveSettings => Settings ?? StoredProviderSettings.For<DeezerMetadataProxySettings>(_metadataRepository.All(), nameof(DeezerMetadataProxy));
 
-        public DeezerMetadataProxy(IDeezerProxy deezerProxy, Logger logger)
+        public DeezerMetadataProxy(IDeezerProxy deezerProxy, IMetadataRepository metadataRepository, Logger logger)
         {
             _deezerProxy = deezerProxy;
             _logger = logger;
+            _metadataRepository = metadataRepository;
         }
 
         public List<Album> SearchForNewAlbum(string title, string artist) => _deezerProxy.SearchNewAlbum(ActiveSettings, title, artist);
