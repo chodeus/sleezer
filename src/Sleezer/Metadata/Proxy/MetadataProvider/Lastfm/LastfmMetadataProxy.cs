@@ -1,5 +1,6 @@
 ﻿using NLog;
 using NzbDrone.Core.Extras.Metadata;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Core.MetadataSource;
 using NzbDrone.Core.Music;
 using System.Text.RegularExpressions;
@@ -13,13 +14,14 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Lastfm
     [ProxyFor(typeof(ISearchForNewArtist))]
     [ProxyFor(typeof(ISearchForNewAlbum))]
     [ProxyFor(typeof(ISearchForNewEntity))]
-    public partial class LastfmMetadataProxy(ILastfmProxy lastfmProxy, Logger logger) : ProxyBase<LastfmMetadataProxySettings>, IMetadata, ISupportMetadataMixing
+    public partial class LastfmMetadataProxy(ILastfmProxy lastfmProxy, IMetadataRepository metadataRepository, Logger logger) : ProxyBase<LastfmMetadataProxySettings>, IMetadata, ISupportMetadataMixing
     {
         private readonly ILastfmProxy _lastfmProxy = lastfmProxy;
         private readonly Logger _logger = logger;
+        private readonly IMetadataRepository _metadataRepository = metadataRepository;
 
         public override string Name => "Last.fm";
-        private LastfmMetadataProxySettings ActiveSettings => Settings ?? LastfmMetadataProxySettings.Instance!;
+        private LastfmMetadataProxySettings ActiveSettings => Settings ?? StoredProviderSettings.For<LastfmMetadataProxySettings>(_metadataRepository.All(), nameof(LastfmMetadataProxy));
 
         public List<Album> SearchForNewAlbum(string title, string artist) => _lastfmProxy.SearchNewAlbum(ActiveSettings, title, artist);
 
