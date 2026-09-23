@@ -10,7 +10,7 @@ public class QobuzQueryPlanTests
     [Fact]
     public void Raw_query_runs_first_and_is_never_gated()
     {
-        List<QobuzQuery> plan = QobuzQueryPlan.Build("Artist", "Artist", "Words Remixes");
+        List<QobuzQuery> plan = QobuzQueryPlan.Build("Artist", "Words Remixes");
 
         Assert.Equal(new QobuzQuery(1, "Artist Words Remixes", false), plan[0]);
     }
@@ -18,7 +18,7 @@ public class QobuzQueryPlanTests
     [Fact]
     public void Cleaned_query_shares_tier_one_but_is_gated()
     {
-        List<QobuzQuery> plan = QobuzQueryPlan.Build("Artist", "Artist", "Words Remixes");
+        List<QobuzQuery> plan = QobuzQueryPlan.Build("Artist", "Words Remixes");
 
         Assert.Contains(new QobuzQuery(1, "Artist Words", true), plan);
     }
@@ -26,7 +26,7 @@ public class QobuzQueryPlanTests
     [Fact]
     public void A_cleaned_query_identical_to_the_raw_one_is_not_repeated()
     {
-        List<QobuzQuery> plan = QobuzQueryPlan.Build("Artist", "Artist", "Plain Title");
+        List<QobuzQuery> plan = QobuzQueryPlan.Build("Artist", "Plain Title");
 
         Assert.Single(plan);
     }
@@ -34,7 +34,7 @@ public class QobuzQueryPlanTests
     [Fact]
     public void Trailing_subtitle_query_shares_tier_one_but_is_gated()
     {
-        List<QobuzQuery> plan = QobuzQueryPlan.Build("Artist", "Artist", "Imagine: The Evolution Documentary");
+        List<QobuzQuery> plan = QobuzQueryPlan.Build("Artist", "Imagine: The Evolution Documentary");
 
         Assert.Contains(new QobuzQuery(1, "Artist Imagine", true), plan);
         Assert.DoesNotContain(plan, q => q.Tier != 1);
@@ -43,7 +43,7 @@ public class QobuzQueryPlanTests
     [Fact]
     public void Split_release_halves_share_tier_one_but_are_gated()
     {
-        List<QobuzQuery> plan = QobuzQueryPlan.Build("Artist", "Artist", "Alpha / Beta");
+        List<QobuzQuery> plan = QobuzQueryPlan.Build("Artist", "Alpha / Beta");
 
         Assert.Contains(new QobuzQuery(1, "Artist Alpha", true), plan);
         Assert.Contains(new QobuzQuery(1, "Artist Beta", true), plan);
@@ -52,14 +52,21 @@ public class QobuzQueryPlanTests
     [Fact]
     public void Dotted_acronyms_are_collapsed_in_the_cleaned_query()
     {
-        List<QobuzQuery> plan = QobuzQueryPlan.Build("S.H.I.E.L.D.", "S.H.I.E.L.D.", "Agents");
+        List<QobuzQuery> plan = QobuzQueryPlan.Build("S.H.I.E.L.D.", "Agents");
 
         Assert.Contains(new QobuzQuery(1, "SHIELD Agents", true), plan);
+    }
+
+    // The artist goes through GetQueryTitle as CleanArtistQuery did, so a leading "The" still drops.
+    [Fact]
+    public void The_artist_is_normalised_like_lidarrs_clean_artist_query()
+    {
+        Assert.Contains(new QobuzQuery(1, "Killers Hot Fuss", true), QobuzQueryPlan.Build("The Killers", "Hot Fuss"));
     }
 
     [Fact]
     public void An_artist_only_search_has_just_the_raw_query()
     {
-        Assert.Single(QobuzQueryPlan.Build("Artist", "Artist", ""));
+        Assert.Single(QobuzQueryPlan.Build("Artist", ""));
     }
 }

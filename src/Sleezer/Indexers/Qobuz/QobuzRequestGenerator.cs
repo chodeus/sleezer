@@ -44,7 +44,7 @@ namespace NzbDrone.Core.Indexers.Qobuz
             var tier = 0;
 
             // HttpIndexerBase runs every query of a tier in order and only moves on when the tier returned nothing.
-            foreach (var query in QobuzQueryPlan.Build(searchCriteria.ArtistQuery, searchCriteria.CleanArtistQuery, entityTitle))
+            foreach (var query in QobuzQueryPlan.Build(searchCriteria.ArtistQuery, entityTitle))
             {
                 if (query.Tier != tier)
                 {

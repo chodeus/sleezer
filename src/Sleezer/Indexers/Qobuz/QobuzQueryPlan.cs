@@ -12,7 +12,7 @@ namespace NzbDrone.Core.Indexers.Qobuz
     /// <summary>The query plan for a Qobuz album search, in the order HttpIndexerBase runs it.</summary>
     public static class QobuzQueryPlan
     {
-        public static List<QobuzQuery> Build(string artistQuery, string cleanArtistQuery, string entityTitle)
+        public static List<QobuzQuery> Build(string artistQuery, string entityTitle)
         {
             List<QobuzQuery> queries = [];
 
@@ -30,7 +30,8 @@ namespace NzbDrone.Core.Indexers.Qobuz
             if (string.IsNullOrWhiteSpace(entityTitle) || string.IsNullOrWhiteSpace(artistQuery))
                 return queries;
 
-            var artist = StoreQueryCleaner.CleanForTokenSearch(StoreQueryCleaner.CollapseAcronyms(cleanArtistQuery));
+            // Collapsed before GetQueryTitle, which turns the dots into separators first.
+            var artist = StoreQueryCleaner.CleanForTokenSearch(SearchCriteriaBase.GetQueryTitle(StoreQueryCleaner.CollapseAcronyms(artistQuery)));
             if (string.IsNullOrWhiteSpace(artist))
                 return queries;
 
