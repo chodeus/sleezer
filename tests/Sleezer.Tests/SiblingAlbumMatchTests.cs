@@ -1,4 +1,5 @@
 using System.Globalization;
+using NzbDrone.Core.Datastore;
 using NzbDrone.Core.Music;
 using NzbDrone.Plugin.Sleezer.Core.Model;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
@@ -98,6 +99,27 @@ public class SiblingAlbumMatchTests
         _releases[1] = [];
 
         Assert.Same(original, Sibling(Copy(D("2025-04-24"), tracks: 3), Album(2, "Stateside", D("2025-10-10")), original));
+    }
+
+    // Judge rejects a plain copy for an album whose only fitting releases are all-variant.
+    [Fact]
+    public void A_sibling_the_verifier_would_reject_as_a_variant_edition_is_ignored()
+    {
+        Album liveOnly = Album(1, "Stateside", D("2025-04-25"));
+        _releases[1][0].Tracks = new LazyLoaded<List<Track>>([new Track { Title = "Stateside (Live)" }]);
+
+        Assert.Null(Sibling(Copy(D("2025-04-24")), Album(2, "Stateside", D("2025-10-10")), liveOnly));
+    }
+
+    [Fact]
+    public void A_sibling_whose_length_cannot_fit_the_copy_is_ignored()
+    {
+        Album longer = Album(1, "Stateside", D("2025-04-25"));
+        _releases[1][0].Duration = 600_000;
+        StoreReleaseInfo copy = Copy(D("2025-04-24"));
+        copy.TotalDurationSeconds = 200;
+
+        Assert.Null(Sibling(copy, Album(2, "Stateside", D("2025-10-10")), longer));
     }
 
     [Fact]

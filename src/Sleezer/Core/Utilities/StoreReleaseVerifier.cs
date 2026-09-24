@@ -69,11 +69,12 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             return kept;
         }
 
+        /// <summary>Whether Judge, artist aside, would pass the copy under this title for another album.</summary>
+        internal static bool PassesFor(StoreReleaseInfo release, string title, Album album, IReadOnlyList<AlbumRelease> releases) =>
+            JudgeAlbum(release, title, AlbumTarget.Of(album, album.Title, releases)) == null;
+
         private static (string Category, string Detail)? Judge(ReleaseInfo release, Target target)
         {
-            var store = release as StoreReleaseInfo;
-            var candidateTitle = store?.CandidateTitle ?? release.Album;
-
             // Missing data is unjudgeable, not wrong — each check only runs on what the store supplied.
             if (!string.IsNullOrWhiteSpace(release.Artist) && !target.IsVariousArtists && IsVariousArtists(release.Artist))
                 return (VariousArtistsCategory, $"'{release.Artist}' compilation offered for '{target.ArtistName}'");
@@ -81,25 +82,32 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             if (!string.IsNullOrWhiteSpace(release.Artist) && !ArtistMatches(release.Artist, target))
                 return ("artist", $"artist '{release.Artist}' is not '{target.ArtistName}'");
 
+            return JudgeAlbum(release, (release as StoreReleaseInfo)?.CandidateTitle ?? release.Album, target.Album);
+        }
+
+        private static (string Category, string Detail)? JudgeAlbum(ReleaseInfo release, string? candidateTitle, AlbumTarget album)
+        {
+            var store = release as StoreReleaseInfo;
+
             if (!string.IsNullOrWhiteSpace(candidateTitle))
             {
-                if (!TitleMatches(candidateTitle, target.Title))
-                    return ("title", $"'{candidateTitle}' is not '{target.Title}'");
+                if (!TitleMatches(candidateTitle, album.Title))
+                    return ("title", $"'{candidateTitle}' is not '{album.Title}'");
 
-                if (VariantQualifiers.RemixSignaturesConflict(target.Title, candidateTitle, target.SecondaryTypes))
+                if (VariantQualifiers.RemixSignaturesConflict(album.Title, candidateTitle, album.SecondaryTypes))
                     return ("variant", $"'{candidateTitle}' is a variant the album does not call for");
             }
 
-            if (store == null || target.Releases.Count == 0)
+            if (store == null || album.Releases.Count == 0)
                 return null;
 
-            if (store.TrackCount > 0 && !TrackCountMatches(store.TrackCount, target))
-                return ("track count", $"{store.TrackCount} track(s) vs MusicBrainz {target.TrackCountSummary}");
+            if (store.TrackCount > 0 && !TrackCountMatches(store.TrackCount, album))
+                return ("track count", $"{store.TrackCount} track(s) vs MusicBrainz {album.TrackCountSummary}");
 
-            if (store.TotalDurationSeconds > 0 && DurationMismatch(store, target) is { } detail)
+            if (store.TotalDurationSeconds > 0 && DurationMismatch(store, album) is { } detail)
                 return ("duration", detail);
 
-            if (store.TrackCount > 0 && !VariantQualifiers.HasVariantQualifier(candidateTitle) && OnlyVariantEditionsFit(store, target) is { } noPlain)
+            if (store.TrackCount > 0 && !VariantQualifiers.HasVariantQualifier(candidateTitle) && OnlyVariantEditionsFit(store, album) is { } noPlain)
                 return ("variant", noPlain);
 
             return null;
@@ -107,7 +115,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 
         // Lidarr attaches a download to whichever release fits the file count, so with no
         // plain edition of that length a plain product lands on a variant and is named as one.
-        private static string? OnlyVariantEditionsFit(StoreReleaseInfo store, Target target)
+        private static string? OnlyVariantEditionsFit(StoreReleaseInfo store, AlbumTarget target)
         {
             var fitting = target.Releases
                 .Where(r => TrackCountCompatible(store.TrackCount, r.TrackCount))
@@ -152,7 +160,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 
         private static string Comparable(string? title) => Normalize(StoreQueryCleaner.StripQualifiers(title ?? string.Empty));
 
-        private static bool TrackCountMatches(int count, Target target) =>
+        private static bool TrackCountMatches(int count, AlbumTarget target) =>
             target.Releases.Any(r => TrackCountCompatible(count, r.TrackCount));
 
         internal static bool TrackCountCompatible(int count, int releaseCount) =>
@@ -161,7 +169,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 
         // Judged against every release the track count is compatible with (all of them when the
         // store gave no count); one within tolerance is enough.
-        private static string? DurationMismatch(StoreReleaseInfo store, Target target)
+        private static string? DurationMismatch(StoreReleaseInfo store, AlbumTarget target)
         {
             var candidates = target.Releases
                 .Where(r => r.DurationSeconds > 0 && (store.TrackCount <= 0 || TrackCountCompatible(store.TrackCount, r.TrackCount)))
@@ -209,16 +217,11 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             HashSet<string> ArtistTokens,
             HashSet<string> AliasesNormalized,
             bool IsVariousArtists,
-            string Title,
-            IReadOnlyCollection<string> SecondaryTypes,
-            IReadOnlyList<TargetRelease> Releases)
+            AlbumTarget Album)
         {
-            public string TrackCountSummary => string.Join("/", Releases.Select(r => r.TrackCount).Distinct().OrderBy(c => c));
-
             public static Target From(AlbumSearchCriteria criteria)
             {
                 var album = criteria.Albums?.FirstOrDefault();
-                var releases = album?.AlbumReleases?.Value ?? [];
                 var aliases = criteria.Artist.Metadata?.Value?.Aliases ?? [];
                 var artistNormalized = Normalize(criteria.Artist.Name);
 
@@ -228,10 +231,16 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
                     [.. artistNormalized.Split(' ', StringSplitOptions.RemoveEmptyEntries)],
                     [.. aliases.Select(Normalize).Where(a => a.Length > 0)],
                     StoreReleaseVerifier.IsVariousArtists(criteria.Artist.Name),
-                    album?.Title ?? criteria.AlbumTitle,
-                    VariantQualifiers.ForgivenVariants(album),
-                    [.. releases.Select(r => new TargetRelease(r.TrackCount, DurationSeconds(r), r))]);
+                    AlbumTarget.Of(album, album?.Title ?? criteria.AlbumTitle, album?.AlbumReleases?.Value ?? []));
             }
+        }
+
+        private sealed record AlbumTarget(string Title, IReadOnlyCollection<string> SecondaryTypes, IReadOnlyList<TargetRelease> Releases)
+        {
+            public string TrackCountSummary => string.Join("/", Releases.Select(r => r.TrackCount).Distinct().OrderBy(c => c));
+
+            public static AlbumTarget Of(Album? album, string title, IEnumerable<AlbumRelease> releases) =>
+                new(title, VariantQualifiers.ForgivenVariants(album), [.. releases.Select(r => new TargetRelease(r.TrackCount, DurationSeconds(r), r))]);
 
             private static int DurationSeconds(AlbumRelease release)
             {
