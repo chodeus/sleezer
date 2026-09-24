@@ -17,14 +17,14 @@ namespace NzbDrone.Core.Download.Clients.Deezer
 
         // Route 1: DATA.FALLBACK, Deezer's supersession pointer. Route 2: the page's ISRC
         // section, Deezer's own list of other releases carrying the identical recording.
-        public static async Task<JToken?> TryResolveAsync(long originalId, JToken originalPage, Bitrate bitrate, Logger logger, CancellationToken ct)
+        public static async Task<JToken?> TryResolveAsync(DeezerAPI api, long originalId, JToken originalPage, Bitrate bitrate, Logger logger, CancellationToken ct)
         {
             var original = ToCandidate(originalPage["DATA"]!);
 
             var fallbackId = originalPage["DATA"]?["FALLBACK"]?["SNG_ID"]?.Value<long>() ?? 0;
             if (fallbackId > 0 && fallbackId != originalId)
             {
-                var page = await TryCandidateAsync(fallbackId, original, bitrate, "FALLBACK pointer", logger, ct);
+                var page = await TryCandidateAsync(api, fallbackId, original, bitrate, "FALLBACK pointer", logger, ct);
                 if (page != null)
                     return page;
             }
@@ -53,7 +53,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer
                 JToken albumPage;
                 try
                 {
-                    albumPage = await DeezerAPI.Instance.Client.GWApi.GetAlbumPage(albumId, ct);
+                    albumPage = await api.Client.GWApi.GetAlbumPage(albumId, ct);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -68,7 +68,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer
                 if (candidateId == 0)
                     continue;
 
-                var page = await TryCandidateAsync(candidateId, original, bitrate, $"same-ISRC album {albumId}", logger, ct);
+                var page = await TryCandidateAsync(api, candidateId, original, bitrate, $"same-ISRC album {albumId}", logger, ct);
                 if (page != null)
                     return page;
             }
@@ -87,12 +87,12 @@ namespace NzbDrone.Core.Download.Clients.Deezer
         internal static long SizeFor(JToken data, Bitrate bitrate) =>
             long.TryParse(data[FilesizeKey(bitrate)]?.ToString(), out var size) ? size : 0;
 
-        private static async Task<JToken?> TryCandidateAsync(long candidateId, FallbackCandidate original, Bitrate bitrate, string route, Logger logger, CancellationToken ct)
+        private static async Task<JToken?> TryCandidateAsync(DeezerAPI api, long candidateId, FallbackCandidate original, Bitrate bitrate, string route, Logger logger, CancellationToken ct)
         {
             JToken page;
             try
             {
-                page = await DeezerAPI.Instance.Client.GWApi.GetTrackPage(candidateId, ct);
+                page = await api.Client.GWApi.GetTrackPage(candidateId, ct);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

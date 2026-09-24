@@ -11,6 +11,7 @@ namespace NzbDrone.Core.Indexers.Tidal
         private const int PageSize = 100;
         private const int MaxPages = 3;
 
+        public TidalAPI Api { get; set; } = null!;
         public TidalIndexerSettings Settings { get; set; } = null!;
         public Logger Logger { get; set; } = null!;
 
@@ -40,9 +41,7 @@ namespace NzbDrone.Core.Indexers.Tidal
 
         private IEnumerable<IndexerRequest> GetRequests(string searchParameters)
         {
-            var instance = TidalAPI.Instance
-                ?? throw new System.InvalidOperationException(
-                    "Tidal API not initialized. Authenticate the indexer in plugin settings first.");
+            var instance = Api;
 
             for (var page = 0; page < MaxPages; page++)
             {
@@ -55,7 +54,7 @@ namespace NzbDrone.Core.Indexers.Tidal
                 };
 
                 var url = instance.GetAPIUrl("search", data);
-                var req = new IndexerRequest(url, HttpAccept.Json);
+                var req = new SessionIndexerRequest<TidalAPI>(url, HttpAccept.Json, instance);
                 req.HttpRequest.Method = System.Net.Http.HttpMethod.Get;
 
                 var user = instance.Client.ActiveUser;

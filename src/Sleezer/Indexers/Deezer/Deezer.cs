@@ -7,6 +7,7 @@ using NzbDrone.Core.Download.Clients.Deezer;
 using NzbDrone.Core.Parser;
 using NzbDrone.Plugin.Sleezer.Deezer;
 using NzbDrone.Plugin.Sleezer.Core.Replacements;
+using NzbDrone.Core.Music;
 
 namespace NzbDrone.Core.Indexers.Deezer
 {
@@ -26,8 +27,9 @@ namespace NzbDrone.Core.Indexers.Deezer
             IIndexerStatusService indexerStatusService,
             IConfigService configService,
             IParsingService parsingService,
+            IArtistService artistService,
             Logger logger)
-            : base(httpClient, indexerStatusService, configService, parsingService, logger)
+            : base(httpClient, indexerStatusService, configService, parsingService, artistService, logger)
         {
             _deezerProxy = deezerProxy;
         }
@@ -42,10 +44,9 @@ namespace NzbDrone.Core.Indexers.Deezer
                 Settings.Arl = arlTask.Result;
             }*/
 
-            DeezerAPI.Instance?.CheckAndSetARL(Settings.Arl);
-
             return new DeezerRequestGenerator()
             {
+                Api = DeezerAPI.ForArl(Settings.Arl),
                 Settings = Settings,
                 Logger = _logger
             };

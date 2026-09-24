@@ -83,6 +83,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                     Bitrate = bitrate,
                     RemoteAlbum = remoteAlbum,
                     _deezerUrl = deezerUrl,
+                    _api = DeezerAPI.Instance,
                 };
 
                 await item.SetDeezerData();
@@ -115,9 +116,21 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
         private JToken _deezerAlbum = null!;
         private DateTime _lastARLValidityCheck = DateTime.MinValue;
         private byte[]? _albumArt;
+        // The session _deezerAlbum and _tracks came from; every call for this item goes through it.
+        private DeezerAPI _api = null!;
 
         public async Task DoDownload(DeezerSettings settings, Logger logger, CancellationToken cancellation = default)
         {
+            if (!ReferenceEquals(_api, DeezerAPI.Instance))
+            {
+                _api = DeezerAPI.Instance;
+                _tracks = null!;
+                _lastARLValidityCheck = DateTime.MinValue;
+                await SetDeezerData(cancellation);
+            }
+
+            EnsureValidity();
+
             _albumArt ??= await TryFetchAlbumArtAsync(logger, cancellation);
 
             var fallbackCount = _tracks.Count(t => t.bitrate != Bitrate);
@@ -223,7 +236,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
 
         private async Task DoTrackDownload(long track, Bitrate trackBitrate, long expectedSize, DeezerSettings settings, Logger logger, CancellationToken cancellation = default)
         {
-            var page = await DeezerAPI.Instance.Client.GWApi.GetTrackPage(track, cancellation);
+            var page = await _api.Client.GWApi.GetTrackPage(track, cancellation);
 
             try
             {
@@ -232,7 +245,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
             }
             catch (Exception ex) when (settings.AllowTrackSubstitution && ex is (TrackUnavailableException or GeoRestrictionException))
             {
-                var substitute = await DeezerTrackFallback.TryResolveAsync(track, page, trackBitrate, logger, cancellation);
+                var substitute = await DeezerTrackFallback.TryResolveAsync(_api, track, page, trackBitrate, logger, cancellation);
                 if (substitute == null)
                     throw;
 
@@ -327,7 +340,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
             var plainLyrics = string.Empty;
             List<SyncLyrics>? syncLyrics = null;
 
-            var lyrics = await DeezerAPI.Instance.Client.Downloader.FetchLyricsFromDeezer(metadataId, cancellation);
+            var lyrics = await _api.Client.Downloader.FetchLyricsFromDeezer(metadataId, cancellation);
             if (lyrics.HasValue)
             {
                 plainLyrics = lyrics.Value.plainLyrics;
@@ -338,7 +351,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
 
             if (settings.UseLRCLIB && (string.IsNullOrWhiteSpace(plainLyrics) || (settings.SaveSyncedLyrics && !(syncLyrics?.Any() ?? false))))
             {
-                lyrics = await DeezerAPI.Instance.Client.Downloader.FetchLyricsFromLRCLIB("lrclib.net", songTitle, artistName, albumTitle, duration, cancellation);
+                lyrics = await _api.Client.Downloader.FetchLyricsFromLRCLIB("lrclib.net", songTitle, artistName, albumTitle, duration, cancellation);
                 if (lyrics.HasValue)
                 {
                     if (string.IsNullOrWhiteSpace(plainLyrics))
@@ -364,25 +377,25 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                 string artOut = Path.Combine(outDir, "folder.jpg");
                 if (!File.Exists(artOut))
                 {
-                    byte[] bigArt = await DeezerAPI.Instance.Client.Downloader.GetArtBytes(metadataPage["DATA"]!["ALB_PICTURE"]!.ToString(), 1024, cancellation);
+                    byte[] bigArt = await _api.Client.Downloader.GetArtBytes(metadataPage["DATA"]!["ALB_PICTURE"]!.ToString(), 1024, cancellation);
                     await File.WriteAllBytesAsync(artOut, bigArt, cancellation);
                 }
             }
             catch (UnavailableArtException) { } */
         }
 
-        private static async Task DownloadWithTokenRetryAsync(long streamId, JToken streamPage, string outPath, Bitrate trackBitrate, Logger logger, CancellationToken cancellation)
+        private async Task DownloadWithTokenRetryAsync(long streamId, JToken streamPage, string outPath, Bitrate trackBitrate, Logger logger, CancellationToken cancellation)
         {
             var trackToken = streamPage["DATA"]!["TRACK_TOKEN"]!.ToString();
             try
             {
-                await DeezerRawTrackDownloader.DownloadAsync(streamId, trackToken, outPath, trackBitrate, cancellation);
+                await DeezerRawTrackDownloader.DownloadAsync(_api, streamId, trackToken, outPath, trackBitrate, cancellation);
             }
             catch (DeezerUrlExpiredException ex)
             {
                 logger.Debug("Deezer track {TrackId}: {Message} Refreshing track token and retrying once.", streamId, ex.Message);
-                var freshPage = await DeezerAPI.Instance.Client.GWApi.GetTrackPage(streamId, cancellation);
-                await DeezerRawTrackDownloader.DownloadAsync(streamId, freshPage["DATA"]!["TRACK_TOKEN"]!.ToString(), outPath, trackBitrate, cancellation);
+                var freshPage = await _api.Client.GWApi.GetTrackPage(streamId, cancellation);
+                await DeezerRawTrackDownloader.DownloadAsync(_api, streamId, freshPage["DATA"]!["TRACK_TOKEN"]!.ToString(), outPath, trackBitrate, cancellation);
             }
         }
 
@@ -393,7 +406,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                 var picture = _deezerAlbum?["DATA"]?["ALB_PICTURE"]?.ToString();
                 if (string.IsNullOrEmpty(picture))
                     return null;
-                return await DeezerAPI.Instance.Client.Downloader.GetArtBytes(picture, 512, cancellation);
+                return await _api.Client.Downloader.GetArtBytes(picture, 512, cancellation);
             }
             catch (Exception ex)
             {
@@ -402,12 +415,12 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
             }
         }
 
-        public void EnsureValidity()
+        private void EnsureValidity()
         {
             if ((DateTime.Now - _lastARLValidityCheck).TotalMinutes > 30)
             {
                 _lastARLValidityCheck = DateTime.Now;
-                var arlValid = ARLUtilities.IsValid(DeezerAPI.Instance.Client.ActiveARL);
+                var arlValid = ARLUtilities.IsValid(_api.Client.ActiveARL);
                 if (!arlValid)
                     throw new InvalidARLException("The applied ARL is not valid for downloading, cannot continue.");
             }
@@ -418,7 +431,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
             if (_deezerUrl.EntityType != EntityType.Album)
                 throw new InvalidOperationException();
 
-            var albumPage = await DeezerAPI.Instance.Client.GWApi.GetAlbumPage(_deezerUrl.Id, cancellation);
+            var albumPage = await _api.Client.GWApi.GetAlbumPage(_deezerUrl.Id, cancellation);
 
             var filesizeKey = DeezerTrackFallback.FilesizeKey(Bitrate);
 

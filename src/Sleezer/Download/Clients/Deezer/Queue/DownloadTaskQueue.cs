@@ -76,7 +76,6 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
             if (_settings == null)
                 throw new InvalidOperationException("Deezer queue received an item before settings were populated");
 
-            item.EnsureValidity();
             await item.DoDownload(_settings, _logger, token);
 
             await PostProcessGate.RunHeldAsync(item, () => RunPostProcessAsync(item, token));

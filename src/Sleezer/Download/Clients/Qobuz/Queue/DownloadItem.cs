@@ -27,6 +27,8 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
         private const string FileTemplate = "%volume% - %track% - %title%.%ext%";
 
         private Track[] _tracks = [];
+        // The session _qobuzAlbum and _tracks came from; every call for this item goes through it.
+        private QobuzAPI _api = null!;
         private QobuzURL _qobuzUrl = null!;
         private Album _qobuzAlbum = null!;
         private byte[]? _albumArt;
@@ -124,6 +126,9 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
 
         public async Task DoDownload(QobuzSettings settings, Logger logger, CancellationToken cancellation = default)
         {
+            if (!ReferenceEquals(_api, QobuzAPI.Instance))
+                await LoadAlbum(cancellation);
+
             _albumArt = await FetchAlbumArt(settings, logger, cancellation);
 
             int concurrency = Math.Clamp(settings.MaxConcurrentTracks, 1, 8);
@@ -254,7 +259,7 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
 
         private async Task DoTrackDownload(string trackId, AudioQuality bitrate, QobuzSettings settings, Logger logger, CancellationToken cancellation)
         {
-            QobuzAPI api = QobuzAPI.Instance ?? throw new InvalidOperationException("Qobuz API is not initialised.");
+            QobuzAPI api = _api;
 
             // Awaited to completion, not WaitAsync'd: the call cannot be interrupted, and
             // abandoning it leaves it running while the retry reuses outPath.
@@ -328,7 +333,7 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
         {
             try
             {
-                return await QobuzAPI.Instance!.Client.GetAlbumArtBytes(
+                return await _api.Client.GetAlbumArtBytes(
                     _qobuzAlbum, (QobuzArtworkSize)settings.ArtworkSize, settings.CustomArtworkResolution, cancellation);
             }
             catch (Exception ex)
@@ -382,6 +387,7 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
         private async Task LoadAlbum(CancellationToken cancellation = default)
         {
             QobuzAPI api = QobuzAPI.Instance ?? throw new InvalidOperationException("Qobuz API is not initialised.");
+            _api = api;
 
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
             cts.CancelAfter(AlbumLookupTimeout);

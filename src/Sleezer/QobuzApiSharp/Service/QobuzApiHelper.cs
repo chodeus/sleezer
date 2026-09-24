@@ -22,10 +22,16 @@ namespace QobuzApiSharp.Service
     {
         private static string CachedBundleString;
 
+        /// <summary>Drops the cached bundle.js so the next client re-derives app_id and app_secret.</summary>
+        internal static void ForgetBundle() => CachedBundleString = null;
+
+        // One read of the cache: ForgetBundle can null it between a check and a later read.
+        private static string GetBundle() => CachedBundleString ?? FetchBundleString();
+
         /// <summary>
         /// Fetches the bundle.js string from the Qobuz Web Player.
         /// </summary>
-        private static void FetchBundleString()
+        private static string FetchBundleString()
         {
             using (HttpClient QobuzWebClient = new HttpClient())
             {
@@ -39,9 +45,11 @@ namespace QobuzApiSharp.Service
                 {
                     // Grab link to bundle.js
                     string bundleSuffix = Regex.Match(bundleHTML, "<script src=\"(?<bundleJS>\\/resources\\/\\d+\\.\\d+\\.\\d+-[a-z]\\d{3}\\/bundle\\.js)").Groups[1].Value;
-                    CachedBundleString = QobuzWebClient
+                    string bundle = QobuzWebClient
                         .GetStringAsync($"{QobuzApiConstants.WEB_PLAYER_BASE_URL}{bundleSuffix}")
                         .ConfigureAwait(false).GetAwaiter().GetResult();
+                    CachedBundleString = bundle;
+                    return bundle;
                 }
                 catch (Exception ex)
                 {
@@ -57,13 +65,10 @@ namespace QobuzApiSharp.Service
         /// <returns>The production app_id string</returns>
         internal static string GetWebPlayerAppId()
         {
-            if (CachedBundleString == null)
-            {
-                FetchBundleString();
-            }
+            string bundle = GetBundle();
 
             // The production app_id is found in the production api config block.
-            return Regex.Match(CachedBundleString, "production:\\{api:\\{appId:\"(\\d+)\"").Groups[1].Value;
+            return Regex.Match(bundle, "production:\\{api:\\{appId:\"(\\d+)\"").Groups[1].Value;
         }
 
         /// <summary>
@@ -72,17 +77,14 @@ namespace QobuzApiSharp.Service
         /// <returns>A string.</returns>
         internal static string GetWebPlayerAppSecret()
         {
-            if (CachedBundleString == null)
-            {
-                FetchBundleString();
-            }
+            string bundle = GetBundle();
 
             // The app_secret is derived from a seed embedded in the bundle's initialization() function,
             // combined with Berlin timezone info/extras from the timezones data table.
             // Formula: Base64Decode((seed + berlin.info + berlin.extras).Substring(0, combined.Length - 44))
             // This matches what window.rng.prototype.initialization() computes at runtime for production.
-            string seed = Regex.Match(CachedBundleString, "initialSeed\\(\"([^\"]+)\",window\\.utimezone\\.berlin\\)").Groups[1].Value;
-            var berlinMatch = Regex.Match(CachedBundleString, "name:\"Europe/Berlin\",info:\"([^\"]+)\",extras:\"([^\"]+)\"");
+            string seed = Regex.Match(bundle, "initialSeed\\(\"([^\"]+)\",window\\.utimezone\\.berlin\\)").Groups[1].Value;
+            var berlinMatch = Regex.Match(bundle, "name:\"Europe/Berlin\",info:\"([^\"]+)\",extras:\"([^\"]+)\"");
             string berlinInfo = berlinMatch.Groups[1].Value;
             string berlinExtras = berlinMatch.Groups[2].Value;
 

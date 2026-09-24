@@ -8,6 +8,7 @@ using NzbDrone.Core.ThingiProvider;
 using System.Text.Json;
 using NzbDrone.Plugin.Sleezer.Download.Base;
 using NzbDrone.Plugin.Sleezer.Core.Replacements;
+using NzbDrone.Core.Music;
 
 namespace NzbDrone.Plugin.Sleezer.Indexers.TripleTriple
 {
@@ -33,9 +34,10 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.TripleTriple
             IIndexerStatusService statusService,
             IConfigService configService,
             IParsingService parsingService,
+            IArtistService artistService,
             IEnumerable<IHttpRequestInterceptor> requestInterceptors,
             Logger logger)
-            : base(httpClient, statusService, configService, parsingService, logger)
+            : base(httpClient, statusService, configService, parsingService, artistService, logger)
         {
             _requestGenerator = requestGenerator;
             _parser = parser;

@@ -35,14 +35,14 @@ namespace NzbDrone.Core.Download.Clients.Deezer
         private static readonly HttpClient _client = new();
         private static readonly Logger _logger = NzbDroneLogger.GetLogger(typeof(DeezerRawTrackDownloader));
 
-        public static async Task DownloadAsync(long trackId, string trackToken, string outPath, Bitrate bitrate, CancellationToken token = default)
+        public static async Task DownloadAsync(DeezerAPI api, long trackId, string trackToken, string outPath, Bitrate bitrate, CancellationToken token = default)
         {
             using var stallCap = CancellationTokenSource.CreateLinkedTokenSource(token);
             stallCap.CancelAfter(PerTrackTimeout);
 
             try
             {
-                await DownloadCoreAsync(trackId, trackToken, outPath, bitrate, stallCap.Token);
+                await DownloadCoreAsync(api, trackId, trackToken, outPath, bitrate, stallCap.Token);
             }
             catch (OperationCanceledException) when (!token.IsCancellationRequested)
             {
@@ -51,9 +51,9 @@ namespace NzbDrone.Core.Download.Clients.Deezer
             }
         }
 
-        private static async Task DownloadCoreAsync(long trackId, string trackToken, string outPath, Bitrate bitrate, CancellationToken token)
+        private static async Task DownloadCoreAsync(DeezerAPI api, long trackId, string trackToken, string outPath, Bitrate bitrate, CancellationToken token)
         {
-            var (url, isEncrypted) = await GetTrackUrlAsync(trackId, trackToken, bitrate, token);
+            var (url, isEncrypted) = await GetTrackUrlAsync(api, trackId, trackToken, bitrate, token);
             var blowfishKey = DeezerStreamDecoder.GenerateBlowfishKey(trackId.ToString(CultureInfo.InvariantCulture));
 
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
@@ -67,26 +67,26 @@ namespace NzbDrone.Core.Download.Clients.Deezer
             await DeezerStreamDecoder.DecodeAsync(body, file, isEncrypted, blowfishKey, token);
         }
 
-        private static async Task<(Uri Url, bool IsEncrypted)> GetTrackUrlAsync(long trackId, string trackToken, Bitrate bitrate, CancellationToken token)
+        private static async Task<(Uri Url, bool IsEncrypted)> GetTrackUrlAsync(DeezerAPI api, long trackId, string trackToken, Bitrate bitrate, CancellationToken token)
         {
-            var client = DeezerAPI.Instance.Client;
+            var client = api.Client;
             var options = client.GWApi.ActiveUserData?["USER"]?["OPTIONS"];
             var licenseToken = options?["license_token"]?.ToString();
             if (string.IsNullOrEmpty(licenseToken))
                 throw new InvalidOperationException("No Deezer license token available — the ARL session is not initialized or was rejected.");
 
             // Pre-flight (deezer-py parity); the media API still enforces server-side.
-            if (!DeezerAPI.Instance.CanStream(bitrate))
+            if (!api.CanStream(bitrate))
             {
                 // Cached options lag a plan upgrade — refresh the session once before refusing.
-                var refresh = await DeezerAPI.Instance.TryRefreshSessionAsync(token);
+                var refresh = await api.TryRefreshSessionAsync(token);
                 if (refresh == SessionRefreshResult.Refreshed)
                     licenseToken = client.GWApi.ActiveUserData?["USER"]?["OPTIONS"]?["license_token"]?.ToString() ?? licenseToken;
 
                 // A transient refresh failure is not a denial — let the media API decide.
                 if (refresh == SessionRefreshResult.Failed)
                     _logger.Warn("Deezer session refresh failed; cannot verify {Bitrate} entitlement for track {TrackId} locally, deferring to the media API", bitrate, trackId);
-                else if (!DeezerAPI.Instance.CanStream(bitrate))
+                else if (!api.CanStream(bitrate))
                     throw new InsufficientLicenseRightsException(bitrate == Bitrate.FLAC
                         ? $"Deezer account has no lossless streaming — cannot download track {trackId} as FLAC. A Premium/HiFi ARL is required."
                         : $"Deezer account has no high-quality streaming — cannot download track {trackId} as MP3 320.");
