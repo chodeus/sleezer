@@ -66,9 +66,7 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Blocklisting\Blocklists.cs"
              LinkBase="SourceUnderTest" />
-    <Compile Include="..\..\src\Sleezer\Blocklisting\DeezerBlocklist.cs"
-             LinkBase="SourceUnderTest" />
-    <Compile Include="..\..\src\Sleezer\Blocklisting\TidalBlocklist.cs"
+    <Compile Include="..\..\src\Sleezer\Core\Utilities\StoreReleaseGuid.cs"
              LinkBase="SourceUnderTest" />
     <!-- Provenance tag written after the client's own metadata pass. -->
     <Compile Include="..\..\src\Sleezer\Core\Utilities\SourceTagWriter.cs"

@@ -12,6 +12,7 @@ using NzbDrone.Core.Parser.Model;
 using System.Collections.Concurrent;
 using NzbDrone.Plugin.Sleezer.Core.Deezer;
 using NzbDrone.Plugin.Sleezer.Core.Model;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Deezer;
 using System.Globalization;
 
@@ -195,7 +196,7 @@ namespace NzbDrone.Core.Indexers.Deezer
 
             var result = new StoreReleaseInfo
             {
-                Guid = $"Deezer-{x.AlbumId}-{bitrate}",
+                Guid = StoreReleaseGuid.Create(StoreReleaseGuid.Deezer, x.AlbumId, bitrate),
                 Artist = x.ArtistName,
                 Album = x.AlbumTitle,
                 DownloadUrl = url,
