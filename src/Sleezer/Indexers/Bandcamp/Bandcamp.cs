@@ -78,7 +78,7 @@ namespace NzbDrone.Core.Indexers.Bandcamp
             var releases = await FetchCollectionReleases(searchCriteria).ConfigureAwait(false);
 
             // Applied here rather than inherited: this override never calls base.Fetch.
-            var kept = AlbumYearGuard.Apply(GuardAmbiguousArtists(CleanupReleases(releases), searchCriteria.Artist), searchCriteria, Name, _logger);
+            var kept = RefineStoreResults(CleanupReleases(releases), searchCriteria);
 
             _logger.Info("{Indexer}: {Count} result(s) for '{Artist} - {Album}'",
                 Name, kept.Count, searchCriteria.Artist?.Name, searchCriteria.AlbumTitle);
@@ -170,7 +170,7 @@ namespace NzbDrone.Core.Indexers.Bandcamp
 
             foreach (var item in matches)
             {
-                var releases = await BuildReleaseInfosForCollectionItem(item, expectedTrackCounts).ConfigureAwait(false);
+                var releases = await BuildReleaseInfosForCollectionItem(item).ConfigureAwait(false);
                 foreach (var release in releases)
                 {
                     if (results.All(existing => !string.Equals(existing.Guid, release.Guid, StringComparison.OrdinalIgnoreCase)))
@@ -225,7 +225,7 @@ namespace NzbDrone.Core.Indexers.Bandcamp
             return results;
         }
 
-        private async Task<List<ReleaseInfo>> BuildReleaseInfosForCollectionItem(BandcampCollectionItem item, HashSet<int>? expectedTrackCounts = null)
+        private async Task<List<ReleaseInfo>> BuildReleaseInfosForCollectionItem(BandcampCollectionItem item)
         {
             var releases = new List<ReleaseInfo>();
 
@@ -277,27 +277,26 @@ namespace NzbDrone.Core.Indexers.Bandcamp
                     durationResolved = true;
                 }
 
-                releases.Add(ToReleaseInfo(item, format.Key, size, albumDurationSeconds, expectedTrackCounts));
+                releases.Add(ToReleaseInfo(item, format.Key, size, albumDurationSeconds));
             }
 
             return releases;
         }
 
-        private ReleaseInfo ToReleaseInfo(BandcampCollectionItem item, string formatKey, long size, double? albumDurationSeconds, HashSet<int>? expectedTrackCounts = null)
+        private ReleaseInfo ToReleaseInfo(BandcampCollectionItem item, string formatKey, long size, double? albumDurationSeconds)
         {
             var artistName = item.BandName ?? "Unknown Artist";
             var albumTitle = item.Title ?? "Unknown Album";
             var formatLabel = FormatLabel(formatKey, size, albumDurationSeconds);
-            var title = BuildReleaseTitle(artistName, albumTitle, formatLabel, item.TrackCount, expectedTrackCounts);
             var publishDate = ParsePublishDate(item.ReleaseDate);
             var downloadUrl = AddFormatFragment(item.DownloadPageUrl!, formatKey);
 
-            return new StoreReleaseInfo
+            var release = new StoreReleaseInfo
             {
                 Guid = $"bandcamp-{item.ItemUrl}-{formatKey}",
-                Title = title,
                 Artist = NormalizeReleaseComponent(artistName),
                 Album = NormalizeAlbumTitle(artistName, albumTitle),
+                TrackCount = item.TrackCount,
                 PublishDate = publishDate,
                 InfoUrl = item.ItemUrl!,
                 DownloadUrl = downloadUrl,
@@ -307,6 +306,10 @@ namespace NzbDrone.Core.Indexers.Bandcamp
                 Size = size,
                 Source = "bandcamp"
             };
+
+            string tail = item.TrackCount > 0 ? $" [{item.TrackCount} tracks]" : string.Empty;
+            ReleaseTitle.Compose(release, release.Artist, release.Album, $"{tail} [WEB] [{formatLabel}]");
+            return release;
         }
 
         private static string GetCollectionIdentity(BandcampCollectionItem item)
@@ -437,23 +440,6 @@ namespace NzbDrone.Core.Indexers.Bandcamp
         {
             var separator = downloadPageUrl.Contains('#') ? "&" : "#";
             return $"{downloadPageUrl}{separator}format={Uri.EscapeDataString(formatKey)}";
-        }
-
-        internal static string BuildReleaseTitle(string? artistName, string? albumTitle, string formatLabel, int trackCount = 0, HashSet<int>? expectedTrackCounts = null)
-        {
-            var normalizedArtist = NormalizeReleaseComponent(artistName);
-            var normalizedAlbum = NormalizeAlbumTitle(normalizedArtist, albumTitle);
-            var baseTitle = $"{normalizedArtist} - {normalizedAlbum}";
-
-            // Append track count for observability when we have it
-            if (trackCount > 0)
-            {
-                baseTitle += $" [{trackCount} tracks]";
-            }
-
-            // Add WEB for custom format matching - Bandcamp is a web source
-            // This ensures releases match WEB custom format requirements in quality profiles
-            return $"{baseTitle} [WEB] [{formatLabel}]";
         }
 
         internal static string NormalizeAlbumTitle(string? artistName, string? albumTitle)

@@ -147,7 +147,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
         [FieldDefinition(11, Label = "Run Pre-Import Tagging On", Type = FieldType.TagSelect, SelectOptions = typeof(PostProcessClient), Section = MetadataSectionType.Metadata, Placeholder = "Type to add a client", HelpText = "Run Lidarr's identification + tag writer on downloaded files before import for the selected Sleezer downloaders, so untagged or mistagged releases match cleanly. Empty = tagging disabled. Does not run on torrent or Usenet downloads.")]
         public IEnumerable<int> PreImportTaggingClients { get; set; } = Array.Empty<int>();
 
-        [FieldDefinition(12, Label = "Strip Featured Artists", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "When pre-import tagging, strip '(feat. X)' / '(featuring Y)' / '(ft Z)' suffixes from track titles and artist tags before writing. Applies to whichever clients are selected above.")]
+        [FieldDefinition(12, Label = "Remove Featured Artists From Tags", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "After pre-import tagging, remove '(feat. X)' / '(featuring Y)' / '(ft Z)' from the written title and artist tags, and rename files to match. A style choice: import matching already ignores these. Applies to whichever clients are selected above.")]
         public bool StripFeaturedArtists { get; set; }
 
         public NzbDroneValidationResult Validate() => new(Validator.Validate(this));

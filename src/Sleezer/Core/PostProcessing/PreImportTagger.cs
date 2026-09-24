@@ -217,14 +217,10 @@ public class PreImportTagger : IPreImportTagger
             // the import cutoff; identification-only, tags on disk untouched.
             info.ArtistTitle = FeaturedArtistStripper.StripGuestCredits(info.ArtistTitle, artist.Name) ?? info.ArtistTitle;
 
-            if (stripFeaturedArtists)
-            {
-                // Pre-clean the tag-derived title before Identify so a tag like
-                // "Foo (feat. Bar)" still matches a catalog track named "Foo".
-                info.Title = FeaturedArtistStripper.Strip(info.Title);
-                info.CleanTitle = FeaturedArtistStripper.Strip(info.CleanTitle);
-                info.ArtistTitle = FeaturedArtistStripper.Strip(info.ArtistTitle);
-            }
+            // Always: MusicBrainz credits a featured artist, not the title, so "Foo (feat. Bar)" must match "Foo".
+            info.Title = FeaturedArtistStripper.Strip(info.Title);
+            info.CleanTitle = FeaturedArtistStripper.Strip(info.CleanTitle);
+            info.ArtistTitle = FeaturedArtistStripper.Strip(info.ArtistTitle);
 
             return new LocalTrack
             {

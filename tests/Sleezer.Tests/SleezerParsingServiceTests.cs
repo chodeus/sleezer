@@ -1,4 +1,5 @@
 using NLog;
+using NzbDrone.Core.IndexerSearch.Definitions;
 using NzbDrone.Core.Music;
 using NzbDrone.Core.Parser;
 using NzbDrone.Core.Parser.Model;
@@ -74,5 +75,81 @@ public class SleezerParsingServiceTests
     private sealed class SingleArtistService(Artist artist) : FakeArtistService
     {
         public override Artist FindByName(string title) => artist;
+    }
+}
+
+// FindByTitle gives up on a clean title two library albums share; a search means the searched one.
+public class PreferSearchedAlbumTests
+{
+    private static readonly Artist Searched = new() { Id = 1, Name = "Some Artist", CleanName = "someartist" };
+
+    private static RemoteAlbum Mapped(string parsedTitle, Artist? artist, params Album[] albums) =>
+        new() { ParsedAlbumInfo = new ParsedAlbumInfo { AlbumTitle = parsedTitle, ArtistName = "Some Artist" }, Artist = artist, Albums = [.. albums] };
+
+    private static AlbumSearchCriteria Criteria(params Album[] albums) => new() { Artist = Searched, Albums = [.. albums] };
+
+    private static Album A(int id, string title) => new() { Id = id, Title = title };
+
+    // Through Map with Lidarr's own ParsingService: its exact-title step misses a braced title and the
+    // library lookups come back empty, as they do when two albums share the clean title.
+    [Fact]
+    public void Map_sends_a_title_Lidarr_could_not_place_to_the_searched_album()
+    {
+        Album searched = A(7, "In and Out of Love (Remixes EP)");
+        var parsing = new SleezerParsingService(new ParsingService(null!, null!, new Sleezer.Tests.Fakes.FakeAlbumService([], titleLookupsFindNothing: true), null!, LogManager.CreateNullLogger()), LogManager.CreateNullLogger());
+
+        RemoteAlbum result = parsing.Map(new ParsedAlbumInfo { ArtistName = "Some Artist", AlbumTitle = "In and Out of Love {Remixes EP" }, Criteria(searched));
+
+        Assert.Same(Searched, result.Artist);
+        Assert.Same(searched, Assert.Single(result.Albums));
+    }
+
+    [Fact]
+    public void An_unmapped_title_goes_to_the_searched_album_with_that_clean_title()
+    {
+        Album searched = A(7, "In and Out of Love (Remixes EP)");
+
+        RemoteAlbum result = SleezerParsingService.PreferSearchedAlbum(Mapped("In and Out of Love {Remixes EP", Searched), Criteria(searched));
+
+        Assert.Same(searched, Assert.Single(result.Albums));
+    }
+
+    [Fact]
+    public void A_title_mapped_to_another_album_goes_to_the_searched_one()
+    {
+        Album searched = A(7, "Stateside");
+
+        RemoteAlbum result = SleezerParsingService.PreferSearchedAlbum(Mapped("Stateside", Searched, A(3, "Stateside")), Criteria(searched));
+
+        Assert.Same(searched, Assert.Single(result.Albums));
+    }
+
+    [Fact]
+    public void Another_artists_result_is_left_alone()
+    {
+        Album other = A(3, "Stateside");
+        Artist someoneElse = new() { Id = 2, Name = "Someone Else", CleanName = "someoneelse" };
+
+        RemoteAlbum result = SleezerParsingService.PreferSearchedAlbum(Mapped("Stateside", someoneElse, other), Criteria(A(7, "Stateside")));
+
+        Assert.Same(other, Assert.Single(result.Albums));
+    }
+
+    [Fact]
+    public void Two_searched_albums_with_one_clean_title_are_left_to_Lidarr()
+    {
+        RemoteAlbum result = SleezerParsingService.PreferSearchedAlbum(Mapped("Stateside", Searched), Criteria(A(7, "Stateside"), A(8, "Stateside")));
+
+        Assert.Empty(result.Albums);
+    }
+
+    [Fact]
+    public void A_title_that_matches_no_searched_album_is_left_alone()
+    {
+        Album mapped = A(3, "In and Out of Love");
+
+        RemoteAlbum result = SleezerParsingService.PreferSearchedAlbum(Mapped("In and Out of Love", Searched, mapped), Criteria(A(7, "In and Out of Love (Remixes EP)")));
+
+        Assert.Same(mapped, Assert.Single(result.Albums));
     }
 }

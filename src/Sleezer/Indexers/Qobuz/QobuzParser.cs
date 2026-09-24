@@ -247,18 +247,15 @@ namespace NzbDrone.Core.Indexers.Qobuz
             }
 
             result.Size = EstimateSize(x, bitrate);
-            result.Title = $"{x.Artist?.Name} - {x.CompleteTitle}";
-
-            if (year > 0)
-                result.Title += $" ({year})";
+            string tail = year > 0 ? $" ({year})" : string.Empty;
 
             if (!string.IsNullOrEmpty(releaseType))
-                result.Title += $" [{releaseType}]";
+                tail += $" [{releaseType}]";
 
             if (x.ParentalWarning.GetValueOrDefault())
-                result.Title += " [Explicit]";
+                tail += " [Explicit]";
 
-            result.Title += $" [{format}] [WEB]";
+            ReleaseTitle.Compose(result, x.Artist?.Name, x.CompleteTitle, tail + $" [{format}] [WEB]");
 
             return result;
         }

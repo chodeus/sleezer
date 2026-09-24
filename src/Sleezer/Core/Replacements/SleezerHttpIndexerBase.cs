@@ -44,8 +44,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Replacements
                 releases = FilterReleases(await base.Fetch(searchCriteria), searchCriteria);
             }
 
-            releases = StoreResultRefiner.Refine(releases, searchCriteria,
-                Settings is not IStoreMatchingSettings { StrictMatching: false }, duplicates, Name, _logger);
+            releases = StoreResultRefiner.Refine(releases, searchCriteria, StrictMatching, duplicates, Name, _logger);
 
             // Slskd accounts for its own searches; this is the same answer for the rest.
             _logger.Info("{Indexer}: {Count} result(s) for '{Artist} - {Album}'",
@@ -73,6 +72,13 @@ namespace NzbDrone.Plugin.Sleezer.Core.Replacements
             _logger.Debug("{Indexer}: dropping '{Title}' — its credited artist matches more than one library artist", Name, release.Title);
             return false;
         }
+
+        // Indexers without the setting always verify.
+        private bool StrictMatching => Settings is not IStoreMatchingSettings { StrictMatching: false };
+
+        // For an override that never calls base.Fetch.
+        protected IList<ReleaseInfo> RefineStoreResults(IList<ReleaseInfo> releases, AlbumSearchCriteria searchCriteria) =>
+            StoreResultRefiner.Refine(releases, searchCriteria, StrictMatching, AmbiguousArtistGuard.DuplicatedCleanNames(_artistService.GetAllArtists()), Name, _logger);
 
         // After paging, so a drop here cannot end pagination early.
         protected IList<ReleaseInfo> GuardAmbiguousArtists(IList<ReleaseInfo> releases, Artist? searched) =>

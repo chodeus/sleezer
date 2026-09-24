@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using NzbDrone.Core.Parser.Model;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
 namespace NzbDrone.Plugin.Sleezer.Core.Model
 {
@@ -19,5 +20,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
         public IReadOnlyList<int>? TrackDurationsSeconds { get; set; }
 
         public string? Rejection { get; set; }
+
+        // Set by ReleaseTitle; every later rewrite of Title goes through it.
+        public ReleaseTitleParts? TitleParts { get; set; }
     }
 }

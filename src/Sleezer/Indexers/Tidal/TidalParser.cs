@@ -183,14 +183,11 @@ namespace NzbDrone.Core.Indexers.Tidal
                 _ => 40000
             };
             result.Size = x.Duration * bps;
-            result.Title = $"{x.Artists.First().Name} - {x.Title}";
-
-            if (year > 0)
-                result.Title += $" ({year})";
+            string tail = year > 0 ? $" ({year})" : string.Empty;
             if (x.Explicit)
-                result.Title += " [Explicit]";
+                tail += " [Explicit]";
 
-            result.Title += $" [{format}] [WEB]";
+            ReleaseTitle.Compose(result, x.Artists.First().Name, x.Title, tail + $" [{format}] [WEB]");
             return result;
         }
     }

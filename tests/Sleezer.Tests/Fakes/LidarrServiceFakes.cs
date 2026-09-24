@@ -41,7 +41,7 @@ internal abstract class FakeArtistService : IArtistService
     public void RemoveAddOptions(Artist artist) => throw new NotSupportedException();
 }
 
-internal sealed class FakeAlbumService(List<Album> byId) : IAlbumService
+internal sealed class FakeAlbumService(List<Album> byId, bool titleLookupsFindNothing = false) : IAlbumService
 {
     public List<Album> GetAlbums(IEnumerable<int> albumIds) => byId;
 
@@ -53,8 +53,9 @@ internal sealed class FakeAlbumService(List<Album> byId) : IAlbumService
     public List<Album> GetAlbumsForRefresh(int artistMetadataId, List<string> foreignIds) => throw new NotSupportedException();
     public Album AddAlbum(Album newAlbum, bool doRefresh) => throw new NotSupportedException();
     public Album FindById(string foreignId) => throw new NotSupportedException();
-    public Album FindByTitle(int artistMetadataId, string title) => throw new NotSupportedException();
-    public Album FindByTitleInexact(int artistMetadataId, string title) => throw new NotSupportedException();
+    // Null is what AlbumRepository.FindByTitle returns when two library albums share the clean title.
+    public Album FindByTitle(int artistMetadataId, string title) => titleLookupsFindNothing ? null! : throw new NotSupportedException();
+    public Album FindByTitleInexact(int artistMetadataId, string title) => titleLookupsFindNothing ? null! : throw new NotSupportedException();
     public List<Album> GetCandidates(int artistMetadataId, string title) => throw new NotSupportedException();
     public void DeleteAlbum(int albumId, bool deleteFiles, bool addImportListExclusion = false) => throw new NotSupportedException();
     public List<Album> GetAllAlbums() => throw new NotSupportedException();
