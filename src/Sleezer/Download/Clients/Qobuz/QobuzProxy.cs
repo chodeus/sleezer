@@ -121,6 +121,7 @@ namespace NzbDrone.Core.Download.Clients.Qobuz
                 RemainingSize = x.TotalSize - x.DownloadedSize,
                 RemainingTime = GetRemainingTime(x),
                 Status = x.Status,
+                Message = x.FailureMessage,
                 CanMoveFiles = true,
                 CanBeRemoved = true,
             };

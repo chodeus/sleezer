@@ -66,6 +66,8 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Blocklisting\Blocklists.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Blocklisting\AlbumWideFailure.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Utilities\StoreReleaseGuid.cs"
              LinkBase="SourceUnderTest" />
     <!-- Provenance tag written after the client's own metadata pass. -->
@@ -120,6 +122,8 @@
              LinkBase="SourceUnderTest" />
     <!-- Qobuz per-attempt outcome; the vendored model + exception it reads are Newtonsoft only. -->
     <Compile Include="..\..\src\Sleezer\Core\Qobuz\QobuzTrackAttempt.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Core\Qobuz\QobuzAlbumFailure.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\QobuzApiSharp\Models\Content\Track\FileUrl.cs"
              LinkBase="SourceUnderTest" />

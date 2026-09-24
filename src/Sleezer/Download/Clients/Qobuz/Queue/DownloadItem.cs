@@ -39,6 +39,8 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
         private int _completedTracks;
         private int _failedTracks;
         private int _skippedTracks;
+        // Skips that recur at every tier: not streamable, or only a sample.
+        private int _unstreamableTracks;
 
         public string ID { get; private set; } = string.Empty;
         public string Title { get; private set; } = string.Empty;
@@ -48,6 +50,7 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
         public string? DownloadFolder { get; private set; }
         public AudioQuality Bitrate { get; private set; }
         public DownloadItemStatus Status { get; set; }
+        public string? FailureMessage { get; private set; }
 
         /// <summary>
         /// The settings this item was queued with. Captured at enqueue because the queue
@@ -144,6 +147,7 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
             {
                 logger.Warn("Qobuz download incomplete for {Title}: {Completed}/{Total} tracks, {Failed} failed, {Skipped} skipped",
                     Title, CompletedTracks, TrackCount, FailedTracks, SkippedTracks);
+                FailureMessage = QobuzAlbumFailure.Reason(Volatile.Read(ref _unstreamableTracks), settings.RequireCompleteAlbum);
                 Status = DownloadItemStatus.Failed;
                 CleanUpFailedDownload(settings, logger);
                 return;
@@ -174,6 +178,7 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
                 {
                     logger.Warn("Qobuz track {TrackId} ({TrackTitle}) is not streamable for this account; skipping", track.Id, track.Title);
                     Interlocked.Increment(ref _skippedTracks);
+                    Interlocked.Increment(ref _unstreamableTracks);
                     return;
                 }
 
@@ -229,6 +234,7 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
                     // Counted as skipped so Require Complete Album decides, not the failure path.
                     logger.Warn(ex, "Qobuz track {TrackId} ({TrackTitle}) is not available in full; skipping", track.Id, track.Title);
                     Interlocked.Increment(ref _skippedTracks);
+                    Interlocked.Increment(ref _unstreamableTracks);
                     return true;
                 }
                 catch (Exception ex) when (QobuzTrackAttempt.Classify(ex, attempt, MaxAttemptsPerQuality) == QobuzAttemptOutcome.TryNextQuality)
