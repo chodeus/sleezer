@@ -34,17 +34,16 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         private static IList<ReleaseInfo> PresentAsSearched(IList<ReleaseInfo> releases, AlbumSearchCriteria criteria, string indexerName, Logger logger)
         {
             string? searched = criteria.Albums?.FirstOrDefault()?.Title ?? criteria.AlbumTitle;
-            string? artist = criteria.Artist?.Name;
-            if (string.IsNullOrWhiteSpace(searched) || string.IsNullOrWhiteSpace(artist))
+            if (string.IsNullOrWhiteSpace(searched) || criteria.Artist is not { Name: { Length: > 0 } artist } searchedArtist)
                 return releases;
 
             int retitled = 0;
             foreach (ReleaseInfo release in releases)
             {
-                // Only an exact title and a credit the verifier checked: renamed, the result skips
-                // Lidarr's own title check, and an unjudgeable one was passed unchecked, not matched.
+                // Only an exact title and an exact credit: renamed, the result skips Lidarr's own title
+                // and artist checks, and an unjudgeable title was passed unchecked, not matched.
                 if (release is StoreReleaseInfo { Rejection: null } store
-                    && !string.IsNullOrWhiteSpace(store.Artist)
+                    && StoreReleaseVerifier.CreditsArtist(store, searchedArtist)
                     && StoreReleaseVerifier.SameAlbumTitle(store.CandidateTitle ?? store.Album, searched)
                     && ReleaseTitle.AsSearchedAlbum(store, artist, searched))
                     retitled++;

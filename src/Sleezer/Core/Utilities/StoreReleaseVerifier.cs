@@ -168,6 +168,15 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             return c.Length > 0 && c == Comparable(target) && Numerals(candidate).SetEquals(Numerals(target));
         }
 
+        /// <summary>Whether the store names the searched artist outright: the full credit, an alias, or a listed main artist.</summary>
+        // Stricter than ArtistMatches on purpose: a result renamed to the searched artist loses Lidarr's own artist lookup,
+        // and "Low" must not claim "Low Roar". Credits are never split: "Simon & Garfunkel" is not "Simon".
+        internal static bool CreditsArtist(StoreReleaseInfo release, Artist searched)
+        {
+            HashSet<string> names = [.. new[] { searched.Name }.Concat(searched.Metadata?.Value?.Aliases ?? []).Select(Normalize).Where(n => n.Length > 0)];
+            return names.Contains(Normalize(release.Artist)) || release.MainArtists.Any(a => names.Contains(Normalize(a)));
+        }
+
         private static HashSet<string> Numerals(string? title) => [.. Numeral.Matches(Normalize(title)).Select(m => m.Value)];
 
         private static string Comparable(string? title) => Normalize(StoreQueryCleaner.StripQualifiers(title ?? string.Empty));

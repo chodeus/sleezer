@@ -91,10 +91,10 @@ public class ReleaseTitleTests
         Assert.Equal("Some Artist - Album" + Tail, release.Title);
     }
 
-    private static AlbumSearchCriteria Criteria(string albumTitle, string artistName = "Some Artist")
+    private static AlbumSearchCriteria Criteria(string albumTitle, string artistName = "Some Artist", params string[] aliases)
     {
         Artist artist = new() { Name = artistName, CleanName = artistName.CleanArtistName() };
-        artist.Metadata = new LazyLoaded<ArtistMetadata>(new ArtistMetadata { Name = artistName, Aliases = [] });
+        artist.Metadata = new LazyLoaded<ArtistMetadata>(new ArtistMetadata { Name = artistName, Aliases = [.. aliases] });
         return new AlbumSearchCriteria
         {
             Artist = artist,
@@ -105,6 +105,9 @@ public class ReleaseTitleTests
 
     private static IList<ReleaseInfo> Refine(ReleaseInfo release, string searched, bool strict = true) =>
         StoreResultRefiner.Refine([release], Criteria(searched), strict, [], "Store", Log);
+
+    private static IList<ReleaseInfo> Refine(ReleaseInfo release, AlbumSearchCriteria criteria) =>
+        StoreResultRefiner.Refine([release], criteria, true, [], "Store", Log);
 
     [Fact]
     public void A_verified_result_is_presented_as_the_searched_album()
@@ -167,15 +170,50 @@ public class ReleaseTitleTests
     }
 
     // Lidarr's artist lookup fails on a collaboration credit, and braces defeat its search-criteria reparse.
+    // Qobuz lists each main artist, which is what names the searched one outright.
     [Fact]
     public void A_verified_collaboration_credit_is_presented_as_the_searched_artist()
     {
         StoreReleaseInfo release = Composed("Some Artist & Guest", "In And Out Of Love (Remixes)");
+        release.MainArtists = ["Some Artist", "Guest"];
 
         Refine(release, "In and Out of Love (Remixes EP)");
 
         Assert.Equal("Some Artist".CleanArtistName(), ParsedArtistClean(release));
         Assert.Contains("[Some Artist & Guest - In And Out Of Love (Remixes)]", release.Title);
+    }
+
+    // Renamed, the result skips Lidarr's artist lookup, so the verifier's lenient artist match is not enough.
+    [Fact]
+    public void An_artist_whose_name_only_contains_the_searched_one_keeps_its_own_credit()
+    {
+        StoreReleaseInfo release = Composed("Low Roar", "Live");
+
+        Refine(release, Criteria("Live", "Low"));
+
+        Assert.Null(release.Rejection);
+        Assert.Equal("Low Roar".CleanArtistName(), ParsedArtistClean(release));
+    }
+
+    // Credits are never split, so a duo is not taken for one of its members without a main-artist list.
+    [Fact]
+    public void A_collaboration_credit_without_listed_main_artists_keeps_its_own_credit()
+    {
+        StoreReleaseInfo release = Composed("Some Artist & Guest", "Live");
+
+        Refine(release, Criteria("Live", "Some Artist"));
+
+        Assert.Equal("Some Artist & Guest".CleanArtistName(), ParsedArtistClean(release));
+    }
+
+    [Fact]
+    public void A_credit_under_an_alias_is_presented_as_the_searched_artist()
+    {
+        StoreReleaseInfo release = Composed("SA", "In And Out Of Love (Remixes)");
+
+        Refine(release, Criteria("In and Out of Love (Remixes EP)", "Some Artist", "SA"));
+
+        Assert.Equal("Some Artist".CleanArtistName(), ParsedArtistClean(release));
     }
 
     [Fact]
