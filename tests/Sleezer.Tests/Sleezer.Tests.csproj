@@ -84,6 +84,9 @@
     <!-- Identity gate for Deezer track substitution; BCL only. -->
     <Compile Include="..\..\src\Sleezer\Core\Deezer\DeezerFallbackGate.cs"
              LinkBase="SourceUnderTest" />
+    <!-- ARL validity from GW user data; Newtonsoft only. -->
+    <Compile Include="..\..\src\Sleezer\Core\Deezer\DeezerArlCheck.cs"
+             LinkBase="SourceUnderTest" />
     <!-- Store-result verification: FuzzySharp + SlskdTextProcessor (both already here) + Lidarr.Core types. -->
     <Compile Include="..\..\src\Sleezer\Core\Model\StoreReleaseInfo.cs"
              LinkBase="SourceUnderTest" />

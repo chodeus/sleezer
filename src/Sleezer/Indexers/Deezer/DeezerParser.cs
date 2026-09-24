@@ -27,6 +27,7 @@ namespace NzbDrone.Core.Indexers.Deezer
         // than to wedge the indexer thread forever.
         private static readonly TimeSpan IndexerParseTimeout = TimeSpan.FromMinutes(2);
 
+        public DeezerAPI Api { get; set; } = null!;
         public DeezerIndexerSettings Settings { get; set; } = null!;
 
         public IList<ReleaseInfo> ParseResponse(IndexerResponse response)
@@ -86,7 +87,7 @@ namespace NzbDrone.Core.Indexers.Deezer
         {
             var torrentInfos = new List<ReleaseInfo>();
 
-            var albumPage = await DeezerAPI.Instance.Client.GWApi.GetAlbumPage(long.Parse(result.AlbumId, CultureInfo.InvariantCulture));
+            var albumPage = await Api.Client.GWApi.GetAlbumPage(long.Parse(result.AlbumId, CultureInfo.InvariantCulture));
             var songs = albumPage["SONGS"]!["data"]!;
 
             // Per-format availability: a track with FILESIZE_X == 0 is unavailable at that format.
@@ -143,7 +144,7 @@ namespace NzbDrone.Core.Indexers.Deezer
             if (!missing128)
                 torrentInfos.Add(ToReleaseInfo(result, 1, size128, explicitType, facts));
 
-            var options = DeezerAPI.Instance.Client.GWApi.ActiveUserData?["USER"]?["OPTIONS"];
+            var options = Api.Client.GWApi.ActiveUserData?["USER"]?["OPTIONS"];
             var hasHq = options?["web_hq"]?.Value<bool>() == true;
             var hasLossless = options?["web_lossless"]?.Value<bool>() == true;
 
@@ -293,7 +294,7 @@ namespace NzbDrone.Core.Indexers.Deezer
             await Task.WhenAll(recent.Select(async album =>
             {
                 var id = album["ALB_ID"]!.Value<long>();
-                var result = await DeezerAPI.Instance.Client.GWApi.GetAlbumPage(id);
+                var result = await Api.Client.GWApi.GetAlbumPage(id);
 
                 var duration = result["SONGS"]!.Sum(track => track.Contains("DURATION") ? track["DURATION"]!.Value<long>() : 0L);
                 var trackCount = result["SONGS"]!.Count();
@@ -323,7 +324,7 @@ namespace NzbDrone.Core.Indexers.Deezer
 
         private async Task<JToken[]> GetChannelNewReleases(string channelName)
         {
-            var channelData = await DeezerAPI.Instance.Client.GWApi.GetPage(channelName);
+            var channelData = await Api.Client.GWApi.GetPage(channelName);
             Regex regex = new("New.*releases");
 
             var newReleasesSection = (JObject)channelData["sections"]!.FirstOrDefault(s => regex.IsMatch(s["title"]!.ToString()))!;
@@ -332,7 +333,7 @@ namespace NzbDrone.Core.Indexers.Deezer
 
             if (newReleasesSection.ContainsKey("target"))
             {
-                var showAll = await DeezerAPI.Instance.Client.GWApi.GetPage(newReleasesSection["target"]!.ToString());
+                var showAll = await Api.Client.GWApi.GetPage(newReleasesSection["target"]!.ToString());
                 return showAll["sections"]!.First()!["items"]!.Select(i => i["data"]!).ToArray();
             }
 

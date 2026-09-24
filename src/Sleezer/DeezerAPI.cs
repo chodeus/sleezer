@@ -24,13 +24,29 @@ namespace NzbDrone.Plugin.Sleezer.Deezer
 
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
 
+        private static readonly object _swapGate = new();
+
         public static DeezerAPI Instance { get; private set; } = new("");
 
         internal DeezerAPI(string arl)
         {
-            Instance = this;
             _client = new();
             CheckAndSetARL(arl);
+        }
+
+        // A different ARL gets a fresh session: SetARL in place would switch accounts under in-flight work.
+        internal static DeezerAPI ForArl(string arl)
+        {
+            lock (_swapGate)
+            {
+                var current = Instance;
+                var active = current._client.ActiveARL;
+                if (!string.IsNullOrEmpty(arl) && !string.IsNullOrEmpty(active) && active != arl)
+                    return Instance = new DeezerAPI(arl);
+
+                current.CheckAndSetARL(arl);
+                return current;
+            }
         }
 
         public DeezerClient Client => _client;

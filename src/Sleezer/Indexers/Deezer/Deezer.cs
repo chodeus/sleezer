@@ -44,10 +44,9 @@ namespace NzbDrone.Core.Indexers.Deezer
                 Settings.Arl = arlTask.Result;
             }*/
 
-            DeezerAPI.Instance?.CheckAndSetARL(Settings.Arl);
-
             return new DeezerRequestGenerator()
             {
+                Api = DeezerAPI.ForArl(Settings.Arl),
                 Settings = Settings,
                 Logger = _logger
             };
@@ -57,6 +56,7 @@ namespace NzbDrone.Core.Indexers.Deezer
         {
             return new DeezerParser()
             {
+                Api = DeezerAPI.ForArl(Settings.Arl),
                 Settings = Settings
             };
         }

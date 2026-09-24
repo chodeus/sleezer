@@ -5,7 +5,9 @@ using System.Threading.Tasks;
 using AngleSharp.Dom;
 using AngleSharp.Html.Parser;
 using AngleSharp.XPath;
+using DeezNET;
 using NLog;
+using NzbDrone.Plugin.Sleezer.Core.Deezer;
 
 namespace NzbDrone.Plugin.Sleezer.Deezer
 {
@@ -52,6 +54,7 @@ namespace NzbDrone.Plugin.Sleezer.Deezer
             return "";
         }
 
+        // Validates on a throwaway client: SetARL on the live one would swap its account under in-flight work.
         public static bool IsValid(string token)
         {
             if (string.IsNullOrWhiteSpace(token))
@@ -59,27 +62,20 @@ namespace NzbDrone.Plugin.Sleezer.Deezer
 
             try
             {
-                // calling this gets a checkForm/API token, it will always return one regardless of the arl being valid or not, requiring the additional checks
-                Task setArlTask = DeezerAPI.Instance.Client.SetARL(token);
-                if (!setArlTask.Wait(ArlValidationTimeout))
+                var client = new DeezerClient();
+                if (!client.SetARL(token).Wait(ArlValidationTimeout))
                 {
                     _logger.Debug("ARL validation timed out after {Seconds}s; treating as invalid", ArlValidationTimeout.TotalSeconds);
                     return false;
                 }
 
-                bool accountActive = DeezerAPI.Instance.Client.GWApi.ActiveUserData!["USER"]!.Value<long>("USER_ID") == 0;
-                bool hasStreaming = DeezerAPI.Instance.Client.GWApi.ActiveUserData!["USER"]!["OPTIONS"]!.Value<bool>("web_streaming");
-                if (accountActive && hasStreaming)
-                    return false;
+                return DeezerArlCheck.HasSignedInUser(client.GWApi.ActiveUserData);
             }
             catch (Exception ex)
             {
                 _logger.Debug(ex, "ARL validation failed");
                 return false;
             }
-
-
-            return true;
         }
     }
 }

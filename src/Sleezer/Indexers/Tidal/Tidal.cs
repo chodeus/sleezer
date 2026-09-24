@@ -41,8 +41,9 @@ namespace NzbDrone.Core.Indexers.Tidal
 
         // Tracks the access token currently loaded into TidalAPI.Instance, so
         // re-authenticating with a different account (or clearing settings)
-        // forces a fresh LoadFromTokens call. Empty string = nothing loaded.
+        // forces a fresh session. Empty string = nothing loaded. Guarded by _sessionGate.
         private static string _loadedAccessToken = string.Empty;
+        private static readonly object _sessionGate = new();
 
         private readonly IIndexerRepository _indexerRepository;
 
@@ -60,14 +61,13 @@ namespace NzbDrone.Core.Indexers.Tidal
 
         public override IIndexerRequestGenerator GetRequestGenerator()
         {
-            EnsureApiInitialized();
-            EnsureTokensLoaded();
-
-            if (TidalAPI.Instance?.Client.ActiveUser == null)
+            var api = LoadSession();
+            if (api?.Client.ActiveUser == null)
                 return null!;
 
             return new TidalRequestGenerator
             {
+                Api = api,
                 Settings = Settings,
                 Logger = _logger
             };
@@ -77,6 +77,7 @@ namespace NzbDrone.Core.Indexers.Tidal
         {
             return new TidalParser
             {
+                Api = LoadSession(),
                 Settings = Settings,
                 Logger = _logger
             };
@@ -210,7 +211,9 @@ namespace NzbDrone.Core.Indexers.Tidal
 
             try
             {
-                var data = TidalAPI.Instance!.Client
+                // A throwaway client: the saved tokens reach the live session on the next search, not mid-download.
+                var client = new TidalClient(null, _httpClient);
+                var data = client
                     .CompleteDeviceLogin(auth, budgetCts.Token)
                     .GetAwaiter().GetResult();
 
@@ -219,8 +222,7 @@ namespace NzbDrone.Core.Indexers.Tidal
                     _pendingDeviceAuth = null;
                 }
 
-                var user = TidalAPI.Instance.Client.ActiveUser!;
-                _loadedAccessToken = user.AccessToken;
+                var user = client.ActiveUser!;
                 _logger.Info("Tidal device login complete for user {UserId} ({CountryCode})", user.UserId, user.CountryCode);
 
                 return new
@@ -249,6 +251,17 @@ namespace NzbDrone.Core.Indexers.Tidal
             }
         }
 
+        // One lock over load and capture, so a search never holds another account's session.
+        private TidalAPI? LoadSession()
+        {
+            lock (_sessionGate)
+            {
+                EnsureApiInitialized();
+                EnsureTokensLoaded();
+                return TidalAPI.Instance;
+            }
+        }
+
         private void EnsureApiInitialized()
         {
             if (TidalAPI.Instance == null)
@@ -271,7 +284,7 @@ namespace NzbDrone.Core.Indexers.Tidal
                 if (_loadedAccessToken.Length > 0)
                 {
                     _logger.Debug("Tidal settings cleared; dropping in-memory session.");
-                    TidalAPI.Instance!.Client.ActiveUser = null;
+                    TidalAPI.Replace(null, _httpClient, _logger);
                     _loadedAccessToken = string.Empty;
                 }
                 return;
@@ -282,6 +295,13 @@ namespace NzbDrone.Core.Indexers.Tidal
             // and we reload.
             if (string.Equals(_loadedAccessToken, Settings.AccessToken, StringComparison.Ordinal))
                 return;
+
+            // Another token means another session: loading it into the live client would switch in-flight work.
+            if (_loadedAccessToken.Length > 0)
+            {
+                TidalAPI.Replace(null, _httpClient, _logger);
+                _loadedAccessToken = string.Empty;
+            }
 
             _logger.Debug("Loading Tidal session from saved tokens — access={Access} refresh={Refresh} expires={Expires:o} country={Country}",
                 SecretRedactor.Fingerprint(Settings.AccessToken),
@@ -326,6 +346,14 @@ namespace NzbDrone.Core.Indexers.Tidal
         // here mutates the same object SetFields serialises out.
         private void PersistRefreshedTokens(TidalUser user)
         {
+            // A replaced session must not write its account over the current one. No _sessionGate:
+            // this fires on a pool thread inside LoadFromTokens while LoadSession holds it.
+            if (!ReferenceEquals(TidalAPI.Instance?.Client.ActiveUser, user))
+            {
+                _logger.Debug("Ignoring a token refresh from a replaced Tidal session");
+                return;
+            }
+
             try
             {
                 Settings.AccessToken = user.AccessToken;
@@ -369,14 +397,14 @@ namespace NzbDrone.Core.Indexers.Tidal
             {
                 return await base.FetchPage(request, parser);
             }
-            catch (HttpException ex) when (ShouldAttemptRefresh(ex))
+            catch (HttpException ex) when (parser is TidalParser { Api: { } api } && ShouldAttemptRefresh(ex, api))
             {
                 _logger.Warn("Tidal search hit {Status}; attempting token refresh and retrying once", ex.Response.StatusCode);
 
                 bool refreshed;
                 try
                 {
-                    refreshed = await TidalAPI.Instance!.Client.ForceRefreshToken();
+                    refreshed = await api.Client.ForceRefreshToken();
                 }
                 catch (Exception refreshEx)
                 {
@@ -395,7 +423,7 @@ namespace NzbDrone.Core.Indexers.Tidal
                 // Re-stamp the Authorization header with the refreshed token.
                 // The original IndexerRequest captured the OLD bearer at
                 // generation time, so a naked retry would 401 again.
-                var user = TidalAPI.Instance!.Client.ActiveUser;
+                var user = api.Client.ActiveUser;
                 if (user != null)
                 {
                     request.HttpRequest.Headers.Remove("Authorization");
@@ -406,17 +434,17 @@ namespace NzbDrone.Core.Indexers.Tidal
             }
         }
 
-        private bool ShouldAttemptRefresh(HttpException ex)
+        private static bool ShouldAttemptRefresh(HttpException ex, TidalAPI api)
         {
             if (ex.Response?.StatusCode != HttpStatusCode.Unauthorized)
                 return false;
 
-            if (string.IsNullOrEmpty(TidalAPI.Instance?.Client.ActiveUser?.RefreshToken))
+            if (string.IsNullOrEmpty(api.Client.ActiveUser?.RefreshToken))
                 return false;
 
             return ExpiredTokenDetector.LooksExpired(
                 ex.Response.Content,
-                requestHadCountryCode: !string.IsNullOrEmpty(TidalAPI.Instance?.Client.ActiveUser?.CountryCode));
+                requestHadCountryCode: !string.IsNullOrEmpty(api.Client.ActiveUser?.CountryCode));
         }
     }
 }

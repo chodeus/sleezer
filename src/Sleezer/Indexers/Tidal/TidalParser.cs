@@ -17,6 +17,7 @@ namespace NzbDrone.Core.Indexers.Tidal
 {
     public class TidalParser : IParseIndexerResponse
     {
+        public TidalAPI? Api { get; set; }
         public TidalIndexerSettings Settings { get; set; } = null!;
         public Logger? Logger { get; set; }
 
@@ -95,7 +96,7 @@ namespace NzbDrone.Core.Indexers.Tidal
         {
             try
             {
-                var instance = TidalAPI.Instance;
+                var instance = Api;
                 if (instance == null)
                     return null;
 
