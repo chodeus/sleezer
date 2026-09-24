@@ -28,9 +28,11 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
                 .Where(a => a.Id != target.Id
                     && StoreReleaseVerifier.TitleJudgeable(a.Title)
                     && StoreReleaseVerifier.TitleMatches(title, a.Title)
-                    && !VariantQualifiers.RemixSignaturesConflict(a.Title, title))
+                    && !VariantQualifiers.RemixSignaturesConflict(a.Title, title, VariantQualifiers.ForgivenVariants(a)))
                 .Select(a => (Album: a, Releases: releasesOf(a.Id)))
-                .Where(s => release.TrackCount <= 0 || s.Releases.Any(r => StoreReleaseVerifier.TrackCountCompatible(release.TrackCount, r.TrackCount)))
+                // As in Judge: no releases means no track count to judge, not a mismatch.
+                .Where(s => release.TrackCount <= 0 || s.Releases.Count == 0
+                    || s.Releases.Any(r => StoreReleaseVerifier.TrackCountCompatible(release.TrackCount, r.TrackCount)))
                 .Select(s => (s.Album, Near: Nearest(release.PublishDate, AlbumDates.Of(s.Album, s.Releases))))
                 .Where(s => s.Near is { } near && near.Gap + Margin <= toTarget.Gap)
                 .OrderBy(s => s.Near!.Value.Gap)

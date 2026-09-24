@@ -78,6 +78,28 @@ public class SiblingAlbumMatchTests
         Assert.Null(Sibling(copy, remix, original));
     }
 
+    // Judge forgives a remix qualifier when the album is typed Remix, so the sibling check must too.
+    [Fact]
+    public void A_sibling_typed_remix_counts_for_a_remix_titled_copy()
+    {
+        Album remixAlbum = Album(1, "Stateside", D("2025-04-25"));
+        remixAlbum.SecondaryTypes = [SecondaryAlbumType.Remix];
+        StoreReleaseInfo copy = Copy(D("2025-04-24"));
+        copy.CandidateTitle = "Stateside (Dub Remix)";
+
+        Assert.Same(remixAlbum, Sibling(copy, Album(2, "Stateside", D("2025-10-10")), remixAlbum));
+    }
+
+    // Judge skips the track-count check when MusicBrainz lists no releases.
+    [Fact]
+    public void A_sibling_with_no_releases_is_not_ruled_out_by_track_count()
+    {
+        Album original = Album(1, "Stateside", D("2025-04-25"));
+        _releases[1] = [];
+
+        Assert.Same(original, Sibling(Copy(D("2025-04-24"), tracks: 3), Album(2, "Stateside", D("2025-10-10")), original));
+    }
+
     [Fact]
     public void A_sibling_whose_track_count_cannot_fit_the_copy_is_ignored()
     {
