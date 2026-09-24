@@ -205,7 +205,7 @@ namespace NzbDrone.Core.Indexers.Qobuz
 
             var result = new StoreReleaseInfo
             {
-                Guid = $"Qobuz-{x.Id}-{bitrate}",
+                Guid = StoreReleaseGuid.Create(StoreReleaseGuid.Store.Qobuz, x.Id, bitrate),
                 Artist = x.Artist?.Name,
                 Album = x.CompleteTitle,
                 DownloadUrl = url,

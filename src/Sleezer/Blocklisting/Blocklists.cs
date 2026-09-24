@@ -26,6 +26,12 @@ namespace NzbDrone.Plugin.Sleezer.Blocklisting
     public class QobuzBlocklist(IBlocklistRepository blocklistRepository) : BaseBlocklist<QobuzDownloadProtocol>(blocklistRepository)
     { }
 
+    public class DeezerBlocklist(IBlocklistRepository blocklistRepository) : BaseBlocklist<DeezerDownloadProtocol>(blocklistRepository)
+    { }
+
+    public class TidalBlocklist(IBlocklistRepository blocklistRepository) : BaseBlocklist<TidalDownloadProtocol>(blocklistRepository)
+    { }
+
     public class SubSonicBlocklist(IBlocklistRepository blocklistRepository) : BaseBlocklist<SubSonicDownloadProtocol>(blocklistRepository)
     { }
 

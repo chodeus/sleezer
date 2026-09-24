@@ -1,5 +1,4 @@
 using NzbDrone.Core.Blocklisting;
-using NzbDrone.Core.Datastore;
 using NzbDrone.Core.Download;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Plugin.Sleezer.Blocklisting;
@@ -13,42 +12,6 @@ namespace Sleezer.Tests;
 // decay for Soulseek's transient failures.
 public class SlskdBlocklistTests
 {
-    // Only BlocklistedByTorrentInfoHash + Add are exercised; the rest satisfy
-    // the wide IBasicRepository surface.
-    private sealed class FakeRepo : IBlocklistRepository
-    {
-        private readonly List<Blocklist> _rows = [];
-        public void Add(Blocklist b) => _rows.Add(b);
-
-        public List<Blocklist> BlocklistedByTorrentInfoHash(int artistId, string hash) =>
-            [.. _rows.Where(b => b.ArtistId == artistId && b.TorrentInfoHash != null && b.TorrentInfoHash.Contains(hash))];
-        public List<Blocklist> BlocklistedByTitle(int artistId, string sourceTitle) => [];
-        public List<Blocklist> BlocklistedByArtists(List<int> artistIds) => [];
-        public void DeleteForArtists(List<int> artistIds) { }
-
-        public IEnumerable<Blocklist> All() => _rows;
-        public int Count() => _rows.Count;
-        public Blocklist Find(int id) => throw new NotImplementedException();
-        public Blocklist Get(int id) => throw new NotImplementedException();
-        public IEnumerable<Blocklist> Get(IEnumerable<int> ids) => throw new NotImplementedException();
-        public Blocklist Insert(Blocklist model) { _rows.Add(model); return model; }
-        public Blocklist Update(Blocklist model) => model;
-        public Blocklist Upsert(Blocklist model) => model;
-        public void SetFields(Blocklist model, params System.Linq.Expressions.Expression<Func<Blocklist, object>>[] properties) { }
-        public void SetFields(IList<Blocklist> models, params System.Linq.Expressions.Expression<Func<Blocklist, object>>[] properties) { }
-        public void Delete(Blocklist model) { }
-        public void Delete(int id) { }
-        public void InsertMany(IList<Blocklist> models) => _rows.AddRange(models);
-        public void UpdateMany(IList<Blocklist> models) { }
-        public void DeleteMany(List<Blocklist> models) { }
-        public void DeleteMany(IEnumerable<int> ids) { }
-        public void Purge(bool vacuum = false) { }
-        public bool HasItems() => _rows.Count > 0;
-        public Blocklist Single() => throw new NotImplementedException();
-        public Blocklist SingleOrDefault() => throw new NotImplementedException();
-        public PagingSpec<Blocklist> GetPaged(PagingSpec<Blocklist> pagingSpec) => pagingSpec;
-    }
-
     private static DownloadFailedEvent FailedEvent(string guid, Dictionary<string, string> data) => new()
     {
         ArtistId = 1,
@@ -58,7 +21,7 @@ public class SlskdBlocklistTests
         Data = data,
     };
 
-    private static NzbDrone.Core.Blocklisting.IBlocklistForProtocol MakeBlocklist(string kind, FakeRepo repo) => kind switch
+    private static NzbDrone.Core.Blocklisting.IBlocklistForProtocol MakeBlocklist(string kind, FakeBlocklistRepository repo) => kind switch
     {
         "deezer" => new DeezerBlocklist(repo),
         "tidal" => new TidalBlocklist(repo),
@@ -72,7 +35,7 @@ public class SlskdBlocklistTests
     [InlineData("soulseek", "SoulseekDownloadProtocol", "Soulseek")]
     public void GetBlocklist_reads_camelcase_keys_from_rehydrated_data(string kind, string protocol, string indexer)
     {
-        FakeRepo repo = new();
+        FakeBlocklistRepository repo = new();
         var bl = MakeBlocklist(kind, repo);
         Assert.Equal(protocol, bl.Protocol);
         Blocklist row = bl.GetBlocklist(FailedEvent("g", new()
@@ -92,7 +55,7 @@ public class SlskdBlocklistTests
     [Fact]
     public void GetBlocklist_still_reads_pascalcase_keys()
     {
-        FakeRepo repo = new();
+        FakeBlocklistRepository repo = new();
         SoulseekBlocklist bl = new(repo);
         Blocklist row = bl.GetBlocklist(FailedEvent("g", new()
         {
@@ -107,7 +70,7 @@ public class SlskdBlocklistTests
     [Fact]
     public void Soulseek_block_decays_on_the_escalating_window()
     {
-        FakeRepo repo = new();
+        FakeBlocklistRepository repo = new();
         SoulseekBlocklist bl = new(repo);
         ReleaseInfo release = new() { Guid = "36_Slskd-hash1", DownloadProtocol = new NzbDrone.Core.Indexers.SoulseekDownloadProtocol().GetType().Name };
 
@@ -123,7 +86,7 @@ public class SlskdBlocklistTests
     [Fact]
     public void Soulseek_block_ignores_other_releases()
     {
-        FakeRepo repo = new();
+        FakeBlocklistRepository repo = new();
         SoulseekBlocklist bl = new(repo);
         repo.Add(new Blocklist { ArtistId = 1, TorrentInfoHash = "36_Slskd-other", Date = DateTime.UtcNow });
         Assert.False(bl.IsBlocklisted(1, new ReleaseInfo { Guid = "36_Slskd-hash1" }));
@@ -136,7 +99,7 @@ public class SlskdBlocklistTests
         // if that were captured un-prefixed ("Slskd-h1") while the query Guid
         // is prefixed ("36_Slskd-h1"), matching would silently fail. This is
         // why SlskdIndexer.CleanupReleases mirrors the POST-prefix Guid.
-        FakeRepo repo = new();
+        FakeBlocklistRepository repo = new();
         SoulseekBlocklist bl = new(repo);
         repo.Add(new Blocklist { ArtistId = 1, TorrentInfoHash = "Slskd-h1", Date = DateTime.UtcNow });
         Assert.False(bl.IsBlocklisted(1, new ReleaseInfo { Guid = "36_Slskd-h1" }));
@@ -150,7 +113,7 @@ public class SlskdBlocklistTests
     [InlineData(-25, false)]  // newest 25h ago -> past the 24h tier -> expired
     public void Soulseek_block_covers_the_24h_tier(int newestHoursAgo, bool expected)
     {
-        FakeRepo repo = new();
+        FakeBlocklistRepository repo = new();
         SoulseekBlocklist bl = new(repo);
         ReleaseInfo release = new() { Guid = "36_Slskd-t24" };
         repo.Add(new Blocklist { ArtistId = 1, TorrentInfoHash = "36_Slskd-t24", Date = DateTime.UtcNow.AddHours(newestHoursAgo - 20) });
@@ -162,7 +125,7 @@ public class SlskdBlocklistTests
     [Fact]
     public void Soulseek_block_ages_out_stale_failures_from_the_escalation_count()
     {
-        FakeRepo repo = new();
+        FakeBlocklistRepository repo = new();
         SoulseekBlocklist bl = new(repo);
         ReleaseInfo release = new() { Guid = "36_Slskd-old" };
 
