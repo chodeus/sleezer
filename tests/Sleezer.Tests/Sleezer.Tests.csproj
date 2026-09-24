@@ -147,6 +147,10 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Utilities\SiblingAlbumMatch.cs"
              LinkBase="SourceUnderTest" />
+    <!-- Colliding-CleanName import fix. ParsingService and IArtistService come from
+         the Lidarr.Core reference below. -->
+    <Compile Include="..\..\src\Sleezer\Core\Replacements\SleezerParsingService.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Utilities\DirectoryEmptiness.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Utilities\EmptyDownloadDirectorySweeper.cs"
