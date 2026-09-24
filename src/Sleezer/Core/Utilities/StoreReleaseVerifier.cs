@@ -136,7 +136,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             return Fuzz.TokenSortRatio(normalized, target.ArtistNormalized) >= ArtistFuzzyFloor;
         }
 
-        private static bool TitleMatches(string candidate, string target)
+        internal static bool TitleMatches(string candidate, string target)
         {
             var c = Normalize(StoreQueryCleaner.StripQualifiers(candidate));
             var t = Normalize(StoreQueryCleaner.StripQualifiers(target));
@@ -150,7 +150,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         private static bool TrackCountMatches(int count, Target target) =>
             target.Releases.Any(r => TrackCountCompatible(count, r.TrackCount));
 
-        private static bool TrackCountCompatible(int count, int releaseCount) =>
+        internal static bool TrackCountCompatible(int count, int releaseCount) =>
             Math.Abs(count - releaseCount) <= TrackCountSlack
             && Math.Abs(count - releaseCount) <= Math.Max(releaseCount, 1) * TrackCountRatioSlack;
 

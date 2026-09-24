@@ -143,6 +143,10 @@
          come from the Lidarr.Core reference below. -->
     <Compile Include="..\..\src\Sleezer\Core\Utilities\AlbumYearGuard.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Core\Utilities\AlbumDates.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Core\Utilities\SiblingAlbumMatch.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Utilities\DirectoryEmptiness.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Utilities\EmptyDownloadDirectorySweeper.cs"
