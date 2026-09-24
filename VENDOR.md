@@ -38,7 +38,7 @@ it is the source of truth, not the prose.
     "path": "src/Sleezer/Indexers/Qobuz/, src/Sleezer/Download/Clients/Qobuz/, src/Sleezer/ImportLists/Qobuz/",
     "upstream": "https://github.com/DaveBinM/Lidarr.Plugin.Qobuz",
     "commit": "8ccfca3e661692e1c32c02b92aba8c834ec8cb45",
-    "vendored": "2026-08-22",
+    "vendored": "2026-09-22",
     "track": true
   },
   {
@@ -86,6 +86,8 @@ Local changes, which GPL-3.0 §5(a) requires be stated:
   so the token was stored on every API exception. The `app_secret` derivation
   also reports a changed bundle format instead of throwing
   `ArgumentOutOfRangeException` from a blind substring.
+  `ForgetBundle` clears the process-wide `bundle.js` cache, so a rotated
+  `app_secret` can be re-derived without restarting Lidarr.
 - `QobuzApiService.Artist.cs`, `.Favorite.cs`, `.User.cs`: eight parameter keys
   had a trailing space (`"type "`, `"user_id "`, `"order "`, …). `ToQueryString`
   escapes the key, so they were sent as `type%20=` and silently ignored — which

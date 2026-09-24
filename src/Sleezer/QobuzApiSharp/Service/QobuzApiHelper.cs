@@ -22,6 +22,9 @@ namespace QobuzApiSharp.Service
     {
         private static string CachedBundleString;
 
+        /// <summary>Drops the cached bundle.js so the next client re-derives app_id and app_secret.</summary>
+        internal static void ForgetBundle() => CachedBundleString = null;
+
         /// <summary>
         /// Fetches the bundle.js string from the Qobuz Web Player.
         /// </summary>
