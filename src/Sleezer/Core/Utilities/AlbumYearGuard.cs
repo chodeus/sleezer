@@ -1,5 +1,6 @@
 using NLog;
 using NzbDrone.Core.IndexerSearch.Definitions;
+using NzbDrone.Core.Music;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Plugin.Sleezer.Core.Model;
 
@@ -21,17 +22,17 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 
         public static IList<ReleaseInfo> Apply(IList<ReleaseInfo> releases, AlbumSearchCriteria? criteria, string indexerName, Logger logger)
         {
-            int targetYear = criteria?.AlbumYear ?? 0;
-
-            if (releases.Count == 0 || targetYear <= 0)
+            if (releases.Count == 0 || criteria is not { AlbumYear: > 0 })
                 return releases;
 
+            int targetYear = criteria.AlbumYear;
+            int[] albumYears = AlbumYears(criteria);
             DateTime nowUtc = DateTime.UtcNow;
 
             // A catalogue whose store years are uniformly a little off MusicBrainz must be left
             // alone rather than flagged wholesale — but "a little" has a limit, or an old single
             // no store dates correctly gets no year check at all and a re-recording walks in.
-            List<int> distances = [.. releases.Where(r => !IsUndated(r, nowUtc)).Select(r => Math.Abs(r.PublishDate.Year - targetYear))];
+            List<int> distances = [.. releases.Where(r => !IsUndated(r, nowUtc)).Select(r => YearsOff(r, albumYears))];
             if (distances.Count == 0)
                 return releases;
 
@@ -43,7 +44,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             foreach (ReleaseInfo release in releases)
             {
                 // Unjudgeable, not wrong — and on the AlbumData indexers that is most of them.
-                if (IsUndated(release, nowUtc) || Math.Abs(release.PublishDate.Year - targetYear) <= ToleranceYears)
+                if (IsUndated(release, nowUtc) || YearsOff(release, albumYears) <= ToleranceYears)
                     continue;
 
                 flagged.Add(release);
@@ -67,6 +68,21 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 
             return releases;
         }
+
+        // MusicBrainz files a remaster or reissue as a release of the album, so a store date
+        // near any official release is this album, not another one sharing its title.
+        private static int[] AlbumYears(AlbumSearchCriteria criteria)
+        {
+            IEnumerable<int> releaseYears = (criteria.Albums?.FirstOrDefault()?.AlbumReleases?.Value ?? [])
+                .Where(r => r.Status == ReleaseStatus.Official.Name)
+                .Select(r => r.ReleaseDate?.Year)
+                .OfType<int>();
+
+            return [.. releaseYears.Append(criteria.AlbumYear).Distinct()];
+        }
+
+        private static int YearsOff(ReleaseInfo release, int[] albumYears) =>
+            albumYears.Min(year => Math.Abs(release.PublishDate.Year - year));
 
         private static bool IsUndated(ReleaseInfo release, DateTime nowUtc)
         {
