@@ -369,9 +369,9 @@ namespace NzbDrone.Core.Indexers.Tidal
 
         private void PersistIfCurrent(TidalUser user)
         {
-            // The pending session counts too: LoadFromTokens can refresh before it is published.
-            if (!ReferenceEquals(TidalAPI.Instance?.Client.ActiveUser, user)
-                && !ReferenceEquals(_pendingSession?.Client.ActiveUser, user))
+            // While a load is pending only the incoming session may persist; the published one is outgoing.
+            var current = _pendingSession ?? TidalAPI.Instance;
+            if (!ReferenceEquals(current?.Client.ActiveUser, user))
             {
                 _logger.Debug("Ignoring a token refresh from a replaced Tidal session");
                 return;

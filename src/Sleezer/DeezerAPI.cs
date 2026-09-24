@@ -45,7 +45,8 @@ namespace NzbDrone.Plugin.Sleezer.Deezer
 
             lock (_swapGate)
             {
-                if (Instance._client.ActiveARL == arl)
+                // A token refresh can leave a matching ARL's session anonymous once the ARL expires.
+                if (Instance._client.ActiveARL == arl && DeezerArlCheck.HasSignedInUser(Instance._client.GWApi.ActiveUserData))
                     return Instance;
 
                 // Checked before it goes live: SetARL accepts a dead ARL and returns an anonymous session.
