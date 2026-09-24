@@ -6,6 +6,7 @@ using FluentValidation.Results;
 using NLog;
 using NzbDrone.Common.Http;
 using NzbDrone.Core.Configuration;
+using NzbDrone.Core.Indexers.Exceptions;
 using NzbDrone.Core.Parser;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
@@ -63,8 +64,9 @@ namespace NzbDrone.Core.Indexers.Tidal
         public override IIndexerRequestGenerator GetRequestGenerator()
         {
             var api = LoadSession();
+            // Lidarr dereferences the generator; ApiKeyException is what its search and test paths report as auth.
             if (api?.Client.ActiveUser == null)
-                return null!;
+                throw new ApiKeyException("Tidal is not signed in. Authenticate in the indexer settings.");
 
             return new TidalRequestGenerator
             {
