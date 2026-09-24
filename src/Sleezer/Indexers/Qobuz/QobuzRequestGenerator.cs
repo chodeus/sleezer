@@ -86,7 +86,7 @@ namespace NzbDrone.Core.Indexers.Qobuz
                     ["offset"] = $"{page * PageSize}",
                 };
 
-                var req = new QobuzIndexerRequest(api.GetAPIUrl("/album/search", data), context);
+                var req = new QobuzIndexerRequest(api.GetAPIUrl("/album/search", data), context, api);
                 req.HttpRequest.Method = System.Net.Http.HttpMethod.Get;
                 req.HttpRequest.Headers.Add("X-App-ID", api.Client.AppId);
                 req.HttpRequest.Headers.Add("X-User-Auth-Token", api.AuthToken);

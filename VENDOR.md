@@ -87,7 +87,9 @@ Local changes, which GPL-3.0 §5(a) requires be stated:
   also reports a changed bundle format instead of throwing
   `ArgumentOutOfRangeException` from a blind substring.
   `ForgetBundle` clears the process-wide `bundle.js` cache, so a rotated
-  `app_secret` can be re-derived without restarting Lidarr.
+  `app_secret` can be re-derived without restarting Lidarr; the two getters
+  read the cache once through `GetBundle`, so a concurrent clear cannot null it
+  under them.
 - `QobuzApiService.Artist.cs`, `.Favorite.cs`, `.User.cs`: eight parameter keys
   had a trailing space (`"type "`, `"user_id "`, `"order "`, …). `ToQueryString`
   escapes the key, so they were sent as `type%20=` and silently ignored — which

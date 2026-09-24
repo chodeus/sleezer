@@ -116,12 +116,19 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
         private JToken _deezerAlbum = null!;
         private DateTime _lastARLValidityCheck = DateTime.MinValue;
         private byte[]? _albumArt;
-        // Taken once per run: an account change mid-album must not split it across two sessions.
+        // The session _deezerAlbum and _tracks came from; every call for this item goes through it.
         private DeezerAPI _api = null!;
 
         public async Task DoDownload(DeezerSettings settings, Logger logger, CancellationToken cancellation = default)
         {
-            _api = DeezerAPI.Instance;
+            if (!ReferenceEquals(_api, DeezerAPI.Instance))
+            {
+                _api = DeezerAPI.Instance;
+                _tracks = null!;
+                _lastARLValidityCheck = DateTime.MinValue;
+                await SetDeezerData(cancellation);
+            }
+
             EnsureValidity();
 
             _albumArt ??= await TryFetchAlbumArtAsync(logger, cancellation);

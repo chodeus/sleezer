@@ -1,4 +1,5 @@
 using NzbDrone.Common.Http;
+using NzbDrone.Plugin.Sleezer.Qobuz;
 
 namespace NzbDrone.Core.Indexers.Qobuz
 {
@@ -14,7 +15,8 @@ namespace NzbDrone.Core.Indexers.Qobuz
     }
 
     /// <summary>Carries the search context through HttpIndexerBase.FetchPage to the parser as IndexerResponse.Request.</summary>
-    public sealed class QobuzIndexerRequest(string url, QobuzSearchContext? context) : IndexerRequest(url, HttpAccept.Json)
+    public sealed class QobuzIndexerRequest(string url, QobuzSearchContext? context, QobuzAPI session)
+        : SessionIndexerRequest<QobuzAPI>(url, HttpAccept.Json, session)
     {
         public QobuzSearchContext? Context { get; } = context;
     }

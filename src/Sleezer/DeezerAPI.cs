@@ -8,6 +8,8 @@ using System.Threading.Tasks;
 using DeezNET;
 using DeezNET.Data;
 using NLog;
+using NzbDrone.Core.Indexers.Exceptions;
+using NzbDrone.Plugin.Sleezer.Core.Deezer;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
 namespace NzbDrone.Plugin.Sleezer.Deezer
@@ -37,15 +39,21 @@ namespace NzbDrone.Plugin.Sleezer.Deezer
         // A different ARL gets a fresh session: SetARL in place would switch accounts under in-flight work.
         internal static DeezerAPI ForArl(string arl)
         {
+            // Fail closed: an empty ARL would otherwise search on whichever account is live.
+            if (string.IsNullOrEmpty(arl))
+                throw new ApiKeyException("Deezer ARL is not set in the indexer settings.");
+
             lock (_swapGate)
             {
-                var current = Instance;
-                var active = current._client.ActiveARL;
-                if (!string.IsNullOrEmpty(arl) && !string.IsNullOrEmpty(active) && active != arl)
-                    return Instance = new DeezerAPI(arl);
+                if (Instance._client.ActiveARL == arl)
+                    return Instance;
 
-                current.CheckAndSetARL(arl);
-                return current;
+                // Checked before it goes live: SetARL accepts a dead ARL and returns an anonymous session.
+                var fresh = new DeezerAPI(arl);
+                if (!DeezerArlCheck.HasSignedInUser(fresh._client.GWApi.ActiveUserData))
+                    throw new ApiKeyException("Deezer rejected the ARL; it has likely expired. Set a new one in the indexer settings.");
+
+                return Instance = fresh;
             }
         }
 

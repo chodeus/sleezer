@@ -54,7 +54,7 @@ namespace NzbDrone.Core.Indexers.Tidal
                 };
 
                 var url = instance.GetAPIUrl("search", data);
-                var req = new IndexerRequest(url, HttpAccept.Json);
+                var req = new SessionIndexerRequest<TidalAPI>(url, HttpAccept.Json, instance);
                 req.HttpRequest.Method = System.Net.Http.HttpMethod.Get;
 
                 var user = instance.Client.ActiveUser;

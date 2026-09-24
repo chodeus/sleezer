@@ -72,6 +72,7 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
                 Bitrate = quality,
                 RemoteAlbum = remoteAlbum,
                 _tidalUrl = tidalUrl,
+                _api = TidalAPI.Instance ?? throw new InvalidOperationException("Tidal API not initialized"),
             };
 
             await item.SetTidalData();
@@ -98,13 +99,20 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
 
         private (string id, int chunks)[]? _tracks;
         private TidalURL? _tidalUrl;
+        // The session _tracks came from; every call for this item goes through it.
+        private TidalAPI _api = null!;
         private JObject? _tidalAlbum;
 
         public async Task DoDownload(TidalSettings settings, Logger logger, CancellationToken cancellation = default)
         {
-            // Taken once per run: an account change mid-album must not split it across two sessions.
-            var api = TidalAPI.Instance
-                ?? throw new InvalidOperationException("Tidal API not initialized");
+            var live = TidalAPI.Instance ?? throw new InvalidOperationException("Tidal API not initialized");
+            if (!ReferenceEquals(_api, live))
+            {
+                _api = live;
+                await SetTidalData(cancellation);
+            }
+
+            var api = _api;
             List<Task> tasks = new();
             using SemaphoreSlim semaphore = new(3, 3);
 
@@ -353,9 +361,7 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
             if (_tidalUrl == null || _tidalUrl.EntityType != EntityType.Album)
                 throw new InvalidOperationException();
 
-            var instance = TidalAPI.Instance
-                ?? throw new InvalidOperationException("Tidal API not initialized");
-
+            var instance = _api;
             var album = await instance.Client.API.GetAlbum(_tidalUrl.Id, cancellation);
             var albumTracks = await instance.Client.API.GetAlbumTracks(_tidalUrl.Id, cancellation);
 

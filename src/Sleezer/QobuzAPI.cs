@@ -33,64 +33,95 @@ namespace NzbDrone.Plugin.Sleezer.Qobuz
 
         private static readonly object SignInLock = new();
         private static readonly TimeSpan ValidationInterval = TimeSpan.FromMinutes(5);
-        private static DateTime _lastValidated = DateTime.MinValue;
         private static DateTime _lastBundleRefresh = DateTime.MinValue;
+        private DateTime _lastValidated = DateTime.MinValue;
+        private DateTime _secretRejectedAt = DateTime.MinValue;
 
         /// <summary>The signed-in singleton for these settings: rebuilt when the app credentials or the account change, re-signed when the session stops working.</summary>
-        // One locked path for every search: an unlocked rebuild let a concurrent search see the
-        // half-built instance, find no Login and fail, which put the indexer into backoff.
+        // One locked path for every search; a new instance goes live only once it has signed in.
         public static QobuzAPI EnsureSignedIn(QobuzIndexerSettings settings, Logger logger)
         {
             lock (SignInLock)
             {
                 string account = FingerprintOf(settings);
 
-                // Compared as configured, never against what QobuzApiService resolved: a blank
-                // setting never equals a resolved one, so every search would re-authenticate.
-                // Another account gets its own instance, since a search in flight reads its token lazily.
-                if (Instance == null
-                    || Instance.ConfiguredAppId != (settings.AppID ?? string.Empty)
-                    || Instance.ConfiguredAppSecret != (settings.AppSecret ?? string.Empty)
-                    || Instance._account != account)
-                    Replace(settings, account, logger);
+                // Compare configured values, not resolved ones; another account gets its own instance.
+                bool sameConfig = Instance != null
+                    && Instance.ConfiguredAppId == (settings.AppID ?? string.Empty)
+                    && Instance.ConfiguredAppSecret == (settings.AppSecret ?? string.Empty)
+                    && Instance._account == account;
 
-                if (Instance!.SessionIsValid())
-                    return Instance;
+                QobuzAPI candidate;
+                if (sameConfig)
+                {
+                    candidate = Instance!;
+                    if (candidate.Login != null && DateTime.UtcNow - candidate._secretRejectedAt <= ValidationInterval)
+                        return candidate;
 
-                if (Instance.SignIn(settings) && Instance.SecretChecksOut())
-                    return Instance;
+                    if (candidate.SessionIsValid())
+                        return candidate;
+
+                    // A live login with a rejected secret: signing in again on this client reuses that secret.
+                    if (candidate.Login == null && candidate.SignIn(settings) && candidate.SecretChecksOut())
+                        return candidate;
+                }
+                else
+                {
+                    candidate = new QobuzAPI(settings.AppID, settings.AppSecret, account, logger);
+                    if (candidate.SignIn(settings) && candidate.SecretChecksOut())
+                        return Publish(candidate);
+                }
 
                 // Qobuz rotates the web player's app secret and bundle.js is cached for the process,
                 // so a retry on the same client reuses the stale secret. At most once per interval.
                 if (DateTime.UtcNow - _lastBundleRefresh > ValidationInterval)
                 {
                     _lastBundleRefresh = DateTime.UtcNow;
-                    QobuzApiHelper.ForgetBundle();
-                    Replace(settings, account, logger);
-
-                    if (Instance!.SignIn(settings) && Instance.SecretChecksOut())
-                        return Instance;
+                    var refreshed = SignInOnFreshBundle(settings, account, logger);
+                    if (refreshed?.Login != null)
+                    {
+                        if (refreshed.SecretChecksOut())
+                            return Publish(refreshed);
+                        if (candidate.Login == null)
+                            candidate = refreshed;
+                    }
                 }
 
                 // Search needs only the login; the secret signs download URLs.
-                if (Instance!.Login != null)
+                if (candidate.Login != null)
                 {
+                    candidate._secretRejectedAt = DateTime.UtcNow;
                     logger.Warn("Qobuz signed in, but the app secret was rejected: searches work, downloads will fail until it validates");
-                    return Instance;
+                    return Publish(candidate);
                 }
 
+                // Fail closed: a changed account that cannot sign in must not leave the previous one live.
+                Publish(candidate);
                 throw new ApiKeyException("Qobuz sign-in failed. Check the User ID and Auth Token, or the Email and Password, in the indexer settings, and the App ID and Secret if you set them.");
             }
         }
 
         // Must not dispose the outgoing client: a download in flight still holds it.
-        private static void Replace(QobuzIndexerSettings settings, string account, Logger logger)
+        private static QobuzAPI Publish(QobuzAPI api) => Instance = api;
+
+        // A failed bundle fetch keeps the current session rather than failing a search whose login works.
+        private static QobuzAPI? SignInOnFreshBundle(QobuzIndexerSettings settings, string account, Logger logger)
         {
-            Instance = new QobuzAPI(settings.AppID, settings.AppSecret, account, logger);
-            _lastValidated = DateTime.MinValue;
+            QobuzApiHelper.ForgetBundle();
+            try
+            {
+                var fresh = new QobuzAPI(settings.AppID, settings.AppSecret, account, logger);
+                fresh.SignIn(settings);
+                return fresh;
+            }
+            catch (Exception ex)
+            {
+                logger.Debug("Qobuz bundle refresh failed with {ExceptionType}; keeping the current session", ex.GetType().Name);
+                return null;
+            }
         }
 
-        // Stamps the session valid only once the secret is proven; a transient failure is not proof.
+        // IsAppSecretValid already treats a network failure as valid; only an unexpected throw skips the stamp.
         private bool SecretChecksOut()
         {
             try
@@ -147,7 +178,6 @@ namespace NzbDrone.Plugin.Sleezer.Qobuz
         public string ConfiguredAppId => _configuredAppId;
 
         public string ConfiguredAppSecret => _configuredAppSecret;
-
 
         public static string FingerprintOf(QobuzIndexerSettings settings)
         {

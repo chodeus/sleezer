@@ -19,9 +19,11 @@ namespace NzbDrone.Plugin.Sleezer.Tidal
             Instance = new TidalAPI(configDir, httpClient, logger);
         }
 
-        // Publishes a fresh client; holders of the old instance finish on the account they started with.
-        public static TidalAPI Replace(string? configDir, IHttpClient httpClient, Logger logger) =>
-            Instance = new TidalAPI(configDir, httpClient, logger);
+        // Not live until Publish; holders of the old instance finish on the account they started with.
+        public static TidalAPI Create(string? configDir, IHttpClient httpClient, Logger logger) =>
+            new(configDir, httpClient, logger);
+
+        public static void Publish(TidalAPI api) => Instance = api;
 
         private TidalAPI(string? configDir, IHttpClient httpClient, Logger logger)
         {

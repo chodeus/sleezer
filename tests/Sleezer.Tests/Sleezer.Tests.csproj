@@ -87,6 +87,9 @@
     <!-- ARL validity from GW user data; Newtonsoft only. -->
     <Compile Include="..\..\src\Sleezer\Core\Deezer\DeezerArlCheck.cs"
              LinkBase="SourceUnderTest" />
+    <!-- Request-bound store session; Lidarr.Core's IndexerRequest/IndexerResponse. -->
+    <Compile Include="..\..\src\Sleezer\Indexers\SessionIndexerRequest.cs"
+             LinkBase="SourceUnderTest" />
     <!-- Store-result verification: FuzzySharp + SlskdTextProcessor (both already here) + Lidarr.Core types. -->
     <Compile Include="..\..\src\Sleezer\Core\Model\StoreReleaseInfo.cs"
              LinkBase="SourceUnderTest" />

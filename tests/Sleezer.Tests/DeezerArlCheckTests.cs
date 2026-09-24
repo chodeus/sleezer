@@ -17,7 +17,7 @@ public class DeezerArlCheckTests
     [Fact]
     public void Dead_arl_session_is_invalid_even_without_streaming()
     {
-        // Measured shape of a rejected ARL: anonymous user, web_streaming false. The old check passed it.
+        // Measured shape of a rejected ARL: anonymous user, web_streaming false.
         Assert.False(DeezerArlCheck.HasSignedInUser(UserData(0, webStreaming: false)));
     }
 

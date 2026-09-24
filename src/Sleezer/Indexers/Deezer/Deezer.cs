@@ -56,7 +56,6 @@ namespace NzbDrone.Core.Indexers.Deezer
         {
             return new DeezerParser()
             {
-                Api = DeezerAPI.ForArl(Settings.Arl),
                 Settings = Settings
             };
         }
