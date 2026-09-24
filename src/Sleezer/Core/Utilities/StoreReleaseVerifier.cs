@@ -138,14 +138,19 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 
         internal static bool TitleMatches(string candidate, string target)
         {
-            var c = Normalize(StoreQueryCleaner.StripQualifiers(candidate));
-            var t = Normalize(StoreQueryCleaner.StripQualifiers(target));
+            var c = Comparable(candidate);
+            var t = Comparable(target);
             if (c.Length == 0 || t.Length == 0 || c == t)
                 return true;
 
             // Sort-ratio, not set-ratio: a superset title ("Baby Get Shaky") must not score as "Get Shaky".
             return Fuzz.TokenSortRatio(c, t) >= TitleFuzzyFloor;
         }
+
+        // TitleMatches passes an unjudgeable title; a caller that rejects on a match must skip it first.
+        internal static bool TitleJudgeable(string? title) => Comparable(title).Length > 0;
+
+        private static string Comparable(string? title) => Normalize(StoreQueryCleaner.StripQualifiers(title ?? string.Empty));
 
         private static bool TrackCountMatches(int count, Target target) =>
             target.Releases.Any(r => TrackCountCompatible(count, r.TrackCount));

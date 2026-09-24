@@ -21,10 +21,10 @@ namespace NzbDrone.Plugin.Sleezer.Core.DecisionEngine
             if (subject?.Release is not StoreReleaseInfo release || subject.Albums is not [Album target] || subject.Artist == null)
                 return Decision.Accept();
 
-            Album? sibling = SiblingAlbumMatch.DatedSibling(release, target, albumService.GetAlbumsByArtist(subject.Artist.Id), releaseService.GetReleasesByAlbum);
-            return sibling == null
+            // The dates DatedSibling compared, not the albums' own: a reissue date can be the one that matched.
+            return SiblingAlbumMatch.DatedSibling(release, target, albumService.GetAlbumsByArtist(subject.Artist.Id), releaseService.GetReleasesByAlbum) is not { } match
                 ? Decision.Accept()
-                : Decision.Reject($"dated {release.PublishDate:yyyy-MM-dd}, like the artist's {sibling.ReleaseDate:yyyy-MM-dd} '{sibling.Title}' rather than the searched {target.ReleaseDate:yyyy-MM-dd} one");
+                : Decision.Reject($"dated {release.PublishDate:yyyy-MM-dd}, like the artist's {match.SiblingDate:yyyy-MM-dd} '{match.Sibling.Title}' rather than the searched {match.TargetDate:yyyy-MM-dd} one");
         }
     }
 }

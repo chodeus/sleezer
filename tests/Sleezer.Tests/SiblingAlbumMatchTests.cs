@@ -21,8 +21,10 @@ public class SiblingAlbumMatchTests
 
     private static StoreReleaseInfo Copy(DateTime published, int tracks = 1) => new() { Title = "copy", PublishDate = published, TrackCount = tracks };
 
-    private Album? Sibling(StoreReleaseInfo copy, Album target, params Album[] others) =>
+    private SiblingMatch? Match(StoreReleaseInfo copy, Album target, params Album[] others) =>
         SiblingAlbumMatch.DatedSibling(copy, target, [target, .. others], id => _releases[id]);
+
+    private Album? Sibling(StoreReleaseInfo copy, Album target, params Album[] others) => Match(copy, target, others)?.Sibling;
 
     [Fact]
     public void A_copy_dated_like_the_original_is_not_the_guest_version()
@@ -102,6 +104,44 @@ public class SiblingAlbumMatchTests
         Album other = Album(1, "Circles", D(siblingDate));
 
         Assert.Null(Sibling(Copy(D(published)), Album(2, "Circles", D("2011-03-11")), other));
+    }
+
+    // TitleMatches passes an empty title as unjudgeable; here that would reject against every album.
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("...")]
+    public void An_unjudgeable_copy_title_falls_back_to_the_next_one(string candidate)
+    {
+        Album other = Album(1, "Crossroads", D("2025-04-25"));
+        StoreReleaseInfo copy = Copy(D("2025-04-24"));
+        copy.CandidateTitle = candidate;
+
+        Assert.Null(Sibling(copy, Album(2, "Stateside", D("2025-10-10")), other));
+    }
+
+    [Fact]
+    public void An_album_whose_title_is_unjudgeable_is_not_a_sibling()
+    {
+        Album punctuation = Album(1, "...", D("2025-04-25"));
+
+        Assert.Null(Sibling(Copy(D("2025-04-24")), Album(2, "Stateside", D("2025-10-10")), punctuation));
+    }
+
+    [Fact]
+    public void The_match_carries_the_dates_that_were_compared()
+    {
+        Album sibling = Album(1, "Stateside", D("2019-03-08"));
+        _releases[1].Add(new AlbumRelease { Status = "Official", ReleaseDate = D("2025-04-25"), TrackCount = 1 });
+        Album target = Album(2, "Stateside", null);
+        _releases[2].Add(new AlbumRelease { Status = "Official", ReleaseDate = D("2025-10-10"), TrackCount = 1 });
+
+        SiblingMatch? match = Match(Copy(D("2025-04-24")), target, sibling);
+
+        Assert.NotNull(match);
+        Assert.Same(sibling, match.Value.Sibling);
+        Assert.Equal(D("2025-04-25"), match.Value.SiblingDate);
+        Assert.Equal(D("2025-10-10"), match.Value.TargetDate);
     }
 
     [Fact]
