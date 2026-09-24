@@ -1,4 +1,5 @@
 using NzbDrone.Core.Blocklisting;
+using NzbDrone.Core.Download;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Plugin.Sleezer.Blocklisting;
 using Xunit;
@@ -62,6 +63,27 @@ public class StoreAlbumBlocklistTests
         repo.Add(Row(removed, ManualRemoval));
 
         Assert.False(Blocklist(store, repo).IsBlocklisted(1, new ReleaseInfo { Guid = candidate }));
+    }
+
+    // The production path: Lidarr's failure event through GetBlocklist, stored, then another tier searched.
+    [Theory]
+    [InlineData(ManualRemoval, true)]
+    [InlineData(DownloadFailure, false)]
+    public void A_stored_failure_event_blocks_other_tiers_only_when_removed_by_hand(string message, bool otherTierBlocked)
+    {
+        FakeBlocklistRepository repo = new();
+        QobuzBlocklist blocklist = new(repo);
+        repo.Insert(blocklist.GetBlocklist(new DownloadFailedEvent
+        {
+            ArtistId = 1,
+            AlbumIds = [7],
+            SourceTitle = "Artist - Album",
+            Message = message,
+            Data = new Dictionary<string, string> { ["guid"] = "1_Qobuz-abc123xyz-FLACHiRes24Bit96kHz", ["indexer"] = "Qobuz" },
+        }));
+
+        Assert.True(blocklist.IsBlocklisted(1, new ReleaseInfo { Guid = "1_Qobuz-abc123xyz-FLACHiRes24Bit96kHz" }));
+        Assert.Equal(otherTierBlocked, blocklist.IsBlocklisted(1, new ReleaseInfo { Guid = "1_Qobuz-abc123xyz-FLACLossless" }));
     }
 
     [Fact]

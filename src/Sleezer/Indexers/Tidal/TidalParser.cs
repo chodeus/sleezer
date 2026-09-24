@@ -137,7 +137,7 @@ namespace NzbDrone.Core.Indexers.Tidal
             // the count/duration facts stay unset, so those checks skip as before.
             var result = new StoreReleaseInfo
             {
-                Guid = StoreReleaseGuid.Create(StoreReleaseGuid.Tidal, x.Id, bitrate),
+                Guid = StoreReleaseGuid.Create(StoreReleaseGuid.Store.Tidal, x.Id, bitrate),
                 Artist = x.Artists.First().Name,
                 Album = x.Title,
                 DownloadUrl = url,

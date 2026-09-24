@@ -25,5 +25,5 @@ public class StoreReleaseGuidTests
 
     [Fact]
     public void AlbumKey_reads_the_guid_the_parsers_build() =>
-        Assert.Equal("Deezer-123456789", StoreReleaseGuid.AlbumKey(StoreReleaseGuid.Create(StoreReleaseGuid.Deezer, 123456789L, 9)));
+        Assert.Equal("Deezer-123456789", StoreReleaseGuid.AlbumKey(StoreReleaseGuid.Create(StoreReleaseGuid.Store.Deezer, 123456789L, 9)));
 }

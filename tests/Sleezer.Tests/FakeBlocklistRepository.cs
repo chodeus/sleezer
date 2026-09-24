@@ -1,16 +1,21 @@
+using System.Text.RegularExpressions;
 using NzbDrone.Core.Blocklisting;
 using NzbDrone.Core.Datastore;
 
 namespace Sleezer.Tests;
 
-// In-memory IBlocklistRepository. The hash query mirrors BlocklistRepository's Contains match.
+// In-memory IBlocklistRepository. The hash query mirrors BlocklistRepository's Contains, which is
+// SQL LIKE '%hash%': case-insensitive, with '_' matching any one character.
 internal sealed class FakeBlocklistRepository : IBlocklistRepository
 {
     private readonly List<Blocklist> _rows = [];
     public void Add(Blocklist b) => _rows.Add(b);
 
     public List<Blocklist> BlocklistedByTorrentInfoHash(int artistId, string hash) =>
-        [.. _rows.Where(b => b.ArtistId == artistId && b.TorrentInfoHash != null && b.TorrentInfoHash.Contains(hash))];
+        [.. _rows.Where(b => b.ArtistId == artistId && b.TorrentInfoHash != null && Like(b.TorrentInfoHash, hash))];
+
+    private static bool Like(string value, string contains) =>
+        Regex.IsMatch(value, Regex.Escape(contains).Replace("_", ".").Replace("%", ".*"), RegexOptions.IgnoreCase);
     public List<Blocklist> BlocklistedByTitle(int artistId, string sourceTitle) => [];
     public List<Blocklist> BlocklistedByArtists(List<int> artistIds) => [];
     public void DeleteForArtists(List<int> artistIds) { }

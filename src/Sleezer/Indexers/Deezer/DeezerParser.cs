@@ -196,7 +196,7 @@ namespace NzbDrone.Core.Indexers.Deezer
 
             var result = new StoreReleaseInfo
             {
-                Guid = StoreReleaseGuid.Create(StoreReleaseGuid.Deezer, x.AlbumId, bitrate),
+                Guid = StoreReleaseGuid.Create(StoreReleaseGuid.Store.Deezer, x.AlbumId, bitrate),
                 Artist = x.ArtistName,
                 Album = x.AlbumTitle,
                 DownloadUrl = url,
