@@ -102,6 +102,9 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
 
         public async Task DoDownload(TidalSettings settings, Logger logger, CancellationToken cancellation = default)
         {
+            // Taken once per run: an account change mid-album must not split it across two sessions.
+            var api = TidalAPI.Instance
+                ?? throw new InvalidOperationException("Tidal API not initialized");
             List<Task> tasks = new();
             using SemaphoreSlim semaphore = new(3, 3);
 
@@ -112,7 +115,7 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
                     await semaphore.WaitAsync(cancellation);
                     try
                     {
-                        await DoTrackDownload(trackId, settings, logger, cancellation);
+                        await DoTrackDownload(api, trackId, settings, logger, cancellation);
                         if (settings.DownloadDelay)
                         {
                             float delay = (float)Random.Shared.NextDouble()
@@ -186,10 +189,8 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
 
         private int _failedTracks;
 
-        private async Task DoTrackDownload(string track, TidalSettings settings, Logger logger, CancellationToken cancellation = default)
+        private async Task DoTrackDownload(TidalAPI instance, string track, TidalSettings settings, Logger logger, CancellationToken cancellation = default)
         {
-            var instance = TidalAPI.Instance
-                ?? throw new InvalidOperationException("Tidal API not initialized");
             var page = await instance.Client.API.GetTrack(track, cancellation);
             string songTitle = API.CompleteTitleFromPage(page);
             string artistName = page["artist"]!["name"]!.ToString();
@@ -253,7 +254,7 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
                 }
             }
 
-            await ApplyMetadataWithRetry(track, outPath, plainLyrics, logger, cancellation);
+            await ApplyMetadataWithRetry(instance, track, outPath, plainLyrics, logger, cancellation);
 
             SourceTagWriter.TryWrite(outPath, _tidalUrl?.Url, logger);
 
@@ -269,9 +270,8 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
         // with explicit flush+dispose in WriteRawTrackToFile, NFS/Unraid
         // mover targets can return a stale view for a few hundred ms.
         // Retry once with a short delay before treating it as corrupt.
-        private static async Task ApplyMetadataWithRetry(string track, string outPath, string lyrics, Logger logger, CancellationToken cancellation)
+        private static async Task ApplyMetadataWithRetry(TidalAPI instance, string track, string outPath, string lyrics, Logger logger, CancellationToken cancellation)
         {
-            var instance = TidalAPI.Instance!;
             try
             {
                 await instance.Client.Downloader.ApplyMetadataToFile(track, outPath, MediaResolution.s640, lyrics, token: cancellation);
