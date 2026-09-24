@@ -49,7 +49,9 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
         public RemoteAlbum RemoteAlbum { get; private set; } = null!;
         public string? DownloadFolder { get; private set; }
         public AudioQuality Bitrate { get; private set; }
-        public DownloadItemStatus Status { get; set; }
+        // Volatile: FailureMessage is written first, so a reader that sees Failed also sees the reason.
+        private volatile DownloadItemStatus _status;
+        public DownloadItemStatus Status { get => _status; set => _status = value; }
         public string? FailureMessage { get; private set; }
 
         /// <summary>
