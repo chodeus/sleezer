@@ -23,6 +23,7 @@ namespace NzbDrone.Core.Indexers.Tidal
         public IList<ReleaseInfo> ParseResponse(IndexerResponse response)
         {
             var sw = Stopwatch.StartNew();
+            var api = SessionIndexerRequest<TidalAPI>.Of(response);
             var content = new HttpResponse<TidalSearchResponse>(response.HttpResponse).Content;
             var jsonResponse = JObject.Parse(content).ToObject<TidalSearchResponse>();
             if (jsonResponse?.AlbumResults?.Items == null)
@@ -50,7 +51,7 @@ namespace NzbDrone.Core.Indexers.Tidal
                 var alreadyHave = new HashSet<string>(jsonResponse.AlbumResults.Items.Select(a => a.Id));
                 var trackTasks = jsonResponse.TrackResults.Items
                     .Where(t => t.Album != null && !alreadyHave.Contains(t.Album.Id))
-                    .Select(ProcessTrackAlbumResultAsync)
+                    .Select(track => ProcessTrackAlbumResultAsync(track, api))
                     .ToArray();
 
                 var resolved = Task.WhenAll(trackTasks).GetAwaiter().GetResult();
@@ -91,15 +92,11 @@ namespace NzbDrone.Core.Indexers.Tidal
             return qualityList.Select(q => ToReleaseInfo(result, q));
         }
 
-        private async Task<IEnumerable<ReleaseInfo>?> ProcessTrackAlbumResultAsync(TidalSearchResponse.Track result)
+        private async Task<IEnumerable<ReleaseInfo>?> ProcessTrackAlbumResultAsync(TidalSearchResponse.Track result, TidalAPI api)
         {
             try
             {
-                var instance = TidalAPI.Instance;
-                if (instance == null)
-                    return null;
-
-                var album = (await instance.Client.API.GetAlbum(result.Album.Id))
+                var album = (await api.Client.API.GetAlbum(result.Album.Id))
                     .ToObject<TidalSearchResponse.Album>();
                 return album == null ? null : ProcessAlbumResult(album);
             }

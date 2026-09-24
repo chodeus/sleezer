@@ -39,6 +39,7 @@ namespace NzbDrone.Core.Indexers.Qobuz
 
         public IList<ReleaseInfo> ParseResponse(IndexerResponse response)
         {
+            var api = SessionIndexerRequest<QobuzAPI>.Of(response);
             var content = new HttpResponse<SearchResult>(response.HttpResponse).Content;
             var jsonResponse = JObject.Parse(content).ToObject<SearchResult>();
 
@@ -52,19 +53,19 @@ namespace NzbDrone.Core.Indexers.Qobuz
                 albums = [.. albums.Where(a => a.Streamable ?? true)];
                 if (albums.Count != before)
                     Logger.Debug("Qobuz hid {Count} non-streamable album(s) — not licensed for account country {Country}",
-                        before - albums.Count, QobuzAPI.Instance?.CountryCode);
+                        before - albums.Count, api.CountryCode);
             }
 
             // Lets the gated fallback query skip: the album we searched for is on this page.
             if (response.Request is QobuzIndexerRequest { Context: { MatchFound: false } context } && albums.Any(a => IsSearchedAlbum(a, context)))
                 context.MatchFound = true;
 
-            Dictionary<string, string> releaseTypes = ResolveReleaseTypes(albums);
+            Dictionary<string, string> releaseTypes = ResolveReleaseTypes(albums, api);
 
             return
             [
                 .. albums
-                    .SelectMany(album => ProcessAlbumResult(album, releaseTypes))
+                    .SelectMany(album => ProcessAlbumResult(album, releaseTypes, api))
                     .OrderBy(QualityPriority)
                     .ThenBy(r => r.Size)
             ];
@@ -89,7 +90,7 @@ namespace NzbDrone.Core.Indexers.Qobuz
         // Qobuz populates release_type on /album/get but not always on /album/search.
         // Take it from the search payload when it's there and only pay for a detail call
         // on the head of the list when it isn't.
-        private Dictionary<string, string> ResolveReleaseTypes(List<Album> albums)
+        private Dictionary<string, string> ResolveReleaseTypes(List<Album> albums, QobuzAPI api)
         {
             Dictionary<string, string> result = new(StringComparer.Ordinal);
 
@@ -113,7 +114,7 @@ namespace NzbDrone.Core.Indexers.Qobuz
                 await gate.WaitAsync(budget.Token);
                 try
                 {
-                    return (album.Id, Type: await Task.Run(() => QobuzAPI.Instance?.Client?.GetAlbum(album.Id, true)?.ReleaseType, budget.Token));
+                    return (album.Id, Type: await Task.Run(() => api.Client.GetAlbum(album.Id, true)?.ReleaseType, budget.Token));
                 }
                 catch (Exception ex)
                 {
@@ -154,7 +155,7 @@ namespace NzbDrone.Core.Indexers.Qobuz
             return result;
         }
 
-        private static IEnumerable<ReleaseInfo> ProcessAlbumResult(Album result, Dictionary<string, string> releaseTypes)
+        private static IEnumerable<ReleaseInfo> ProcessAlbumResult(Album result, Dictionary<string, string> releaseTypes, QobuzAPI api)
         {
             List<AudioQuality> qualityList = [AudioQuality.MP3320, AudioQuality.FLACLossless];
 
@@ -166,18 +167,18 @@ namespace NzbDrone.Core.Indexers.Qobuz
             }
 
             releaseTypes.TryGetValue(result.Id, out string? releaseType);
-            return qualityList.Select(q => ToReleaseInfo(result, q, releaseType));
+            return qualityList.Select(q => ToReleaseInfo(result, q, releaseType, api));
         }
 
         // Qobuz returns album URLs on its default "fr-fr" storefront; rewrite to the
         // signed-in account's locale so Lidarr's info link opens the right one. The
         // download only needs the album ID out of this URL, so this is cosmetic.
-        private static string LocalizeUrl(string url)
+        private static string LocalizeUrl(string url, QobuzAPI api)
         {
             if (string.IsNullOrEmpty(url))
                 return url;
 
-            var user = QobuzAPI.Instance?.Login?.User;
+            var user = api.Login?.User;
             if (string.IsNullOrEmpty(user?.CountryCode) || string.IsNullOrEmpty(user?.LanguageCode))
                 return url;
 
@@ -190,7 +191,7 @@ namespace NzbDrone.Core.Indexers.Qobuz
                 .Select(a => a.Name)
                 .ToList() ?? [];
 
-        private static ReleaseInfo ToReleaseInfo(Album x, AudioQuality bitrate, string? releaseType)
+        private static ReleaseInfo ToReleaseInfo(Album x, AudioQuality bitrate, string? releaseType, QobuzAPI api)
         {
             var publishDate = DateTime.UtcNow;
             var year = 0;
@@ -200,7 +201,7 @@ namespace NzbDrone.Core.Indexers.Qobuz
                 year = publishDate.Year;
             }
 
-            var url = LocalizeUrl(x.Url);
+            var url = LocalizeUrl(x.Url, api);
 
             var result = new StoreReleaseInfo
             {

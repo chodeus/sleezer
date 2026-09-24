@@ -72,6 +72,7 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
                 Bitrate = quality,
                 RemoteAlbum = remoteAlbum,
                 _tidalUrl = tidalUrl,
+                _api = TidalAPI.Instance ?? throw new InvalidOperationException("Tidal API not initialized"),
             };
 
             await item.SetTidalData();
@@ -98,10 +99,20 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
 
         private (string id, int chunks)[]? _tracks;
         private TidalURL? _tidalUrl;
+        // The session _tracks came from; every call for this item goes through it.
+        private TidalAPI _api = null!;
         private JObject? _tidalAlbum;
 
         public async Task DoDownload(TidalSettings settings, Logger logger, CancellationToken cancellation = default)
         {
+            var live = TidalAPI.Instance ?? throw new InvalidOperationException("Tidal API not initialized");
+            if (!ReferenceEquals(_api, live))
+            {
+                _api = live;
+                await SetTidalData(cancellation);
+            }
+
+            var api = _api;
             List<Task> tasks = new();
             using SemaphoreSlim semaphore = new(3, 3);
 
@@ -112,7 +123,7 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
                     await semaphore.WaitAsync(cancellation);
                     try
                     {
-                        await DoTrackDownload(trackId, settings, logger, cancellation);
+                        await DoTrackDownload(api, trackId, settings, logger, cancellation);
                         if (settings.DownloadDelay)
                         {
                             float delay = (float)Random.Shared.NextDouble()
@@ -186,10 +197,8 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
 
         private int _failedTracks;
 
-        private async Task DoTrackDownload(string track, TidalSettings settings, Logger logger, CancellationToken cancellation = default)
+        private async Task DoTrackDownload(TidalAPI instance, string track, TidalSettings settings, Logger logger, CancellationToken cancellation = default)
         {
-            var instance = TidalAPI.Instance
-                ?? throw new InvalidOperationException("Tidal API not initialized");
             var page = await instance.Client.API.GetTrack(track, cancellation);
             string songTitle = API.CompleteTitleFromPage(page);
             string artistName = page["artist"]!["name"]!.ToString();
@@ -253,7 +262,7 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
                 }
             }
 
-            await ApplyMetadataWithRetry(track, outPath, plainLyrics, logger, cancellation);
+            await ApplyMetadataWithRetry(instance, track, outPath, plainLyrics, logger, cancellation);
 
             SourceTagWriter.TryWrite(outPath, _tidalUrl?.Url, logger);
 
@@ -269,9 +278,8 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
         // with explicit flush+dispose in WriteRawTrackToFile, NFS/Unraid
         // mover targets can return a stale view for a few hundred ms.
         // Retry once with a short delay before treating it as corrupt.
-        private static async Task ApplyMetadataWithRetry(string track, string outPath, string lyrics, Logger logger, CancellationToken cancellation)
+        private static async Task ApplyMetadataWithRetry(TidalAPI instance, string track, string outPath, string lyrics, Logger logger, CancellationToken cancellation)
         {
-            var instance = TidalAPI.Instance!;
             try
             {
                 await instance.Client.Downloader.ApplyMetadataToFile(track, outPath, MediaResolution.s640, lyrics, token: cancellation);
@@ -353,9 +361,7 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
             if (_tidalUrl == null || _tidalUrl.EntityType != EntityType.Album)
                 throw new InvalidOperationException();
 
-            var instance = TidalAPI.Instance
-                ?? throw new InvalidOperationException("Tidal API not initialized");
-
+            var instance = _api;
             var album = await instance.Client.API.GetAlbum(_tidalUrl.Id, cancellation);
             var albumTracks = await instance.Client.API.GetAlbumTracks(_tidalUrl.Id, cancellation);
 

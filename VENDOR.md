@@ -37,8 +37,8 @@ it is the source of truth, not the prose.
     "name": "Lidarr.Plugin.Qobuz",
     "path": "src/Sleezer/Indexers/Qobuz/, src/Sleezer/Download/Clients/Qobuz/, src/Sleezer/ImportLists/Qobuz/",
     "upstream": "https://github.com/DaveBinM/Lidarr.Plugin.Qobuz",
-    "commit": "a3bd3139aa4306d59451dd0c474df92b06b5ab2e",
-    "vendored": "2026-08-22",
+    "commit": "8ccfca3e661692e1c32c02b92aba8c834ec8cb45",
+    "vendored": "2026-09-22",
     "track": true
   },
   {
@@ -86,6 +86,10 @@ Local changes, which GPL-3.0 §5(a) requires be stated:
   so the token was stored on every API exception. The `app_secret` derivation
   also reports a changed bundle format instead of throwing
   `ArgumentOutOfRangeException` from a blind substring.
+  `ForgetBundle` clears the process-wide `bundle.js` cache, so a rotated
+  `app_secret` can be re-derived without restarting Lidarr; the two getters
+  read the cache once through `GetBundle`, so a concurrent clear cannot null it
+  under them.
 - `QobuzApiService.Artist.cs`, `.Favorite.cs`, `.User.cs`: eight parameter keys
   had a trailing space (`"type "`, `"user_id "`, `"order "`, …). `ToQueryString`
   escapes the key, so they were sent as `type%20=` and silently ignored — which
@@ -130,6 +134,11 @@ internals diverged enough that a patch will rarely apply:
 - Import lists fixed: the favourite-albums list only set `Artist`, and all three
   could loop forever on an empty page.
 - Sleezer logging conventions and nullable annotations throughout.
+- Upstream `8ccfca3e6` (2026-09-16) was ported by mechanism, not diffed: the gated cleaned
+  query and version-word stripping (`QobuzQueryPlan`, `StoreQueryCleaner.StripForSearch`),
+  the two-library-artists guard (`AmbiguousArtistGuard`, in the shared indexer base), and the
+  locked, revalidated session (`QobuzAPI.EnsureSignedIn`). Its release-type throttling was
+  not taken — this parser already reads `release_type` from the search payload.
 
 ### lidarr-plugin-bandcamp — adopted, no longer tracked
 

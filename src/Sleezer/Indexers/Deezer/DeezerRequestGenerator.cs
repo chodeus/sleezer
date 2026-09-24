@@ -14,6 +14,7 @@ namespace NzbDrone.Core.Indexers.Deezer
     {
         private const int PageSize = 100;
         private const int MaxPages = 30;
+        public DeezerAPI Api { get; set; } = null!;
         public DeezerIndexerSettings Settings { get; set; } = null!;
         public Logger Logger { get; set; } = null!;
 
@@ -91,7 +92,7 @@ namespace NzbDrone.Core.Indexers.Deezer
 
         private IEnumerable<IndexerRequest> GetRequests(string searchParameters)
         {
-            DeezerAPI.Instance?.TryUpdateToken();
+            Api.TryUpdateToken();
 
             for (var page = 0; page < MaxPages; page++)
             {
@@ -104,11 +105,11 @@ namespace NzbDrone.Core.Indexers.Deezer
                     ["filter"] = "ALL",
                 };
 
-                var url = DeezerAPI.Instance!.GetGWUrl("search.music");
-                var req = new IndexerRequest(url, HttpAccept.Json); ;
+                var url = Api.GetGWUrl("search.music");
+                var req = new SessionIndexerRequest<DeezerAPI>(url, HttpAccept.Json, Api);
                 req.HttpRequest.SetContent(data.ToString(Newtonsoft.Json.Formatting.None));
                 req.HttpRequest.Method = System.Net.Http.HttpMethod.Post;
-                req.HttpRequest.Cookies.Add("sid", DeezerAPI.Instance.Client.SID);
+                req.HttpRequest.Cookies.Add("sid", Api.Client.SID);
                 yield return req;
             }
         }
