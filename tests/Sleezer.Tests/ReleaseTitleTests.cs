@@ -151,6 +151,8 @@ public class ReleaseTitleTests
 
         Refine(release, searched);
 
+        // Passed verification, so only the exact-title rule kept it from being renamed.
+        Assert.Null(release.Rejection);
         Assert.NotEqual(searched.CleanArtistName(), ParsedClean(release));
     }
 
