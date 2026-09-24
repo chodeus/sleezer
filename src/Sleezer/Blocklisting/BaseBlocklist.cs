@@ -9,22 +9,19 @@ namespace NzbDrone.Plugin.Sleezer.Blocklisting
 {
     public abstract class BaseBlocklist<TProtocol>(IBlocklistRepository blocklistRepository) : IBlocklistForProtocol where TProtocol : IDownloadProtocol
     {
-        // Lidarr's FailedDownloadService message whenever a user marks a download as failed.
-        private const string ManualRemoval = "Manually marked as failed";
-
         protected readonly IBlocklistRepository BlocklistRepository = blocklistRepository;
 
         public string Protocol => typeof(TProtocol).Name;
 
         public virtual bool IsBlocklisted(int artistId, ReleaseInfo release) => MatchingRows(artistId, release).Count != 0;
 
-        // A hand-removed store release blocks every quality tier of its album; an automatic
+        // An album-wide failure blocks every quality tier of that store album; any other
         // failure keeps to its own tier so Lidarr can fall back to another.
         protected List<Blocklist> MatchingRows(int artistId, ReleaseInfo release)
         {
             string? album = StoreReleaseGuid.AlbumKey(release.Guid);
             return [.. BlocklistRepository.BlocklistedByTorrentInfoHash(artistId, album ?? release.Guid)
-                .Where(b => SameRelease(b, release) || (album != null && b.Message == ManualRemoval && StoreReleaseGuid.AlbumKey(b.TorrentInfoHash) == album))];
+                .Where(b => SameRelease(b, release) || (album != null && AlbumWideFailure.Covers(b.Message) && StoreReleaseGuid.AlbumKey(b.TorrentInfoHash) == album))];
         }
 
         // EntityHistory.Data round-trips through a CamelCase DictionaryKeyPolicy
