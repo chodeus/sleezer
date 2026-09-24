@@ -1,4 +1,5 @@
 using NzbDrone.Common.Instrumentation;
+using NzbDrone.Core.Datastore;
 using NzbDrone.Core.IndexerSearch.Definitions;
 using NzbDrone.Core.Music;
 using NzbDrone.Core.Parser.Model;
@@ -101,6 +102,46 @@ public class AlbumYearGuardTests
         IList<ReleaseInfo> kept = AlbumYearGuard.Apply([R("only", 2018 + offset)], C(2018), "Qobuz", Log);
 
         Assert.Equal(expectedFlagged, Flagged(kept).Length);
+    }
+
+    private static AlbumSearchCriteria WithReleases(int albumYear, params (int Year, string Status)[] releases)
+    {
+        AlbumSearchCriteria criteria = C(albumYear);
+        criteria.Albums = [new Album { AlbumReleases = new LazyLoaded<List<AlbumRelease>>(
+            [.. releases.Select(r => new AlbumRelease { Status = r.Status, ReleaseDate = new DateTime(r.Year, 6, 1) })]) }];
+        return criteria;
+    }
+
+    // MusicBrainz files a remaster as a release of the same album, so a store copy dated like
+    // one is that album, however far it sits from the first release.
+    [Fact]
+    public void Keeps_a_reissue_dated_like_an_official_release_of_the_album()
+    {
+        IList<ReleaseInfo> kept = AlbumYearGuard.Apply(
+            [R("original", 1997), R("remaster", 2008), R("other record", 2016)],
+            WithReleases(1997, (1997, "Official"), (2008, "Official")), "Deezer", Log);
+
+        Assert.Equal(["other record"], Flagged(kept));
+    }
+
+    [Fact]
+    public void A_bootleg_date_does_not_vouch_for_a_store_copy()
+    {
+        IList<ReleaseInfo> kept = AlbumYearGuard.Apply(
+            [R("original", 1997), R("copy", 2008)],
+            WithReleases(1997, (1997, "Official"), (2008, "Bootleg")), "Deezer", Log);
+
+        Assert.Equal(["copy"], Flagged(kept));
+    }
+
+    // The shifted-catalogue band measures from the nearest release year too.
+    [Fact]
+    public void A_catalogue_shifted_from_a_reissue_year_is_left_alone()
+    {
+        IList<ReleaseInfo> kept = AlbumYearGuard.Apply(
+            [R("reissue", 2011)], WithReleases(1997, (1997, "Official"), (2008, "Official")), "Deezer", Log);
+
+        Assert.Empty(Flagged(kept));
     }
 
     [Fact]
