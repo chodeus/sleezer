@@ -75,6 +75,6 @@ namespace NzbDrone.Plugin.Sleezer.Core.Replacements
         // Info, not Debug: with the queue warning suppressed this is the only trace of the collision.
         // The exception already names the matching artists.
         private void LogCollision(string title, MultipleArtistsFoundException e) =>
-            _logger.Info(e, "Multiple artists share a clean name for '{0}'; falling back to download history", title);
+            _logger.Info(e, "Multiple artists share a clean name for '{0}'; artist left unresolved, so Lidarr can use a grab-history record if one exists", title);
     }
 }
