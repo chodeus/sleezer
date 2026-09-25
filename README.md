@@ -220,7 +220,7 @@ Both have a **Strict Matching** setting (on by default) that checks each result'
 
 The **FFmpeg & Post-Processing** entry (the component formerly known as "Codec Tinker" in Tubifarry) does two jobs. It converts imported audio files between formats: you can set default rules (e.g. "convert all WAV to FLAC", "convert AAC ≥ 256k to MP3 320k") or per-artist overrides. It also holds the corrupt-file scan and pre-import tagging described in the next section.
 
-**FFmpeg Path** is required either way. Conversion and the corrupt scan's decode check both use the ffmpeg kept there, and saving the entry installs ffmpeg into it if it is missing. There is only ever the one copy.
+**FFmpeg Path** is required either way. It is the only place Sleezer installs ffmpeg: saving the entry installs it there if it is missing. Conversion and the corrupt scan's decode check use the newest ffmpeg Sleezer can find in that path, `$FFMPEG` or the host `PATH`, so a newer system ffmpeg is used over the downloaded copy.
 
 > ⚠️ **Scope note — FFmpeg conversion applies to every track Lidarr imports, not just Sleezer's downloads.** FFmpeg is registered as a Lidarr *Metadata Consumer*, which Lidarr invokes for every imported track regardless of source. Enable it and your torrent, Usenet, and manual imports will also be converted according to the rules you configure. If you only want Sleezer's Deezer/Tidal/Qobuz/Slskd downloads affected, leave the provider disabled — the corrupt-scan and pre-import tagger do **not** require it to be enabled for downloads to work.
 
@@ -304,7 +304,7 @@ Each feature is opt-in via a chip-style picker: pick which Sleezer downloaders s
 
 #### Run Corrupt Scan On
 
-When a download finishes, Sleezer runs each audio file through FFmpeg to detect truncated/corrupt streams. If something's broken, the download is deleted and marked failed so Lidarr grabs a different release instead of importing a silent half-track.
+When a download finishes, Sleezer checks each audio file's size and tags, then decodes it with FFmpeg to detect truncated or corrupt streams. If no ffmpeg can be found, only the size and tag checks run. If something's broken, the download is deleted and marked failed so Lidarr grabs a different release instead of importing a silent half-track.
 
 Add the clients you want scanned — for example, just **Slskd** (where corrupt files from random peers are the whole reason this exists), or all three if you want belt-and-braces.
 
