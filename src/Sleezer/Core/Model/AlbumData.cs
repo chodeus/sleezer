@@ -1,5 +1,4 @@
 ﻿using NzbDrone.Core.Parser.Model;
-using System.Text.RegularExpressions;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
 namespace NzbDrone.Plugin.Sleezer.Core.Model
@@ -7,7 +6,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
     /// <summary>
     /// Contains combined information about an album, search parameters, and search results.
     /// </summary>
-    public partial class AlbumData(string name, string downloadProtocol)
+    public class AlbumData(string name, string downloadProtocol)
     {
         public string? Guid { get; set; }
         public string IndexerName { get; } = name;
@@ -42,6 +41,9 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
 
         public int Priotity { get; set; }
         public bool MatchedSearchCriteria { get; set; }
+
+        // AlbumName is the searched MusicBrainz title, not a folder or store name: every bracket is kept.
+        public bool AlbumIsSearchedTitle { get; set; }
 
         // Detected media source ("WEB", "CD", "Vinyl", "SACD") — parsed by
         // Lidarr's quality detection from the title suffix.
@@ -91,7 +93,11 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
                 ? ReleaseDateTime
                 : DateTime.UtcNow;
             release.DownloadProtocol = DownloadProtocol;
-            release.Title = ConstructTitle();
+            ReleaseTitleParts parts = TitleParts();
+            if (release is StoreReleaseInfo store)
+                ReleaseTitle.Render(store, parts);
+            else
+                release.Title = parts.Text;
             release.Codec = Codec.ToString();
             release.Resolution = CoverResolution;
             release.Source = CustomString;
@@ -111,15 +117,11 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
             _ => throw new FormatException($"Unsupported release_date_precision: {ReleaseDatePrecision}"),
         };
 
-        /// <summary>
-        /// Constructs a title string for the album in a format optimized for parsing.
-        /// </summary>
-        /// <returns>A formatted title string.</returns>
-        private string ConstructTitle()
+        private ReleaseTitleParts TitleParts()
         {
-            string normalizedAlbumName = NormalizeAlbumName(AlbumName);
+            string album = AlbumIsSearchedTitle ? ReleaseTitle.SearchedAlbum(AlbumName) : ReleaseTitle.StoreAlbum(AlbumName);
 
-            string title = $"{ArtistName} - {normalizedAlbumName}";
+            string title = string.Empty;
 
             if (ReleaseDateTime != DateTime.MinValue)
                 title += $" ({ReleaseDateTime.Year})";
@@ -147,30 +149,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
                     .Select(info => $" [{info}]"));
 
             title += $" [{SourceTag}]";
-            return title;
+            return new ReleaseTitleParts(ArtistName, album, title);
         }
-
-        /// <summary>
-        /// Normalizes the album name to handle featuring artists and other parentheses.
-        /// </summary>
-        /// <param name="albumName">The album name to normalize.</param>
-        /// <returns>The normalized album name.</returns>
-        private static string NormalizeAlbumName(string albumName)
-        {
-            if (FeatRegex().IsMatch(albumName)) // TODO ISMatch vs Match
-            {
-                Match match = FeatRegex().Match(albumName);
-                string featuringArtist = albumName[(match.Index + match.Length)..].Trim();
-
-                albumName = $"{albumName[..match.Index].Trim()} (feat. {featuringArtist})";
-            }
-            return FeatReplaceRegex().Replace(albumName, match => $"{{{match.Value.Trim('(', ')')}}}");
-        }
-
-        [GeneratedRegex(@"(?i)\b(feat\.|ft\.|featuring)\b", RegexOptions.IgnoreCase, "de-DE")]
-        private static partial Regex FeatRegex();
-
-        [GeneratedRegex(@"\((?!feat\.)[^)]*\)")]
-        private static partial Regex FeatReplaceRegex();
     }
 }

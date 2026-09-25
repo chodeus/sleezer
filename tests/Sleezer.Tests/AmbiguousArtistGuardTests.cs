@@ -17,14 +17,13 @@ public class AmbiguousArtistGuardTests
 
     private static Artist A(string name) => new() { Name = name, CleanName = name.ToLowerInvariant().Replace(" ", string.Empty) };
 
-    private static StoreReleaseInfo R(string artist, string album, params string[] mainArtists) => new()
+    private static StoreReleaseInfo R(string artist, string album, params string[] mainArtists)
     {
+        StoreReleaseInfo release = new() { Artist = artist, Album = album, MainArtists = mainArtists };
         // The shape QobuzParser emits; Lidarr's title parser needs the year and format tags.
-        Title = $"{artist} - {album} (2024) [Lossless] [WEB]",
-        Artist = artist,
-        Album = album,
-        MainArtists = mainArtists
-    };
+        ReleaseTitle.Compose(release, artist, album, " (2024) [Lossless] [WEB]");
+        return release;
+    }
 
     private static readonly Artist Searched = A("Main Act");
 

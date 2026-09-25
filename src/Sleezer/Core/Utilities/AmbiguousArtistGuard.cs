@@ -26,13 +26,13 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 
             foreach (ReleaseInfo release in releases)
             {
-                switch (Judge(release, searched, duplicates, out string? title))
+                switch (Judge(release, searched, duplicates, out ReleaseTitleParts? parts))
                 {
                     case Outcome.Keep:
                         kept.Add(release);
                         break;
                     case Outcome.Retitle:
-                        release.Title = title;
+                        ReleaseTitle.Render((StoreReleaseInfo)release, parts!);
                         release.Artist = searched.Name;
                         retitled++;
                         kept.Add(release);
@@ -60,32 +60,31 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 
         private enum Outcome { Keep, Retitle, Drop }
 
-        private static Outcome Judge(ReleaseInfo release, Artist searched, HashSet<string> duplicates, out string? title)
+        private static Outcome Judge(ReleaseInfo release, Artist searched, HashSet<string> duplicates, out ReleaseTitleParts? parts)
         {
-            title = null;
+            parts = null;
 
             // The same parse Lidarr's DownloadDecisionMaker will do; an unparseable title never reaches FindByName.
             string? clean = ReleaseTitleParser.ParseAlbumTitle(release.Title)?.ArtistName?.CleanArtistName();
             if (clean == null || clean == searched.CleanName || !duplicates.Contains(clean))
                 return Outcome.Keep;
 
-            title = RetitleAs(release, searched);
-            return title == null ? Outcome.Drop : Outcome.Retitle;
+            parts = RetitleAs(release, searched);
+            return parts == null ? Outcome.Drop : Outcome.Retitle;
         }
 
         // Only where the store credits the searched artist as a main artist and the new title parses
         // back to them. Never a Various Artists credit: a compilation is not an ambiguity to resolve.
-        private static string? RetitleAs(ReleaseInfo release, Artist searched)
+        private static ReleaseTitleParts? RetitleAs(ReleaseInfo release, Artist searched)
         {
-            if (release is not StoreReleaseInfo store
+            if (release is not StoreReleaseInfo { TitleParts: { } current } store
                 || string.IsNullOrEmpty(release.Artist)
                 || StoreReleaseVerifier.IsVariousArtists(release.Artist)
-                || release.Title?.StartsWith(release.Artist, StringComparison.Ordinal) != true
                 || !store.MainArtists.Any(name => name.CleanArtistName() == searched.CleanName))
                 return null;
 
-            string title = searched.Name + release.Title[release.Artist.Length..];
-            return ReleaseTitleParser.ParseAlbumTitle(title)?.ArtistName?.CleanArtistName() == searched.CleanName ? title : null;
+            ReleaseTitleParts parts = current with { Artist = searched.Name };
+            return ReleaseTitleParser.ParseAlbumTitle(parts.Text)?.ArtistName?.CleanArtistName() == searched.CleanName ? parts : null;
         }
     }
 }

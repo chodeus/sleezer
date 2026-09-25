@@ -1,4 +1,5 @@
 using NLog;
+using NzbDrone.Common.Extensions;
 using NzbDrone.Core.IndexerSearch.Definitions;
 using NzbDrone.Core.Music;
 using NzbDrone.Core.Parser;
@@ -54,13 +55,30 @@ namespace NzbDrone.Plugin.Sleezer.Core.Replacements
         {
             try
             {
-                return _inner.Map(parsedAlbumInfo, searchCriteria);
+                return PreferSearchedAlbum(_inner.Map(parsedAlbumInfo, searchCriteria), searchCriteria);
             }
             catch (MultipleArtistsFoundException e)
             {
                 LogCollision(parsedAlbumInfo.ArtistName, e);
                 return new RemoteAlbum { ParsedAlbumInfo = parsedAlbumInfo };
             }
+        }
+
+        // FindByTitle gives up when two library albums share a clean title, and the inexact fallback can
+        // then pick another; in a search, the searched album with that clean title is the one meant.
+        internal static RemoteAlbum PreferSearchedAlbum(RemoteAlbum mapped, SearchCriteriaBase? searchCriteria)
+        {
+            string? title = mapped.ParsedAlbumInfo?.AlbumTitle;
+            if (searchCriteria?.Albums == null || mapped.Artist == null || mapped.Artist.Id != searchCriteria.Artist?.Id || string.IsNullOrWhiteSpace(title))
+                return mapped;
+
+            string clean = title.CleanArtistName();
+            Album? searched = searchCriteria.Albums.ExclusiveOrDefault(a => a.Title.CleanArtistName() == clean);
+            if (searched == null || mapped.Albums is [{ } only] && only.Id == searched.Id)
+                return mapped;
+
+            mapped.Albums = [searched];
+            return mapped;
         }
 
         // Keyed on artist id, so a shared CleanName cannot reach it.

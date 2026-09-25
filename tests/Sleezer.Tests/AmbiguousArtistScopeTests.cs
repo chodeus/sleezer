@@ -15,13 +15,12 @@ public class AmbiguousArtistScopeTests
     private static readonly Artist Searched = A("Main Act");
     private static readonly Artist[] Library = [A("Main Act"), A("Guest Act"), A("Guest Act")];
 
-    private static StoreReleaseInfo R(string artist, params string[] mainArtists) => new()
+    private static StoreReleaseInfo R(string artist, params string[] mainArtists)
     {
-        Title = $"{artist} - Some Album (2024) [Lossless] [WEB]",
-        Artist = artist,
-        Album = "Some Album",
-        MainArtists = mainArtists
-    };
+        StoreReleaseInfo release = new() { Artist = artist, Album = "Some Album", MainArtists = mainArtists };
+        ReleaseTitle.Compose(release, artist, "Some Album", " (2024) [Lossless] [WEB]");
+        return release;
+    }
 
     [Fact]
     public void Rejects_only_what_the_guard_would_drop()

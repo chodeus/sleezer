@@ -213,7 +213,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
             // Determine final values for artist, album, year
             string finalArtist = DetermineFinalArtist(isArtistMatch, isAlbumMatch, folderData, searchData);
-            string finalAlbum = DetermineFinalAlbum(isAlbumMatch, folderData, searchData);
+            (string finalAlbum, bool albumIsSearchedTitle) = DetermineFinalAlbum(isAlbumMatch, folderData, searchData);
             string finalYear = folderData.Year;
 
             // Whitelisted extras (cue/log) must not skew codec/bitrate detection.
@@ -257,6 +257,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 AlbumId = $"/api/v0/transfers/downloads/{folderData.Username}",
                 ArtistName = finalArtist,
                 AlbumName = finalAlbum,
+                AlbumIsSearchedTitle = albumIsSearchedTitle,
                 MatchedSearchCriteria = matchedSearchCriteria,
                 SourceTag = DetectSourceTag(folderData.Path),
                 ReleaseDate = finalYear,
@@ -603,7 +604,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             return searchData.Artist ?? "Unknown Artist";
         }
 
-        private static string DetermineFinalAlbum(bool isAlbumMatch, SlskdFolderData folderData, SlskdSearchData searchData)
+        // True when the album is the searched title, so its brackets must reach Lidarr intact.
+        private static (string Album, bool IsSearchedTitle) DetermineFinalAlbum(bool isAlbumMatch, SlskdFolderData folderData, SlskdSearchData searchData)
         {
             if (isAlbumMatch && !string.IsNullOrEmpty(searchData.Album))
             {
@@ -612,11 +614,11 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 // be appended to the searched title.
                 Match folderVersion = VolumeKeywordRegex().Match(folderData.Album ?? "");
                 Match searchVersion = VolumeKeywordRegex().Match(searchData.Album);
-                return folderVersion.Success && !searchVersion.Success ? $"{searchData.Album} {folderVersion.Value}" : searchData.Album;
+                return (folderVersion.Success && !searchVersion.Success ? $"{searchData.Album} {folderVersion.Value}" : searchData.Album, true);
             }
             if (!string.IsNullOrEmpty(folderData.Album))
-                return CleanFallbackAlbum(folderData.Album, searchData.Artist);
-            return searchData.Album ?? "Unknown Album";
+                return (CleanFallbackAlbum(folderData.Album, searchData.Artist), false);
+            return (searchData.Album ?? "Unknown Album", !string.IsNullOrEmpty(searchData.Album));
         }
 
         /// <summary>

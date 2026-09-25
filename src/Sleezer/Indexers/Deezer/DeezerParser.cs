@@ -21,8 +21,6 @@ namespace NzbDrone.Core.Indexers.Deezer
     public class DeezerParser : IParseIndexerResponse
     {
         private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
-        private static readonly Regex ParenToDash = new(@"\s*\(([^)]+)\)", RegexOptions.Compiled);
-        private static readonly Regex CollapseSpaces = new(@"\s+", RegexOptions.Compiled);
         // Bounds the blocking wait in ParseResponse. A Deezer search + album enrichment fan-out
         // that can't finish in this window is almost certainly a hung HTTP call — better to throw
         // than to wedge the indexer thread forever.
@@ -233,28 +231,18 @@ namespace NzbDrone.Core.Indexers.Deezer
             }
 
             result.Size = size;
-            // Parens inside the album name collide with Lidarr's release-title parser, which captures album
-            // non-greedily up to the first "(" or "[". Convert "(foo)" to " - foo" so the first paren the
-            // parser sees is the year. The original title is preserved on result.Album.
-            var titleForParser = ParenToDash.Replace(x.AlbumTitle, " - $1");
-            titleForParser = CollapseSpaces.Replace(titleForParser, " ").Trim();
-            result.Title = $"{x.ArtistName} - {titleForParser}";
-
-            if (year > 0)
-            {
-                result.Title += $" ({year})";
-            }
+            string tail = year > 0 ? $" ({year})" : string.Empty;
 
             if (explicitType == ExplicitStatus.Explicit)
             {
-                result.Title += " [Explicit]";
+                tail += " [Explicit]";
             }
             else if (explicitType == ExplicitStatus.Clean)
             {
-                result.Title += " [Clean]";
+                tail += " [Clean]";
             }
 
-            result.Title += $" [{format}] [WEB]";
+            ReleaseTitle.Compose(result, x.ArtistName, x.AlbumTitle, tail + $" [{format}] [WEB]");
 
             return result;
         }

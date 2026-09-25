@@ -93,6 +93,9 @@
     <!-- Store-result verification: FuzzySharp + SlskdTextProcessor (both already here) + Lidarr.Core types. -->
     <Compile Include="..\..\src\Sleezer\Core\Model\StoreReleaseInfo.cs"
              LinkBase="SourceUnderTest" />
+    <!-- Release titles Lidarr's parser reads back whole; StoreReleaseInfo carries its parts. -->
+    <Compile Include="..\..\src\Sleezer\Core\Utilities\ReleaseTitle.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Utilities\StoreQueryCleaner.cs"
              LinkBase="SourceUnderTest" />
     <!-- Qobuz album-search query plan (#124). Pure: StoreQueryCleaner + SearchCriteriaBase from Lidarr.Core. -->

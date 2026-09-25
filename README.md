@@ -304,16 +304,11 @@ Same picker pattern — add the clients you want tagged.
 
 For **Single/EP** targets there's a title-driven fallback: Soulseek search results contain only the files that matched the query, so a single grabbed out of someone's album rip arrives wearing that album's tags and can never pass album-level identification. When that happens, Sleezer matches the files to the release by *track title* instead (best score first) and tags the matches. Remix/variant qualifiers still refuse to cross-match — a `(KETTAMA remix)` file never gets tagged as the original — and a file whose artist tag names someone else entirely is left untouched for Lidarr to judge.
 
-#### Strip Featured Artists
+#### Featured artists
 
-This is the one that fixes the classic "75% match" import failure on Deezer. Deezer's track titles often read `"Song Name (feat. Other Artist)"`. Lidarr compares that against MusicBrainz which just lists `"Song Name"`, and the fuzzy match falls just under Lidarr's 80% default threshold — so the import silently fails.
+Store track titles often read `"Song Name (feat. Other Artist)"`, while MusicBrainz credits the featured artist and titles the track `"Song Name"`. Pre-import tagging always ignores bracketed featured-artist suffixes (`(feat. X)`, `[featuring Y]`, `{ft. Z}`) when it matches files to the release, so these titles no longer fall under Lidarr's 80% match threshold.
 
-With **Strip Featured Artists** enabled, Sleezer:
-
-1. Reads the Title/Artist/AlbumArtist tags from the file.
-2. Strips bracketed featured-artist suffixes: `(feat. X)`, `[featuring Y]`, `{ft. Z}` — case-insensitive, bracket-style agnostic.
-3. Writes the cleaned tags back to the file.
-4. Renames the file from the cleaned tag so the filename Lidarr parses also matches.
+**Remove Featured Artists From Tags** is a separate style choice. With it on, after tagging Sleezer also removes those suffixes from the written Title/Artist/AlbumArtist tags and renames each file from its cleaned title.
 
 Bare-text suffixes without brackets (`Foo feat. Bar`) are left alone to avoid false positives on track titles that legitimately contain the word "feat".
 
@@ -381,7 +376,7 @@ Best results come with artists that are linked across multiple metadata systems,
 * **Slskd download path permissions** — Lidarr needs read/write on the Slskd download folder. For Docker, check volume mounts and PUID/PGID.
 * **FFmpeg issues** — make sure FFmpeg is on PATH, or set its location explicitly in FFmpeg settings. If it's still failing, enable Lidarr's Trace logging and look for the full ffmpeg command line in the log.
 * **Metadata not being added** — confirm your files are in a supported format. If you're using FFmpeg conversion, check the output format is one Lidarr accepts (AAC in MP4, FLAC, MP3, Opus, ALAC).
-* **"X% match" import failure on Deezer** — enable **Strip Featured Artists** (see above). This is the single biggest fix for Deezer's `(feat. X)` titles being rejected by Lidarr's 80% matcher.
+* **"X% match" import failure on Deezer** — make sure pre-import tagging is on for that client (see above). Matching ignores bracketed `(feat. X)` suffixes, which was the single biggest cause of Deezer titles failing Lidarr's 80% matcher.
 * **"Unable to import automatically, found multiple artists"** — two artists in your library reduce to the same name once Lidarr strips case, punctuation and the disambiguation comment, so it can't pick one from the folder name. Lidarr on its own stops there and leaves the download stuck in the queue. Sleezer leaves the artist unresolved instead, so a matching grab-history record (Lidarr keeps one for everything it grabbed) can pick the artist.
 * **No release found** — confirm the indexer is enabled in Delay Profiles (the wrench icon on each profile).
 
