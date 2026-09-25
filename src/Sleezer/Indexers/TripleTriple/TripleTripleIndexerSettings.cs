@@ -2,6 +2,7 @@ using FluentValidation;
 using NzbDrone.Core.Annotations;
 using NzbDrone.Core.Indexers;
 using NzbDrone.Core.Validation;
+using NzbDrone.Plugin.Sleezer.Core.Model;
 
 namespace NzbDrone.Plugin.Sleezer.Indexers.TripleTriple
 {
@@ -30,7 +31,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.TripleTriple
         }
     }
 
-    public class TripleTripleIndexerSettings : IIndexerSettings
+    public class TripleTripleIndexerSettings : IIndexerSettings, IStoreMatchingSettings
     {
         private static readonly TripleTripleIndexerSettingsValidator _validator = new();
 
@@ -57,6 +58,9 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.TripleTriple
 
         [FieldDefinition(9, Type = FieldType.Number, Label = "Early Download Limit", Unit = "days", HelpText = "Time before release date Lidarr will download from this indexer, empty is no limit", Advanced = true)]
         public int? EarlyReleaseLimit { get; set; }
+
+        [FieldDefinition(10, Label = "Strict Matching", Type = FieldType.Checkbox, HelpText = StrictMatchingHelp.TitleOnly)]
+        public bool StrictMatching { get; set; } = true;
 
         public NzbDroneValidationResult Validate() => new(_validator.Validate(this));
     }

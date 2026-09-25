@@ -60,13 +60,13 @@ namespace NzbDrone.Core.Indexers.Qobuz
         [FieldDefinition(5, Label = "App Secret", Type = FieldType.Password, Advanced = true, Privacy = PrivacyLevel.ApiKey, Placeholder = "Auto-detected", HelpText = "Leave blank. Set only alongside a manual App ID.")]
         public string AppSecret { get; set; } = "";
 
-        [FieldDefinition(6, Label = "Hide Non-Streamable Releases", Type = FieldType.Checkbox, HelpText = "Skip albums Qobuz marks as not streamable for your account — usually licensing gaps in your country.")]
+        [FieldDefinition(6, Label = "Hide Albums This Account Can't Stream", Type = FieldType.Checkbox, HelpText = "Hide albums Qobuz marks as not streamable for this account, usually licensing gaps in your country.")]
         public bool HideNonStreamable { get; set; } = true;
 
         [FieldDefinition(7, Type = FieldType.Number, Label = "Early Download Limit", Unit = "days", HelpText = "Time before release date Lidarr will download from this indexer, empty is no limit", Advanced = true)]
         public int? EarlyReleaseLimit { get; set; }
 
-        [FieldDefinition(8, Label = "Strict Matching", Type = FieldType.Checkbox, HelpText = "Verify each result's artist, title, track count and length against the MusicBrainz release, and reject remix, live, acoustic and extended variants unless the album itself is one. Failing results are not hidden: they reach Lidarr carrying the reason, so automatic search skips them while interactive search shows why and still lets you grab one. Various Artists compilations are dropped outright. Also covers the release-year check.")]
+        [FieldDefinition(8, Label = "Strict Matching", Type = FieldType.Checkbox, HelpText = StrictMatchingHelp.TracksAndLength)]
         public bool StrictMatching { get; set; } = true;
 
         // Hardcoded to the Qobuz API host; only present because IIndexerSettings demands it.

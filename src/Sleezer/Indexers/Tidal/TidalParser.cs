@@ -75,6 +75,12 @@ namespace NzbDrone.Core.Indexers.Tidal
 
         private IEnumerable<ReleaseInfo> ProcessAlbumResult(TidalSearchResponse.Album result)
         {
+            if (Settings.HideAlbumsWithMissing && TidalAlbumAvailability.Unavailable(result.AllowStreaming, result.StreamReady))
+            {
+                Logger?.Debug("Tidal hid album {AlbumId} '{Title}': not streamable for this account", result.Id, result.Title);
+                return [];
+            }
+
             var qualityList = new List<AudioQuality> { AudioQuality.LOW, AudioQuality.HIGH };
 
             if (result.MediaMetadata?.Tags != null)

@@ -2,6 +2,7 @@ using FluentValidation;
 using NzbDrone.Core.Annotations;
 using NzbDrone.Core.Indexers;
 using NzbDrone.Core.Validation;
+using NzbDrone.Plugin.Sleezer.Core.Model;
 
 namespace NzbDrone.Plugin.Sleezer.Indexers.SubSonic;
 
@@ -42,7 +43,7 @@ public class SubSonicIndexerSettingsValidator : AbstractValidator<SubSonicIndexe
     }
 }
 
-public class SubSonicIndexerSettings : IIndexerSettings
+public class SubSonicIndexerSettings : IIndexerSettings, IStoreMatchingSettings
 {
     private static readonly SubSonicIndexerSettingsValidator Validator = new();
 
@@ -69,6 +70,9 @@ public class SubSonicIndexerSettings : IIndexerSettings
 
     [FieldDefinition(7, Type = FieldType.Number, Label = "Early Download Limit", Unit = "days", HelpText = "Time before release date Lidarr will download from this indexer, empty is no limit.", Advanced = true)]
     public int? EarlyReleaseLimit { get; set; }
+
+    [FieldDefinition(8, Label = "Strict Matching", Type = FieldType.Checkbox, HelpText = StrictMatchingHelp.TitleOnly)]
+    public bool StrictMatching { get; set; } = true;
 
     public NzbDroneValidationResult Validate() => new(Validator.Validate(this));
 }

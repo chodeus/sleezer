@@ -41,7 +41,7 @@ public partial class TidalSearchResponse
         public long Duration { get; set; }
 
         [JsonProperty("streamReady")]
-        public bool StreamReady { get; set; }
+        public bool? StreamReady { get; set; }
 
         [JsonProperty("djReady")]
         public bool DjReady { get; set; }
@@ -53,7 +53,7 @@ public partial class TidalSearchResponse
         public string StreamStartDate { get; set; }
 
         [JsonProperty("allowStreaming")]
-        public bool AllowStreaming { get; set; }
+        public bool? AllowStreaming { get; set; }
 
         [JsonProperty("premiumStreamingOnly")]
         public bool PremiumStreamingOnly { get; set; }
