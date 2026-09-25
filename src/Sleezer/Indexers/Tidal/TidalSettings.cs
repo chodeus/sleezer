@@ -47,7 +47,7 @@ namespace NzbDrone.Core.Indexers.Tidal
         [FieldDefinition(5, Label = "User Id", Type = FieldType.Number, Hidden = HiddenType.Hidden)]
         public long UserId { get; set; }
 
-        [FieldDefinition(10, Label = "Hide Albums This Account Can't Stream", HelpText = "Hide albums Tidal marks as not streamable for this account, so a grab cannot fail part-way through the download.", Type = FieldType.Checkbox)]
+        [FieldDefinition(10, Label = "Hide Albums This Account Can't Stream", HelpText = "Hide albums Tidal marks as not streamable for this account. Albums Tidal gives no streaming flag for are kept.", Type = FieldType.Checkbox)]
         public bool HideAlbumsWithMissing { get; set; } = true;
 
         [FieldDefinition(11, Label = "Hide Clean Releases", HelpText = "Skip albums labelled as 'Clean'. Non-clean releases are tagged [Explicit] in the title so you can filter with release profiles.", Type = FieldType.Checkbox)]
