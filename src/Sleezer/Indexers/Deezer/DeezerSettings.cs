@@ -28,7 +28,7 @@ namespace NzbDrone.Core.Indexers.Deezer
             set => _arl = value?.Trim() ?? "";
         }
 
-        [FieldDefinition(1, Label = "Hide Albums This Account Can't Stream", HelpText = "Hide albums with any track Deezer will not serve this account: unavailable at every bitrate, or not licensed in your country. A blocked track otherwise fails part-way through the download.", Type = FieldType.Checkbox)]
+        [FieldDefinition(1, Label = "Hide Albums This Account Can't Stream", HelpText = "Hide albums with any track Deezer will not serve this account: not licensed in your country, or with no MP3 128 file, which Deezer treats as its baseline, even when you only take FLAC. A blocked track otherwise fails part-way through the download.", Type = FieldType.Checkbox)]
         public bool HideAlbumsWithMissing { get; set; } = true;
 
         [FieldDefinition(2, Label = "Hide Clean Releases", HelpText = "Skip albums labelled as 'Clean' (explicit content censored). Non-clean releases are labelled [Explicit] in the title so you can filter with release profiles.", Type = FieldType.Checkbox)]
