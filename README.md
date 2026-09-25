@@ -4,6 +4,13 @@
 
 A Lidarr plugin adding **Deezer**, **Tidal**, **Qobuz**, **Bandcamp** and **Slskd (Soulseek)** as download sources, plus corruption scanning, pre-import tagging and FFmpeg conversion. One install, no middlemen.
 
+**Quick links**
+
+- [Installation](#installation-)
+- **Sources:** [Deezer](#deezer-setup-) · [Tidal](#tidal-setup-) · [Qobuz](#qobuz-setup-) · [Bandcamp](#bandcamp-setup-️) · [Soulseek (Slskd)](#soulseek-slskd-setup-) · [Web Clients](#web-clients-)
+- **Features:** [FFmpeg conversion](#ffmpeg-️) · [Corrupt File Scan & Pre-Import Tagging](#corrupt-file-scan--pre-import-tagging-) · [Queue Cleaner](#queue-cleaner-) · [Search Sniper](#search-sniper-) · [Custom Metadata Sources](#custom-metadata-sources-) · [Similar Artists](#similar-artists-)
+- **More:** [Troubleshooting](#troubleshooting-️) · [Credits](#credits-) · [Contributing](#contributing-) · [License](#license-)
+
 ## Installation 🚀
 
 1. In Lidarr, go to `System -> Plugins`.
