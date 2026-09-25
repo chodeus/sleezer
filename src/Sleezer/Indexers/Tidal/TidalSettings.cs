@@ -47,7 +47,7 @@ namespace NzbDrone.Core.Indexers.Tidal
         [FieldDefinition(5, Label = "User Id", Type = FieldType.Number, Hidden = HiddenType.Hidden)]
         public long UserId { get; set; }
 
-        [FieldDefinition(10, Label = "Hide Albums With Missing Tracks", HelpText = "If an album has any unavailable tracks on Tidal, they will not be provided when searching.", Type = FieldType.Checkbox)]
+        [FieldDefinition(10, Label = "Hide Albums This Account Can't Stream", HelpText = "Hide albums with any track Tidal will not serve this account, so a blocked track cannot fail part-way through the download.", Type = FieldType.Checkbox)]
         public bool HideAlbumsWithMissing { get; set; } = true;
 
         [FieldDefinition(11, Label = "Hide Clean Releases", HelpText = "Skip albums labelled as 'Clean'. Non-clean releases are tagged [Explicit] in the title so you can filter with release profiles.", Type = FieldType.Checkbox)]
@@ -56,7 +56,7 @@ namespace NzbDrone.Core.Indexers.Tidal
         [FieldDefinition(12, Type = FieldType.Number, Label = "Early Download Limit", Unit = "days", HelpText = "Time before release date Lidarr will download from this indexer, empty is no limit", Advanced = true)]
         public int? EarlyReleaseLimit { get; set; }
 
-        [FieldDefinition(13, Label = "Strict Matching", Type = FieldType.Checkbox, HelpText = "Verify each result's artist and title against the MusicBrainz release, and reject remix, live, acoustic and extended variants unless the album itself is one. Failing results are not hidden: they reach Lidarr carrying the reason, so automatic search skips them while interactive search shows why and still lets you grab one. Various Artists compilations are dropped outright. Also covers the release-year check.")]
+        [FieldDefinition(13, Label = "Strict Matching", Type = FieldType.Checkbox, HelpText = StrictMatchingHelp.TitleOnly)]
         public bool StrictMatching { get; set; } = true;
 
         [FieldDefinition(99, Label = "Authenticate with Tidal", Type = FieldType.OAuth)]

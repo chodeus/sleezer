@@ -135,7 +135,7 @@ Three lists reuse the indexer's session, so add and save the indexer first — t
 * Each album is offered at up to four qualities — `MP3 320kbps`, `FLAC Lossless`, `FLAC 24bit 96kHz`, `FLAC 24bit 192kHz`. Your Lidarr quality profile picks.
 * **Region.** Qobuz licenses per territory. An album missing from search is usually not licensed in your account's storefront rather than a bug — the indexer test logs which storefront that is. A failed grab says so explicitly.
 * **Require Complete Album** (on by default) fails the whole album when any track can't be downloaded, so Lidarr retries or picks another release instead of importing a gap-toothed album.
-* The post-processing pipeline (corrupt-file scan + pre-import tagging) runs on Qobuz downloads — enable **Qobuz** in the FFmpeg provider's client pickers.
+* The post-processing pipeline (corrupt-file scan + pre-import tagging) runs on Qobuz downloads — enable **Qobuz** in the **FFmpeg & Post-Processing** entry's client pickers.
 * Qobuz supplies no lyrics; enable **Use LRCLIB as Lyric Provider** if you want them.
 * **Strict Matching** (on by default) verifies every result against the MusicBrainz release: artist, title, track count and total length must line up; remix, live, acoustic and extended variants are rejected unless the album itself is one; and a plain product is rejected when MusicBrainz holds no plain edition of that length. A failing result is not hidden — it reaches Lidarr carrying the reason, so automatic search skips it while interactive search shows why and still lets you grab it. Various Artists compilations are dropped outright, because two such library entries make Lidarr's artist lookup throw. The release-year check runs under the same setting. Turn it off per indexer if a catalogue's metadata is systematically odd.
 
@@ -164,6 +164,7 @@ Bandcamp only ever surfaces **music you have already bought**. It searches your 
 * Downloads arrive as a ZIP for multi-track releases; the client extracts it and normalises file permissions, which matters on Unraid where Lidarr runs as `99:100`.
 * The `identity` cookie expires. When searches suddenly return nothing, re-copy it.
 * Bandcamp is not a streaming catalogue — there is no RSS feed and no way to discover releases you have not purchased.
+* **Strict Matching** (on by default) checks each result's artist, title and track count against the MusicBrainz release, as on the store indexers.
 
 ### Soulseek (Slskd) Setup 🐟
 
@@ -206,17 +207,21 @@ Lucida and DABMusic have been removed: both sit behind Cloudflare challenges the
 
 The SubSonic indexer/client is generic: any service that implements the [Subsonic API](https://www.subsonic.org/pages/api.jsp) should plug in without modification.
 
+Both have a **Strict Matching** setting (on by default) that checks each result's artist and title against the MusicBrainz release.
+
 ### FFmpeg 🎛️
 
-**FFmpeg** (the component formerly known as "Codec Tinker" in Tubifarry) converts imported audio files between formats. You can set default rules (e.g. "convert all WAV to FLAC", "convert AAC ≥ 256k to MP3 320k") or per-artist overrides. It also backs the corrupt-file scan and pre-import tagging described in the next section, so even users who never touch conversion still benefit from having it configured.
+The **FFmpeg & Post-Processing** entry (the component formerly known as "Codec Tinker" in Tubifarry) does two jobs. It converts imported audio files between formats: you can set default rules (e.g. "convert all WAV to FLAC", "convert AAC ≥ 256k to MP3 320k") or per-artist overrides. It also holds the corrupt-file scan and pre-import tagging described in the next section.
+
+**FFmpeg Path** is required either way. Conversion and the corrupt scan's decode check both use the ffmpeg kept there, and saving the entry installs ffmpeg into it if it is missing. There is only ever the one copy.
 
 > ⚠️ **Scope note — FFmpeg conversion applies to every track Lidarr imports, not just Sleezer's downloads.** FFmpeg is registered as a Lidarr *Metadata Consumer*, which Lidarr invokes for every imported track regardless of source. Enable it and your torrent, Usenet, and manual imports will also be converted according to the rules you configure. If you only want Sleezer's Deezer/Tidal/Qobuz/Slskd downloads affected, leave the provider disabled — the corrupt-scan and pre-import tagger do **not** require it to be enabled for downloads to work.
 
-#### How to Enable FFmpeg
+#### How to Enable Conversion
 
 1. Go to `Settings -> Metadata` in Lidarr.
-2. Open **FFmpeg** (the MetadataConsumer).
-3. Toggle the switch to enable.
+2. Open **FFmpeg & Post-Processing** (the MetadataConsumer).
+3. Toggle the switch to enable. The switch only controls conversion; the corrupt scan and pre-import tagging run from their pickers either way.
 
 #### Conversion targets and bitrates
 
@@ -286,7 +291,7 @@ Sleezer auto-downloads a static FFmpeg from [`chodeus/ffmpeg-static`](https://gi
 
 ### Corrupt File Scan & Pre-Import Tagging 🧼
 
-These live under FFmpeg's settings because they use the bundled FFmpeg binary. They run on **every Sleezer download client** — Deezer, Tidal, Qobuz, Bandcamp, Slskd, SubSonic and TripleTriple — opt-in per client. Lidarr's own torrent and Usenet clients are untouched. Only the FFmpeg *conversion* provider (previous section) applies to imports from every source.
+These live in the **FFmpeg & Post-Processing** entry because the corrupt scan decodes with its ffmpeg; pre-import tagging does not use ffmpeg. Neither needs the entry enabled. They run on **every Sleezer download client** — Deezer, Tidal, Qobuz, Bandcamp, Slskd, SubSonic and TripleTriple — opt-in per client. Lidarr's own torrent and Usenet clients are untouched. Only the FFmpeg *conversion* provider (previous section) applies to imports from every source.
 
 Each feature is opt-in via a chip-style picker: pick which Sleezer downloaders should get the treatment. An empty picker means the feature is off entirely. **Both pickers default empty** — nothing runs until you opt in.
 

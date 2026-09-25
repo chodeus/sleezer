@@ -32,7 +32,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
         // file. Keyed by the absolute path the converter is targeting.
         private static readonly ConcurrentDictionary<string, byte> _inFlight = new();
 
-        public override string Name => "FFmpeg";
+        public override string Name => "FFmpeg & Post-Processing";
 
         public override MetadataFile FindMetadataFile(Artist artist, string path) => default!;
 
