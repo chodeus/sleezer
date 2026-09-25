@@ -203,6 +203,7 @@ public class ReleaseTitleTests
 
         Refine(release, Criteria("Live", "Some Artist"));
 
+        Assert.Null(release.Rejection);
         Assert.Equal("Some Artist & Guest".CleanArtistName(), ParsedArtistClean(release));
     }
 
