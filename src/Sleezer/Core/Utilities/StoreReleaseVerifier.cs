@@ -160,12 +160,12 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         // TitleMatches passes an unjudgeable title; a caller that rejects on a match must skip it first.
         internal static bool TitleJudgeable(string? title) => Comparable(title).Length > 0;
 
-        /// <summary>Whether a candidate names the target outright: identical apart from edition qualifiers, with the same numbers.</summary>
+        /// <summary>Whether a candidate names the target outright: identical apart from edition qualifiers, with the same numbers in order.</summary>
         // Stricter than TitleMatches on purpose: a result renamed to the target loses Lidarr's own title check.
         internal static bool SameAlbumTitle(string? candidate, string? target)
         {
             string c = Comparable(candidate);
-            return c.Length > 0 && c == Comparable(target) && Numerals(candidate).SetEquals(Numerals(target));
+            return c.Length > 0 && c == Comparable(target) && Numerals(candidate).SequenceEqual(Numerals(target), StringComparer.Ordinal);
         }
 
         /// <summary>Whether the store names the searched artist outright: the full credit, an alias, or a listed main artist.</summary>
@@ -177,7 +177,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             return names.Contains(Normalize(release.Artist)) || release.MainArtists.Any(a => names.Contains(Normalize(a)));
         }
 
-        private static HashSet<string> Numerals(string? title) => [.. Numeral.Matches(Normalize(title)).Select(m => m.Value)];
+        private static string[] Numerals(string? title) => [.. Numeral.Matches(Normalize(title)).Select(m => m.Value)];
 
         private static string Comparable(string? title) => Normalize(StoreQueryCleaner.StripQualifiers(title ?? string.Empty));
 

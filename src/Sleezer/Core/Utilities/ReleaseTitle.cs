@@ -17,7 +17,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         private static readonly Regex BracketPair = new(@"[\(\[](?<inner>[^\(\)\[\]]*)[\)\]]", RegexOptions.Compiled);
         private static readonly Regex FeatCredit = new(@"^\s*(?:feat\.?|ft\.?|featuring)\s", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         // The dot is required bare: "Little Feat", "Ft Worth".
-        private static readonly Regex BareFeat = new(@"\s+(?:feat\.|ft\.|featuring)\s+(?<who>.+)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        private static readonly Regex BareFeat = new(@"\s+(?:feat\.|ft\.|featuring)\s+[^{}]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         private static readonly Regex TrailingWord = new(@"\s*\b\w+\W*$", RegexOptions.Compiled);
         private static readonly Regex TrailingNonWord = new(@"\W+$", RegexOptions.Compiled);
         private static readonly Regex Spaces = new(@"\s+", RegexOptions.Compiled);
@@ -38,14 +38,12 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
                 return string.Empty;
             });
 
-            // A bare credit counts only before the first bracket; inside one it is part of that text.
+            // A bare credit counts only outside every bracket; inside one it is part of that text.
             text = Braced(text);
-            int firstBrace = text.IndexOf('{');
-            string head = firstBrace < 0 ? text : text[..firstBrace];
-            if (BareFeat.Match(head) is { Success: true } bare)
+            if (BareFeat.Matches(text).FirstOrDefault(m => OutsideBraces(text, m.Index)) is { } bare)
             {
                 credits.Add(bare.Value.Trim());
-                text = head[..bare.Index] + " " + text[head.Length..];
+                text = text[..bare.Index] + " " + text[(bare.Index + bare.Length)..];
             }
 
             text = Collapse(text);
@@ -92,6 +90,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             Render(release, new ReleaseTitleParts(searchedArtist, SearchedAlbum(searchedTitle), tail));
             return true;
         }
+
+        private static bool OutsideBraces(string text, int index) => text[..index].Count(c => c == '{') == text[..index].Count(c => c == '}');
 
         // Unpaired openers would still end the album early.
         private static string Braced(string text) => text.Replace('(', '{').Replace('[', '{').Replace(')', '}').Replace(']', '}');

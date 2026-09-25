@@ -64,6 +64,8 @@ public class ReleaseTitleTests
     [InlineData("Song feat. Guest", "Song")]
     [InlineData("Song (feat. Guest) (Club Mix)", "Song Club Mix")]
     [InlineData("Album [Deluxe]", "Album Deluxe")]
+    [InlineData("Album (Deluxe Edition) feat. Guest", "Album Deluxe Edition")]
+    [InlineData("Album (Remix feat. Guest)", "Album Remix feat. Guest")]
     [InlineData("Little Feat Live", "Little Feat Live")]
     [InlineData("Live at Ft Worth", "Live at Ft Worth")]
     public void A_store_title_keeps_its_brackets_but_drops_a_featured_credit(string store, string expected)
@@ -148,6 +150,7 @@ public class ReleaseTitleTests
     [Theory]
     [InlineData("Greatest Hits Vol. 2", "Greatest Hits Vol. 1")]
     [InlineData("Symphony (Part II)", "Symphony (Part I)")]
+    [InlineData("Album (Volume 2) (Disc 1)", "Album (Volume 1) (Disc 2)")]
     public void A_different_number_is_never_presented_as_the_searched_album(string store, string searched)
     {
         StoreReleaseInfo release = Composed("Some Artist", store);
