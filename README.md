@@ -11,7 +11,7 @@ A Lidarr plugin adding **Deezer**, **Tidal**, **Qobuz**, **Bandcamp** and **Slsk
 | **One plugin** | Deezer, Tidal, Qobuz, Bandcamp and Soulseek in one install |
 | **Right album, first time** | Store results checked against MusicBrainz; remixes and live versions never stand in |
 | **Better Soulseek search** | Far fewer empty searches; multi-disc and single-track grabs handled |
-| **Clean imports** | Downloads scanned for corruption and retagged before Lidarr imports them (opt-in per client) |
+| **Clean imports** | Downloads scanned for corruption and retagged before Lidarr imports them (opt-in per client); Soulseek files fingerprint-checked |
 | **Fails loudly** | Rejections show their reason; blocklists actually block |
 
 Full comparison with the plugins Sleezer started from: [What Sleezer changes](docs/whats-different.md).

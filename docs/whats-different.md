@@ -44,6 +44,8 @@ Store search covers Deezer, Qobuz, Tidal and Bandcamp.
 | Tags left as the source named them | Retagged to the release Lidarr asked for (opt-in per client) |
 | Store downloads matched to a CD release | Matched to the Digital Media release of the same length |
 | Singles from album rips failed import | Matched by track title |
+| Store titles with `(feat. X)` failed Lidarr's 80% match | Featured credits ignored when matching |
+| Soulseek files trusted by name alone | Audio fingerprint (AcoustID) checked against the wanted recording: always for singles from album rips, optionally for every file |
 | "Found multiple artists" stuck forever | Resolved from grab history |
 | Soulseek: restarts, retries and shared folders lost downloads | Downloads resume, retries import, no cross-deletes |
 | Empty download folders pile up | Swept automatically |
@@ -57,10 +59,11 @@ Store search covers Deezer, Qobuz, Tidal and Bandcamp.
 | Removing a wrong store release blocked one quality | Blocks every quality of that album |
 | A Qobuz album the account can't fully stream was retried at each quality | Blocked once, with the reason |
 
-## FFmpeg and tasks
+## FFmpeg and more
 
 | Before | Sleezer |
 |---|---|
 | FFmpeg downloaded once, unchecked, never updated | Own static builds, SHA-256 checked, updated daily |
 | Some corrupt files passed the check | Caught, and bad cover art no longer deletes good audio |
 | Search Sniper ignored saved settings and needed a restart | Reads saved settings, applies without a restart |
+| Credentials could end up in logs | Deezer ARL and Tidal/Qobuz tokens masked, so logs are safe to share |
