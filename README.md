@@ -305,7 +305,7 @@ Each feature is opt-in via a chip-style picker: pick which Sleezer downloaders s
 
 When a download finishes, Sleezer checks each audio file's size and tags, then decodes it with FFmpeg to detect truncated or corrupt streams. If no ffmpeg can be found, only the size and tag checks run. If something's broken, the download is deleted and marked failed so Lidarr grabs a different release instead of importing a silent half-track.
 
-Add the clients you want scanned — for example, just **Slskd** (where corrupt files from random peers are the whole reason this exists), or all three if you want belt-and-braces.
+Add the clients you want scanned — for example, just **Slskd** (where corrupt files from random peers are the whole reason this exists), or all of them if you want belt-and-braces.
 
 #### Run Pre-Import Tagging On
 
