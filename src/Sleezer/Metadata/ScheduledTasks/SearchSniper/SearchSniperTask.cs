@@ -234,7 +234,8 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
             CollectFromSource(
                 lastId => _repositoryHelper.GetAlbumsWithFilesBatch(profiles.Keys, lastId, BatchSize),
                 eligibleAlbums, queuedAlbumIds, candidateTarget, startId, minId,
-                batch => KeepCustomFormatCutoffUnmet(batch, profiles));
+                batch => KeepCustomFormatCutoffUnmet(batch, profiles),
+                maxIterations: int.MaxValue);
         }
 
         private List<Album> KeepCustomFormatCutoffUnmet(List<Album> batch, Dictionary<int, QualityProfile> profiles)
@@ -262,11 +263,12 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
             int candidateTarget,
             int startId,
             int minId,
-            Func<List<Album>, List<Album>>? keep = null)
+            Func<List<Album>, List<Album>>? keep = null,
+            int maxIterations = 100)
         {
+            // Every batch advances lastId, and the wrap check ends a full pass, so an uncapped scan still stops.
             int lastId = startId - 1;
             bool hasWrapped = false;
-            int maxIterations = 100;
             int iterations = 0;
 
             while (eligibleAlbums.Count < candidateTarget && iterations++ < maxIterations)

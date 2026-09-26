@@ -13,106 +13,57 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
     {
         private readonly IArtistService _artistService = artistService;
 
-        public List<Album> GetCutoffUnmetAlbumsBatch(Dictionary<int, List<int>> profileCutoffs, int lastId, int limit)
-        {
-            if (profileCutoffs.Count == 0)
-                return [];
+        // Query failures propagate: SearchSniperTask.Execute logs them, where an empty result would read as "nothing to search".
+        public List<Album> GetCutoffUnmetAlbumsBatch(Dictionary<int, List<int>> profileCutoffs, int lastId, int limit) =>
+            profileCutoffs.Count == 0 ? [] : Batch(BuildCutoffUnmetQuery(profileCutoffs), lastId, limit);
 
-            try
-            {
-                SqlBuilder builder = BuildCutoffUnmetQuery(profileCutoffs)
-                    .Where($@"""Albums"".""Id"" > {lastId}")
-                    .OrderBy($@"""Albums"".""Id"" ASC LIMIT {limit}");
+        public List<Album> GetPartialAlbumsBatch(int lastId, int limit) => Batch(BuildMissingTracksQuery(), lastId, limit);
 
-                return PopulateArtists(Query(builder));
-            }
-            catch
-            {
-                return [];
-            }
-        }
-
-        public List<Album> GetPartialAlbumsBatch(int lastId, int limit)
-        {
-            try
-            {
-                SqlBuilder builder = BuildMissingTracksQuery()
-                    .Where($@"""Albums"".""Id"" > {lastId}")
-                    .OrderBy($@"""Albums"".""Id"" ASC LIMIT {limit}");
-
-                return PopulateArtists(Query(builder));
-            }
-            catch
-            {
-                return [];
-            }
-        }
+        public List<Album> GetAlbumsWithFilesBatch(IReadOnlyCollection<int> profileIds, int lastId, int limit) =>
+            profileIds.Count == 0 ? [] : Batch(BuildAlbumsWithFilesQuery(profileIds), lastId, limit);
 
         public (int minId, int maxId) GetPartialAlbumsIdRange() => IdRange(BuildMissingTracksQuery);
 
         public (int minId, int maxId) GetCutoffUnmetAlbumsIdRange(Dictionary<int, List<int>> profileCutoffs) =>
             profileCutoffs.Count == 0 ? (0, 0) : IdRange(() => BuildCutoffUnmetQuery(profileCutoffs));
 
-        public List<Album> GetAlbumsWithFilesBatch(IReadOnlyCollection<int> profileIds, int lastId, int limit)
-        {
-            if (profileIds.Count == 0)
-                return [];
-
-            try
-            {
-                SqlBuilder builder = BuildAlbumsWithFilesQuery(profileIds)
-                    .Where($@"""Albums"".""Id"" > {lastId}")
-                    .OrderBy($@"""Albums"".""Id"" ASC LIMIT {limit}");
-
-                return PopulateArtists(Query(builder));
-            }
-            catch
-            {
-                return [];
-            }
-        }
-
         public (int minId, int maxId) GetAlbumsWithFilesIdRange(IReadOnlyCollection<int> profileIds) =>
             profileIds.Count == 0 ? (0, 0) : IdRange(() => BuildAlbumsWithFilesQuery(profileIds));
 
-        // Lowest file id per album: the trackFiles[0] CutoffSpecification scores.
+        // One file per album from its monitored release, the set CutoffSpecification scores from.
         public Dictionary<int, TrackFile> GetFirstTrackFiles(IEnumerable<int> albumIds)
         {
             string ids = string.Join(",", albumIds);
             if (ids.Length == 0)
                 return [];
 
-            try
-            {
-                SqlBuilder builder = new SqlBuilder(_database.DatabaseType)
-                    .Select(typeof(TrackFile))
-                    .Where($@"""TrackFiles"".""Id"" IN (SELECT MIN(""Id"") FROM ""TrackFiles"" WHERE ""AlbumId"" IN ({ids}) GROUP BY ""AlbumId"")");
+            SqlBuilder builder = new SqlBuilder(_database.DatabaseType)
+                .Select(typeof(TrackFile))
+                .Join<TrackFile, Track>((f, t) => f.Id == t.TrackFileId)
+                .Join<Track, AlbumRelease>((t, r) => t.AlbumReleaseId == r.Id)
+                .Where<AlbumRelease>(r => r.Monitored == true)
+                .Where($@"""TrackFiles"".""AlbumId"" IN ({ids})");
 
-                return _database.Query<TrackFile>(builder).ToDictionary(f => f.AlbumId);
-            }
-            catch
-            {
-                return [];
-            }
+            return _database.Query<TrackFile>(builder)
+                .GroupBy(f => f.AlbumId)
+                .ToDictionary(g => g.Key, g => g.MinBy(f => f.Id)!);
         }
+
+        private List<Album> Batch(SqlBuilder query, int lastId, int limit) =>
+            PopulateArtists(Query(query
+                .Where($@"""Albums"".""Id"" > {lastId}")
+                .OrderBy($@"""Albums"".""Id"" ASC LIMIT {limit}")));
 
         private (int minId, int maxId) IdRange(Func<SqlBuilder> query)
         {
-            try
-            {
-                List<Album> minResult = Query(query().OrderBy($@"""Albums"".""Id"" ASC LIMIT 1"));
+            List<Album> minResult = Query(query().OrderBy($@"""Albums"".""Id"" ASC LIMIT 1"));
 
-                if (minResult.Count == 0)
-                    return (0, 0);
-
-                List<Album> maxResult = Query(query().OrderBy($@"""Albums"".""Id"" DESC LIMIT 1"));
-
-                return (minResult[0].Id, maxResult.Count > 0 ? maxResult[0].Id : minResult[0].Id);
-            }
-            catch
-            {
+            if (minResult.Count == 0)
                 return (0, 0);
-            }
+
+            List<Album> maxResult = Query(query().OrderBy($@"""Albums"".""Id"" DESC LIMIT 1"));
+
+            return (minResult[0].Id, maxResult.Count > 0 ? maxResult[0].Id : minResult[0].Id);
         }
 
         private SqlBuilder BuildCutoffUnmetQuery(Dictionary<int, List<int>> profileCutoffs)
