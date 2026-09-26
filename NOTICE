@@ -9,7 +9,7 @@ Foundation, version 3. See the LICENSE file for the full text.
 
 == Attributions ==
 
-Sleezer was assembled by merging two upstream Lidarr plugins. It would not
+Sleezer was assembled from several upstream Lidarr plugins. It would not
 exist without the original authors of those projects.
 
 * Portions of the Deezer indexer, Deezer download client, ARL handling, and
@@ -17,6 +17,13 @@ exist without the original authors of those projects.
   were originally distributed as part of `Lidarr.Plugin.Deezer`.
     https://github.com/TrevTV/Lidarr.Plugin.Deezer
     https://github.com/TrevTV/DeezNET  (GPL-3.0)
+
+* Portions of the Tidal indexer and download client, and the `TidalSharp`
+  library under `src/Sleezer/TidalSharp/`, are Copyright (C) TrevTV and
+  contributors, and were originally distributed as part of
+  `Lidarr.Plugin.Tidal`. That repository publishes no licence; the port is
+  used in good faith and will be removed from Sleezer if the author asks.
+    https://github.com/TrevTV/Lidarr.Plugin.Tidal
 
 * Portions of the Slskd indexer and download client, the multi-source web-
   client framework (Lucida, DABmusic, T2Tunes, Subsonic), the FFmpeg
