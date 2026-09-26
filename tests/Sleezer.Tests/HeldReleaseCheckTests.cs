@@ -7,68 +7,71 @@ namespace Sleezer.Tests;
 
 public class HeldReleaseCheckTests
 {
-    // Each entry is (length in seconds, has a file on disk).
-    private static List<Track> Held(params (int Seconds, bool HasFile)[] tracks) =>
+    // Each entry is (length in seconds, has a file on disk); files hang off the monitored release.
+    private static List<Track> Release(params (int Seconds, bool HasFile)[] tracks) =>
         [.. tracks.Select((t, i) => new Track { Duration = t.Seconds * 1000, TrackFileId = t.HasFile ? i + 1 : 0 })];
 
     private static StoreReleaseInfo Offer(params int[] seconds) =>
         new() { Title = "x", TrackCount = seconds.Length, TrackDurationsSeconds = seconds };
 
-    // Make It Make Sense: a 1-track single offered for the 3-track single already on disk.
+    // Make It Make Sense: a 1-track FLAC single for the 3-track MP3 single on disk, which the album also has as a 1-track release.
     [Fact]
-    public void A_smaller_product_than_the_files_on_disk_is_rejected()
+    public void A_smaller_product_matching_another_release_is_accepted()
     {
-        string? reason = HeldReleaseCheck.Reason(Offer(189), Held((189, true), (200, true), (210, true)));
+        List<Track> album = [.. Release((189, true), (200, true), (210, true)), .. Release((189, false))];
 
-        Assert.Equal("1 track(s) offered, but 3 of this album's tracks are already on disk", reason);
+        Assert.Null(HeldReleaseCheck.Reason(Offer(189), album));
     }
 
     [Fact]
     public void An_album_with_no_files_is_never_judged()
     {
-        Assert.Null(HeldReleaseCheck.Reason(Offer(100), Held((189, false), (200, false), (210, false))));
-    }
-
-    // Alan Walker Dust: 3 of 4 on disk, the missing original offered as a 4-track product.
-    [Fact]
-    public void A_product_covering_a_partly_held_release_is_accepted()
-    {
-        Assert.Null(HeldReleaseCheck.Reason(Offer(191, 162, 280, 203), Held((191, false), (162, true), (280, true), (203, true))));
+        Assert.Null(HeldReleaseCheck.Reason(Offer(100), Release((189, false), (200, false))));
     }
 
     [Fact]
-    public void A_same_size_product_within_mastering_drift_is_accepted()
+    public void A_product_within_mastering_drift_is_accepted()
     {
-        Assert.Null(HeldReleaseCheck.Reason(Offer(214, 228), Held((214, true), (221, true))));
+        Assert.Null(HeldReleaseCheck.Reason(Offer(214, 228), Release((214, true), (221, true))));
     }
 
-    // Blank Space (Piano Version): 253 s offered for the 232 s single on disk.
+    // Blank Space (Piano Version): 253 s offered, and every release of the album runs 232 s.
     [Fact]
-    public void A_same_size_product_with_a_different_recording_is_rejected()
+    public void A_different_recording_is_rejected()
     {
-        string? reason = HeldReleaseCheck.Reason(Offer(253), Held((232, true)));
+        string? reason = HeldReleaseCheck.Reason(Offer(253), [.. Release((232, true)), .. Release((232, false))]);
 
-        Assert.Equal("track 1 (4:13) matches no track on the release already on disk", reason);
+        Assert.Equal("track 1 (4:13) matches no track on any release of this album", reason);
     }
 
-    // Afrojack All Night: the 9-track remixes offered over the 5-track release on disk.
+    // The recording is on a release other than the one on disk, so the import can switch to it.
     [Fact]
-    public void A_bigger_product_is_left_to_Lidarr_even_with_unknown_tracks()
+    public void A_track_found_on_another_release_is_accepted()
     {
-        Assert.Null(HeldReleaseCheck.Reason(Offer(204, 194, 189, 188, 232, 253, 314, 248, 250), Held((204, true), (194, true), (189, true), (188, true), (232, true))));
+        Assert.Null(HeldReleaseCheck.Reason(Offer(253), [.. Release((232, true)), .. Release((253, false))]));
+    }
+
+    // Afrojack All Night: the 9-track remixes over the 5-track release on disk, all nine on the album's 9-track release.
+    [Fact]
+    public void A_bigger_product_matching_a_bigger_release_is_accepted()
+    {
+        List<Track> album = [.. Release((204, true), (194, true), (189, true), (188, true), (232, true)),
+                             .. Release((204, false), (194, false), (189, false), (188, false), (232, false), (253, false), (314, false), (248, false), (250, false))];
+
+        Assert.Null(HeldReleaseCheck.Reason(Offer(204, 194, 189, 188, 232, 253, 314, 248, 250), album));
     }
 
     [Fact]
     public void Missing_lengths_are_unjudgeable()
     {
-        Assert.Null(HeldReleaseCheck.Reason(new StoreReleaseInfo { Title = "x", TrackCount = 1 }, Held((232, true))));
-        Assert.Null(HeldReleaseCheck.Reason(Offer(253), Held((0, true))));
-        Assert.Null(HeldReleaseCheck.Reason(Offer(0), Held((232, true))));
+        Assert.Null(HeldReleaseCheck.Reason(new StoreReleaseInfo { Title = "x", TrackCount = 1 }, Release((232, true))));
+        Assert.Null(HeldReleaseCheck.Reason(Offer(0), Release((232, true))));
     }
 
+    // A release without lengths might hold the recording, so it can't be ruled out.
     [Fact]
-    public void An_unknown_track_count_is_unjudgeable()
+    public void An_untimed_release_makes_the_album_unjudgeable()
     {
-        Assert.Null(HeldReleaseCheck.Reason(new StoreReleaseInfo { Title = "x", TrackDurationsSeconds = [253] }, Held((232, true), (240, true))));
+        Assert.Null(HeldReleaseCheck.Reason(Offer(253), [.. Release((232, true)), .. Release((0, false))]));
     }
 }

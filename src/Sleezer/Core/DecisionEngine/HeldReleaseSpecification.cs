@@ -8,7 +8,7 @@ using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
 namespace NzbDrone.Plugin.Sleezer.Core.DecisionEngine
 {
-    /// <summary>Rejects a store copy that could not replace the files an album already has, such as a single offered as an upgrade.</summary>
+    /// <summary>Rejects a store copy offered as an upgrade whose tracks are not recordings of the album, such as a radio edit or a piano version.</summary>
     public class HeldReleaseSpecification(IReleaseService releaseService, ITrackService trackService) : IDecisionEngineSpecification
     {
         public SpecificationPriority Priority => SpecificationPriority.Default;
@@ -21,12 +21,11 @@ namespace NzbDrone.Plugin.Sleezer.Core.DecisionEngine
             if (subject?.Release is not StoreReleaseInfo release || subject.Albums is not [Album target])
                 return Decision.Accept();
 
-            // Track files hang off the monitored release's tracks, the same one MoreTracksSpecification reads.
-            AlbumRelease? held = releaseService.GetReleasesByAlbum(target.Id).FirstOrDefault(r => r.Monitored);
-            if (held == null)
+            List<int> releaseIds = releaseService.GetReleasesByAlbum(target.Id).Select(r => r.Id).ToList();
+            if (releaseIds.Count == 0)
                 return Decision.Accept();
 
-            return HeldReleaseCheck.Reason(release, trackService.GetTracksByRelease(held.Id)) is { } reason
+            return HeldReleaseCheck.Reason(release, trackService.GetTracksByReleases(releaseIds)) is { } reason
                 ? Decision.Reject(reason)
                 : Decision.Accept();
         }
