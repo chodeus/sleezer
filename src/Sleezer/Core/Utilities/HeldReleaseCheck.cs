@@ -9,6 +9,10 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         // Wider than mastering drift, narrower than a radio edit or extended mix.
         private const int DurationToleranceSeconds = 10;
 
+        // The switch StoreReleaseVerifier honours; settings from another plugin or none at all count as strict.
+        public static bool StrictMatching(object? indexerSettings) =>
+            indexerSettings is not IStoreMatchingSettings { StrictMatching: false };
+
         public static string? Reason(StoreReleaseInfo release, IReadOnlyList<Track> albumTracks)
         {
             if (!albumTracks.Any(t => t.HasFile))

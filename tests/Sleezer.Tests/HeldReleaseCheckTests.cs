@@ -74,4 +74,23 @@ public class HeldReleaseCheckTests
     {
         Assert.Null(HeldReleaseCheck.Reason(Offer(253), [.. Release((232, true)), .. Release((0, false))]));
     }
+
+    private sealed class StoreSettings(bool strict) : IStoreMatchingSettings
+    {
+        public bool StrictMatching { get; } = strict;
+    }
+
+    [Fact]
+    public void Strict_matching_off_on_the_indexer_turns_the_check_off()
+    {
+        Assert.False(HeldReleaseCheck.StrictMatching(new StoreSettings(false)));
+        Assert.True(HeldReleaseCheck.StrictMatching(new StoreSettings(true)));
+    }
+
+    [Fact]
+    public void Unknown_or_foreign_indexer_settings_count_as_strict()
+    {
+        Assert.True(HeldReleaseCheck.StrictMatching(null));
+        Assert.True(HeldReleaseCheck.StrictMatching(new object()));
+    }
 }
