@@ -26,7 +26,7 @@ exist without the original authors of those projects.
     https://github.com/TrevTV/Lidarr.Plugin.Tidal
 
 * Portions of the Slskd indexer and download client, the multi-source web-
-  client framework (Lucida, DABmusic, T2Tunes, Subsonic), the FFmpeg
+  client framework (Subsonic), the FFmpeg
   conversion pipeline (formerly "Codec Tinker"), Queue Cleaner, Search
   Sniper, custom metadata source framework, and Similar Artists recommender
   are Copyright (C) TypNull and contributors, and were originally distributed

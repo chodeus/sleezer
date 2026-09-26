@@ -40,7 +40,6 @@ namespace NzbDrone.Plugin.Sleezer
             typeof(SoulseekDownloadProtocol),
             typeof(QobuzDownloadProtocol),
             typeof(SubSonicDownloadProtocol),
-            typeof(AmazonMusicDownloadProtocol),
             typeof(TidalDownloadProtocol),
             typeof(BandcampDownloadProtocol)];
 
@@ -59,7 +58,7 @@ namespace NzbDrone.Plugin.Sleezer
         // Retired protocols leave rows behind that Lidarr keeps rendering by name.
         private void RemoveRetiredProtocols(IDelayProfileRepository repo)
         {
-            string[] retired = ["LucidaDownloadProtocol", "DABMusicDownloadProtocol"];
+            string[] retired = ["LucidaDownloadProtocol", "DABMusicDownloadProtocol", "AmazonMusicDownloadProtocol"];
 
             foreach (DelayProfile profile in repo.All())
             {

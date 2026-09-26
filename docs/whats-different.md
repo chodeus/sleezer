@@ -11,7 +11,7 @@ Sleezer started as a merge of the plugins listed under [Credits](../README.md#cr
 | Qobuz | Lidarr.Plugin.Qobuz | A rotated app secret is picked up without a restart. Credentials kept out of logs. Preview-only tracks skipped. Import lists fixed. |
 | Bandcamp | lidarr-plugin-bandcamp | Largely rewritten. Fixes a security hole and multi-GB archives loaded into memory. |
 | Soulseek | Tubifarry | See [Soulseek search](#soulseek-search) and [Downloads and imports](#downloads-and-imports). |
-| Web clients | Tubifarry | Lucida and DABmusic removed, because they no longer deliver downloads. The rest get scanning and tagging. |
+| Web clients | Tubifarry | Lucida, DABmusic and T2Tunes removed. SubSonic gets scanning and tagging. |
 
 ## Soulseek search
 

@@ -209,17 +209,11 @@ A few Slskd behaviours worth knowing, all born from live-log audits of real-worl
 
 ### Web Clients 📻
 
-Sleezer also ships a family of "web-client" indexers inherited from Tubifarry. These are third-party music services that vary in uptime and quality — Sleezer isn't responsible for any of them.
+Sleezer ships a **SubSonic** indexer and download client, inherited from Tubifarry. It is generic: any server that implements the [Subsonic API](https://www.subsonic.org/pages/api.jsp), such as your own music server, should plug in without modification.
 
-**Supported:**
-* **T2Tunes** — a third-party web service.
-* **SubSonic** — a music-streaming API standard with broad compatibility.
+Lucida, DABMusic and T2Tunes have been removed. Delete any Lucida, DABMusic or TripleTriple indexer and download-client entries left in Lidarr after upgrading.
 
-Lucida and DABMusic have been removed because they no longer deliver downloads. Delete any Lucida or DABMusic indexer and download-client entries left in Lidarr after upgrading.
-
-The SubSonic indexer/client is generic: any service that implements the [Subsonic API](https://www.subsonic.org/pages/api.jsp) should plug in without modification.
-
-Both have a **Strict Matching** setting (on by default) that checks each result's artist and title against the MusicBrainz release.
+It has a **Strict Matching** setting (on by default) that checks each result's artist and title against the MusicBrainz release.
 
 ### FFmpeg 🎛️
 
@@ -303,7 +297,7 @@ Sleezer auto-downloads a static FFmpeg from [`chodeus/ffmpeg-static`](https://gi
 
 ### Corrupt File Scan & Pre-Import Tagging 🧼
 
-These live in the **FFmpeg & Post-Processing** entry because the corrupt scan decodes with its ffmpeg; pre-import tagging does not use ffmpeg. Neither needs the entry enabled. They run on **every Sleezer download client** — Deezer, Tidal, Qobuz, Bandcamp, Slskd, SubSonic and TripleTriple — opt-in per client. Lidarr's own torrent and Usenet clients are untouched. Only the FFmpeg *conversion* provider (previous section) applies to imports from every source.
+These live in the **FFmpeg & Post-Processing** entry because the corrupt scan decodes with its ffmpeg; pre-import tagging does not use ffmpeg. Neither needs the entry enabled. They run on **every Sleezer download client** — Deezer, Tidal, Qobuz, Bandcamp, Slskd and SubSonic — opt-in per client. Lidarr's own torrent and Usenet clients are untouched. Only the FFmpeg *conversion* provider (previous section) applies to imports from every source.
 
 Each feature is opt-in via a chip-style picker: pick which Sleezer downloaders should get the treatment. An empty picker means the feature is off entirely. **Both pickers default empty** — nothing runs until you opt in.
 
@@ -311,7 +305,7 @@ Each feature is opt-in via a chip-style picker: pick which Sleezer downloaders s
 
 When a download finishes, Sleezer checks each audio file's size and tags, then decodes it with FFmpeg to detect truncated or corrupt streams. If no ffmpeg can be found, only the size and tag checks run. If something's broken, the download is deleted and marked failed so Lidarr grabs a different release instead of importing a silent half-track.
 
-Add the clients you want scanned — for example, just **Slskd** (where corrupt files from random peers are the whole reason this exists), or all three if you want belt-and-braces.
+Add the clients you want scanned — for example, just **Slskd** (where corrupt files from random peers are the whole reason this exists), or all of them if you want belt-and-braces.
 
 #### Run Pre-Import Tagging On
 
