@@ -11,7 +11,6 @@ using NzbDrone.Core.Parser.Model;
 using NzbDrone.Core.RemotePathMappings;
 using System.Text.Json;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
-using NzbDrone.Plugin.Sleezer.Download.Base;
 using NzbDrone.Plugin.Sleezer.Indexers.SubSonic;
 
 namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
@@ -88,7 +87,7 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
                 urlBuilder.Append("&f=json");
                 string testUrl = urlBuilder.ToString();
 
-                BaseHttpClient httpClient = new(Settings.ServerUrl, _requestInterceptors, TimeSpan.FromSeconds(Settings.RequestTimeout));
+                SubSonicHttpClient httpClient = new(Settings.ServerUrl, _requestInterceptors, TimeSpan.FromSeconds(Settings.RequestTimeout));
                 using HttpRequestMessage request = httpClient.CreateRequest(HttpMethod.Get, testUrl);
 
                 _logger.Trace("Testing SubSonic connection to: {BaseUrl}", Settings.ServerUrl);

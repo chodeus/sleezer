@@ -1,7 +1,10 @@
 using DownloadAssistant.Options;
 using DownloadAssistant.Requests;
 using NLog;
+using NzbDrone.Common.Disk;
+using NzbDrone.Common.Instrumentation;
 using NzbDrone.Core.Datastore;
+using NzbDrone.Core.Download;
 using NzbDrone.Core.Music;
 using NzbDrone.Core.Parser.Model;
 using Requests;
@@ -9,24 +12,86 @@ using Requests.Options;
 using System.Text;
 using System.Text.Json;
 using NzbDrone.Plugin.Sleezer.Core.Model;
+using NzbDrone.Plugin.Sleezer.Core.PostProcessing;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
-using NzbDrone.Plugin.Sleezer.Download.Base;
 using NzbDrone.Plugin.Sleezer.Indexers.SubSonic;
+using NzbDrone.Plugin.Sleezer.Metadata.FFmpeg;
 
 namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
 {
     /// <summary>
     /// SubSonic download request handling track and album downloads
     /// </summary>
-    public class SubSonicDownloadRequest : BaseDownloadRequest<SubSonicDownloadOptions>
+    public class SubSonicDownloadRequest : Request<SubSonicDownloadOptions, string, string>
     {
-        private readonly BaseHttpClient _httpClient;
+        private readonly OsPath _destinationPath;
+        private readonly StringBuilder _message = new();
+        private readonly RequestContainer<IRequest> _requestContainer = [];
+        private readonly RequestContainer<LoadRequest> _trackContainer = [];
+
+        // The orchestrating request must NOT share the download handler. It occupies a
+        // slot while waiting for the tracks that need that same slot, so at
+        // MaxParallelDownloads = 1 the two deadlock and the item hangs at Downloading
+        // forever. Verified in RequestSchedulingTests.
+        private static readonly RequestHandler OrchestrationHandler = new() { MaxParallelism = 16 };
+        private readonly RemoteAlbum _remoteAlbum;
+        private readonly Album _albumData;
+        private readonly DownloadClientItem _clientItem;
+        private readonly ReleaseFormatter _releaseFormatter;
+        private readonly Logger _logger;
+        private readonly SubSonicHttpClient _httpClient;
+        private int _expectedTrackCount;
+        private byte[]? _albumCover;
         private SubSonicAlbumFull? _currentAlbum;
 
-        public SubSonicDownloadRequest(RemoteAlbum remoteAlbum, SubSonicDownloadOptions? options)
-            : base(remoteAlbum, options)
+        // Progress tracking
+        private DateTime _lastUpdateTime = DateTime.MinValue;
+        private long _lastRemainingSize;
+
+        private ReleaseInfo ReleaseInfo => _remoteAlbum.Release;
+        public override Task Task => _requestContainer.Task;
+        public override RequestState State => _requestContainer.State;
+        public string ID { get; } = Guid.NewGuid().ToString();
+
+        public DownloadClientItem ClientItem
         {
-            _httpClient = new BaseHttpClient(
+            get
+            {
+                long remainingSize = GetRemainingSize();
+                long totalDownloaded = _trackContainer.Sum(t => t.BytesDownloaded);
+                long estimatedTotalSize = totalDownloaded + remainingSize;
+
+                _clientItem.TotalSize = Math.Max(_clientItem.TotalSize, estimatedTotalSize);
+                _clientItem.RemainingSize = remainingSize;
+                _clientItem.Status = GetDownloadItemStatus();
+                _clientItem.RemainingTime = GetRemainingTime();
+                _clientItem.Message = GetDistinctMessages();
+                _clientItem.CanBeRemoved = HasCompleted();
+                _clientItem.CanMoveFiles = HasCompleted();
+                return _clientItem;
+            }
+        }
+
+        public SubSonicDownloadRequest(RemoteAlbum remoteAlbum, SubSonicDownloadOptions? options)
+            : base(options)
+        {
+            _logger = NzbDroneLogger.GetLogger(this);
+            _remoteAlbum = remoteAlbum;
+            _albumData = remoteAlbum.Albums.FirstOrDefault() ?? new Album();
+            _releaseFormatter = new ReleaseFormatter(ReleaseInfo, remoteAlbum.Artist, Options.NamingConfig);
+            _requestContainer.Add(_trackContainer);
+            _expectedTrackCount = Options.IsTrack ? 1 : remoteAlbum.Albums.FirstOrDefault()?.AlbumReleases.Value?.FirstOrDefault()?.TrackCount ?? 0;
+
+            _destinationPath = new OsPath(Path.Combine(
+                Options.DownloadPath,
+                _releaseFormatter.BuildArtistFolderName(null),
+                _releaseFormatter.BuildAlbumFilename("{Album Title}", new Album() { Title = ReleaseInfo.Album ?? ReleaseInfo.Title })
+            ));
+
+            _clientItem = CreateClientItem();
+            _logger.Debug($"Processing download. Type: {(Options.IsTrack ? "track" : "album")}, ID: {Options.ItemId}");
+
+            _httpClient = new SubSonicHttpClient(
                 Options.BaseUrl,
                 Options.RequestInterceptors,
                 TimeSpan.FromSeconds(Options.RequestTimeout));
@@ -53,7 +118,46 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
             }));
         }
 
-        protected override async Task ProcessDownloadAsync(CancellationToken token)
+        /// <summary>
+        /// Downloads, then runs the shared post-process pass. Must stay inside the request
+        /// delegate: State stays Running, so Lidarr cannot import the folder mid-scan.
+        /// </summary>
+        private async Task ProcessDownloadAndPostProcessAsync(CancellationToken token)
+        {
+            await ProcessDownloadAsync(token);
+
+            if (Options.PostProcess == null)
+                return;
+
+            // ProcessDownloadAsync only queues the per-track work, so the files do not
+            // exist yet. Scanning here would find an empty folder, report zero strikes
+            // and call it clean.
+            await _trackContainer.Task.WaitAsync(token);
+
+            // A container's Task does not cover requests chained onto its members, and
+            // that chain is where per-track tagging runs — so follow each track's own
+            // SubsequentRequest rather than trusting the container alone.
+            Task[] chained = [.. _trackContainer
+                .Select(t => ((IRequest)t).SubsequentRequest?.Task)
+                .Where(x => x != null)
+                .Select(x => x!)];
+
+            if (chained.Length > 0)
+                await Task.WhenAll(chained).WaitAsync(token);
+
+            var request = new PostProcessRequest(
+                PostProcessClient.SubSonic,
+                ID,
+                ReleaseInfo.Title,
+                _destinationPath.FullPath,
+                ReleaseInfo.DownloadProtocol ?? string.Empty,
+                _albumData);
+
+            if (!await Options.PostProcess.RunAsync(request, token))
+                throw new PostProcessRejectedException($"Post-processing rejected {ReleaseInfo.Title}.");
+        }
+
+        private async Task ProcessDownloadAsync(CancellationToken token)
         {
             _logger.Trace($"Processing {(Options.IsTrack ? "track" : "album")}: {ReleaseInfo.Title}");
 
@@ -374,5 +478,79 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
             Duration = track.Duration * 1000, // Convert seconds to milliseconds
             Artist = new LazyLoaded<Artist>(new Artist { Name = track.Artist })
         };
+
+        private void LogAndAppendMessage(string message, LogLevel logLevel)
+        {
+            _message.AppendLine(message);
+            _logger?.Log(logLevel, message);
+        }
+
+        private DownloadClientItem CreateClientItem() => new()
+        {
+            DownloadId = ID,
+            Title = ReleaseInfo.Title,
+            TotalSize = ReleaseInfo.Size,
+            DownloadClientInfo = Options.ClientInfo,
+            OutputPath = _destinationPath,
+        };
+
+        private TimeSpan? GetRemainingTime()
+        {
+            long remainingSize = GetRemainingSize();
+            if (_lastUpdateTime != DateTime.MinValue && _lastRemainingSize != 0)
+            {
+                TimeSpan timeElapsed = DateTime.UtcNow - _lastUpdateTime;
+                long bytesDownloaded = _lastRemainingSize - remainingSize;
+
+                if (timeElapsed.TotalSeconds > 0 && bytesDownloaded > 0)
+                {
+                    double bytesPerSecond = bytesDownloaded / timeElapsed.TotalSeconds;
+                    double remainingSeconds = remainingSize / bytesPerSecond;
+                    return remainingSeconds < 0 ? TimeSpan.FromSeconds(10) : TimeSpan.FromSeconds(remainingSeconds);
+                }
+            }
+
+            _lastUpdateTime = DateTime.UtcNow;
+            _lastRemainingSize = remainingSize;
+            return null;
+        }
+
+        private string GetDistinctMessages() => string.Join(Environment.NewLine, _message.ToString().Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries).Distinct());
+
+        private long GetRemainingSize()
+        {
+            long totalDownloaded = _trackContainer.Sum(t => t.BytesDownloaded);
+            IEnumerable<LoadRequest> knownSizes = _trackContainer.Where(t => t.ContentLength > 0);
+            int knownCount = knownSizes.Count();
+
+            return (_expectedTrackCount, knownCount) switch
+            {
+                (0, _) => ReleaseInfo.Size - totalDownloaded,
+                (var expected, var count) when count == expected => knownSizes.Sum(t => t.ContentLength) - totalDownloaded,
+                (var expected, var count) when count > 2 => Math.Max(0, Math.Max((long)(knownSizes.Average(t => t.ContentLength) * expected), ReleaseInfo.Size) - totalDownloaded),
+                (var expected, var count) when count > 0 => Math.Max((long)(knownSizes.Average(t => t.ContentLength) * expected), ReleaseInfo.Size) - totalDownloaded,
+                _ => ReleaseInfo.Size - totalDownloaded
+            };
+        }
+
+        public DownloadItemStatus GetDownloadItemStatus() => State switch
+        {
+            RequestState.Idle => DownloadItemStatus.Queued,
+            RequestState.Paused => DownloadItemStatus.Paused,
+            RequestState.Running => DownloadItemStatus.Downloading,
+            RequestState.Compleated => DownloadItemStatus.Completed,
+            RequestState.Failed => _requestContainer.Count(x => x.State == RequestState.Failed) >= _requestContainer.Count / 2
+                                   ? DownloadItemStatus.Failed
+                                   : _requestContainer.All(x => x.HasCompleted()) ? DownloadItemStatus.Completed : DownloadItemStatus.Failed,
+            _ => DownloadItemStatus.Warning,
+        };
+
+        private string BuildTrackFilename(Track track, Album album, string extension = ".flac") => _releaseFormatter.BuildTrackFilename(null, track, album) + extension;
+
+        public override void Start() => throw new NotImplementedException();
+
+        public override void Pause() => throw new NotImplementedException();
+
+        protected override Task<RequestReturn> RunRequestAsync() => throw new NotImplementedException();
     }
 }

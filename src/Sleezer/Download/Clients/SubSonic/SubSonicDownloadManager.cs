@@ -5,28 +5,75 @@ using NzbDrone.Core.Indexers;
 using NzbDrone.Core.MediaFiles;
 using NzbDrone.Core.Organizer;
 using NzbDrone.Core.Parser.Model;
-using NzbDrone.Plugin.Sleezer.Download.Base;
 
 using NzbDrone.Common.Disk;
 using NzbDrone.Core.Extras.Metadata;
 using NzbDrone.Plugin.Sleezer.Core.PostProcessing;
-using NzbDrone.Plugin.Sleezer.Metadata.FFmpeg;
+using Requests;
 namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
 {
-    public interface ISubSonicDownloadManager : IBaseDownloadManager<SubSonicDownloadRequest, SubSonicDownloadOptions, SubSonicClient>
-    { }
+    public interface ISubSonicDownloadManager
+    {
+        Task<string> Download(RemoteAlbum remoteAlbum, IIndexer indexer, NamingConfig namingConfig, SubSonicClient provider);
+
+        IEnumerable<DownloadClientItem> GetItems();
+
+        void RemoveItem(DownloadClientItem item);
+    }
 
     /// <summary>
     /// Manager for SubSonic downloads, handles creating and managing download requests
     /// </summary>
-    public class SubSonicDownloadManager(IEnumerable<IHttpRequestInterceptor> requestInterceptors, IAudioTagService audioTagService, Logger logger, ICorruptionScanner corruptionScanner, ICorruptionFailureHandler corruptionFailureHandler, IPreImportTagger preImportTagger, IMetadataFactory metadataFactory, IDiskProvider diskProvider) : BaseDownloadManager<SubSonicDownloadRequest, SubSonicDownloadOptions, SubSonicClient>(logger), ISubSonicDownloadManager
+    public class SubSonicDownloadManager(IEnumerable<IHttpRequestInterceptor> requestInterceptors, IAudioTagService audioTagService, Logger logger, ICorruptionScanner corruptionScanner, ICorruptionFailureHandler corruptionFailureHandler, IPreImportTagger preImportTagger, IMetadataFactory metadataFactory, IDiskProvider diskProvider) : ISubSonicDownloadManager
     {
+        private readonly RequestContainer<SubSonicDownloadRequest> _queue = [];
+        private readonly Logger _logger = logger;
+        private readonly RequestHandler _requesthandler = [];
         private readonly PostProcessRunner _postProcess = new(corruptionScanner, corruptionFailureHandler, preImportTagger, metadataFactory, diskProvider, logger);
 
         private readonly IEnumerable<IHttpRequestInterceptor> _requestInterceptors = requestInterceptors;
         private readonly IAudioTagService _audioTagService = audioTagService;
 
-        protected override async Task<SubSonicDownloadRequest> CreateDownloadRequest(
+        public async Task<string> Download(RemoteAlbum remoteAlbum, IIndexer indexer, NamingConfig namingConfig, SubSonicClient provider)
+        {
+            try
+            {
+                SubSonicDownloadRequest downloadRequest = await CreateDownloadRequest(remoteAlbum, indexer, namingConfig, provider);
+                _queue.Add(downloadRequest);
+
+                _logger.Debug($"Added download: {downloadRequest.ID} | {remoteAlbum.Release.Title}");
+                return downloadRequest.ID;
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, $"Error adding download for album: {remoteAlbum.Release.Title}");
+                throw;
+            }
+        }
+
+        public IEnumerable<DownloadClientItem> GetItems() => _queue.Select(x => x.ClientItem);
+
+        public void RemoveItem(DownloadClientItem item)
+        {
+            try
+            {
+                SubSonicDownloadRequest? request = _queue.ToList().Find(x => x.ID == item.DownloadId);
+                if (request == null)
+                {
+                    _logger.Warn($"Attempted to remove non-existent download item: {item.DownloadId}");
+                    return;
+                }
+                request.Dispose();
+                _queue.Remove(request);
+                _logger.Debug($"Removed download: {item.DownloadId}");
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, $"Error removing download item: {item.DownloadId}");
+            }
+        }
+
+        private async Task<SubSonicDownloadRequest> CreateDownloadRequest(
             RemoteAlbum remoteAlbum,
             IIndexer indexer,
             NamingConfig namingConfig,
@@ -52,7 +99,6 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
                 Password = provider.Settings.Password,
                 UseTokenAuth = provider.Settings.UseTokenAuth,
                 MaxDownloadSpeed = provider.Settings.MaxDownloadSpeed * 1024, // Convert KB/s to bytes/s
-                ConnectionRetries = provider.Settings.ConnectionRetries,
                 RequestTimeout = provider.Settings.RequestTimeout,
                 NamingConfig = namingConfig,
                 RequestInterceptors = _requestInterceptors,
@@ -60,7 +106,6 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
                 NumberOfAttempts = (byte)provider.Settings.ConnectionRetries,
                 ClientInfo = DownloadClientItemClientInfo.FromDownloadClient(provider, false),
                 PostProcess = _postProcess,
-                PostProcessClient = PostProcessClient.SubSonic,
                 IsTrack = isTrack,
                 ItemId = itemId,
                 PreferredFormat = (PreferredFormatEnum)provider.Settings.PreferredFormat,

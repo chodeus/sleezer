@@ -76,7 +76,7 @@ public class RequestSchedulingTests
         Assert.False(childRan);
     }
 
-    // And why BaseDownloadRequest.OrchestrationHandler exists: a separate handler frees
+    // And why SubSonicDownloadRequest.OrchestrationHandler exists: a separate handler frees
     // the download capacity the children need, at every parallelism setting.
     [Theory]
     [InlineData(1)]
