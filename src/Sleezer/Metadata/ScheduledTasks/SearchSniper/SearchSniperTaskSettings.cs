@@ -74,7 +74,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
         [FieldDefinition(9, Label = "Missing Tracks", Type = FieldType.Checkbox, HelpText = "Automatically search for albums that have missing tracks in your library.")]
         public bool SearchMissingTracks { get; set; }
 
-        [FieldDefinition(10, Label = "Cutoff Not Met", Type = FieldType.Checkbox, HelpText = "Automatically search for albums where the current quality does not meet the quality cutoff.")]
+        [FieldDefinition(10, Label = "Cutoff Not Met", Type = FieldType.Checkbox, HelpText = "Automatically search for albums whose quality or custom format score is below the profile's cutoff.")]
         public bool SearchQualityCutoffNotMet { get; set; }
 
         public string BaseUrl { get; set; } = string.Empty;

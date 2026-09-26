@@ -1,8 +1,10 @@
 using FluentValidation.Results;
 using NLog;
+using NzbDrone.Core.CustomFormats;
 using NzbDrone.Core.Datastore;
 using NzbDrone.Core.Extras.Metadata;
 using NzbDrone.Core.IndexerSearch;
+using NzbDrone.Core.MediaFiles;
 using NzbDrone.Core.Messaging.Commands;
 using NzbDrone.Core.Messaging.Events;
 using NzbDrone.Core.Music;
@@ -22,6 +24,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
         private readonly IQueueService _queueService;
         private readonly IManageCommandQueue _commandQueueManager;
         private readonly IQualityProfileService _qualityProfileService;
+        private readonly ICustomFormatCalculationService _formatService;
         private readonly IMetadataRepository _metadataRepository;
         private readonly SearchSniperRepositoryHelper _repositoryHelper;
         private readonly Logger _logger;
@@ -32,6 +35,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
             IQueueService queueService,
             IManageCommandQueue commandQueueManager,
             IQualityProfileService qualityProfileService,
+            ICustomFormatCalculationService formatService,
             IMetadataRepository metadataRepository,
             IMainDatabase database,
             IEventAggregator eventAggregator,
@@ -42,6 +46,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
             _queueService = queueService;
             _commandQueueManager = commandQueueManager;
             _qualityProfileService = qualityProfileService;
+            _formatService = formatService;
             _metadataRepository = metadataRepository;
             _repositoryHelper = new SearchSniperRepositoryHelper(database, eventAggregator, artistService);
             _logger = logger;
@@ -207,10 +212,41 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
                     eligibleAlbums, queuedAlbumIds, candidateTarget, startId, cutoffIdRange.minId);
             }
 
+            if (settings.SearchQualityCutoffNotMet && eligibleAlbums.Count < candidateTarget)
+                CollectCustomFormatCutoffUnmet(eligibleAlbums, queuedAlbumIds, candidateTarget);
+
             AssignArtistsToAlbums(eligibleAlbums.Values);
 
             _logger.Info("Collected {0} eligible album(s) for random selection", eligibleAlbums.Count);
             return [.. eligibleAlbums.Values];
+        }
+
+        private void CollectCustomFormatCutoffUnmet(Dictionary<int, Album> eligibleAlbums, HashSet<int> queuedAlbumIds, int candidateTarget)
+        {
+            Dictionary<int, QualityProfile> profiles = CustomFormatCutoff.Profiles(_qualityProfileService.All()).ToDictionary(p => p.Id);
+            (int minId, int maxId) = _repositoryHelper.GetAlbumsWithFilesIdRange(profiles.Keys);
+            if (maxId == 0)
+                return;
+
+            int startId = GetRandomStartId(minId, maxId);
+            _logger.Trace("Fetching custom format cutoff unmet albums (ID range: {0}-{1}, starting at ID: {2})...", minId, maxId, startId);
+
+            CollectFromSource(
+                lastId => _repositoryHelper.GetAlbumsWithFilesBatch(profiles.Keys, lastId, BatchSize),
+                eligibleAlbums, queuedAlbumIds, candidateTarget, startId, minId,
+                batch => KeepCustomFormatCutoffUnmet(batch, profiles),
+                maxIterations: int.MaxValue);
+        }
+
+        private List<Album> KeepCustomFormatCutoffUnmet(List<Album> batch, Dictionary<int, QualityProfile> profiles)
+        {
+            Dictionary<int, TrackFile> firstFiles = _repositoryHelper.GetFirstTrackFiles(batch.Select(a => a.Id));
+
+            return batch.Where(a => a.Artist?.Value is { } artist
+                                    && firstFiles.TryGetValue(a.Id, out TrackFile? file)
+                                    && profiles.TryGetValue(artist.QualityProfileId, out QualityProfile? profile)
+                                    && CustomFormatCutoff.IsUnmet(profile, _formatService.ParseCustomFormat(file, artist)))
+                        .ToList();
         }
 
         private static int GetRandomStartId(int minId, int maxId)
@@ -226,11 +262,13 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
             HashSet<int> queuedAlbumIds,
             int candidateTarget,
             int startId,
-            int minId)
+            int minId,
+            Func<List<Album>, List<Album>>? keep = null,
+            int maxIterations = 100)
         {
+            // Every batch advances lastId, and the wrap check ends a full pass, so an uncapped scan still stops.
             int lastId = startId - 1;
             bool hasWrapped = false;
-            int maxIterations = 100;
             int iterations = 0;
 
             while (eligibleAlbums.Count < candidateTarget && iterations++ < maxIterations)
@@ -248,7 +286,8 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
                     break;
                 }
 
-                foreach (Album album in batch)
+                // Paging follows the unfiltered batch; keep only narrows what is collected.
+                foreach (Album album in keep?.Invoke(batch) ?? batch)
                 {
                     if (hasWrapped && album.Id >= startId)
                         return;
@@ -269,6 +308,9 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
                 }
 
                 lastId = batch[^1].Id;
+
+                if (hasWrapped && lastId >= startId)
+                    return;
 
                 if (!hasWrapped && batch.Count < BatchSize)
                 {
