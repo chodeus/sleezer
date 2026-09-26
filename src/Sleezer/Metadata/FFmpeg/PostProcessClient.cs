@@ -19,9 +19,6 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
         [FieldOption(Label = "Bandcamp")]
         Bandcamp = 5,
 
-        [FieldOption(Label = "TripleTriple")]
-        TripleTriple = 8,
-
         [FieldOption(Label = "SubSonic")]
         SubSonic = 9,
     }
@@ -34,8 +31,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
             PostProcessClient.Qobuz or
             PostProcessClient.Tidal or
             PostProcessClient.Deezer or
-            PostProcessClient.Bandcamp or
-            PostProcessClient.TripleTriple => true,
+            PostProcessClient.Bandcamp => true,
 
             // Fail closed: a client added later must be classified deliberately. Slskd and
             // SubSonic can both serve a genuine CD rip.

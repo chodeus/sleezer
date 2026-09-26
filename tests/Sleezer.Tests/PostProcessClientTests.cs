@@ -13,7 +13,6 @@ public class PostProcessClientTests
     [InlineData(PostProcessClient.Tidal)]
     [InlineData(PostProcessClient.Deezer)]
     [InlineData(PostProcessClient.Bandcamp)]
-    [InlineData(PostProcessClient.TripleTriple)]
     public void Storefronts_can_only_deliver_a_digital_release(PostProcessClient client)
     {
         Assert.True(client.IsDigitalStorefront());
