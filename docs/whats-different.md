@@ -11,17 +11,17 @@ Sleezer started as a merge of the plugins listed under [Credits](../README.md#cr
 | Qobuz | Lidarr.Plugin.Qobuz | A rotated app secret is picked up without a restart. Credentials kept out of logs. Preview-only tracks skipped. Import lists fixed. |
 | Bandcamp | lidarr-plugin-bandcamp | Largely rewritten. Fixes a security hole and multi-GB archives loaded into memory. |
 | Soulseek | Tubifarry | See [Soulseek search](#soulseek-search) and [Downloads and imports](#downloads-and-imports). |
-| Web clients | Tubifarry | Lucida and DABmusic removed, because Cloudflare blocks them. The rest get scanning and tagging. |
+| Web clients | Tubifarry | Lucida and DABmusic removed, because they no longer deliver downloads. The rest get scanning and tagging. |
 
 ## Soulseek search
 
 | Before | Sleezer |
 |---|---|
-| 44% of searches found nothing | Queries fixed: `G‐Eazy`-style punctuation, plain `Artist Album` first, no chopped words |
+| 44% of searches found nothing | Queries fixed: Unicode punctuation in names, plain `Artist Album` first, no chopped words |
 | Multi-disc shares split per disc | One release |
 | Share ranking never reached Lidarr | Ranking applied, and users who just failed rank lower |
 | Singles stitched from several users | One source per single |
-| A dead share retried every search | Backs off 1 h, then 6 h, then 24 h |
+| A Soulseek user whose download failed was tried again on the next search | That release skips automatic searches for 1 h, then 6 h, then 24 h |
 
 ## Store search and titles
 
@@ -43,9 +43,9 @@ Store search covers Deezer, Qobuz, Tidal and Bandcamp.
 | Corrupt downloads imported as-is | Files decoded first, and bad downloads re-searched (opt-in per client) |
 | Tags left as the source named them | Retagged to the release Lidarr asked for (opt-in per client) |
 | Store downloads matched to a CD release | Matched to the Digital Media release of the same length |
-| Singles from album rips failed import | Matched by track title |
+| Singles taken from full-album shares failed import | Matched by track title |
 | Store titles with `(feat. X)` failed Lidarr's 80% match | Featured credits ignored when matching |
-| Soulseek files trusted by name alone | Audio fingerprint (AcoustID) checked against the wanted recording: always for singles from album rips, optionally for every file |
+| Soulseek files trusted by name alone | Audio fingerprint (AcoustID) checked against the wanted recording: always for singles taken from full-album shares, optionally for every file |
 | "Found multiple artists" stuck forever | Resolved from grab history |
 | Soulseek: restarts, retries and shared folders lost downloads | Downloads resume, retries import, no cross-deletes |
 | Empty download folders pile up | Swept automatically |

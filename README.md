@@ -31,15 +31,15 @@ Full comparison with the plugins Sleezer started from: [What Sleezer changes](do
 
 ### Deezer Setup 🎧
 
-Sleezer talks to Deezer directly (no Deemix middleman) using the `DeezNET` library.
+Sleezer talks to Deezer directly using the `DeezNET` library.
 
-> ⚠️ Deezer actively moves against downloading tools. Sleezer does its best, but there is no guarantee you won't be rate-limited or have an ARL banned.
+> ⚠️ Downloads use your own Deezer account, and its subscription decides which qualities are available.
 
 #### Setting Up the Deezer Indexer
 
 1. Go to `Settings -> Indexers` and click **Add**.
 2. In the modal, select `Deezer` (under **Other** at the bottom).
-3. Paste your personal ARL into the box. If you leave it blank the plugin will pick a public ARL automatically — this works but is less reliable.
+3. Paste your account's ARL into the box.
 4. Press **Save**. The first save performs a handful of auth calls and can take a few seconds.
 
 #### Setting Up the Deezer Download Client
@@ -51,9 +51,8 @@ Sleezer talks to Deezer directly (no Deemix middleman) using the `DeezNET` libra
 
 #### ARL tips
 
-* If your downloads suddenly start failing, rotate the ARL before anything else. Most "Deezer broke" reports are single-ARL bans.
+* If downloads suddenly start failing, copy the ARL again: it changes when you log out or the session expires.
 * **Strict Matching** (on by default) verifies every result against the MusicBrainz release: artist, title, track count and total length must line up; remix, live, acoustic and extended variants are rejected unless the album itself is one; and a plain product is rejected when MusicBrainz holds no plain edition of that length. A failing result is not hidden — it reaches Lidarr carrying the reason, so automatic search skips it while interactive search shows why and still lets you grab it. Various Artists compilations are dropped outright, because two such library entries make Lidarr's artist lookup throw. The release-year check runs under the same setting. Turn it off per indexer if a catalogue's metadata is systematically odd.
-* Leaving the ARL field blank uses Sleezer's public-ARL rotation — works but slower and occasionally stale.
 
 ### Tidal Setup 🌊
 
@@ -89,13 +88,7 @@ Tidal's device-code OAuth flow doesn't redirect back to Lidarr after you authori
 * The post-processing pipeline (corrupt-file scan + pre-import tagging) runs on Tidal downloads, just like Deezer and Slskd.
 * If searches start returning errors that mention `countryCode parameter missing`, that's Tidal's confusing way of saying your session expired. Sleezer detects this and forces a refresh; if that fails, re-authenticate via the indexer settings.
 * **Your storefront is the usual explanation.** After authenticating, the indexer shows an **Account Storefront** field (under Advanced) — the two-letter country Tidal licenses your account against. Testing the indexer logs it too. Download failures now name it directly: `not licensed lossless in AU`, or `either not licensed in AU or removed from Tidal`.
-  <details>
-  <summary>Why a VPN does not fix this</summary>
-
-  Tidal enforces regional entitlement **on the account**, not on the `countryCode` a client sends or the IP it connects from. Sleezer sends your account's own country because every other Tidal client does the same — tiddl and orpheusdl-tidal included; none of them attempt to override it, because it does not work. Connecting through a VPN leaves the account's storefront unchanged.
-
-  The only thing that actually changes it is a Tidal account registered in another country. Tidal's own support states the country cannot be altered on an existing account: you create a new one with a different email and an in-country billing address, and they migrate playlists and favourites across.
-  </details>
+  Tidal licenses music per country, and the country belongs to your account. What's available is what Tidal offers in that country.
 * A Tidal download failing with `Tidal returned codec 'MP4A' ... despite a LOSSLESS request` is expected — the grab is failed deliberately so Lidarr re-picks another source instead of importing AAC into a Lossless bucket.
   <details>
   <summary>Why this happens</summary>
@@ -208,7 +201,7 @@ Sleezer includes both the Slskd indexer and download client, so Lidarr can searc
 
 A few Slskd behaviours worth knowing, all born from live-log audits of real-world failure modes:
 
-* **Remix/variant qualifiers are hard boundaries.** A folder named `Song (Colyn Remix)` will never match a search for the plain `Song`, and vice versa — same for `rework`, `bootleg`, `VIP`, `edit`, `instrumental`, `acapella`, and `karaoke`. Two releases that each *name* a remixer only match when those names agree; a generic qualifier (`Remixes` with nobody named) matches any remix release. Deluxe/remastered editions are unaffected.
+* **Remix/variant qualifiers are hard boundaries.** A folder named `Song (Artist Remix)` will never match a search for the plain `Song`, and vice versa — same for `rework`, `bootleg`, `VIP`, `edit`, `instrumental`, `acapella`, and `karaoke`. Two releases that each *name* a remixer only match when those names agree; a generic qualifier (`Remixes` with nobody named) matches any remix release. Deluxe/remastered editions are unaffected.
 * **Recently-failed sources sit out automatic searches on an escalating clock.** When a download fails ("File not shared.", remote cancel), that release is excluded from automatic grabs — one hour after a first failure, six after a second, a full day from the third — so a transiently busy peer retries quickly while a dead share stops being hammered. Interactive search still shows everything — a manual re-grab is deliberate.
 * **Failed grabs retry cleanly.** A re-grab after a failure tracks under a fresh download id, so a completed retry imports instead of being silently ignored by Lidarr's tracked-download cache (which permanently remembers the failed id until a restart).
 * **Downloads survive Lidarr restarts.** In-flight and completed Slskd transfers re-attach to their grabs after a restart — including multi-disc and retried grabs — so nothing sits finished in Slskd, invisible to Lidarr.
@@ -219,10 +212,10 @@ A few Slskd behaviours worth knowing, all born from live-log audits of real-worl
 Sleezer also ships a family of "web-client" indexers inherited from Tubifarry. These are third-party music services that vary in uptime and quality — Sleezer isn't responsible for any of them.
 
 **Supported:**
-* **T2Tunes** — a music-downloading service backed by Amazon Music.
+* **T2Tunes** — a third-party web service.
 * **SubSonic** — a music-streaming API standard with broad compatibility.
 
-Lucida and DABMusic have been removed: both sit behind Cloudflare challenges the plugin cannot pass, so they never delivered a download. Delete any Lucida or DABMusic indexer and download-client entries left in Lidarr after upgrading.
+Lucida and DABMusic have been removed because they no longer deliver downloads. Delete any Lucida or DABMusic indexer and download-client entries left in Lidarr after upgrading.
 
 The SubSonic indexer/client is generic: any service that implements the [Subsonic API](https://www.subsonic.org/pages/api.jsp) should plug in without modification.
 
@@ -326,7 +319,7 @@ Before Lidarr sees the finished folder, Sleezer reads each file's embedded tags,
 
 Same picker pattern — add the clients you want tagged.
 
-For **Single/EP** targets there's a title-driven fallback: Soulseek search results contain only the files that matched the query, so a single grabbed out of someone's album rip arrives wearing that album's tags and can never pass album-level identification. When that happens, Sleezer matches the files to the release by *track title* instead (best score first) and tags the matches. Remix/variant qualifiers still refuse to cross-match — a `(KETTAMA remix)` file never gets tagged as the original — and a file whose artist tag names someone else entirely is left untouched for Lidarr to judge.
+For **Single/EP** targets there's a title-driven fallback: Soulseek search results contain only the files that matched the query, so a single grabbed out of someone's full-album share arrives wearing that album's tags and can never pass album-level identification. When that happens, Sleezer matches the files to the release by *track title* instead (best score first) and tags the matches. Remix/variant qualifiers still refuse to cross-match — a `(… remix)` file never gets tagged as the original — and a file whose artist tag names someone else entirely is left untouched for Lidarr to judge.
 
 #### Featured artists
 
@@ -391,8 +384,8 @@ Best results come with artists that are linked across multiple metadata systems,
 * **MetaMix** — coordinates the search flow.
 
 **Examples:**
-* `similar:Pink Floyd`
-* `~20244d07-534f-4eff-b4d4-930878889970`
+* `similar:<artist name>`
+* `~<MusicBrainz artist ID>`
 
 ## Troubleshooting 🛠️
 
