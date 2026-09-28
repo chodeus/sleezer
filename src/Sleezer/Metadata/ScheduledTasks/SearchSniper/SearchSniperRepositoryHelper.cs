@@ -51,7 +51,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
                 .ToDictionary(g => g.Key, g => g.MinBy(f => f.Id)!);
         }
 
-        // Two queries per batch, matched by ImportGrabs.
+        // Up to two queries per batch, matched by ImportGrabs.
         public Dictionary<int, EntityHistory> GetGrabsOf(IReadOnlyCollection<TrackFile> files)
         {
             if (files.Count == 0)
