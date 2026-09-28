@@ -43,12 +43,19 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         }
 
         /// <summary>Structured variant qualifiers for a title; every dimension marks a different recording.</summary>
-        public sealed record VariantProfile(bool Live, bool Acoustic, bool Demo, bool Extended, string? MonoStereo, string? RemixSignature);
+        public sealed record VariantProfile(bool Live, bool Demo, bool Extended, IReadOnlySet<string> Arrangements, string? MonoStereo, string? RemixSignature)
+        {
+            public bool AnyCut => Live || Demo || Extended || Arrangements.Count > 0;
+        }
+
+        // Only the adjectives count ending a title; a noun there is a title word ("Adagio for Strings").
+        private const string ArrangementAdjectives = @"acoustic|unplugged|stripped|orchestral|symphonic|lo-?fi|re-?record(?:ed|ing)";
+        private const string ArrangementWords = ArrangementAdjectives + @"|piano|cover(?:s|ed)?|strings?|lullaby|chill|guitar";
 
         public static VariantProfile ExtractVariantProfile(string? title)
         {
             if (string.IsNullOrWhiteSpace(title))
-                return new VariantProfile(false, false, false, false, null, null);
+                return new VariantProfile(false, false, false, new HashSet<string>(), null, null);
 
             string lowered = title.ToLowerInvariant();
             string qualifierZones = string.Join(" ", BracketedContentRegex().Matches(title).Select(m => m.Value[1..^1])).ToLowerInvariant();
@@ -60,7 +67,6 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             bool live = LiveQualifierRegex().IsMatch(qualifierZones) ||
                         LiveVenueRegex().IsMatch(lowered) ||
                         TrailingWord("live", trailZone) || trailZone == "live";
-            bool acoustic = AcousticRegex().IsMatch(qualifierZones) || TrailingWord("acoustic", trailZone) || trailZone == "acoustic";
             bool demo = DemoRegex().IsMatch(qualifierZones) || TrailingWord("demos", trailZone) || TrailingWord("demo", trailZone) || trailZone is "demo" or "demos";
             bool extended = ExtendedRegex().IsMatch(qualifierZones) || ExtendedPhraseRegex().IsMatch(lowered);
 
@@ -68,8 +74,33 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
                 : StereoRegex().IsMatch(qualifierZones) ? "stereo"
                 : null;
 
-            return new VariantProfile(live, acoustic, demo, extended, monoStereo, ExtractRemixSignature(title));
+            return new VariantProfile(live, demo, extended, Arrangements(qualifierZones, lowered, trailZone), monoStereo, ExtractRemixSignature(title));
         }
+
+        // An arrangement word in brackets, before "version", "cover" and the like anywhere, or an adjective ending the title.
+        private static HashSet<string> Arrangements(string qualifierZones, string lowered, string trailZone)
+        {
+            HashSet<string> found = [.. ArrangementRegex().Matches(qualifierZones).Select(m => ArrangementKey(m.Value))];
+            foreach (Match phrase in ArrangementPhraseRegex().Matches(lowered))
+            {
+                found.Add(ArrangementKey(phrase.Groups[1].Value));
+                if (phrase.Groups[2].Success)
+                    found.Add(ArrangementKey(phrase.Groups[2].Value));
+            }
+            if (TrailingArrangementRegex().Match(trailZone) is { Success: true } trailing)
+                found.Add(ArrangementKey(trailing.Groups[1].Value));
+            return found;
+        }
+
+        private static string ArrangementKey(string word) => word switch
+        {
+            "covers" or "covered" => "cover",
+            "orchestra" => "orchestral",
+            "string" => "strings",
+            "lo-fi" => "lofi",
+            _ when word.Contains("record", StringComparison.Ordinal) => "rerecorded",
+            _ => word,
+        };
 
         /// <summary>True when the two titles name different variants; deluxe/remaster editions never conflict.</summary>
         public static bool RemixSignaturesConflict(string? searchAlbum, string? candidateName) =>
@@ -94,7 +125,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
                 return true;
             if (search.Demo ? !candidate.Demo : (candidate.Demo && !metaDemo))
                 return true;
-            if (search.Acoustic != candidate.Acoustic || search.Extended != candidate.Extended)
+            if (search.Extended != candidate.Extended || !search.Arrangements.SetEquals(candidate.Arrangements))
                 return true;
 
             if (search.MonoStereo != null && candidate.MonoStereo != null && search.MonoStereo != candidate.MonoStereo)
@@ -122,8 +153,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         public static bool HasVariantQualifier(string? title)
         {
             VariantProfile profile = ExtractVariantProfile(title);
-            return profile.Live || profile.Acoustic || profile.Demo || profile.Extended ||
-                   profile.MonoStereo != null || profile.RemixSignature != null;
+            return profile.AnyCut || profile.MonoStereo != null || profile.RemixSignature != null;
         }
 
         /// <summary>True when a TRACK title is itself a variant cut. Narrow on purpose — "(radio edit)" is the main track of most singles.</summary>
@@ -132,8 +162,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             if (string.IsNullOrWhiteSpace(title))
                 return false;
 
-            VariantProfile profile = ExtractVariantProfile(title);
-            return profile.Live || profile.Acoustic || profile.Demo || profile.Extended || HasOnlyRemixFamilyQualifiers(title);
+            return ExtractVariantProfile(title).AnyCut || HasOnlyRemixFamilyQualifiers(title);
         }
 
         /// <summary>Removes bracketed segments; shared so callers don't re-declare the regex.</summary>
@@ -214,7 +243,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             if (components.Count == 1)
                 return ExtractVariantProfile(components[0]);
 
-            bool live = false, acoustic = false, demo = false, extended = false;
+            bool live = false, demo = false, extended = false;
+            HashSet<string> arrangements = [];
             string? monoStereo = null;
             string? remixSignature = null;
 
@@ -224,14 +254,14 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             {
                 VariantProfile profile = ExtractVariantProfile(component);
                 live |= profile.Live;
-                acoustic |= profile.Acoustic;
                 demo |= profile.Demo;
                 extended |= profile.Extended;
+                arrangements.UnionWith(profile.Arrangements);
                 monoStereo ??= profile.MonoStereo;
                 remixSignature ??= profile.RemixSignature;
             }
 
-            return new VariantProfile(live, acoustic, demo, extended, monoStereo, remixSignature);
+            return new VariantProfile(live, demo, extended, arrangements, monoStereo, remixSignature);
         }
 
         private static bool HasSecondaryType(IReadOnlyCollection<string>? types, string name) =>
@@ -269,10 +299,10 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         [GeneratedRegex(@"[\(\[\{].*?[\)\]\}]", RegexOptions.Compiled)]
         private static partial Regex BracketedContentRegex();
 
-        [GeneratedRegex(@"\b(remix(es|ed)?|rmx|re-?work(ed)?|bootleg|vip|flip|edit|instrumentals?|a?\s?capp?ellas?|karaokes?|sped[\s-]?up|slowed|nightcore|daycore|reverb|8d|mashups?|cover(ed)?\s+by)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+        [GeneratedRegex(@"\b(remix(es|ed)?|rmx|re-?work(ed)?|bootleg|vip|flip|dub|edit|instrumentals?|a?\s?capp?ellas?|karaokes?|sped[\s-]?up|slowed|nightcore|daycore|reverb|8d|mashups?|cover(ed)?\s+by)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
         private static partial Regex RemixKeywordRegex();
 
-        [GeneratedRegex(@"\b(remix(es|ed)?|rmx|re-?work(ed)?|bootleg|vip|flip|mashups?)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+        [GeneratedRegex(@"\b(remix(es|ed)?|rmx|re-?work(ed)?|bootleg|vip|flip|dub|mashups?)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
         private static partial Regex GenuineRemixKeywordRegex();
 
         [GeneratedRegex(@"\blive\b", RegexOptions.Compiled)]
@@ -280,9 +310,6 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 
         [GeneratedRegex(@"\blive\s+(at|in|from)\b", RegexOptions.Compiled)]
         private static partial Regex LiveVenueRegex();
-
-        [GeneratedRegex(@"\bacoustic\b", RegexOptions.Compiled)]
-        private static partial Regex AcousticRegex();
 
         [GeneratedRegex(@"\bdemos?\b", RegexOptions.Compiled)]
         private static partial Regex DemoRegex();
@@ -292,6 +319,17 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 
         [GeneratedRegex(@"\bextended\s+(mix|version|edit)\b", RegexOptions.Compiled)]
         private static partial Regex ExtendedPhraseRegex();
+
+        // A credit ("piano: <name>") or a work ("string quartet") names no arrangement.
+        [GeneratedRegex(@"\b(?:" + ArrangementWords + @")\b(?!\s*:|\s+(?:concerto|sonata|trio|quartet|quintet)s?\b)", RegexOptions.Compiled)]
+        private static partial Regex ArrangementRegex();
+
+        // Alone, "orchestra" names the ensemble; only "orchestra version" and the like mark an arrangement.
+        [GeneratedRegex(@"\b(" + ArrangementWords + @"|orchestra)\s+(?:version|ver|(covers?)|instrumental|mix|edit)\b", RegexOptions.Compiled)]
+        private static partial Regex ArrangementPhraseRegex();
+
+        [GeneratedRegex(@"(?:^|[\s-])(" + ArrangementAdjectives + @")$", RegexOptions.Compiled)]
+        private static partial Regex TrailingArrangementRegex();
 
         [GeneratedRegex(@"\bmono\b", RegexOptions.Compiled)]
         private static partial Regex MonoRegex();
