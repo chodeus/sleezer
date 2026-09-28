@@ -50,7 +50,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 
         // Only the adjectives count ending a title; a noun there is a title word ("Adagio for Strings").
         private const string ArrangementAdjectives = @"acoustic|unplugged|stripped|orchestral|symphonic|lo-?fi|re-?record(?:ed|ing)";
-        private const string ArrangementWords = ArrangementAdjectives + @"|piano|covers?|strings?|lullaby|chill|guitar";
+        private const string ArrangementWords = ArrangementAdjectives + @"|piano|cover(?:s|ed)?|strings?|lullaby|chill|guitar";
 
         public static VariantProfile ExtractVariantProfile(string? title)
         {
@@ -94,7 +94,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 
         private static string ArrangementKey(string word) => word switch
         {
-            "covers" => "cover",
+            "covers" or "covered" => "cover",
             "orchestra" => "orchestral",
             "string" => "strings",
             "lo-fi" => "lofi",

@@ -274,6 +274,8 @@ public class VariantProfileTests
     [InlineData("Song", "Song - Piano Cover", true)]
     [InlineData("Song (Piano Cover)", "Song - Piano Cover", false)]
     [InlineData("Song (Piano Cover)", "Song (Piano Version)", true)]                // a cover is its own cut
+    [InlineData("Song (Night Bus Remix)", "Song (Covered by Night Bus)", true)]     // same name, cover vs remix
+    [InlineData("Song (Cover by Night Bus)", "Song (Covered by Night Bus)", false)]
     [InlineData("Song", "Song - Acoustic Version", true)]
     [InlineData("Song", "Song (Stripped)", true)]
     [InlineData("Song (Stripped)", "Song (Orchestral Version)", true)]              // two different arrangements
@@ -324,6 +326,7 @@ public class VariantProfileTests
     {
         Assert.True(VariantQualifiers.IsVariantTrack("Harbor Lights (piano version)"));
         Assert.True(VariantQualifiers.HasVariantQualifier("Harbor Lights - Unplugged"));
+        Assert.True(VariantQualifiers.IsVariantTrack("Harbor Lights (Covered by Night Bus)"));
         Assert.False(VariantQualifiers.IsVariantTrack("Piano Man"));
         Assert.False(VariantQualifiers.IsVariantTrack("Night Lullaby"));
     }
