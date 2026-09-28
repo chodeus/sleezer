@@ -3,6 +3,7 @@ using NLog;
 using NzbDrone.Core.CustomFormats;
 using NzbDrone.Core.Datastore;
 using NzbDrone.Core.Extras.Metadata;
+using NzbDrone.Core.History;
 using NzbDrone.Core.IndexerSearch;
 using NzbDrone.Core.MediaFiles;
 using NzbDrone.Core.Messaging.Commands;
@@ -242,10 +243,16 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
         {
             Dictionary<int, TrackFile> firstFiles = _repositoryHelper.GetFirstTrackFiles(batch.Select(a => a.Id));
 
-            return batch.Where(a => a.Artist?.Value is { } artist
+            List<Album> unmet = batch.Where(a => a.Artist?.Value is { } artist
                                     && firstFiles.TryGetValue(a.Id, out TrackFile? file)
                                     && profiles.TryGetValue(artist.QualityProfileId, out QualityProfile? profile)
                                     && CustomFormatCutoff.IsUnmet(profile, _formatService.ParseCustomFormat(file, artist)))
+                        .ToList();
+
+            // A store copy is named for the release it landed on, often a CD one, so the grab can meet what the name misses.
+            Dictionary<int, EntityHistory> grabs = _repositoryHelper.GetGrabsOf([.. unmet.Select(a => firstFiles[a.Id])]);
+            return unmet.Where(a => !grabs.TryGetValue(firstFiles[a.Id].Id, out EntityHistory? grab)
+                                    || CustomFormatCutoff.IsUnmet(profiles[a.Artist!.Value.QualityProfileId], _formatService.ParseCustomFormat(grab, a.Artist.Value)))
                         .ToList();
         }
 

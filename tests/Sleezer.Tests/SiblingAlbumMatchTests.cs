@@ -195,4 +195,65 @@ public class SiblingAlbumMatchTests
 
         Assert.Null(Sibling(Copy(D("2025-04-24")), Album(2, "Stateside", null), original));
     }
+
+    private static StoreReleaseInfo Titled(string? title) => new() { Title = "copy", CandidateTitle = title };
+
+    private static Album? Named(StoreReleaseInfo copy, Album target, params Album[] others) =>
+        SiblingAlbumMatch.NamedSibling(copy, target, [target, .. others]);
+
+    // The store dates the re-recording like the original, so only its title says which album it is.
+    [Fact]
+    public void A_copy_titled_as_the_re_recording_belongs_to_it()
+    {
+        Album original = Album(1, "Home Is Where We Start", D("2012-08-28"));
+        Album rerecorded = Album(2, "Home Is Where We Start: Rekindled", D("2024-03-01"));
+
+        Assert.Same(rerecorded, Named(Titled("Home Is Where We Start (Rekindled)"), original, rerecorded));
+    }
+
+    [Fact]
+    public void A_plain_copy_is_not_claimed_by_a_qualified_sibling()
+    {
+        Album original = Album(1, "Home Is Where We Start", D("2012-08-28"));
+        Album rerecorded = Album(2, "Home Is Where We Start: Rekindled", D("2024-03-01"));
+
+        Assert.Null(Named(Titled("Home Is Where We Start"), original, rerecorded));
+    }
+
+    // Only the whole title names a sibling: a plain title is also the start of every edition's.
+    [Fact]
+    public void A_title_that_only_starts_a_siblings_title_is_not_its()
+    {
+        Album deluxe = Album(1, "Home Is Where We Start (Deluxe)", D("2013-08-28"));
+        Album rerecorded = Album(2, "Home Is Where We Start: Rekindled", D("2024-03-01"));
+
+        Assert.Null(Named(Titled("Home Is Where We Start"), deluxe, rerecorded));
+    }
+
+    [Fact]
+    public void A_copy_titled_as_the_searched_album_stays_when_a_twin_shares_the_title()
+    {
+        Album searched = Album(1, "Harbor Lights (Night Bus Remix)", D("2026-01-09"));
+        Album twin = Album(2, "Harbor Lights (Night Bus remix)", D("2026-01-09"));
+
+        Assert.Null(Named(Titled("Harbor Lights (Night Bus Remix)"), searched, twin));
+    }
+
+    [Fact]
+    public void Letter_case_does_not_hide_the_sibling()
+    {
+        Album single = Album(1, "Harbor Lights", D("2025-06-06"));
+        Album remix = Album(2, "Harbor Lights (Night Bus remix)", D("2026-01-09"));
+
+        Assert.Same(remix, Named(Titled("HARBOR LIGHTS (NIGHT BUS REMIX)"), single, remix));
+    }
+
+    // An album titled only in punctuation normalizes to nothing, the same as a missing title.
+    [Fact]
+    public void A_copy_with_no_title_is_left_alone()
+    {
+        Album single = Album(1, "Harbor Lights", D("2025-06-06"));
+
+        Assert.Null(Named(Titled(null), single, Album(2, "!!!", D("2025-09-01"))));
+    }
 }

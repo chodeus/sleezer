@@ -12,6 +12,17 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         // Versions that came out closer together than this can't be told apart by date.
         private static readonly TimeSpan Margin = TimeSpan.FromDays(14);
 
+        /// <summary>The artist's other album whose full title, qualifiers included, the store copy carries while the searched one's differs.</summary>
+        // Stores date a re-recording like its original, so the title is the only tell DatedSibling can't see.
+        public static Album? NamedSibling(StoreReleaseInfo release, Album target, IEnumerable<Album> artistAlbums)
+        {
+            string named = StoreReleaseVerifier.Normalize(string.IsNullOrWhiteSpace(release.CandidateTitle) ? release.Album : release.CandidateTitle);
+            if (named.Length == 0 || named == StoreReleaseVerifier.Normalize(target.Title))
+                return null;
+
+            return artistAlbums.FirstOrDefault(a => a.Id != target.Id && StoreReleaseVerifier.Normalize(a.Title) == named);
+        }
+
         public static SiblingMatch? DatedSibling(StoreReleaseInfo release, Album target, IEnumerable<Album> artistAlbums, Func<int, List<AlbumRelease>> releasesOf)
         {
             if (AlbumDates.IsUndated(release, DateTime.UtcNow) || YearOnly(release.PublishDate)
