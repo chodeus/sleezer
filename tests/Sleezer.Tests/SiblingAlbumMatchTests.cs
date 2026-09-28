@@ -220,6 +220,17 @@ public class SiblingAlbumMatchTests
         Assert.Null(Named(Titled("Home Is Where We Start"), original, rerecorded));
     }
 
+    // A store title that normalizes to nothing hands over to the album name, as DatedSibling's does.
+    [Fact]
+    public void An_unjudgeable_store_title_falls_back_to_the_album_name()
+    {
+        Album original = Album(1, "Home Is Where We Start", D("2012-08-28"));
+        Album rerecorded = Album(2, "Home Is Where We Start: Rekindled", D("2024-03-01"));
+        StoreReleaseInfo copy = new() { Title = "copy", CandidateTitle = "...", Album = "Home Is Where We Start (Rekindled)" };
+
+        Assert.Same(rerecorded, Named(copy, original, rerecorded));
+    }
+
     // Only the whole title names a sibling: a plain title is also the start of every edition's.
     [Fact]
     public void A_title_that_only_starts_a_siblings_title_is_not_its()

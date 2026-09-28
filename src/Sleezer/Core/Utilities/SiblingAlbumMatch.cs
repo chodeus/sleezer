@@ -6,7 +6,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
     /// <summary>The sibling a store copy's date points at, with the two dates that were compared.</summary>
     public readonly record struct SiblingMatch(Album Sibling, DateTime SiblingDate, DateTime TargetDate);
 
-    /// <summary>Finds the artist's other album under the searched title that a store copy's date points at.</summary>
+    /// <summary>Finds the artist's other album a store copy belongs to: the one its title names, or the one its date points at under the searched title.</summary>
     public static class SiblingAlbumMatch
     {
         // Versions that came out closer together than this can't be told apart by date.
@@ -16,7 +16,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         // Stores date a re-recording like its original, so the title is the only tell DatedSibling can't see.
         public static Album? NamedSibling(StoreReleaseInfo release, Album target, IEnumerable<Album> artistAlbums)
         {
-            string named = StoreReleaseVerifier.Normalize(string.IsNullOrWhiteSpace(release.CandidateTitle) ? release.Album : release.CandidateTitle);
+            string named = StoreReleaseVerifier.Normalize(OwnTitle(release));
             if (named.Length == 0 || named == StoreReleaseVerifier.Normalize(target.Title))
                 return null;
 
@@ -30,7 +30,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
                 return null;
 
             // Only a judgeable title can name a sibling: TitleMatches passes an empty one, which here would reject.
-            string? title = new[] { release.CandidateTitle, release.Album, target.Title }.FirstOrDefault(StoreReleaseVerifier.TitleJudgeable);
+            string? title = OwnTitle(release) ?? (StoreReleaseVerifier.TitleJudgeable(target.Title) ? target.Title : null);
             if (title == null)
                 return null;
 
@@ -52,6 +52,10 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
                 .Select(d => ((TimeSpan Gap, DateTime Date)?)((published - d).Duration(), d))
                 .OrderBy(n => n!.Value.Gap)
                 .FirstOrDefault();
+
+        // The store's own title for the copy: one it can't judge falls through to the album name.
+        private static string? OwnTitle(StoreReleaseInfo release) =>
+            new[] { release.CandidateTitle, release.Album }.FirstOrDefault(StoreReleaseVerifier.TitleJudgeable);
 
         // MusicBrainz and the stores both record a year-only date as 1 January, too coarse to compare by days.
         private static bool YearOnly(DateTime date) => date is { Month: 1, Day: 1 };
