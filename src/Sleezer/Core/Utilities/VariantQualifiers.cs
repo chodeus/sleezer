@@ -43,12 +43,15 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         }
 
         /// <summary>Structured variant qualifiers for a title; every dimension marks a different recording.</summary>
-        public sealed record VariantProfile(bool Live, bool Acoustic, bool Demo, bool Extended, string? MonoStereo, string? RemixSignature);
+        public sealed record VariantProfile(bool Live, bool Acoustic, bool Demo, bool Extended, bool Piano, bool Unplugged, string? MonoStereo, string? RemixSignature)
+        {
+            public bool AnyCut => Live || Acoustic || Demo || Extended || Piano || Unplugged;
+        }
 
         public static VariantProfile ExtractVariantProfile(string? title)
         {
             if (string.IsNullOrWhiteSpace(title))
-                return new VariantProfile(false, false, false, false, null, null);
+                return new VariantProfile(false, false, false, false, false, false, null, null);
 
             string lowered = title.ToLowerInvariant();
             string qualifierZones = string.Join(" ", BracketedContentRegex().Matches(title).Select(m => m.Value[1..^1])).ToLowerInvariant();
@@ -63,12 +66,14 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             bool acoustic = AcousticRegex().IsMatch(qualifierZones) || TrailingWord("acoustic", trailZone) || trailZone == "acoustic";
             bool demo = DemoRegex().IsMatch(qualifierZones) || TrailingWord("demos", trailZone) || TrailingWord("demo", trailZone) || trailZone is "demo" or "demos";
             bool extended = ExtendedRegex().IsMatch(qualifierZones) || ExtendedPhraseRegex().IsMatch(lowered);
+            bool piano = PianoRegex().IsMatch(qualifierZones) || PianoPhraseRegex().IsMatch(lowered) || TrailingWord("piano", trailZone);
+            bool unplugged = UnpluggedRegex().IsMatch(qualifierZones) || TrailingWord("unplugged", trailZone);
 
             string? monoStereo = MonoRegex().IsMatch(qualifierZones) ? "mono"
                 : StereoRegex().IsMatch(qualifierZones) ? "stereo"
                 : null;
 
-            return new VariantProfile(live, acoustic, demo, extended, monoStereo, ExtractRemixSignature(title));
+            return new VariantProfile(live, acoustic, demo, extended, piano, unplugged, monoStereo, ExtractRemixSignature(title));
         }
 
         /// <summary>True when the two titles name different variants; deluxe/remaster editions never conflict.</summary>
@@ -94,7 +99,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
                 return true;
             if (search.Demo ? !candidate.Demo : (candidate.Demo && !metaDemo))
                 return true;
-            if (search.Acoustic != candidate.Acoustic || search.Extended != candidate.Extended)
+            if (search.Acoustic != candidate.Acoustic || search.Extended != candidate.Extended
+                || search.Piano != candidate.Piano || search.Unplugged != candidate.Unplugged)
                 return true;
 
             if (search.MonoStereo != null && candidate.MonoStereo != null && search.MonoStereo != candidate.MonoStereo)
@@ -122,8 +128,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         public static bool HasVariantQualifier(string? title)
         {
             VariantProfile profile = ExtractVariantProfile(title);
-            return profile.Live || profile.Acoustic || profile.Demo || profile.Extended ||
-                   profile.MonoStereo != null || profile.RemixSignature != null;
+            return profile.AnyCut || profile.MonoStereo != null || profile.RemixSignature != null;
         }
 
         /// <summary>True when a TRACK title is itself a variant cut. Narrow on purpose — "(radio edit)" is the main track of most singles.</summary>
@@ -132,8 +137,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             if (string.IsNullOrWhiteSpace(title))
                 return false;
 
-            VariantProfile profile = ExtractVariantProfile(title);
-            return profile.Live || profile.Acoustic || profile.Demo || profile.Extended || HasOnlyRemixFamilyQualifiers(title);
+            return ExtractVariantProfile(title).AnyCut || HasOnlyRemixFamilyQualifiers(title);
         }
 
         /// <summary>Removes bracketed segments; shared so callers don't re-declare the regex.</summary>
@@ -214,7 +218,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             if (components.Count == 1)
                 return ExtractVariantProfile(components[0]);
 
-            bool live = false, acoustic = false, demo = false, extended = false;
+            bool live = false, acoustic = false, demo = false, extended = false, piano = false, unplugged = false;
             string? monoStereo = null;
             string? remixSignature = null;
 
@@ -227,11 +231,13 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
                 acoustic |= profile.Acoustic;
                 demo |= profile.Demo;
                 extended |= profile.Extended;
+                piano |= profile.Piano;
+                unplugged |= profile.Unplugged;
                 monoStereo ??= profile.MonoStereo;
                 remixSignature ??= profile.RemixSignature;
             }
 
-            return new VariantProfile(live, acoustic, demo, extended, monoStereo, remixSignature);
+            return new VariantProfile(live, acoustic, demo, extended, piano, unplugged, monoStereo, remixSignature);
         }
 
         private static bool HasSecondaryType(IReadOnlyCollection<string>? types, string name) =>
@@ -292,6 +298,15 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 
         [GeneratedRegex(@"\bextended\s+(mix|version|edit)\b", RegexOptions.Compiled)]
         private static partial Regex ExtendedPhraseRegex();
+
+        [GeneratedRegex(@"\bpiano\b", RegexOptions.Compiled)]
+        private static partial Regex PianoRegex();
+
+        [GeneratedRegex(@"\bpiano\s+ver(sion)?\b", RegexOptions.Compiled)]
+        private static partial Regex PianoPhraseRegex();
+
+        [GeneratedRegex(@"\bunplugged\b", RegexOptions.Compiled)]
+        private static partial Regex UnpluggedRegex();
 
         [GeneratedRegex(@"\bmono\b", RegexOptions.Compiled)]
         private static partial Regex MonoRegex();

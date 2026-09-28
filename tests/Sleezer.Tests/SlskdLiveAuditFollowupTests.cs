@@ -260,9 +260,39 @@ public class VariantProfileTests
     [InlineData("Album", "Album (Remastered)", false)]
     [InlineData("Live", "AC-DC - Live", false)]                                       // album literally titled Live
     [InlineData("One More Light Live", "Linkin Park - One More Light Live [FLAC]", false)]  // trailing qualifier survives suffixes
+    [InlineData("Song", "Song (Piano Version)", true)]
+    [InlineData("Song (Piano Version)", "Song", true)]
+    [InlineData("Song", "Song - Piano Version", true)]
+    [InlineData("Song", "Song - Piano", true)]
+    [InlineData("Song (Piano Version)", "Song (Piano Ver.)", false)]
+    [InlineData("Song (Acoustic)", "Song (Piano Version)", true)]                   // two different cuts
+    [InlineData("Song", "Song (Unplugged)", true)]
+    [InlineData("Song Unplugged", "Song - Unplugged", false)]
+    [InlineData("Piano Man", "Piano Man (Remastered)", false)]                      // 'piano' as a title word
     public void RemixSignaturesConflict_covers_variant_dimensions(string searchAlbum, string folder, bool expected)
     {
         Assert.Equal(expected, VariantQualifiers.RemixSignaturesConflict(searchAlbum, folder));
+    }
+
+    // The Remix type forgives remix text, not the target's own piano or unplugged cut.
+    [Fact]
+    public void A_remix_typed_piano_target_rejects_another_remix()
+    {
+        Assert.True(VariantQualifiers.RemixSignaturesConflict("Harbor Lights (piano unplugged)", "Harbor Lights (Night Bus Remix)", ["Remix"]));
+    }
+
+    [Fact]
+    public void A_piano_qualifier_on_the_parent_folder_counts()
+    {
+        Assert.True(VariantQualifiers.RemixSignaturesConflict("Album", ["Album", "Album (Piano Versions)"], null));
+    }
+
+    [Fact]
+    public void Piano_and_unplugged_cuts_count_as_variant_tracks()
+    {
+        Assert.True(VariantQualifiers.IsVariantTrack("Harbor Lights (piano version)"));
+        Assert.True(VariantQualifiers.HasVariantQualifier("Harbor Lights - Unplugged"));
+        Assert.False(VariantQualifiers.IsVariantTrack("Piano Man"));
     }
 
     [Fact]
