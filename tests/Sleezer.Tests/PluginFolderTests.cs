@@ -3,8 +3,6 @@ using Xunit;
 
 namespace Sleezer.Tests;
 
-// Lidarr installs into plugins/chodeus/sleezer; a settings path built from the project name
-// (Sleezer) made a second folder on case-sensitive filesystems.
 public class PluginFolderTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "sleezer-plugins-" + Guid.NewGuid().ToString("N"));
@@ -13,11 +11,12 @@ public class PluginFolderTests : IDisposable
     public void Dispose() { try { Directory.Delete(_root, true); } catch { } }
 
     [Theory]
-    [InlineData("https://github.com/chodeus/sleezer")]
-    [InlineData("https://github.com/chodeus/sleezer/")]
-    public void Resolve_uses_the_owner_and_repo_casing_from_the_url(string repoUrl)
+    [InlineData("https://github.com/chodeus/sleezer", "chodeus", "sleezer")]
+    [InlineData("https://github.com/chodeus/sleezer/", "chodeus", "sleezer")]
+    [InlineData("https://github.com/Chodeus/Sleezer", "Chodeus", "Sleezer")]
+    public void Resolve_uses_the_owner_and_repo_casing_from_the_url(string repoUrl, string owner, string repo)
     {
-        Assert.Equal(Path.Combine(_root, "chodeus", "sleezer"), PluginFolder.Resolve(_root, repoUrl));
+        Assert.Equal(Path.Combine(_root, owner, repo), PluginFolder.Resolve(_root, repoUrl));
     }
 
     [Fact]
@@ -31,16 +30,32 @@ public class PluginFolderTests : IDisposable
         Assert.True(PluginFolder.AdoptLegacyFile(legacy, target));
         Assert.Equal("old", File.ReadAllText(target));
         Assert.False(Directory.Exists(Path.Combine(_root, "legacy")));
+        Assert.Equal(target, PluginFolder.FileInUse(legacy, target));
     }
 
     [Fact]
     public void An_existing_install_file_is_never_overwritten()
     {
-        string legacy = Write(Path.Combine(_root, "chodeus", "Sleezer", "settings.resx"), "old");
-        string target = Write(Path.Combine(_root, "chodeus", "sleezer", "settings.resx"), "current");
+        string legacy = Write(Path.Combine(_root, "legacy", "settings.resx"), "old");
+        string target = Write(Path.Combine(_root, "install", "settings.resx"), "current");
 
         Assert.False(PluginFolder.AdoptLegacyFile(legacy, target));
         Assert.Equal("current", File.ReadAllText(target));
+        Assert.Equal("old", File.ReadAllText(legacy));
+        Assert.Equal(target, PluginFolder.FileInUse(legacy, target));
+    }
+
+    [Fact]
+    public void A_failed_move_keeps_using_the_legacy_file()
+    {
+        string legacy = Write(Path.Combine(_root, "legacy", "settings.resx"), "old");
+        // A file where the install folder should be makes the move throw.
+        Write(Path.Combine(_root, "install"), "blocker");
+        string target = Path.Combine(_root, "install", "settings.resx");
+
+        Assert.ThrowsAny<IOException>(() => PluginFolder.AdoptLegacyFile(legacy, target));
+        Assert.Equal(legacy, PluginFolder.FileInUse(legacy, target));
+        Assert.Equal("old", File.ReadAllText(legacy));
     }
 
     [Fact]

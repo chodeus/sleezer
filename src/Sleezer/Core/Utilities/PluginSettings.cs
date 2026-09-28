@@ -45,8 +45,9 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         public PluginSettings(IAppFolderInfo appFolderInfo, Logger logger, bool autoSave = true)
         {
             _logger = logger;
-            _settingsPath = Path.Combine(PluginFolder.Resolve(appFolderInfo.GetPluginPath(), PluginInfo.RepoUrl), "settings.resx");
-            AdoptLegacySettings(Path.Combine(appFolderInfo.GetPluginPath(), PluginInfo.Author, PluginInfo.Name, "settings.resx"));
+            _settingsPath = AdoptLegacySettings(
+                Path.Combine(appFolderInfo.GetPluginPath(), PluginInfo.Author, PluginInfo.Name, "settings.resx"),
+                Path.Combine(PluginFolder.Resolve(appFolderInfo.GetPluginPath(), PluginInfo.RepoUrl), "settings.resx"));
             _settings = [];
             _autoSave = autoSave;
 
@@ -131,17 +132,19 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             }
         }
 
-        private void AdoptLegacySettings(string legacyPath)
+        private string AdoptLegacySettings(string legacyPath, string path)
         {
             try
             {
-                if (PluginFolder.AdoptLegacyFile(legacyPath, _settingsPath))
-                    _logger.Info($"Moved plugin settings from {legacyPath} to {_settingsPath}");
+                if (PluginFolder.AdoptLegacyFile(legacyPath, path))
+                    _logger.Info($"Moved plugin settings from {legacyPath} to {path}");
             }
             catch (Exception ex)
             {
-                _logger.Warn(ex, $"Could not move plugin settings from {legacyPath}");
+                _logger.Warn(ex, $"Could not move plugin settings from {legacyPath}; using it in place until the next start");
             }
+
+            return PluginFolder.FileInUse(legacyPath, path);
         }
 
         private void SaveInternal()

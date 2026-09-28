@@ -26,5 +26,9 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 
             return true;
         }
+
+        /// <summary>The file to read and write: <paramref name="path"/>, unless the only copy is still at <paramref name="legacyPath"/>.</summary>
+        public static string FileInUse(string legacyPath, string path) =>
+            File.Exists(path) || !File.Exists(legacyPath) ? path : legacyPath;
     }
 }
