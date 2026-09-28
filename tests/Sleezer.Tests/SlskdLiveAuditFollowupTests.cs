@@ -263,12 +263,37 @@ public class VariantProfileTests
     [InlineData("Song", "Song (Piano Version)", true)]
     [InlineData("Song (Piano Version)", "Song", true)]
     [InlineData("Song", "Song - Piano Version", true)]
-    [InlineData("Song", "Song - Piano", true)]
+    [InlineData("Song", "Song - Stripped", true)]
+    [InlineData("Pull the Strings", "Pull the Strings - 2011 Remaster", false)]     // a noun ending the title is a title word
     [InlineData("Song (Piano Version)", "Song (Piano Ver.)", false)]
     [InlineData("Song (Acoustic)", "Song (Piano Version)", true)]                   // two different cuts
     [InlineData("Song", "Song (Unplugged)", true)]
     [InlineData("Song Unplugged", "Song - Unplugged", false)]
     [InlineData("Piano Man", "Piano Man (Remastered)", false)]                      // 'piano' as a title word
+    [InlineData("Song", "Song (Cover)", true)]
+    [InlineData("Song", "Song - Piano Cover", true)]
+    [InlineData("Song (Piano Cover)", "Song - Piano Cover", false)]
+    [InlineData("Song (Piano Cover)", "Song (Piano Version)", true)]                // a cover is its own cut
+    [InlineData("Song", "Song - Acoustic Version", true)]
+    [InlineData("Song", "Song (Stripped)", true)]
+    [InlineData("Song (Stripped)", "Song (Orchestral Version)", true)]              // two different arrangements
+    [InlineData("Song", "Song (String Version)", true)]
+    [InlineData("Song (String Version)", "Song (Strings)", false)]
+    [InlineData("Song (Orchestra Version)", "Song (Orchestral Version)", false)]
+    [InlineData("Album", "Album (City Symphony Orchestra)", false)]                 // an ensemble, not an arrangement
+    [InlineData("Quartets", "Quartets (Northside String Quartet)", false)]
+    [InlineData("Sonatas", "Sonatas (cello: A. Player, piano: B. Player)", false)]  // performer credits
+    [InlineData("Album (Covers)", "Album (Cover Version)", false)]
+    [InlineData("Song", "Song (Symphonic Version)", true)]
+    [InlineData("Song", "Song (Lullaby Version)", true)]
+    [InlineData("Song (Lo-Fi Version)", "Song (Lofi)", false)]
+    [InlineData("Song", "Song (Chill Version)", true)]
+    [InlineData("Song", "Song (Guitar Version)", true)]
+    [InlineData("Song", "Song (Re-Recorded)", true)]
+    [InlineData("Song (Re-recording)", "Song (Rerecorded)", false)]
+    [InlineData("Song", "Song (Night Bus Dub)", true)]
+    [InlineData("Song", "Song (Album Version)", false)]                             // the plain recording
+    [InlineData("Song", "Song (Clean)", false)]                                     // an edit of the same recording
     public void RemixSignaturesConflict_covers_variant_dimensions(string searchAlbum, string folder, bool expected)
     {
         Assert.Equal(expected, VariantQualifiers.RemixSignaturesConflict(searchAlbum, folder));
@@ -279,6 +304,13 @@ public class VariantProfileTests
     public void A_remix_typed_piano_target_rejects_another_remix()
     {
         Assert.True(VariantQualifiers.RemixSignaturesConflict("Harbor Lights (piano unplugged)", "Harbor Lights (Night Bus Remix)", ["Remix"]));
+    }
+
+    // A dub is a remix: a Remix-typed target forgives it like any other.
+    [Fact]
+    public void A_remix_typed_target_forgives_a_dub()
+    {
+        Assert.False(VariantQualifiers.RemixSignaturesConflict("Harbor Lights", "Harbor Lights (Night Bus Dub)", ["Remix"]));
     }
 
     [Fact]
@@ -293,6 +325,7 @@ public class VariantProfileTests
         Assert.True(VariantQualifiers.IsVariantTrack("Harbor Lights (piano version)"));
         Assert.True(VariantQualifiers.HasVariantQualifier("Harbor Lights - Unplugged"));
         Assert.False(VariantQualifiers.IsVariantTrack("Piano Man"));
+        Assert.False(VariantQualifiers.IsVariantTrack("Night Lullaby"));
     }
 
     [Fact]
