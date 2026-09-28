@@ -1,4 +1,6 @@
+using System.Linq.Expressions;
 using NzbDrone.Core.Datastore;
+using NzbDrone.Core.History;
 using NzbDrone.Core.MediaFiles;
 using NzbDrone.Core.Messaging.Events;
 using NzbDrone.Core.Music;
@@ -48,6 +50,23 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
                 .GroupBy(f => f.AlbumId)
                 .ToDictionary(g => g.Key, g => g.MinBy(f => f.Id)!);
         }
+
+        // Up to two queries per batch, matched by ImportGrabs.
+        public Dictionary<int, EntityHistory> GetGrabsOf(IReadOnlyCollection<TrackFile> files)
+        {
+            if (files.Count == 0)
+                return [];
+
+            List<int> albumIds = [.. files.Select(f => f.AlbumId).Distinct()];
+            Dictionary<int, string> downloads = ImportGrabs.DownloadIds(files.Select(f => f.Id),
+                History(h => h.EventType == EntityHistoryEventType.TrackFileImported && albumIds.Contains(h.AlbumId)));
+
+            List<string> downloadIds = [.. downloads.Values.Distinct()];
+            return downloadIds.Count == 0 ? [] : ImportGrabs.Of(downloads, History(h => h.EventType == EntityHistoryEventType.Grabbed && downloadIds.Contains(h.DownloadId)));
+        }
+
+        private List<EntityHistory> History(Expression<Func<EntityHistory, bool>> where) =>
+            [.. _database.Query<EntityHistory>(new SqlBuilder(_database.DatabaseType).Select(typeof(EntityHistory)).Where(where))];
 
         private List<Album> Batch(SqlBuilder query, int lastId, int limit) =>
             PopulateArtists(Query(query
