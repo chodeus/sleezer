@@ -212,15 +212,7 @@ public class PreImportTagger : IPreImportTagger
         List<LocalTrack> localTracks = audioFiles.Select(path =>
         {
             ParsedTrackInfo info = SafeReadTags(path);
-
-            // Comma-joined guest credits drag Lidarr's artist distance below
-            // the import cutoff; identification-only, tags on disk untouched.
-            info.ArtistTitle = FeaturedArtistStripper.StripGuestCredits(info.ArtistTitle, artist.Name) ?? info.ArtistTitle;
-
-            // Always: MusicBrainz credits a featured artist, not the title, so "Foo (feat. Bar)" must match "Foo".
-            info.Title = FeaturedArtistStripper.Strip(info.Title);
-            info.CleanTitle = FeaturedArtistStripper.Strip(info.CleanTitle);
-            info.ArtistTitle = FeaturedArtistStripper.Strip(info.ArtistTitle);
+            FeaturedArtistStripper.ForIdentification(info, artist.Name);
 
             return new LocalTrack
             {

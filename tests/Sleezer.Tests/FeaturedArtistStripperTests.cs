@@ -1,3 +1,4 @@
+using NzbDrone.Core.Parser.Model;
 using NzbDrone.Plugin.Sleezer.Core.PostProcessing;
 using Xunit;
 
@@ -83,5 +84,54 @@ public class FeaturedArtistStripperTests
     public void StripGuestCredits_passes_null_and_empty_through(string? input, string? artist, string? expected)
     {
         Assert.Equal(expected, FeaturedArtistStripper.StripGuestCredits(input, artist));
+    }
+
+    // Live 2026-09-29: store singles tagged "Song (feat. Guest) [Remixer Remix]" missed the pre-import cutoff on the album title alone.
+    [Fact]
+    public void ForIdentification_strips_feat_from_the_album_title()
+    {
+        ParsedTrackInfo info = new() { AlbumTitle = "Song Title (feat. Guest Artist) [Remixer Remix]" };
+
+        FeaturedArtistStripper.ForIdentification(info, "Artist Name");
+
+        Assert.Equal("Song Title [Remixer Remix]", info.AlbumTitle);
+    }
+
+    [Fact]
+    public void ForIdentification_strips_feat_from_the_track_titles_and_artist()
+    {
+        ParsedTrackInfo info = new()
+        {
+            Title = "Song Title (feat. Guest Artist)",
+            CleanTitle = "Song Title (ft. Guest Artist)",
+            ArtistTitle = "Artist Name, Guest Artist"
+        };
+
+        FeaturedArtistStripper.ForIdentification(info, "Artist Name");
+
+        Assert.Equal("Song Title", info.Title);
+        Assert.Equal("Song Title", info.CleanTitle);
+        Assert.Equal("Artist Name", info.ArtistTitle);
+    }
+
+    [Fact]
+    public void ForIdentification_strips_a_bracketed_feat_from_the_artist()
+    {
+        ParsedTrackInfo info = new() { ArtistTitle = "Artist Name (feat. Guest Artist)" };
+
+        FeaturedArtistStripper.ForIdentification(info, "Other Artist");
+
+        Assert.Equal("Artist Name", info.ArtistTitle);
+    }
+
+    [Fact]
+    public void ForIdentification_leaves_a_title_without_feat_alone()
+    {
+        ParsedTrackInfo info = new() { AlbumTitle = "Album Title (Remixer Remix)", Title = "Song Title" };
+
+        FeaturedArtistStripper.ForIdentification(info, "Artist Name");
+
+        Assert.Equal("Album Title (Remixer Remix)", info.AlbumTitle);
+        Assert.Equal("Song Title", info.Title);
     }
 }

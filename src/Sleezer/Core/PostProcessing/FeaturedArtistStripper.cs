@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using NzbDrone.Core.Parser.Model;
 
 namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing;
 
@@ -47,5 +48,18 @@ public static class FeaturedArtistStripper
         return GuestCreditSeparatorPattern.IsMatch(trimmed[artist.Length..])
             ? trimmed[..artist.Length]
             : input;
+    }
+
+    /// <summary>Drops guest credits from read tags before matching; the tags on disk are untouched.</summary>
+    public static void ForIdentification(ParsedTrackInfo info, string? primaryArtist)
+    {
+        // Comma-joined guest credits drag Lidarr's artist distance below the import cutoff.
+        info.ArtistTitle = StripGuestCredits(info.ArtistTitle, primaryArtist) ?? info.ArtistTitle;
+
+        // MusicBrainz credits a featured artist, never the title, so "Foo (feat. Bar)" must match "Foo".
+        info.Title = Strip(info.Title);
+        info.CleanTitle = Strip(info.CleanTitle);
+        info.ArtistTitle = Strip(info.ArtistTitle);
+        info.AlbumTitle = Strip(info.AlbumTitle);
     }
 }
