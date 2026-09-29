@@ -365,7 +365,7 @@ public class PreImportTagger : IPreImportTagger
         // everything above failed, fall back to per-track title matching
         // against the target release (remix/variant qualifiers still conflict).
         int titleTagged = 0;
-        if (tagged == 0 && TitleFallbackGuard.IsEligibleAlbum(album))
+        if (tagged == 0)
         {
             (titleTagged, int titleErrored, int titleSkipped) = await TryTitleDrivenTaggingAsync(localTracks, album, artist, albumRelease, stripFeaturedArtists, fingerprintTitleFallback, preferDigitalMedia, knownRecordings, sourceId, taggedFiles, ct);
             tagged += titleTagged;
@@ -451,6 +451,13 @@ public class PreImportTagger : IPreImportTagger
         List<Track>? tracks = release?.Tracks?.Value;
         if (release == null || tracks is not { Count: > 0 })
             return (0, 0, 0);
+
+        if (!TitleFallbackGuard.IsEligibleAlbum(album, [.. tracks.Select(t => t.Title)]))
+        {
+            _logger.Debug("Pre-import tag: no title fallback for {SourceId} — '{Album}' ({Type} {SecondaryTypes}) is not eligible for title matching",
+                sourceId, album.Title, album.AlbumType, string.Join("/", album.SecondaryTypes?.Select(t => t?.Name) ?? []));
+            return (0, 0, 0);
+        }
 
         if (!TitleFallbackGuard.IsSafeTarget(release, localTracks.Count, preferDigitalMedia))
         {
