@@ -19,10 +19,7 @@ using PluginBase = NzbDrone.Core.Plugins.Plugin;
 
 namespace NzbDrone.Plugin.Sleezer
 {
-    public class SleezerPlugin : PluginBase
-#if !MASTER_BRANCH
-        , IHandle<ApplicationStartingEvent>
-#endif
+    public class SleezerPlugin : PluginBase, IHandle<ApplicationStartingEvent>
     {
         private readonly Logger _logger;
         private readonly Lazy<IPluginService> _pluginService;
@@ -100,11 +97,20 @@ namespace NzbDrone.Plugin.Sleezer
 
         public void Handle(ApplicationStartingEvent message)
         {
+            RecordStart();
 #if CI
-            AvailableVersion = _pluginService.Value.GetRemotePlugin(GithubUrl).Version;
-            if (AvailableVersion > InstalledVersion)
-                _commandQueueManager.Push(new InstallPluginCommand() { GithubUrl = GithubUrl });
+            // GetRemotePlugin returns null when GitHub can't be reached.
+            if (_pluginService.Value.GetRemotePlugin(GithubUrl) is { } remote)
+            {
+                AvailableVersion = remote.Version;
+                if (AvailableVersion > InstalledVersion)
+                    _commandQueueManager.Push(new InstallPluginCommand() { GithubUrl = GithubUrl });
+            }
 #endif
+        }
+
+        private void RecordStart()
+        {
             List<DateTime> lastStarted = _pluginSettings.GetValue<List<DateTime>>("lastStarted") ?? [];
 
             LastStarted = DateTime.UtcNow;
