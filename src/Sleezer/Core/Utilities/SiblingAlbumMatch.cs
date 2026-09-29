@@ -6,7 +6,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
     /// <summary>The sibling a store copy's date points at, with the two dates that were compared.</summary>
     public readonly record struct SiblingMatch(Album Sibling, DateTime SiblingDate, DateTime TargetDate);
 
-    /// <summary>Finds the artist's other album a store copy belongs to: the one its title names, or the one its date points at under the searched title.</summary>
+    /// <summary>Finds the artist's other album a store copy belongs to: the one its title names, its date points at, or its guests match under the searched title.</summary>
     public static class SiblingAlbumMatch
     {
         // Versions that came out closer together than this can't be told apart by date.
@@ -45,6 +45,22 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
                 .OrderBy(s => s.Near!.Value.Gap)
                 .Select(s => (SiblingMatch?)new SiblingMatch(s.Album, s.Near!.Value.Date, toTarget.Date))
                 .FirstOrDefault();
+        }
+
+        /// <summary>The artist's same-titled album whose credited guests the store copy names exactly, while the searched one's differ.</summary>
+        // Lidarr keeps one artist per album, so versions that differ only by guest look alike to the checks above.
+        public static Album? GuestSibling(StoreReleaseInfo release, Album target, IEnumerable<Album> artistAlbums, string searchedArtist, Func<Album, IReadOnlyList<string>?> guestsOf)
+        {
+            string title = StoreReleaseVerifier.Normalize(target.Title);
+            List<Album> siblings = [.. artistAlbums.Where(a => a.Id != target.Id && StoreReleaseVerifier.Normalize(a.Title) == title)];
+            if (siblings.Count == 0 || guestsOf(target) is not { } wanted)
+                return null;
+
+            HashSet<string> named = GuestCredits.OfStoreCopy($"{release.CandidateTitle} {release.Album}", release.MainArtists, searchedArtist);
+            if (named.SetEquals(GuestCredits.Clean(wanted, searchedArtist)))
+                return null;
+
+            return siblings.FirstOrDefault(s => guestsOf(s) is { } guests && named.SetEquals(GuestCredits.Clean(guests, searchedArtist)));
         }
 
         private static (TimeSpan Gap, DateTime Date)? Nearest(DateTime published, IEnumerable<DateTime> dates) =>
