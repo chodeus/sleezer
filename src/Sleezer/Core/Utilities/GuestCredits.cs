@@ -1,24 +1,42 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using NzbDrone.Common.Extensions;
 using NzbDrone.Core.Parser;
 
 namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 {
-    /// <summary>Guest artists as a store copy names them and as MusicBrainz credits them, in comparable form.</summary>
+    /// <summary>Guest artists as a store copy names them, compared with the names a MusicBrainz credit lists.</summary>
     public static partial class GuestCredits
     {
-        /// <summary>Guests in the title's "(feat. …)" brackets plus main artists other than the searched one.</summary>
-        public static HashSet<string> OfStoreCopy(string? title, IEnumerable<string> mainArtists, string searchedArtist)
-        {
-            IEnumerable<string> featured = FeaturedRegex().Matches(title ?? string.Empty).SelectMany(m => SplitNames(m.Groups[1].Value));
-            return Clean(featured.Concat(mainArtists.SelectMany(SplitNames)), searchedArtist);
-        }
-
-        /// <summary>Names comparable across stores and MusicBrainz, the searched artist left out.</summary>
-        public static HashSet<string> Clean(IEnumerable<string> names, string searchedArtist)
+        /// <summary>The copy's guest text: its "(feat. …)" brackets plus main artists other than the searched one.</summary>
+        public static string OfStoreCopy(IEnumerable<string?> titles, IEnumerable<string> mainArtists, string searchedArtist)
         {
             string primary = searchedArtist.CleanArtistName();
-            return [.. names.Select(n => n.CleanArtistName()).Where(n => n.Length > 0 && n != primary)];
+            IEnumerable<string> featured = titles.SelectMany(t => FeaturedRegex().Matches(t ?? string.Empty))
+                .Select(m => m.Groups[1].Value.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase);
+            IEnumerable<string> others = mainArtists.Where(a => a.CleanArtistName() != primary);
+            return string.Join(" & ", featured.Concat(others));
+        }
+
+        /// <summary>True when the guest text names exactly these artists and nobody else; the searched artist may appear too.</summary>
+        // Names are removed whole, never split on separators: "Tyler, The Creator" is one credited name.
+        public static bool NamesExactly(string guestText, IEnumerable<string> names, string searchedArtist)
+        {
+            string text = Fold(guestText);
+            foreach (string name in names.Select(Fold).Where(n => n.Length > 0).OrderByDescending(n => n.Length))
+            {
+                Match found = WholeName(name).Match(text);
+                if (!found.Success)
+                    return false;
+                text = text.Remove(found.Index, found.Length).Insert(found.Index, " ");
+            }
+
+            string primary = Fold(searchedArtist);
+            if (primary.Length > 0)
+                text = WholeName(primary).Replace(text, " ");
+
+            return SeparatorRegex().Replace(text, string.Empty).Length == 0;
         }
 
         /// <summary>The credited names in a MusicBrainz release group's artist credit, the primary artist left out.</summary>
@@ -30,13 +48,16 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
                 .Select(c => c.GetProperty("name").GetString() ?? string.Empty)];
         }
 
-        private static IEnumerable<string> SplitNames(string names) => SeparatorRegex().Split(names).Where(n => !string.IsNullOrWhiteSpace(n));
+        private static string Fold(string value) => Regex.Replace(value.RemoveAccent().ToLowerInvariant(), @"\s+", " ").Trim();
+
+        private static Regex WholeName(string name) => new($@"(?<!\w){Regex.Escape(name)}(?!\w)");
 
         // Mirrors FeaturedArtistStripper.BracketedFeatPattern plus "with": a credit here, left in titles there.
         [GeneratedRegex(@"[\(\[\{](?:feat\.?|featuring|ft\.?|with)\s+([^\)\]\}]+)[\)\]\}]", RegexOptions.IgnoreCase)]
         private static partial Regex FeaturedRegex();
 
-        [GeneratedRegex(@"\s*(?:,|&|\band\b)\s*", RegexOptions.IgnoreCase)]
+        // What may remain once every credited name is removed: joining words and punctuation.
+        [GeneratedRegex(@"\b(?:and|feat|featuring|ft|with|x)\b|[\s,&.;/+×]")]
         private static partial Regex SeparatorRegex();
     }
 }

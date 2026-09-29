@@ -101,14 +101,35 @@ public class GuestSiblingTests
     }
 
     [Theory]
-    [InlineData("Song (feat. A, B & C)", new[] { "a", "b", "c" })]
-    [InlineData("Song [featuring A and B]", new[] { "a", "b" })]
-    [InlineData("Song (with A)", new[] { "a" })]
-    [InlineData("Song (A remix)", new string[0])]
-    [InlineData("Song (feat. Main Artist & A)", new[] { "a" })]
-    public void Store_guests_come_from_the_featured_brackets(string title, string[] expected)
+    [InlineData("Song (feat. Guest A, Guest B & Guest C)", new[] { "Guest A", "Guest B", "Guest C" }, true)]
+    [InlineData("Song [featuring Guest A and Guest B]", new[] { "Guest B", "Guest A" }, true)]
+    [InlineData("Song (with Guest A)", new[] { "Guest A" }, true)]
+    [InlineData("Song (Remixer remix)", new string[0], true)]
+    [InlineData("Song (feat. Main Artist & Guest A)", new[] { "Guest A" }, true)]
+    [InlineData("Song (feat. Surname, The Band & Guest A)", new[] { "Surname, The Band", "Guest A" }, true)]
+    [InlineData("Song (feat. Guest Band & Guest)", new[] { "Guest", "Guest Band" }, true)]
+    [InlineData("Song (feat. Guest A & Guest B)", new[] { "Guest A" }, false)]
+    [InlineData("Song (feat. Guest A)", new[] { "Guest A", "Guest B" }, false)]
+    [InlineData("Song (feat. Guest Anna)", new[] { "Guest Ann" }, false)]
+    public void A_copy_names_exactly_the_credited_guests(string title, string[] credited, bool expected)
     {
-        Assert.Equal(expected.ToHashSet(), GuestCredits.OfStoreCopy(title, [], Main));
+        Assert.Equal(expected, GuestCredits.NamesExactly(GuestCredits.OfStoreCopy([title], [], Main), credited, Main));
+    }
+
+    [Fact]
+    public void A_main_artist_with_a_comma_stays_one_name()
+    {
+        string guests = GuestCredits.OfStoreCopy(["Song"], [Main, "Surname, The Band"], Main);
+
+        Assert.True(GuestCredits.NamesExactly(guests, ["Surname, The Band"], Main));
+    }
+
+    [Fact]
+    public void A_featured_credit_in_both_title_fields_counts_once()
+    {
+        string guests = GuestCredits.OfStoreCopy(["Song (feat. Guest A)", "Song (feat. Guest A)"], [], Main);
+
+        Assert.True(GuestCredits.NamesExactly(guests, ["Guest A"], Main));
     }
 
     [Fact]

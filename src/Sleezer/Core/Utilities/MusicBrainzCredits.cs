@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
+using System.Net;
 using NLog;
 using NzbDrone.Common.Http;
+using NzbDrone.Plugin.Sleezer.Core.Model;
 
 namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 {
@@ -15,14 +17,21 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
     {
         private static readonly string UserAgent = $"Sleezer/{PluginInfo.Version} ( {PluginInfo.RepoUrl} )";
 
-        // Successes only: a failed lookup must be retried next time, not remembered.
+        // Successes only: a failed lookup must be retried later, not remembered.
         private static readonly ConcurrentDictionary<string, IReadOnlyList<string>> Cache = new();
+
+        // These lookups run inside release decisions; one stalled request pauses them all for five minutes
+        // rather than letting every candidate wait out its own timeout.
+        private static readonly ICircuitBreaker Breaker = CircuitBreakerFactory.GetCustomBreaker<MusicBrainzCredits>(1, 5);
 
         public IReadOnlyList<string>? GuestsOf(string releaseGroupId, string primaryArtistId)
         {
             string key = $"{releaseGroupId}|{primaryArtistId}";
             if (Cache.TryGetValue(key, out IReadOnlyList<string>? cached))
                 return cached;
+
+            if (Breaker.IsOpen)
+                return null;
 
             try
             {
@@ -33,15 +42,27 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
                     .WithRateLimit(1.1)
                     .Build();
                 request.Headers.Add("User-Agent", UserAgent);
-                request.RequestTimeout = TimeSpan.FromSeconds(10);
+                request.RequestTimeout = TimeSpan.FromSeconds(5);
+                request.SuppressHttpError = true;
 
-                IReadOnlyList<string> guests = GuestCredits.FromMusicBrainz(httpClient.Get(request).Content, primaryArtistId);
+                HttpResponse response = httpClient.Get(request);
+
+                // A release group MusicBrainz no longer has credits nobody; that is an answer, not an outage.
+                IReadOnlyList<string> guests = response.StatusCode switch
+                {
+                    HttpStatusCode.OK => GuestCredits.FromMusicBrainz(response.Content, primaryArtistId),
+                    HttpStatusCode.NotFound => [],
+                    _ => throw new HttpException(request, response)
+                };
+
+                Breaker.RecordSuccess();
                 Cache[key] = guests;
                 return guests;
             }
             catch (Exception ex)
             {
-                logger.Debug(ex, "MusicBrainz credits unavailable for release group {ReleaseGroupId}", releaseGroupId);
+                Breaker.RecordFailure();
+                logger.Debug(ex, "MusicBrainz credits unavailable for release group {ReleaseGroupId}; pausing lookups for five minutes", releaseGroupId);
                 return null;
             }
         }

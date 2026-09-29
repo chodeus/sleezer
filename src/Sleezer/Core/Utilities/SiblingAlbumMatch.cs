@@ -56,11 +56,11 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             if (siblings.Count == 0 || guestsOf(target) is not { } wanted)
                 return null;
 
-            HashSet<string> named = GuestCredits.OfStoreCopy($"{release.CandidateTitle} {release.Album}", release.MainArtists, searchedArtist);
-            if (named.SetEquals(GuestCredits.Clean(wanted, searchedArtist)))
+            string named = GuestCredits.OfStoreCopy([release.CandidateTitle, release.Album], release.MainArtists, searchedArtist);
+            if (GuestCredits.NamesExactly(named, wanted, searchedArtist))
                 return null;
 
-            return siblings.FirstOrDefault(s => guestsOf(s) is { } guests && named.SetEquals(GuestCredits.Clean(guests, searchedArtist)));
+            return siblings.FirstOrDefault(s => guestsOf(s) is { } guests && GuestCredits.NamesExactly(named, guests, searchedArtist));
         }
 
         private static (TimeSpan Gap, DateTime Date)? Nearest(DateTime published, IEnumerable<DateTime> dates) =>
