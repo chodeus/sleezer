@@ -141,7 +141,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             }
             catch (Exception ex)
             {
-                _logger.Warn(ex, $"Could not move plugin settings from {legacyPath}; using it in place until the next start");
+                _logger.Warn(ex, $"Could not finish moving plugin settings from {legacyPath}; using {PluginFolder.FileInUse(legacyPath, path)}");
             }
 
             return PluginFolder.FileInUse(legacyPath, path);
