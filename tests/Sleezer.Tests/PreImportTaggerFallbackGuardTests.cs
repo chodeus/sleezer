@@ -62,4 +62,54 @@ public class PreImportTaggerFallbackGuardTests
     {
         Assert.False(TitleFallbackGuard.IsSafeTarget(R(7), 7, preferDigitalMedia: true));
     }
+
+    private static Album A(string type, params SecondaryAlbumType[] secondary) => new() { AlbumType = type, SecondaryTypes = [.. secondary] };
+
+    [Theory]
+    [InlineData("Song (Remixer remix)")]
+    [InlineData("Song (remix edit)", "Song (remix)")]
+    public void A_remix_single_whose_tracks_name_the_remix_is_eligible(params string[] tracks)
+    {
+        Assert.True(TitleFallbackGuard.IsEligibleAlbum(A("Single", SecondaryAlbumType.Remix), tracks));
+    }
+
+    [Theory]
+    [InlineData("Song")]
+    [InlineData("Song", "Song (Remixer remix)")]
+    public void A_remix_single_with_a_plain_track_title_stays_ineligible(params string[] tracks)
+    {
+        Assert.False(TitleFallbackGuard.IsEligibleAlbum(A("Single", SecondaryAlbumType.Remix), tracks));
+    }
+
+    [Fact]
+    public void A_remix_single_with_no_tracks_stays_ineligible()
+    {
+        Assert.False(TitleFallbackGuard.IsEligibleAlbum(A("Single", SecondaryAlbumType.Remix), []));
+    }
+
+    [Fact]
+    public void A_live_single_stays_ineligible_even_when_its_titles_say_live()
+    {
+        Assert.False(TitleFallbackGuard.IsEligibleAlbum(A("Single", SecondaryAlbumType.Live), ["Song (live)"]));
+    }
+
+    [Theory]
+    [InlineData("Single", true)]
+    [InlineData("EP", true)]
+    [InlineData("Album", false)]
+    public void Only_small_releases_are_eligible(string type, bool eligible)
+    {
+        Assert.Equal(eligible, TitleFallbackGuard.IsEligibleAlbum(A(type), ["Song"]));
+    }
+
+    // Eligibility leans on the matcher refusing a plain file for a named remix.
+    [Fact]
+    public void On_an_eligible_remix_single_only_the_remix_file_matches()
+    {
+        Dictionary<int, int> mapping = TrackTitleMatcher.Match(
+            ["Song (feat. Guest)", "Song (feat. Guest) (Other remix)", "Song (feat. Guest) (Remixer Remix)"],
+            ["Song (Remixer remix)"]);
+
+        Assert.Equal(new Dictionary<int, int> { [2] = 0 }, mapping);
+    }
 }

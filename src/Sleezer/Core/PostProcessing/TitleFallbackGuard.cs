@@ -1,21 +1,27 @@
 using NzbDrone.Core.Music;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
 namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
 {
     /// <summary>Gates the per-track title fallback that runs when album-level matching fails.</summary>
     public static class TitleFallbackGuard
     {
-        /// <summary>True when an album's own type makes title matching trustworthy.</summary>
-        public static bool IsEligibleAlbum(Album album)
+        /// <summary>True when an album's type, and a remix single's track titles, make title matching trustworthy.</summary>
+        public static bool IsEligibleAlbum(Album album, IReadOnlyCollection<string?> trackTitles)
         {
             bool smallRelease = string.Equals(album.AlbumType, "Single", StringComparison.OrdinalIgnoreCase) ||
                                 string.Equals(album.AlbumType, "EP", StringComparison.OrdinalIgnoreCase);
             if (!smallRelease)
                 return false;
 
-            // Live/Remix/Demo singles carry plain MB TRACK titles, so the variant
+            // Live/Remix/Demo singles can carry plain MB TRACK titles, so the variant
             // guard can't tell a studio file from the live cut — fail closed.
-            return album.SecondaryTypes?.Any(t => t?.Name is "Live" or "Remix" or "Demo" or "Mixtape") != true;
+            if (album.SecondaryTypes?.Any(t => t?.Name is "Live" or "Demo" or "Mixtape") == true)
+                return false;
+
+            // A remix track that names its remix is safe: RemixSignaturesConflict rejects a plain file against it.
+            return album.SecondaryTypes?.Any(t => t?.Name == "Remix") != true ||
+                   (trackTitles.Count > 0 && trackTitles.All(t => VariantQualifiers.ExtractRemixSignature(t) != null));
         }
 
         /// <summary>True when release-scoped tags may be written to this download by title alone.</summary>
