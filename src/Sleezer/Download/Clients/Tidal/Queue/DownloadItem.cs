@@ -38,6 +38,7 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
                 ID = persisted.ID,
                 Title = persisted.Title,
                 Artist = persisted.Artist,
+                ReleaseTitle = persisted.ReleaseTitle,
                 Explicit = persisted.Explicit,
                 Bitrate = persisted.Bitrate,
                 TotalSize = persisted.TotalSize,
@@ -71,6 +72,7 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
                 Status = DownloadItemStatus.Queued,
                 Bitrate = quality,
                 RemoteAlbum = remoteAlbum,
+                ReleaseTitle = remoteAlbum.Release.Title,
                 _tidalUrl = tidalUrl,
                 _api = TidalAPI.Instance ?? throw new InvalidOperationException("Tidal API not initialized"),
             };
@@ -82,6 +84,7 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
         public string ID { get; private set; } = "";
         public string Title { get; private set; } = "";
         public string Artist { get; private set; } = "";
+        public string? ReleaseTitle { get; private set; }
         public bool Explicit { get; private set; }
 
         public RemoteAlbum? RemoteAlbum { get; private set; }

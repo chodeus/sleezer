@@ -10,6 +10,7 @@ using NzbDrone.Core.Download.Clients.Qobuz.Queue;
 using NzbDrone.Core.Exceptions;
 using NzbDrone.Core.Extras.Metadata;
 using NzbDrone.Core.Parser.Model;
+using NzbDrone.Plugin.Sleezer.Core.Download;
 using NzbDrone.Plugin.Sleezer.Core.PostProcessing;
 using NzbDrone.Plugin.Sleezer.Qobuz;
 using QobuzApiSharp.Exceptions;
@@ -116,7 +117,7 @@ namespace NzbDrone.Core.Download.Clients.Qobuz
             var item = new DownloadClientItem
             {
                 DownloadId = x.ID,
-                Title = title,
+                Title = QueueTitle.For(x.ReleaseTitle, title),
                 TotalSize = x.TotalSize,
                 RemainingSize = x.TotalSize - x.DownloadedSize,
                 RemainingTime = GetRemainingTime(x),

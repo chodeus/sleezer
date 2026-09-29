@@ -31,6 +31,7 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
         public string ID { get; set; } = string.Empty;
         public string Title { get; set; } = string.Empty;
         public string Artist { get; set; } = string.Empty;
+        public string? ReleaseTitle { get; set; }
         public bool Explicit { get; set; }
 
         public AudioQuality Bitrate { get; set; }
@@ -48,6 +49,7 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
                 ID = item.ID,
                 Title = item.Title,
                 Artist = item.Artist,
+                ReleaseTitle = item.ReleaseTitle,
                 Explicit = item.Explicit,
                 Bitrate = item.Bitrate,
                 TotalSize = item.TotalSize,
