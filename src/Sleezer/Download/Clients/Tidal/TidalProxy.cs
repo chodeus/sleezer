@@ -9,6 +9,7 @@ using NzbDrone.Common.Extensions;
 using NzbDrone.Core.Download.Clients.Tidal.Queue;
 using NzbDrone.Core.Extras.Metadata;
 using NzbDrone.Core.Parser.Model;
+using NzbDrone.Plugin.Sleezer.Core.Download;
 using NzbDrone.Plugin.Sleezer.Core.PostProcessing;
 using TidalSharp.Data;
 
@@ -87,7 +88,7 @@ namespace NzbDrone.Core.Download.Clients.Tidal
             var item = new DownloadClientItem
             {
                 DownloadId = x.ID,
-                Title = title,
+                Title = QueueTitle.For(x.ReleaseTitle, title),
                 TotalSize = x.TotalSize,
                 RemainingSize = x.TotalSize - x.DownloadedSize,
                 RemainingTime = GetRemainingTime(x),

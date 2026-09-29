@@ -52,6 +52,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                 ID = persisted.ID,
                 Title = persisted.Title,
                 Artist = persisted.Artist,
+                ReleaseTitle = persisted.ReleaseTitle,
                 Explicit = persisted.Explicit,
                 Bitrate = persisted.Bitrate,
                 TotalSize = persisted.TotalSize,
@@ -82,6 +83,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                     Status = DownloadItemStatus.Queued,
                     Bitrate = bitrate,
                     RemoteAlbum = remoteAlbum,
+                    ReleaseTitle = remoteAlbum.Release.Title,
                     _deezerUrl = deezerUrl,
                     _api = DeezerAPI.Instance,
                 };
@@ -96,6 +98,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
 
         public string Title { get; private set; } = null!;
         public string Artist { get; private set; } = null!;
+        public string? ReleaseTitle { get; private set; }
         public bool Explicit { get; private set; }
 
         public RemoteAlbum RemoteAlbum { get; private set; } = null!;

@@ -184,6 +184,8 @@
     <!-- Import-vs-post-process ordering gate. BCL + Lidarr's DownloadItemStatus only. -->
     <Compile Include="..\..\src\Sleezer\Core\Download\IQueuedDownload.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Core\Download\QueueTitle.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Download\PostProcessGate.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Download\Clients\Tidal\FFMPEG.cs"

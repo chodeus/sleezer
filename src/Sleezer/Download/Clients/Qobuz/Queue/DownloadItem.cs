@@ -45,6 +45,7 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
         public string ID { get; private set; } = string.Empty;
         public string Title { get; private set; } = string.Empty;
         public string Artist { get; private set; } = string.Empty;
+        public string? ReleaseTitle { get; private set; }
         public bool Explicit { get; private set; }
         public RemoteAlbum RemoteAlbum { get; private set; } = null!;
         public string? DownloadFolder { get; private set; }
@@ -91,6 +92,7 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
                 ID = persisted.ID,
                 Title = persisted.Title,
                 Artist = persisted.Artist,
+                ReleaseTitle = persisted.ReleaseTitle,
                 Explicit = persisted.Explicit,
                 Bitrate = persisted.Bitrate,
                 TotalSize = persisted.TotalSize,
@@ -119,6 +121,7 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
                 Status = DownloadItemStatus.Queued,
                 Bitrate = ParseQuality(remoteAlbum.Release.Container),
                 RemoteAlbum = remoteAlbum,
+                ReleaseTitle = remoteAlbum.Release.Title,
                 TotalSize = remoteAlbum.Release.Size,
                 _qobuzUrl = qobuzUrl,
             };
