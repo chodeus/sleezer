@@ -9,6 +9,7 @@ using NzbDrone.Core.Configuration;
 using NzbDrone.Core.IndexerSearch.Definitions;
 using NzbDrone.Core.Parser;
 using NzbDrone.Core.Parser.Model;
+using NzbDrone.Plugin.Sleezer.Core.Qobuz;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Qobuz;
 using NzbDrone.Plugin.Sleezer.Core.Replacements;
@@ -63,6 +64,13 @@ namespace NzbDrone.Core.Indexers.Qobuz
             ValidationFailure? baseFailure = await base.TestConnection();
             if (baseFailure != null)
                 return baseFailure;
+
+            // This indexer's own session: another Qobuz indexer may have signed in meanwhile.
+            QobuzAPI session = QobuzAPI.EnsureSignedIn(Settings, _logger);
+            session.RefreshRightsIfStale(Settings, TimeSpan.Zero);
+            string? streamingProblem = QobuzAccountCheck.StreamingProblem(session.Login, DateTimeOffset.UtcNow);
+            if (streamingProblem != null)
+                return new ValidationFailure(string.Empty, streamingProblem);
 
             // Surface the storefront the account resolves to. Qobuz licenses per
             // territory, so "album not found" is usually this country, not a bug.
