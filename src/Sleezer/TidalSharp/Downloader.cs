@@ -273,6 +273,14 @@ public class Downloader
                 );
                 var streamData = result.ToObject<TrackStreamData>()!;
 
+                // Fails the whole album like the codec check below, so Lidarr picks another source.
+                if (PreviewGuard.IsPreview(streamData.AssetPresentation))
+                {
+                    throw new APIException(
+                        $"Tidal served a {streamData.AssetPresentation} of track {trackId} instead of the full track " +
+                        "— the account's subscription does not cover it. Failing the download so Lidarr can try another source.");
+                }
+
                 // Detect Tidal's silent codec downgrade. Per-track licensing in
                 // some regions causes playbackinfopostpaywall to return an mp4a
                 // (AAC) manifest for a LOSSLESS request without raising an

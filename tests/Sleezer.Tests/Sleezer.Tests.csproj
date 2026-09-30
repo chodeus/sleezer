@@ -194,6 +194,8 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Download\Clients\Tidal\FFMPEG.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\TidalSharp\PreviewGuard.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\TidalSharp\LosslessGuard.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\TidalSharp\Data\Quality.cs"
