@@ -5,6 +5,7 @@ using System.Text;
 using NLog;
 using NzbDrone.Core.Indexers.Exceptions;
 using NzbDrone.Core.Indexers.Qobuz;
+using NzbDrone.Plugin.Sleezer.Core.Qobuz;
 using QobuzApiSharp.Exceptions;
 using QobuzApiSharp.Models.User;
 using QobuzApiSharp.Service;
@@ -217,6 +218,11 @@ namespace NzbDrone.Plugin.Sleezer.Qobuz
 
                 _logger.Info("Qobuz signed in — user {UserId} country {Country} appId {AppId}",
                     _login?.User?.Id, CountryCode, _client.AppId);
+
+                string? streamingProblem = QobuzAccountCheck.StreamingProblem(_login, DateTimeOffset.UtcNow);
+                if (streamingProblem != null)
+                    _logger.Warn(streamingProblem);
+
                 return true;
             }
             catch (ApiErrorResponseException ex)

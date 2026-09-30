@@ -202,6 +202,10 @@ namespace NzbDrone.Plugin.Sleezer.Deezer
             var hasLossless = userData["USER"]?["OPTIONS"]?["web_lossless"]?.ToObject<bool?>() == true;
             _logger.Debug("Deezer {Operation} ok in {ElapsedMs}ms — user={UserId} country={Country} hq={Hq} lossless={Lossless}",
                 operation, elapsedMs, userId, country, hasHq, hasLossless);
+
+            string? streamingProblem = DeezerArlCheck.StreamingProblem(userData);
+            if (streamingProblem != null)
+                _logger.Warn(streamingProblem);
         }
 
         private static void WaitWithTimeout(Task task)
