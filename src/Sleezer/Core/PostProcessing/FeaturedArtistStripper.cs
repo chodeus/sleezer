@@ -58,7 +58,9 @@ public static class FeaturedArtistStripper
 
         // MusicBrainz credits a featured artist, never the title, so "Foo (feat. Bar)" must match "Foo".
         info.Title = Strip(info.Title);
-        info.CleanTitle = Strip(info.CleanTitle);
+
+        // Lidarr's CleanTitle drops everything from "feat." on, remix name included, and any "(… Version)".
+        info.CleanTitle = info.Title;
         info.ArtistTitle = Strip(info.ArtistTitle);
         info.AlbumTitle = Strip(info.AlbumTitle);
     }

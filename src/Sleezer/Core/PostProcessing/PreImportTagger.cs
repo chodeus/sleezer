@@ -313,6 +313,16 @@ public class PreImportTagger : IPreImportTagger
                 continue;
             }
 
+            // Tagging only some files splits the download into two albums in Lidarr, and both halves then miss tracks.
+            int weakTracks = TrackMatchGate.WeakTracks(release.TrackMapping, confidenceThreshold);
+            if (weakTracks > 0)
+            {
+                skipped += release.TrackMapping.Mapping.Count;
+                _logger.Info("Pre-import tag: {Weak}/{TrackCount} track(s) of '{Release}' match too weakly for {SourceId} — tagging none",
+                    weakTracks, release.TrackMapping.Mapping.Count, release.AlbumRelease?.Title ?? "<unknown>", sourceId);
+                continue;
+            }
+
             _logger.Debug("Pre-import tag: matched release '{Release}' for {SourceId} with album distance {Distance:F3}; tagging {TrackCount} track(s)",
                 release.AlbumRelease?.Title ?? "<unknown>", sourceId, albumDistance, release.TrackMapping.Mapping.Count);
 
@@ -323,14 +333,6 @@ public class PreImportTagger : IPreImportTagger
                 LocalTrack localTrack = entry.Key;
                 Track track = entry.Value.Item1;
                 double trackDistance = entry.Value.Item2?.NormalizedDistance() ?? 1.0;
-
-                if (trackDistance > confidenceThreshold)
-                {
-                    skipped++;
-                    _logger.Trace("Pre-import tag: track match distance {Distance:F3} exceeds max; skipping {File}",
-                        trackDistance, Path.GetFileName(localTrack.Path));
-                    continue;
-                }
 
                 if (verifyAllWithFingerprint && VerifyRecording(localTrack, track, artist, knownRecordings) == FingerprintVerdict.Mismatch)
                 {
