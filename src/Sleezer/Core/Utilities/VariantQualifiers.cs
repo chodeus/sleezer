@@ -281,7 +281,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             int firstDash = title.IndexOf(" - ", StringComparison.Ordinal);
             zones.Add(BracketedContentRegex().Replace(firstDash >= 0 ? title[(firstDash + 3)..] : title, " "));
 
-            string joined = string.Join(" ", zones);
+            // A line break, which a named mix's possessive can't reach across: "Voodoo (It's in the Wall) (original mix)".
+            string joined = string.Join("\n", zones);
             if (!GenuineRemixKeywordRegex().IsMatch(joined))
                 return false;
 
@@ -299,10 +300,11 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         [GeneratedRegex(@"[\(\[\{].*?[\)\]\}]", RegexOptions.Compiled)]
         private static partial Regex BracketedContentRegex();
 
-        [GeneratedRegex(@"\b(remix(es|ed)?|rmx|re-?work(ed)?|bootleg|v\.?i\.?p|flip|dub|edit|instrumentals?|a?\s?capp?ellas?|karaokes?|sped[\s-]?up|slowed|nightcore|daycore|reverb|8d|mashups?|cover(ed)?\s+by)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+        // A mix named for its maker ("Tiësto's AFTR:HRS Mix") is a remix; a bare "Original Mix" is not.
+        [GeneratedRegex(@"\b(remix(es|ed)?|rmx|re-?work(ed)?|bootleg|v\.?i\.?p|flip|dub|edit|instrumentals?|a?\s?capp?ellas?|karaokes?|sped[\s-]?up|slowed|nightcore|daycore|reverb|8d|mashups?|cover(ed)?\s+by|(?<=['’]s\b[^()\[\]{}\n]*)mix)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
         private static partial Regex RemixKeywordRegex();
 
-        [GeneratedRegex(@"\b(remix(es|ed)?|rmx|re-?work(ed)?|bootleg|v\.?i\.?p|flip|dub|mashups?)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+        [GeneratedRegex(@"\b(remix(es|ed)?|rmx|re-?work(ed)?|bootleg|v\.?i\.?p|flip|dub|mashups?|(?<=['’]s\b[^()\[\]{}\n]*)mix)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
         private static partial Regex GenuineRemixKeywordRegex();
 
         [GeneratedRegex(@"\blive\b", RegexOptions.Compiled)]
@@ -311,7 +313,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         [GeneratedRegex(@"\blive\s+(at|in|from)\b", RegexOptions.Compiled)]
         private static partial Regex LiveVenueRegex();
 
-        [GeneratedRegex(@"\bdemos?\b", RegexOptions.Compiled)]
+        // A session recording ("1986 Sound City Session", "BBC Sessions") is another take, as a demo is.
+        [GeneratedRegex(@"\b(?:demos?|sessions?)\b", RegexOptions.Compiled)]
         private static partial Regex DemoRegex();
 
         [GeneratedRegex(@"\bextended\b(?!\s+(edition|play|liner))", RegexOptions.Compiled)]

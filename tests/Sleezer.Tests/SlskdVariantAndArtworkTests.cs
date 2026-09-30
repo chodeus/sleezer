@@ -74,6 +74,10 @@ public class VariantQualifierDetectionTests
     [InlineData("Best of Both Worlds (Live)", true)]
     [InlineData("Dreams (Extended Version)", true)]
     [InlineData("Never Say Never (Colyn Remix)", true)]
+    [InlineData("Let Me Love You (Tiësto's AFTR:HRS Mix)", true)]
+    [InlineData("Welcome To The Jungle (1986 Sound City Session)", true)]
+    [InlineData("Brain Crackin' (Original Mix)", false)]
+    [InlineData("The Paramour Sessions", false)]           // "sessions" as a title word
     [InlineData("Proposition", false)]
     [InlineData("GLXY - Mind Less", false)]
     [InlineData("OK Computer (Deluxe Edition)", false)]   // edition, not a variant
@@ -82,6 +86,29 @@ public class VariantQualifierDetectionTests
     public void Qualifier_detection_matches_the_variant_profile(string title, bool expected)
     {
         Assert.Equal(expected, VariantQualifiers.HasVariantQualifier(title));
+    }
+}
+
+public class NamedMixAndSessionConflictTests
+{
+    [Theory]
+    [InlineData("Let Me Love You", "Let Me Love You (Tiësto's AFTR:HRS Mix)", true)]
+    [InlineData("Let Me Love You", "Let Me Love You (Tiësto’s AFTR:HRS Mix)", true)]
+    [InlineData("Let Me Love You (Tiësto's AFTR:HRS mix)", "Let Me Love You (Tiësto's AFTR:HRS Mix)", false)]
+    [InlineData("Welcome to the Jungle", "Welcome To The Jungle (1986 Sound City Session)", true)]
+    [InlineData("The Paramour Sessions", "The Paramour Sessions", false)]
+    [InlineData("Satisfaction", "Satisfaction (Original Mix)", false)]
+    public void A_named_mix_or_a_session_is_a_different_recording(string searched, string candidate, bool conflict)
+    {
+        Assert.Equal(conflict, VariantQualifiers.RemixSignaturesConflict(searched, candidate));
+    }
+
+    [Theory]
+    [InlineData("Voodoo (It's in the Wall) (original mix)", false)]
+    [InlineData("643 (Love's on Fire) (Oliver Klein's vocal mix)", true)]
+    public void A_possessive_names_a_mix_only_inside_its_own_bracket(string title, bool variantTrack)
+    {
+        Assert.Equal(variantTrack, VariantQualifiers.IsVariantTrack(title));
     }
 }
 
