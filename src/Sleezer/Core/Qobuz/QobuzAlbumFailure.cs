@@ -8,5 +8,9 @@ namespace NzbDrone.Plugin.Sleezer.Core.Qobuz
         // Null keeps Lidarr's generic "Failed download detected", which blocks only the grabbed tier.
         public static string? Reason(int unstreamableTracks, bool requireCompleteAlbum) =>
             requireCompleteAlbum && unstreamableTracks > 0 ? AlbumWideFailure.QobuzUnstreamable : null;
+
+        // The album payload already flags these tracks, so the album can fail before anything downloads.
+        public static int FlaggedUnstreamable(IEnumerable<bool?> trackStreamable) =>
+            trackStreamable.Count(streamable => streamable == false);
     }
 }

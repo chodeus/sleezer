@@ -137,6 +137,19 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
             if (!ReferenceEquals(_api, QobuzAPI.Instance))
                 await LoadAlbum(cancellation);
 
+            int flaggedUnstreamable = QobuzAlbumFailure.FlaggedUnstreamable(_tracks.Select(track => track.Streamable));
+            string? failFast = QobuzAlbumFailure.Reason(flaggedUnstreamable, settings.RequireCompleteAlbum);
+            if (failFast != null)
+            {
+                logger.Warn("Qobuz album {Title} has {Count} of {Total} track(s) not streamable for this account; failing before download because Require Complete Album is on",
+                    Title, flaggedUnstreamable, TrackCount);
+                Interlocked.Add(ref _skippedTracks, flaggedUnstreamable);
+                Interlocked.Add(ref _unstreamableTracks, flaggedUnstreamable);
+                FailureMessage = failFast;
+                Status = DownloadItemStatus.Failed;
+                return;
+            }
+
             _albumArt = await FetchAlbumArt(settings, logger, cancellation);
 
             int concurrency = Math.Clamp(settings.MaxConcurrentTracks, 1, 8);
