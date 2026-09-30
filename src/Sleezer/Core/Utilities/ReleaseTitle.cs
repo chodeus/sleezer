@@ -59,8 +59,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             // Lidarr's parse drops the closing brace, and CleanArtistName keeps a final "of"/"a"/"the" that
             // it drops before a bracket: "Songs (Best Of)" would clean to "songsbestof", not "songsbest".
             while (AsParsed(encoded).CleanArtistName() != wanted && TrailingWord.Match(encoded) is { Success: true, Index: > 0 } last
-                   && AsParsed(encoded[..last.Index] + "}").CleanArtistName() == wanted)
-                encoded = encoded[..last.Index] + "}";
+                   && AsParsed(CloseBrace(encoded[..last.Index])).CleanArtistName() == wanted)
+                encoded = CloseBrace(encoded[..last.Index]);
 
             return encoded;
         }
@@ -90,6 +90,9 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             Render(release, new ReleaseTitleParts(searchedArtist, SearchedAlbum(searchedTitle), tail));
             return true;
         }
+
+        // "Can I Get a..." cuts to "Can I Get": a brace is closed only if the cut left one open.
+        private static string CloseBrace(string text) => OutsideBraces(text, text.Length) ? text : text + "}";
 
         private static bool OutsideBraces(string text, int index) => text[..index].Count(c => c == '{') == text[..index].Count(c => c == '}');
 

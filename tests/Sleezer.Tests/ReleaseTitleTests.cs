@@ -37,6 +37,7 @@ public class ReleaseTitleTests
     [InlineData("Live (at the Apollo")]
     [InlineData("Songs (Best Of)")]
     [InlineData("Something (Side A)")]
+    [InlineData("Can I Get a...")]
     public void A_searched_title_parses_back_to_the_searched_album(string searched)
     {
         StoreReleaseInfo release = Composed("Some Artist", "Store Wording");
@@ -44,6 +45,16 @@ public class ReleaseTitleTests
         Assert.True(ReleaseTitle.AsSearchedAlbum(release, "Some Artist", searched));
 
         Assert.Equal(searched.CleanArtistName(), ParsedClean(release));
+    }
+
+    [Fact]
+    public void A_cut_searched_title_gains_no_stray_brace()
+    {
+        StoreReleaseInfo release = Composed("Some Artist", "Store Wording");
+
+        ReleaseTitle.AsSearchedAlbum(release, "Some Artist", "Can I Get a...");
+
+        Assert.DoesNotContain("}", release.Title);
     }
 
     // Bandcamp has no year: the album ends at the first "[" instead.
