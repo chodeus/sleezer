@@ -5,6 +5,7 @@ using System.Text;
 using NLog;
 using NzbDrone.Core.Indexers.Exceptions;
 using NzbDrone.Core.Indexers.Qobuz;
+using NzbDrone.Plugin.Sleezer.Core.Qobuz;
 using QobuzApiSharp.Exceptions;
 using QobuzApiSharp.Models.User;
 using QobuzApiSharp.Service;
@@ -35,6 +36,7 @@ namespace NzbDrone.Plugin.Sleezer.Qobuz
         private static readonly TimeSpan ValidationInterval = TimeSpan.FromMinutes(5);
         private static DateTime _lastBundleRefresh = DateTime.MinValue;
         private DateTime _lastValidated = DateTime.MinValue;
+        private DateTime _rightsReadAt = DateTime.MinValue;
         private DateTime _secretRejectedAt = DateTime.MinValue;
 
         /// <summary>The signed-in singleton for these settings: rebuilt when the app credentials or the account change, re-signed when the session stops working.</summary>
@@ -190,6 +192,38 @@ namespace NzbDrone.Plugin.Sleezer.Qobuz
         /// <summary>Two-letter country of the signed-in account, or empty when not signed in.</summary>
         public string CountryCode => _login?.User?.CountryCode ?? string.Empty;
 
+        /// <summary>Whether the shared session is signed in as the account these settings configure.</summary>
+        public bool IsFor(QobuzIndexerSettings settings) => _login != null && _account == FingerprintOf(settings);
+
+        /// <summary>Re-reads the account's streaming rights when they are older than maxAge; a failed read keeps the session.</summary>
+        // Rights come with the login, so a subscription that lapses mid-session stays hidden until the next one.
+        public void RefreshRightsIfStale(QobuzIndexerSettings settings, TimeSpan maxAge)
+        {
+            lock (SignInLock)
+            {
+                if (_login == null || _account != FingerprintOf(settings) || DateTime.UtcNow - _rightsReadAt < maxAge)
+                    return;
+
+                if (string.IsNullOrEmpty(settings.UserID) || string.IsNullOrEmpty(settings.UserAuthToken))
+                    return;
+
+                try
+                {
+                    _login = _client.LoginWithToken(settings.UserID, settings.UserAuthToken);
+                    _rightsReadAt = DateTime.UtcNow;
+
+                    string? streamingProblem = QobuzAccountCheck.StreamingProblem(_login, DateTimeOffset.UtcNow);
+                    if (streamingProblem != null)
+                        _logger.Warn(streamingProblem);
+                }
+                catch (Exception ex)
+                {
+                    // Not passing `ex`: its message can quote the token back (see SignInCore).
+                    _logger.Debug("Qobuz could not re-read the account's streaming rights ({ExceptionType}); keeping the current session", ex.GetType().Name);
+                }
+            }
+        }
+
         public bool SignIn(QobuzIndexerSettings settings)
         {
             lock (SignInLock)
@@ -215,8 +249,14 @@ namespace NzbDrone.Plugin.Sleezer.Qobuz
                     ? _client.LoginWithToken(settings.UserID, settings.UserAuthToken)
                     : _client.LoginWithEmail(settings.Email, settings.MD5Password);
 
+                _rightsReadAt = DateTime.UtcNow;
                 _logger.Info("Qobuz signed in — user {UserId} country {Country} appId {AppId}",
                     _login?.User?.Id, CountryCode, _client.AppId);
+
+                string? streamingProblem = QobuzAccountCheck.StreamingProblem(_login, DateTimeOffset.UtcNow);
+                if (streamingProblem != null)
+                    _logger.Warn(streamingProblem);
+
                 return true;
             }
             catch (ApiErrorResponseException ex)
