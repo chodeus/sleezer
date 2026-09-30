@@ -10,6 +10,7 @@ public class StoreVersionFilterTests
     [Theory]
     [InlineData("Album Version (Explicit)")]
     [InlineData("Explicit Album Version")]
+    [InlineData("Clean Album Version")]
     [InlineData("Album Version")]
     [InlineData("Remastered 2023")]
     [InlineData("(Remastered 2023)")]

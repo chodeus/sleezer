@@ -8,7 +8,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
     /// </summary>
     public static partial class StoreVersionFilter
     {
-        [GeneratedRegex(@"^(?:explicit|clean|(?:explicit|clean) version|(?:(?:explicit|original|lp) )?album version(?: explicit)?|(?:\d{4} )?(?:digital(?:ly)? )?remaster(?:ed)?(?: version)?(?: (?:in )?\d{4})?(?: version)?)$", RegexOptions.IgnoreCase)]
+        [GeneratedRegex(@"^(?:explicit|clean|(?:explicit|clean) version|(?:(?:explicit|clean|original|lp) )?album version(?: explicit)?|(?:\d{4} )?(?:digital(?:ly)? )?remaster(?:ed)?(?: version)?(?: (?:in )?\d{4})?(?: version)?)$", RegexOptions.IgnoreCase)]
         private static partial Regex Boilerplate();
 
         [GeneratedRegex(@"\s*[/;]\s*|\s+-\s+|\s*[\(\)\[\]]\s*")]
