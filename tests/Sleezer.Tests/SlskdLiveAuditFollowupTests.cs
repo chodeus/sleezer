@@ -24,6 +24,7 @@ public class RemixSignatureTests
     [InlineData("Nevermind (Remastered)", null)]
     [InlineData("Love Who You Love (Radio Edit)", "radio")]
     [InlineData("Album (VIP)", "")]
+    [InlineData("Song Title (Remixer Name V.I.P)", "remixer name")]    // live 2026-09-30: the dotted spelling slipped past
     [InlineData("Album (Instrumental)", "")]
     [InlineData("Album (2014) [FLAC]", null)]
     public void ExtractRemixSignature_identifies_remix_qualifiers(string title, string? expected)
@@ -46,6 +47,7 @@ public class RemixSignatureTests
     [InlineData("Me, Myself & I", "Me, Myself & I (Sped Up)", true)]
     [InlineData("The Documentary", "The Game - The Documentary (Instrumentals)", true)]
     [InlineData("Song", "Song (A Cappella)", true)]
+    [InlineData("Song Title", "Artist Name - Song Title (Remixer Name V.I.P)", true)]
     public void RemixSignaturesConflict_separates_remixes_from_originals(string searchAlbum, string folder, bool expected)
     {
         Assert.Equal(expected, VariantQualifiers.RemixSignaturesConflict(searchAlbum, folder));
@@ -61,6 +63,7 @@ public class RemixSignatureTests
     [InlineData("Some Album", "Some Album (Remixes)", new[] { "Remix" }, false)]                                // Remix type still forgives remix text
     [InlineData("Some Album", "Some Album (Marc Stout Remix)", new[] { "Remix" }, false)]                       // named remixer forgiven too
     [InlineData("Some Album", "Some Album (VIP)", new[] { "Remix" }, false)]                                    // VIP is remix-family
+    [InlineData("Some Album", "Some Album (V.I.P)", new[] { "Remix" }, false)]
     [InlineData("Some Album", "Some Album (Instrumental)", new[] { "Remix" }, true)]                            // Remix type must not admit other variants
     [InlineData("Some Album", "Some Album (Radio Edit)", new[] { "Remix" }, true)]
     [InlineData("Some Album", "Some Album (Sped Up)", new[] { "Remix" }, true)]
