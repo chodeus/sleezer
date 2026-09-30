@@ -40,7 +40,7 @@ namespace NzbDrone.Plugin.Sleezer.HealthChecks
             if (qobuzSession != null &&
                 enabled.Select(d => d.Settings).OfType<QobuzIndexerSettings>().FirstOrDefault(qobuzSession.IsFor) is { } qobuz)
             {
-                QobuzAPI.RefreshRightsIfStale(qobuz, RightsMaxAge);
+                qobuzSession.RefreshRightsIfStale(qobuz, RightsMaxAge);
                 problems.Add(QobuzAccountCheck.StreamingProblem(qobuzSession.Login, DateTimeOffset.UtcNow));
             }
 

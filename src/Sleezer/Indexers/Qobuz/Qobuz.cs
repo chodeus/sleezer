@@ -65,8 +65,10 @@ namespace NzbDrone.Core.Indexers.Qobuz
             if (baseFailure != null)
                 return baseFailure;
 
-            QobuzAPI.RefreshRightsIfStale(Settings, TimeSpan.Zero);
-            string? streamingProblem = QobuzAccountCheck.StreamingProblem(QobuzAPI.Instance?.Login, DateTimeOffset.UtcNow);
+            // This indexer's own session: another Qobuz indexer may have signed in meanwhile.
+            QobuzAPI session = QobuzAPI.EnsureSignedIn(Settings, _logger);
+            session.RefreshRightsIfStale(Settings, TimeSpan.Zero);
+            string? streamingProblem = QobuzAccountCheck.StreamingProblem(session.Login, DateTimeOffset.UtcNow);
             if (streamingProblem != null)
                 return new ValidationFailure(string.Empty, streamingProblem);
 

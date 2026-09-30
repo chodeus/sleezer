@@ -197,12 +197,11 @@ namespace NzbDrone.Plugin.Sleezer.Qobuz
 
         /// <summary>Re-reads the account's streaming rights when they are older than maxAge; a failed read keeps the session.</summary>
         // Rights come with the login, so a subscription that lapses mid-session stays hidden until the next one.
-        public static void RefreshRightsIfStale(QobuzIndexerSettings settings, TimeSpan maxAge)
+        public void RefreshRightsIfStale(QobuzIndexerSettings settings, TimeSpan maxAge)
         {
             lock (SignInLock)
             {
-                QobuzAPI? api = Instance;
-                if (api?._login == null || api._account != FingerprintOf(settings) || DateTime.UtcNow - api._rightsReadAt < maxAge)
+                if (_login == null || _account != FingerprintOf(settings) || DateTime.UtcNow - _rightsReadAt < maxAge)
                     return;
 
                 if (string.IsNullOrEmpty(settings.UserID) || string.IsNullOrEmpty(settings.UserAuthToken))
@@ -210,17 +209,17 @@ namespace NzbDrone.Plugin.Sleezer.Qobuz
 
                 try
                 {
-                    api._login = api._client.LoginWithToken(settings.UserID, settings.UserAuthToken);
-                    api._rightsReadAt = DateTime.UtcNow;
+                    _login = _client.LoginWithToken(settings.UserID, settings.UserAuthToken);
+                    _rightsReadAt = DateTime.UtcNow;
 
-                    string? streamingProblem = QobuzAccountCheck.StreamingProblem(api._login, DateTimeOffset.UtcNow);
+                    string? streamingProblem = QobuzAccountCheck.StreamingProblem(_login, DateTimeOffset.UtcNow);
                     if (streamingProblem != null)
-                        api._logger.Warn(streamingProblem);
+                        _logger.Warn(streamingProblem);
                 }
                 catch (Exception ex)
                 {
                     // Not passing `ex`: its message can quote the token back (see SignInCore).
-                    api._logger.Debug("Qobuz could not re-read the account's streaming rights ({ExceptionType}); keeping the current session", ex.GetType().Name);
+                    _logger.Debug("Qobuz could not re-read the account's streaming rights ({ExceptionType}); keeping the current session", ex.GetType().Name);
                 }
             }
         }
