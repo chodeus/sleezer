@@ -1,10 +1,13 @@
 using System;
+using System.Threading.Tasks;
+using FluentValidation.Results;
 using NLog;
 using NzbDrone.Common.Cache;
 using NzbDrone.Common.Http;
 using NzbDrone.Core.Configuration;
 using NzbDrone.Core.Download.Clients.Deezer;
 using NzbDrone.Core.Parser;
+using NzbDrone.Plugin.Sleezer.Core.Deezer;
 using NzbDrone.Plugin.Sleezer.Deezer;
 using NzbDrone.Plugin.Sleezer.Core.Replacements;
 using NzbDrone.Core.Music;
@@ -50,6 +53,16 @@ namespace NzbDrone.Core.Indexers.Deezer
                 Settings = Settings,
                 Logger = _logger
             };
+        }
+
+        protected override async Task<ValidationFailure> TestConnection()
+        {
+            ValidationFailure? baseFailure = await base.TestConnection();
+            if (baseFailure != null)
+                return baseFailure;
+
+            string? streamingProblem = DeezerArlCheck.StreamingProblem(DeezerAPI.ForArl(Settings.Arl).Client.GWApi.ActiveUserData);
+            return streamingProblem == null ? null! : new ValidationFailure(string.Empty, streamingProblem);
         }
 
         public override IParseIndexerResponse GetParser()
