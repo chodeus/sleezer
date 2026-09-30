@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
 namespace NzbDrone.Core.Download.Clients.Deezer
 {
@@ -25,8 +26,8 @@ namespace NzbDrone.Core.Download.Clients.Deezer
             using TagLib.File file = TagLib.File.Create(trackPath);
             var tag = file.Tag;
 
-            tag.Title = TitleWithVersion(data["SNG_TITLE"]?.ToString(), data["VERSION"]?.ToString());
-            tag.Album = TitleWithVersion(albumData?["ALB_TITLE"]?.ToString() ?? data["ALB_TITLE"]?.ToString(), albumData?["VERSION"]?.ToString());
+            tag.Title = TitleWithVersion(data["SNG_TITLE"]?.ToString(), StoreVersionFilter.Meaningful(data["VERSION"]?.ToString()));
+            tag.Album = TitleWithVersion(albumData?["ALB_TITLE"]?.ToString() ?? data["ALB_TITLE"]?.ToString(), StoreVersionFilter.Meaningful(albumData?["VERSION"]?.ToString()));
 
             var performers = Names(data["ARTISTS"]) ?? Names(data["ART_NAME"]?.ToString());
             if (performers != null)

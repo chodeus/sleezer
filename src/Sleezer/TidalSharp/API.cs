@@ -186,10 +186,12 @@ public class API
         return json;
     }
 
-    public static string CompleteTitleFromPage(JToken page)
+    public static string CompleteTitleFromPage(JToken page, Func<string?, string?>? versionFilter = null)
     {
         var title = page["title"]!.ToString();
         var version = page["version"]?.ToString();
+        if (versionFilter != null)
+            version = versionFilter(version);
         // we do the contains check as for whatever reason some albums (at least the one i looked at; 311544258) have the version already
         if (!string.IsNullOrEmpty(version) && !title.Contains(version, StringComparison.InvariantCulture))
             title = $"{title} ({version})";

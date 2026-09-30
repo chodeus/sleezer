@@ -118,6 +118,11 @@
     <Compile Include="..\..\src\Sleezer\Core\Utilities\AmbiguousArtistGuard.cs"
              LinkBase="SourceUnderTest" />
     <!-- Baseline Deezer tag write; TagLib + Newtonsoft via the Lidarr.Core reference. -->
+    <!-- Tag-title version filter and Qobuz album-artist roles; BCL only. -->
+    <Compile Include="..\..\src\Sleezer\Core\Utilities\StoreVersionFilter.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Core\Qobuz\QobuzAlbumArtists.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Download\Clients\Deezer\DeezerTagger.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Tidal\TidalPathSanitizer.cs"

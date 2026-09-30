@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 using NzbDrone.Plugin.Sleezer.Core.Qobuz;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
 // ImagesTools is the plugin's only image scaler; it lives in the Deezer namespace
 // for historical reasons (see CLAUDE.md namespace notes), not because it's Deezer-only.
@@ -195,14 +196,15 @@ namespace NzbDrone.Core.Download.Clients.Qobuz
             var page = s.GetTrack(trackId, true);
             var albumPage = page.Album?.Id is string albumId ? s.GetAlbum(albumId, true) : null;
 
-            track.Tag.Title = page.CompleteTitle;
-            track.Tag.Album = albumPage?.CompleteTitle ?? page.Album?.CompleteTitle;
+            track.Tag.Title = new Track { Title = page.Title, Version = StoreVersionFilter.Meaningful(page.Version)!, Work = page.Work }.CompleteTitle;
+            if ((albumPage ?? page.Album) is { } album)
+                track.Tag.Album = new Album { Title = album.Title, Version = StoreVersionFilter.Meaningful(album.Version)! }.CompleteTitle;
 
             if (page.Performer?.Name is string performer)
                 track.Tag.Performers = [performer];
 
             if (albumPage?.Artists is { } artists)
-                track.Tag.AlbumArtists = [.. artists.Select(x => x.Name)];
+                track.Tag.AlbumArtists = QobuzAlbumArtists.MainNames(artists.Select(x => (x.Name, (IReadOnlyCollection<string>?)x.Roles)));
             track.Tag.Year = (uint)page.ReleaseDateOriginal.GetValueOrDefault().DateTime.Year;
             track.Tag.Track = (uint)page.TrackNumber.GetValueOrDefault();
             track.Tag.TrackCount = (uint)(albumPage?.TracksCount).GetValueOrDefault();
