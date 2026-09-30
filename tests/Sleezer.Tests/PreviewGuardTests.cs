@@ -11,7 +11,8 @@ public class PreviewGuardTests
     [InlineData("PREVIEW", true)]
     [InlineData("preview", true)]
     [InlineData(null, false)]
-    [InlineData("", false)]
-    public void Only_a_non_full_presentation_is_a_preview(string? assetPresentation, bool expected) =>
+    [InlineData("", true)]
+    [InlineData(" ", true)]
+    public void Anything_but_a_full_or_missing_presentation_is_a_preview(string? assetPresentation, bool expected) =>
         Assert.Equal(expected, PreviewGuard.IsPreview(assetPresentation));
 }
