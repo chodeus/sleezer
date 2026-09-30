@@ -49,13 +49,17 @@ public class StoreVersionFilterTests
 
     [Fact]
     public void Qobuz_album_artists_keep_only_the_main_ones() =>
-        Assert.Equal(["Main Artist"], QobuzAlbumArtists.MainNames(
+        Assert.Equal(["Main Artist"], QobuzAlbumArtists.ForTags(
         [
-            ("Main Artist", ["main-artist"]),
+            ("Main Artist", ["MAIN-ARTIST"]),
             ("Guest Singer", ["featured-artist"])
         ]));
 
     [Fact]
     public void Qobuz_album_artists_without_roles_are_all_kept() =>
-        Assert.Equal(["First", "Second"], QobuzAlbumArtists.MainNames([("First", null), ("Second", null), ("", null)]));
+        Assert.Equal(["First", "Second"], QobuzAlbumArtists.ForTags([("First", null), ("Second", null), ("", null)]));
+
+    [Fact]
+    public void Qobuz_main_artists_are_empty_without_roles() =>
+        Assert.Empty(QobuzAlbumArtists.Main([("First", null), ("Second", ["featured-artist"])]));
 }

@@ -204,7 +204,7 @@ namespace NzbDrone.Core.Download.Clients.Qobuz
                 track.Tag.Performers = [performer];
 
             if (albumPage?.Artists is { } artists)
-                track.Tag.AlbumArtists = QobuzAlbumArtists.MainNames(artists.Select(x => (x.Name, (IReadOnlyCollection<string>?)x.Roles)));
+                track.Tag.AlbumArtists = QobuzAlbumArtists.ForTags(artists.Select(x => (x.Name, (IReadOnlyCollection<string>?)x.Roles)));
             track.Tag.Year = (uint)page.ReleaseDateOriginal.GetValueOrDefault().DateTime.Year;
             track.Tag.Track = (uint)page.TrackNumber.GetValueOrDefault();
             track.Tag.TrackCount = (uint)(albumPage?.TracksCount).GetValueOrDefault();
