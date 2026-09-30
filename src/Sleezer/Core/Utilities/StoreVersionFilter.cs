@@ -14,6 +14,10 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         [GeneratedRegex(@"\s*[/;]\s*|\s+-\s+|\s*[\(\)\[\]]\s*")]
         private static partial Regex Separators();
 
+        // "Remastered (2023)" and "Remastered - 2023" are one segment, so the year goes with the wording.
+        [GeneratedRegex(@"\b(remaster(?:ed)?)\s*(?:[\(\[]\s*(\d{4})\s*[\)\]]|-\s*(\d{4})\b)", RegexOptions.IgnoreCase)]
+        private static partial Regex RemasterYear();
+
         // Returns the version unchanged when nothing in it is boilerplate, null when all of it is.
         public static string? Meaningful(string? version)
         {
@@ -21,7 +25,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
                 return null;
 
             string trimmed = version.Trim();
-            string[] segments = Separators().Split(trimmed).Where(s => s.Length > 0).ToArray();
+            string joined = RemasterYear().Replace(trimmed, "$1 $2$3");
+            string[] segments = Separators().Split(joined).Where(s => s.Length > 0).ToArray();
             string[] kept = segments.Where(s => !Boilerplate().IsMatch(s)).ToArray();
 
             if (kept.Length == segments.Length)
@@ -31,6 +36,19 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 
             string rebuilt = string.Join(" / ", kept);
             return trimmed.StartsWith('(') && trimmed.EndsWith(')') ? $"({rebuilt})" : rebuilt;
+        }
+
+        /// <summary>A store title with its meaningful version; a title that already ends in the boilerplate version loses it.</summary>
+        public static string TitleWithVersion(string title, string? version)
+        {
+            string? meaningful = Meaningful(version);
+            if (!string.IsNullOrWhiteSpace(version) && meaningful != version.Trim() && title.EndsWith($"({version.Trim()})", StringComparison.Ordinal))
+                title = title[..^(version.Trim().Length + 2)].TrimEnd();
+
+            // Some store titles already carry their version (Tidal album 311544258).
+            return !string.IsNullOrEmpty(meaningful) && !title.Contains(meaningful, StringComparison.InvariantCulture)
+                ? $"{title} ({meaningful})"
+                : title;
         }
     }
 }

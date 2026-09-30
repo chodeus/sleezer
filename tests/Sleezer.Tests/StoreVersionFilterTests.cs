@@ -18,6 +18,9 @@ public class StoreVersionFilterTests
     [InlineData("Remastered")]
     [InlineData("Explicit")]
     [InlineData("Digitally Remastered")]
+    [InlineData("Remastered (2023)")]
+    [InlineData("Remastered [2011]")]
+    [InlineData("Remastered - 2023")]
     public void Pure_boilerplate_is_dropped(string version) =>
         Assert.Null(StoreVersionFilter.Meaningful(version));
 
@@ -29,6 +32,7 @@ public class StoreVersionFilterTests
     [InlineData("Mix Cut")]
     [InlineData("Single Version")]
     [InlineData("Remastered Live Version")]
+    [InlineData("Live in 2023")]
     public void A_version_that_names_a_different_recording_is_kept(string version) =>
         Assert.Equal(version, StoreVersionFilter.Meaningful(version));
 
@@ -38,6 +42,7 @@ public class StoreVersionFilterTests
     [InlineData("Radio Edit - Remastered 2011", "Radio Edit")]
     [InlineData("(Single Version / Remastered 2023)", "(Single Version)")]
     [InlineData("Radio Edit (Explicit)", "Radio Edit")]
+    [InlineData("Radio Edit / Remastered (2011)", "Radio Edit")]
     public void Only_the_boilerplate_part_of_a_mixed_version_is_dropped(string version, string expected) =>
         Assert.Equal(expected, StoreVersionFilter.Meaningful(version));
 
@@ -47,6 +52,16 @@ public class StoreVersionFilterTests
     [InlineData("  ")]
     public void No_version_stays_empty(string? version) =>
         Assert.Null(StoreVersionFilter.Meaningful(version));
+
+    [Theory]
+    [InlineData("Song", "Album Version", "Song")]
+    [InlineData("Song (Album Version)", "Album Version", "Song")]
+    [InlineData("Song (Single Version / Remastered 2023)", "Single Version / Remastered 2023", "Song (Single Version)")]
+    [InlineData("Song", "Radio Edit", "Song (Radio Edit)")]
+    [InlineData("Song (Radio Edit)", "Radio Edit", "Song (Radio Edit)")]
+    [InlineData("Song", null, "Song")]
+    public void A_title_carries_only_its_meaningful_version(string title, string? version, string expected) =>
+        Assert.Equal(expected, StoreVersionFilter.TitleWithVersion(title, version));
 
     [Fact]
     public void Qobuz_album_artists_keep_only_the_main_ones() =>
