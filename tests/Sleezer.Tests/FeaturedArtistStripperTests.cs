@@ -114,6 +114,19 @@ public class FeaturedArtistStripperTests
         Assert.Equal("Artist Name", info.ArtistTitle);
     }
 
+    // Live 2026-09-30: Lidarr's CleanTitle turned "Song (feat. Guest) (Remixer Remix)" into "Song", so every remix track missed its match.
+    [Theory]
+    [InlineData("Song Title (feat. Guest Artist) (Remixer Remix)", "Song Title", "Song Title (Remixer Remix)")]
+    [InlineData("Song Title (Christmas Version)", "Song Title", "Song Title (Christmas Version)")]
+    public void ForIdentification_matches_on_the_title_with_only_the_feat_removed(string title, string lidarrCleanTitle, string expected)
+    {
+        ParsedTrackInfo info = new() { Title = title, CleanTitle = lidarrCleanTitle };
+
+        FeaturedArtistStripper.ForIdentification(info, "Artist Name");
+
+        Assert.Equal(expected, info.CleanTitle);
+    }
+
     [Fact]
     public void ForIdentification_strips_a_bracketed_feat_from_the_artist()
     {
