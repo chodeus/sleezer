@@ -192,6 +192,9 @@ namespace NzbDrone.Plugin.Sleezer.Qobuz
         /// <summary>Two-letter country of the signed-in account, or empty when not signed in.</summary>
         public string CountryCode => _login?.User?.CountryCode ?? string.Empty;
 
+        /// <summary>Whether the shared session is signed in as the account these settings configure.</summary>
+        public bool IsFor(QobuzIndexerSettings settings) => _login != null && _account == FingerprintOf(settings);
+
         /// <summary>Re-reads the account's streaming rights when they are older than maxAge; a failed read keeps the session.</summary>
         // Rights come with the login, so a subscription that lapses mid-session stays hidden until the next one.
         public static void RefreshRightsIfStale(QobuzIndexerSettings settings, TimeSpan maxAge)

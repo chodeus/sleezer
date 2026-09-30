@@ -103,6 +103,9 @@ namespace NzbDrone.Plugin.Sleezer.Deezer
             }
         }
 
+        /// <summary>Whether the shared session is signed in with this ARL.</summary>
+        public bool IsFor(string? arl) => !string.IsNullOrEmpty(arl) && _client.ActiveARL == arl;
+
         // The session owner decides streaming capability; downloaders only ask.
         internal bool CanStream(Bitrate bitrate)
         {
