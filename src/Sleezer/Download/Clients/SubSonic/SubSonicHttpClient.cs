@@ -1,5 +1,6 @@
 using DownloadAssistant.Base;
 using NzbDrone.Common.Http;
+using NzbDrone.Plugin.Sleezer.Indexers.SubSonic;
 
 namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
 {
@@ -86,7 +87,7 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
             }
             catch (Exception ex)
             {
-                throw new Exception($"HTTP request failed for URL '{request.RequestUri}': {ex.Message}", ex);
+                throw new Exception($"HTTP request failed for URL '{SubSonicUrlRedactor.Redact(request.RequestUri?.ToString())}': {ex.Message}", ex);
             }
         }
 

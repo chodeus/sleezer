@@ -55,7 +55,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.SubSonic
             try
             {
                 string searchUrl = BuildSearch3Url(baseUrl, query, isSingle);
-                _logger.Trace($"Searching SubSonic: {searchUrl}");
+                _logger.Trace("Searching SubSonic: {Url}", SubSonicUrlRedactor.Redact(searchUrl));
                 IndexerRequest searchRequest = CreateRequest(searchUrl, isSingle ? "search3_with_songs" : "search3");
                 chain.Add([searchRequest]);
             }
