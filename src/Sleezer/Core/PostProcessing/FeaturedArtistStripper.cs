@@ -30,8 +30,8 @@ public static class FeaturedArtistStripper
         @"\s*[\(\[\{]with\s([^\)\]\}]+)[\)\]\}]",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    private static readonly Regex NameSeparatorPattern = new(
-        @"\s*(?:,|&|\band\b)\s*",
+    private static readonly Regex OnlySeparatorsPattern = new(
+        @"^(?:\s|,|&|\band\b)*$",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     /// <summary>
@@ -42,11 +42,17 @@ public static class FeaturedArtistStripper
     public static string StripCredits(string? input, IEnumerable<string?> creditedArtists)
     {
         string text = Strip(input);
-        HashSet<string> credited = [.. creditedArtists.OfType<string>().SelectMany(a => a.Split(',').Prepend(a)).Select(Fold).Where(n => n.Length > 0)];
-        return BracketedWithPattern.Replace(text, m =>
-            credited.Contains(Fold(m.Groups[1].Value)) || NameSeparatorPattern.Split(m.Groups[1].Value).Select(Fold).All(credited.Contains)
-                ? string.Empty
-                : m.Value).Trim();
+        string[] credited = [.. creditedArtists.OfType<string>().SelectMany(a => a.Split(',').Prepend(a)).Select(Fold).Where(n => n.Length > 0).Distinct().OrderByDescending(n => n.Length)];
+        return BracketedWithPattern.Replace(text, m => NamesOnlyCredited(m.Groups[1].Value, credited) ? string.Empty : m.Value).Trim();
+    }
+
+    // Whole credited names are removed, longest first; a credit leaves only separators behind.
+    private static bool NamesOnlyCredited(string clause, IEnumerable<string> credited)
+    {
+        string rest = Fold(clause);
+        foreach (string name in credited)
+            rest = Regex.Replace(rest, $@"(?<!\w){Regex.Escape(name)}(?!\w)", " ");
+        return rest != Fold(clause) && OnlySeparatorsPattern.IsMatch(rest);
     }
 
     private static string Fold(string name) => name.RemoveAccent().Trim().ToLowerInvariant();

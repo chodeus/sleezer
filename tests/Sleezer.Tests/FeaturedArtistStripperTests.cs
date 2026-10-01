@@ -166,9 +166,11 @@ public class FeaturedArtistStripperTests
     [Theory]
     [InlineData("Track Title (with First Name)", "Track Title (with First Name)")]
     [InlineData("Track Title (with First Name & Second Name)", "Track Title")]
+    [InlineData("Track Title (with First Name & Second Name and Guest Artist)", "Track Title")]
+    [InlineData("Track Title (with First Name and Guest Artist)", "Track Title (with First Name and Guest Artist)")]
     public void StripCredits_keeps_a_duo_name_whole(string input, string expected)
     {
-        Assert.Equal(expected, FeaturedArtistStripper.StripCredits(input, ["First Name & Second Name"]));
+        Assert.Equal(expected, FeaturedArtistStripper.StripCredits(input, ["First Name & Second Name", "Guest Artist"]));
     }
 
     [Fact]
