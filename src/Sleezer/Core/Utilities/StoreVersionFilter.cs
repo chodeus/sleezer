@@ -43,7 +43,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         {
             string? original = Unbracketed(version);
             string? meaningful = Unbracketed(Meaningful(version));
-            if (original != null && meaningful != original && title.EndsWith($"({original})", StringComparison.Ordinal))
+            if (original != null && meaningful != original && title.EndsWith($"({original})", StringComparison.OrdinalIgnoreCase))
                 title = title[..^(original.Length + 2)].TrimEnd();
 
             // Some store titles already carry their version (Tidal album 311544258).

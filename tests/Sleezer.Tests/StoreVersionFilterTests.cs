@@ -67,6 +67,7 @@ public class StoreVersionFilterTests
     [InlineData("Song", "(Single Version / Remastered 2023)", "Song (Single Version)")]
     [InlineData("Album", "International", "Album")]
     [InlineData("Album (International Version)", "International Version", "Album")]
+    [InlineData("Album (international version)", "International Version", "Album")]
     [InlineData("Song (Single Version / Remastered 2023)", "(Single Version / Remastered 2023)", "Song (Single Version)")]
     public void A_title_carries_only_its_meaningful_version(string title, string? version, string expected) =>
         Assert.Equal(expected, StoreVersionFilter.TitleWithVersion(title, version));
