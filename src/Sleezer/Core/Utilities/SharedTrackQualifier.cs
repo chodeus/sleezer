@@ -37,8 +37,12 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         }
 
         /// <summary>The title without any of these brackets.</summary>
+        // A removed bracket leaves a space, so "First (Mixed)Track" keeps its words apart.
         public static string Without(string title, IReadOnlySet<string> brackets) =>
-            Bracket().Replace(title, m => brackets.Contains(m.Groups[1].Value.Trim()) ? string.Empty : m.Value).Trim();
+            Spaces().Replace(Bracket().Replace(title, m => brackets.Contains(m.Groups[1].Value.Trim()) ? " " : m.Value), " ").Trim();
+
+        [GeneratedRegex(@"\s{2,}")]
+        private static partial Regex Spaces();
 
         private static HashSet<string> BracketsOf(string title) =>
             new(Bracket().Matches(title).Select(m => m.Groups[1].Value.Trim()), StringComparer.OrdinalIgnoreCase);

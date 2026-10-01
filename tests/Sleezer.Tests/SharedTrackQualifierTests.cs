@@ -83,4 +83,10 @@ public class SharedTrackQualifierTests
 
         Assert.Equal("Two (Remixer Name Remix)", SharedTrackQualifier.Without("Two (Mixed) (Remixer Name Remix)", removable));
     }
+
+    [Fact]
+    public void A_removed_interior_bracket_keeps_the_words_apart()
+    {
+        Assert.Equal(["First Track", "Second Track"], SharedTrackQualifier.Drop(["First (Mixed)Track", "Second (Mixed)Track"], Target));
+    }
 }
