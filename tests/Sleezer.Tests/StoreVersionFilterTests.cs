@@ -21,6 +21,8 @@ public class StoreVersionFilterTests
     [InlineData("Remastered (2023)")]
     [InlineData("Remastered [2011]")]
     [InlineData("Remastered - 2023")]
+    [InlineData("International")]
+    [InlineData("International Version")]
     public void Pure_boilerplate_is_dropped(string version) =>
         Assert.Null(StoreVersionFilter.Meaningful(version));
 
@@ -33,6 +35,7 @@ public class StoreVersionFilterTests
     [InlineData("Single Version")]
     [InlineData("Remastered Live Version")]
     [InlineData("Live in 2023")]
+    [InlineData("International Remix")]
     public void A_version_that_names_a_different_recording_is_kept(string version) =>
         Assert.Equal(version, StoreVersionFilter.Meaningful(version));
 
@@ -62,6 +65,8 @@ public class StoreVersionFilterTests
     [InlineData("Song", null, "Song")]
     [InlineData("Live Forever", "Live", "Live Forever (Live)")]
     [InlineData("Song", "(Single Version / Remastered 2023)", "Song (Single Version)")]
+    [InlineData("Album", "International", "Album")]
+    [InlineData("Album (International Version)", "International Version", "Album")]
     [InlineData("Song (Single Version / Remastered 2023)", "(Single Version / Remastered 2023)", "Song (Single Version)")]
     public void A_title_carries_only_its_meaningful_version(string title, string? version, string expected) =>
         Assert.Equal(expected, StoreVersionFilter.TitleWithVersion(title, version));
