@@ -6,6 +6,7 @@ using TidalSharp.Data;
 using TidalSharp.Downloading;
 using TidalSharp.Exceptions;
 using TidalSharp.Metadata;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
 namespace TidalSharp;
 
@@ -171,8 +172,8 @@ public class Downloader
             _logger.Debug(ex, "Album art unavailable for Tidal track {TrackId}", trackId);
         }
 
-        track.Tag.Title = API.CompleteTitleFromPage(trackData);
-        track.Tag.Album = API.CompleteTitleFromPage(albumPage);
+        track.Tag.Title = StoreVersionFilter.TitleWithVersion(trackData["title"]!.ToString(), trackData["version"]?.ToString());
+        track.Tag.Album = StoreVersionFilter.TitleWithVersion(albumPage["title"]!.ToString(), albumPage["version"]?.ToString());
         track.Tag.Performers = trackData["artists"]!.Select(a => a["name"]!.ToString()).ToArray();
         track.Tag.AlbumArtists = albumPage["artists"]!.Select(a => a["name"]!.ToString()).ToArray();
         string? rawReleaseDate = albumPage["releaseDate"]?.ToString() ?? albumPage["streamStartDate"]?.ToString();

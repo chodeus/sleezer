@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
 namespace NzbDrone.Core.Download.Clients.Deezer
 {
@@ -71,12 +72,8 @@ namespace NzbDrone.Core.Download.Clients.Deezer
             file.Save();
         }
 
-        private static string? TitleWithVersion(string? title, string? version)
-        {
-            if (string.IsNullOrWhiteSpace(title))
-                return title;
-            return string.IsNullOrWhiteSpace(version) ? title : $"{title} {version.Trim()}";
-        }
+        private static string? TitleWithVersion(string? title, string? version) =>
+            string.IsNullOrWhiteSpace(title) ? title : StoreVersionFilter.TitleWithVersion(title, version);
 
         private static string[]? Names(JToken? artists)
         {
