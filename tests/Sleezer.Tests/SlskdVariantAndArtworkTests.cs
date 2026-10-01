@@ -106,7 +106,7 @@ public class NamedMixAndSessionConflictTests
     }
 
     [Theory]
-    [InlineData("Track Title (It's a Subtitle) (original mix)", false)]
+    [InlineData("Track Title (Love's Subtitle) (original mix)", false)]
     [InlineData("Track Title (Love's Subtitle) (Remixer Name's vocal mix)", true)]
     public void A_possessive_names_a_mix_only_inside_its_own_bracket(string title, bool variantTrack)
     {
