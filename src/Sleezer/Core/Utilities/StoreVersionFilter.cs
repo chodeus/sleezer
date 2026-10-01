@@ -3,12 +3,12 @@ using System.Text.RegularExpressions;
 namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 {
     /// <summary>
-    /// Drops store boilerplate from a title's version ("Album Version (Explicit)", "Remastered 2023"),
+    /// Drops store boilerplate from a title's version ("Album Version (Explicit)", "Remastered 2023", "International"),
     /// which MusicBrainz titles never carry, and keeps versions that name a different recording.
     /// </summary>
     public static partial class StoreVersionFilter
     {
-        [GeneratedRegex(@"^(?:explicit|clean|(?:explicit|clean) version|(?:(?:explicit|clean|original|lp) )?album version(?: explicit)?|(?:\d{4} )?(?:digital(?:ly)? )?remaster(?:ed)?(?: version)?(?: (?:in )?\d{4})?(?: version)?)$", RegexOptions.IgnoreCase)]
+        [GeneratedRegex(@"^(?:explicit|clean|(?:explicit|clean) version|(?:(?:explicit|clean|original|lp) )?album version(?: explicit)?|international(?: version)?|(?:\d{4} )?(?:digital(?:ly)? )?remaster(?:ed)?(?: version)?(?: (?:in )?\d{4})?(?: version)?)$", RegexOptions.IgnoreCase)]
         private static partial Regex Boilerplate();
 
         [GeneratedRegex(@"\s*[/;]\s*|\s+-\s+|\s*[\(\)\[\]]\s*")]
@@ -43,7 +43,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         {
             string? original = Unbracketed(version);
             string? meaningful = Unbracketed(Meaningful(version));
-            if (original != null && meaningful != original && title.EndsWith($"({original})", StringComparison.Ordinal))
+            if (original != null && meaningful != original && title.EndsWith($"({original})", StringComparison.OrdinalIgnoreCase))
                 title = title[..^(original.Length + 2)].TrimEnd();
 
             // Some store titles already carry their version (Tidal album 311544258).
