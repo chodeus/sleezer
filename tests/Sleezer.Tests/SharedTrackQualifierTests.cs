@@ -6,14 +6,14 @@ namespace Sleezer.Tests;
 // Live 2026-10-01: DJ mixes and soundtracks from Deezer and Qobuz failed import on every track title.
 public class SharedTrackQualifierTests
 {
-    private static readonly string[] Target = ["One", "Two", "Extreme Ways", "Hold That Sucker Down (Hel:sløwed remix)"];
+    private static readonly string[] Target = ["One", "Two", "First Track", "Second Track (Remixer Name remix)"];
 
     [Fact]
     public void A_bracket_the_target_tracklist_carries_is_kept()
     {
-        string[] titles = ["State of Grace (Taylor's Version)", "Red (Taylor's Version)"];
+        string[] titles = ["First Track (Artist's Version)", "Second Track (Artist's Version)"];
 
-        Assert.Equal(titles, SharedTrackQualifier.Drop(titles, ["State of Grace (Taylor's Version)", "Red (Taylor's Version)"]));
+        Assert.Equal(titles, SharedTrackQualifier.Drop(titles, ["First Track (Artist's Version)", "Second Track (Artist's Version)"]));
     }
 
     [Fact]
@@ -28,14 +28,14 @@ public class SharedTrackQualifierTests
     public void A_bracket_every_track_carries_is_dropped_wherever_it_sits()
     {
         Assert.Equal(
-            ["Extreme Ways", "Hold That Sucker Down (Hel:sløwed Remix)"],
-            SharedTrackQualifier.Drop(["Extreme Ways (Mixed)", "Hold That Sucker Down (Mixed) (Hel:sløwed Remix)"], Target));
+            ["First Track", "Second Track (Remixer Name Remix)"],
+            SharedTrackQualifier.Drop(["First Track (Mixed)", "Second Track (Mixed) (Remixer Name Remix)"], Target));
     }
 
     [Theory]
     [InlineData("Mix Cut")]
     [InlineData("Original Soundtrack")]
-    [InlineData("Benny Benassi Presents The Biz")]
+    [InlineData("Artist Name Presents Other Artist")]
     public void Store_wording_shared_by_every_track_is_dropped(string shared)
     {
         Assert.Equal(["One", "Two"], SharedTrackQualifier.Drop([$"One ({shared})", $"Two [{shared}]"], Target));
