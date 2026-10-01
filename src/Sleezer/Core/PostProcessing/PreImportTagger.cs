@@ -142,9 +142,12 @@ public class PreImportTagger : IPreImportTagger
     {
         try
         {
+            // Tagging rewrites titles, so the shared bracket is judged on every file's original title.
+            IReadOnlyDictionary<string, string> originalTitles = ReadTitles(completedFolderPath, ct);
             TaggingResult result = await TagInternalAsync(album, artist, albumRelease, sourceId, completedFolderPath, confidenceThreshold, stripFeaturedArtists, verifyAllWithFingerprint, fingerprintTitleFallback, preferDigitalMedia, ct);
             if (stripFeaturedArtists)
                 StripCreditsFromUntaggedFiles(completedFolderPath, result.TaggedFiles, artist.Name, ct);
+            DropSharedBracketFromUntaggedFiles(originalTitles, result.TaggedFiles, album, ct);
             return result;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -575,6 +578,73 @@ public class PreImportTagger : IPreImportTagger
         }
     }
 
+    // Store copies of DJ mixes and soundtracks put "(Mixed)" or "(Original Soundtrack)" on every
+    // track title, which Lidarr's import scores against MusicBrainz titles without it.
+    private void DropSharedBracketFromUntaggedFiles(IReadOnlyDictionary<string, string> originalTitles, IReadOnlyList<TaggedFile>? taggedFiles, Album album, CancellationToken ct)
+    {
+        // Every release's tracklist must be known: an unloaded one could carry the bracket.
+        List<AlbumRelease>? releases = album.AlbumReleases?.Value;
+        if (originalTitles.Count < 2 || releases is not { Count: > 0 } || releases.Any(r => r.Tracks?.Value is not { Count: > 0 }))
+            return;
+
+        IReadOnlySet<string> removable = SharedTrackQualifier.Removable([.. originalTitles.Values], releases.SelectMany(VariantQualifiers.TracklistOf));
+        if (removable.Count == 0)
+            return;
+
+        HashSet<string> tagged = new((taggedFiles ?? []).Select(t => t.OriginalPath), StringComparer.Ordinal);
+        try
+        {
+            foreach (string path in originalTitles.Keys.Where(p => !tagged.Contains(p)).Order(StringComparer.Ordinal))
+            {
+                ct.ThrowIfCancellationRequested();
+                using TagLib.File file = TagLib.File.Create(path);
+                string title = file.Tag.Title ?? string.Empty;
+                string without = SharedTrackQualifier.Without(title, removable);
+                if (without == title)
+                    continue;
+
+                file.Tag.Title = without;
+                file.Save();
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.Warn(ex, "Pre-import tag: shared-bracket strip failed for {Album}", album.Title);
+        }
+    }
+
+    // Empty when the folder is missing or any title can't be read: a partial set can't judge what is shared.
+    private IReadOnlyDictionary<string, string> ReadTitles(string folderPath, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        if (!_diskProvider.FolderExists(folderPath))
+            return new Dictionary<string, string>();
+
+        try
+        {
+            // Exact paths: on a case-sensitive filesystem "A.flac" and "a.flac" are two files.
+            Dictionary<string, string> titles = new(StringComparer.Ordinal);
+            foreach (string path in EnumerateAudioFiles(folderPath))
+            {
+                ct.ThrowIfCancellationRequested();
+                titles[path] = ReadTitle(path);
+            }
+
+            return titles;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.Debug(ex, "Pre-import tag: could not read titles under {Folder}", folderPath);
+            return new Dictionary<string, string>();
+        }
+    }
+
+    private static string ReadTitle(string path)
+    {
+        using TagLib.File file = TagLib.File.Create(path);
+        return file.Tag.Title ?? string.Empty;
+    }
+
     // Files left with store tags still carry "(feat. X)" in title and album, which Lidarr's
     // import scores against MusicBrainz titles that never do.
     private void StripCreditsFromUntaggedFiles(string folderPath, IReadOnlyList<TaggedFile>? taggedFiles, string? artistName, CancellationToken ct)
@@ -582,7 +652,7 @@ public class PreImportTagger : IPreImportTagger
         if (!_diskProvider.FolderExists(folderPath))
             return;
 
-        HashSet<string> tagged = new((taggedFiles ?? []).Select(t => t.FinalPath), StringComparer.OrdinalIgnoreCase);
+        HashSet<string> tagged = new((taggedFiles ?? []).Select(t => t.FinalPath), StringComparer.Ordinal);
         foreach (string path in EnumerateAudioFiles(folderPath).Where(p => !tagged.Contains(p)))
         {
             ct.ThrowIfCancellationRequested();
