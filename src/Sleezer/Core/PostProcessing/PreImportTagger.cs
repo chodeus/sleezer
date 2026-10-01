@@ -591,7 +591,7 @@ public class PreImportTagger : IPreImportTagger
         if (removable.Count == 0)
             return;
 
-        HashSet<string> tagged = new((taggedFiles ?? []).Select(t => t.OriginalPath), StringComparer.OrdinalIgnoreCase);
+        HashSet<string> tagged = new((taggedFiles ?? []).Select(t => t.OriginalPath), StringComparer.Ordinal);
         try
         {
             foreach (string path in originalTitles.Keys.Where(p => !tagged.Contains(p)).Order(StringComparer.Ordinal))
@@ -622,7 +622,8 @@ public class PreImportTagger : IPreImportTagger
 
         try
         {
-            Dictionary<string, string> titles = new(StringComparer.OrdinalIgnoreCase);
+            // Exact paths: on a case-sensitive filesystem "A.flac" and "a.flac" are two files.
+            Dictionary<string, string> titles = new(StringComparer.Ordinal);
             foreach (string path in EnumerateAudioFiles(folderPath))
             {
                 ct.ThrowIfCancellationRequested();
@@ -651,7 +652,7 @@ public class PreImportTagger : IPreImportTagger
         if (!_diskProvider.FolderExists(folderPath))
             return;
 
-        HashSet<string> tagged = new((taggedFiles ?? []).Select(t => t.FinalPath), StringComparer.OrdinalIgnoreCase);
+        HashSet<string> tagged = new((taggedFiles ?? []).Select(t => t.FinalPath), StringComparer.Ordinal);
         foreach (string path in EnumerateAudioFiles(folderPath).Where(p => !tagged.Contains(p)))
         {
             ct.ThrowIfCancellationRequested();
