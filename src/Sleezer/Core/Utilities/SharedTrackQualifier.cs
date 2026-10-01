@@ -8,16 +8,23 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         [GeneratedRegex(@"\s*[\(\[]([^\(\)\[\]]+)[\)\]]")]
         private static partial Regex Bracket();
 
+        /// <summary>The titles without the bracket they all share; see <see cref="Removable"/>.</summary>
+        public static IReadOnlyList<string> Drop(IReadOnlyList<string> titles, IEnumerable<string?> targetTrackTitles)
+        {
+            IReadOnlySet<string> removable = Removable(titles, targetTrackTitles);
+            return removable.Count == 0 ? titles : [.. titles.Select(t => Without(t, removable))];
+        }
+
         /// <summary>
-        /// The titles without the bracket they all share, when the target album's tracklists never carry it.
-        /// Unchanged when the tracklists are unknown or the bracket marks a variant ("(Live)").
+        /// The brackets every title carries and the target album's tracklists never do.
+        /// Empty when the tracklists are unknown or a bracket marks a variant ("(Live)").
         /// </summary>
         // The target decides: MusicBrainz keeps "(Taylor's Version)" and some "[mix cut]" on every track.
-        public static IReadOnlyList<string> Drop(IReadOnlyList<string> titles, IEnumerable<string?> targetTrackTitles)
+        public static IReadOnlySet<string> Removable(IReadOnlyList<string> titles, IEnumerable<string?> targetTrackTitles)
         {
             List<string> targetTitles = [.. targetTrackTitles.OfType<string>()];
             if (titles.Count < 2 || targetTitles.Count == 0)
-                return titles;
+                return new HashSet<string>();
 
             HashSet<string> target = new(targetTitles.SelectMany(BracketsOf), StringComparer.OrdinalIgnoreCase);
 
@@ -26,11 +33,12 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
                 shared.IntersectWith(BracketsOf(title));
 
             shared.RemoveWhere(inner => target.Contains(inner) || VariantQualifiers.HasVariantQualifier($"({inner})"));
-            if (shared.Count == 0)
-                return titles;
-
-            return [.. titles.Select(t => Bracket().Replace(t, m => shared.Contains(m.Groups[1].Value.Trim()) ? string.Empty : m.Value).Trim())];
+            return shared;
         }
+
+        /// <summary>The title without any of these brackets.</summary>
+        public static string Without(string title, IReadOnlySet<string> brackets) =>
+            Bracket().Replace(title, m => brackets.Contains(m.Groups[1].Value.Trim()) ? string.Empty : m.Value).Trim();
 
         private static HashSet<string> BracketsOf(string title) =>
             new(Bracket().Matches(title).Select(m => m.Groups[1].Value.Trim()), StringComparer.OrdinalIgnoreCase);

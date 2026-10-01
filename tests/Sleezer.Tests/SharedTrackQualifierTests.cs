@@ -68,4 +68,19 @@ public class SharedTrackQualifierTests
 
         Assert.Equal(titles, SharedTrackQualifier.Drop(titles, Target));
     }
+
+    // The tagger judges on every file's original title, then strips only the files it left alone.
+    [Fact]
+    public void A_bracket_one_original_file_lacks_is_not_removable()
+    {
+        Assert.Empty(SharedTrackQualifier.Removable(["One (Mixed)", "Two (Mixed)", "Three"], Target));
+    }
+
+    [Fact]
+    public void Without_strips_only_the_removable_bracket()
+    {
+        var removable = SharedTrackQualifier.Removable(["One (Mixed)", "Two (Mixed) (Remixer Name Remix)"], Target);
+
+        Assert.Equal("Two (Remixer Name Remix)", SharedTrackQualifier.Without("Two (Mixed) (Remixer Name Remix)", removable));
+    }
 }

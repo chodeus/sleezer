@@ -142,10 +142,12 @@ public class PreImportTagger : IPreImportTagger
     {
         try
         {
+            // Tagging rewrites titles, so the shared bracket is judged on every file's original title.
+            IReadOnlyDictionary<string, string> originalTitles = ReadTitles(completedFolderPath);
             TaggingResult result = await TagInternalAsync(album, artist, albumRelease, sourceId, completedFolderPath, confidenceThreshold, stripFeaturedArtists, verifyAllWithFingerprint, fingerprintTitleFallback, preferDigitalMedia, ct);
             if (stripFeaturedArtists)
                 StripCreditsFromUntaggedFiles(completedFolderPath, result.TaggedFiles, artist.Name, ct);
-            DropSharedBracketFromUntaggedFiles(completedFolderPath, result.TaggedFiles, album, ct);
+            DropSharedBracketFromUntaggedFiles(originalTitles, result.TaggedFiles, album, ct);
             return result;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -578,36 +580,53 @@ public class PreImportTagger : IPreImportTagger
 
     // Store copies of DJ mixes and soundtracks put "(Mixed)" or "(Original Soundtrack)" on every
     // track title, which Lidarr's import scores against MusicBrainz titles without it.
-    private void DropSharedBracketFromUntaggedFiles(string folderPath, IReadOnlyList<TaggedFile>? taggedFiles, Album album, CancellationToken ct)
+    private void DropSharedBracketFromUntaggedFiles(IReadOnlyDictionary<string, string> originalTitles, IReadOnlyList<TaggedFile>? taggedFiles, Album album, CancellationToken ct)
     {
-        if (!_diskProvider.FolderExists(folderPath))
+        // Every release's tracklist must be known: an unloaded one could carry the bracket.
+        List<AlbumRelease>? releases = album.AlbumReleases?.Value;
+        if (originalTitles.Count < 2 || releases is not { Count: > 0 } || releases.Any(r => r.Tracks?.Value is not { Count: > 0 }))
             return;
 
-        HashSet<string> tagged = new((taggedFiles ?? []).Select(t => t.FinalPath), StringComparer.OrdinalIgnoreCase);
-        List<string> paths = [.. EnumerateAudioFiles(folderPath).Where(p => !tagged.Contains(p)).Order(StringComparer.Ordinal)];
-        if (paths.Count < 2)
+        IReadOnlySet<string> removable = SharedTrackQualifier.Removable([.. originalTitles.Values], releases.SelectMany(VariantQualifiers.TracklistOf));
+        if (removable.Count == 0)
             return;
 
+        HashSet<string> tagged = new((taggedFiles ?? []).Select(t => t.OriginalPath), StringComparer.OrdinalIgnoreCase);
         try
         {
-            List<string> titles = [.. paths.Select(ReadTitle)];
-            IEnumerable<string?> target = (album.AlbumReleases?.Value ?? []).SelectMany(VariantQualifiers.TracklistOf);
-            IReadOnlyList<string> dropped = SharedTrackQualifier.Drop(titles, target);
-
-            for (int i = 0; i < paths.Count; i++)
+            foreach (string path in originalTitles.Keys.Where(p => !tagged.Contains(p)).Order(StringComparer.Ordinal))
             {
                 ct.ThrowIfCancellationRequested();
-                if (dropped[i] == titles[i])
+                using TagLib.File file = TagLib.File.Create(path);
+                string title = file.Tag.Title ?? string.Empty;
+                string without = SharedTrackQualifier.Without(title, removable);
+                if (without == title)
                     continue;
 
-                using TagLib.File file = TagLib.File.Create(paths[i]);
-                file.Tag.Title = dropped[i];
+                file.Tag.Title = without;
                 file.Save();
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.Warn(ex, "Pre-import tag: shared-bracket strip failed for {Folder}", folderPath);
+            _logger.Warn(ex, "Pre-import tag: shared-bracket strip failed for {Album}", album.Title);
+        }
+    }
+
+    // Empty when the folder is missing or any title can't be read: a partial set can't judge what is shared.
+    private IReadOnlyDictionary<string, string> ReadTitles(string folderPath)
+    {
+        if (!_diskProvider.FolderExists(folderPath))
+            return new Dictionary<string, string>();
+
+        try
+        {
+            return EnumerateAudioFiles(folderPath).ToDictionary(p => p, ReadTitle, StringComparer.OrdinalIgnoreCase);
+        }
+        catch (Exception ex)
+        {
+            _logger.Debug(ex, "Pre-import tag: could not read titles under {Folder}", folderPath);
+            return new Dictionary<string, string>();
         }
     }
 
