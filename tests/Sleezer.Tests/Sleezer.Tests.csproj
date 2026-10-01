@@ -273,6 +273,8 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Indexers\SubSonic\SubSonicUrlRedactor.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Indexers\SubSonic\SubSonicLoginInterceptor.cs"
+             LinkBase="SourceUnderTest" />
   </ItemGroup>
 
   <ItemGroup>

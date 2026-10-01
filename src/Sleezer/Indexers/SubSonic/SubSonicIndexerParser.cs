@@ -158,7 +158,6 @@ public class SubSonicIndexerParser(Logger logger, IHttpClient httpClient) : ISub
         StringBuilder urlBuilder = new($"{baseUrl}/rest/getAlbum.view");
 
         urlBuilder.Append($"?id={Uri.EscapeDataString(albumId)}");
-        SubSonicAuthHelper.AppendAuthParameters(urlBuilder, _settings!.Username, _settings.Password, _settings.UseTokenAuth);
         urlBuilder.Append($"&f={JsonFormat}");
 
         return urlBuilder.ToString();
@@ -171,6 +170,7 @@ public class SubSonicIndexerParser(Logger logger, IHttpClient httpClient) : ISub
             RequestTimeout = TimeSpan.FromSeconds(_settings!.RequestTimeout)
         };
         request.Headers["User-Agent"] = SleezerPlugin.UserAgent;
+        SubSonicAuthHelper.AttachLogin(request, _settings.Username, _settings.Password, _settings.UseTokenAuth);
         return request;
     }
 

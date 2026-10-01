@@ -5,7 +5,6 @@ using NzbDrone.Core.Configuration;
 using NzbDrone.Core.Indexers;
 using NzbDrone.Core.Parser;
 using NzbDrone.Core.ThingiProvider;
-using System.Text;
 using System.Text.Json;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Core.Replacements;
@@ -50,16 +49,14 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.SubSonic
             {
                 // Test connection using ping endpoint
                 string baseUrl = Settings.BaseUrl.TrimEnd('/');
-                var urlBuilder = new StringBuilder($"{baseUrl}/rest/ping.view");
-                SubSonicAuthHelper.AppendAuthParameters(urlBuilder, Settings.Username, Settings.Password, Settings.UseTokenAuth);
-                urlBuilder.Append("&f=json");
-                string testUrl = urlBuilder.ToString();
+                string testUrl = $"{baseUrl}/rest/ping.view?f=json";
 
                 var request = new HttpRequest(testUrl)
                 {
                     RequestTimeout = TimeSpan.FromSeconds(Settings.RequestTimeout)
                 };
                 request.Headers["User-Agent"] = SleezerPlugin.UserAgent;
+                SubSonicAuthHelper.AttachLogin(request, Settings.Username, Settings.Password, Settings.UseTokenAuth);
 
                 _logger.Trace("Testing SubSonic connection to: {BaseUrl}", Settings.BaseUrl);
 

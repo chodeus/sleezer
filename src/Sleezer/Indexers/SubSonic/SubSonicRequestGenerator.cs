@@ -55,7 +55,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.SubSonic
             try
             {
                 string searchUrl = BuildSearch3Url(baseUrl, query, isSingle);
-                _logger.Trace("Searching SubSonic: {Url}", SubSonicUrlRedactor.Redact(searchUrl));
+                _logger.Trace("Searching SubSonic: {Url}", searchUrl);
                 IndexerRequest searchRequest = CreateRequest(searchUrl, isSingle ? "search3_with_songs" : "search3");
                 chain.Add([searchRequest]);
             }
@@ -71,7 +71,6 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.SubSonic
         {
             StringBuilder urlBuilder = new($"{baseUrl}/rest/search3.view");
             urlBuilder.Append($"?query={Uri.EscapeDataString(query)}");
-            SubSonicAuthHelper.AppendAuthParameters(urlBuilder, _settings!.Username, _settings.Password, _settings.UseTokenAuth);
             urlBuilder.Append($"&artistCount=0");
             urlBuilder.Append($"&albumCount={_settings!.SearchLimit}");
             urlBuilder.Append($"&songCount={(isSingle ? _settings.SearchLimit : 0)}");
@@ -90,6 +89,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.SubSonic
             };
 
             req.Headers["User-Agent"] = SleezerPlugin.UserAgent;
+            SubSonicAuthHelper.AttachLogin(req, _settings.Username, _settings.Password, _settings.UseTokenAuth);
             return new IndexerRequest(req);
         }
     }
