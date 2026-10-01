@@ -57,6 +57,16 @@ public class ReleaseTitleTests
         Assert.DoesNotContain("}", release.Title);
     }
 
+    [Fact]
+    public void A_cut_after_a_stray_closer_gains_no_second_one()
+    {
+        StoreReleaseInfo release = Composed("Some Artist", "Store Wording");
+
+        ReleaseTitle.AsSearchedAlbum(release, "Some Artist", "Album] Can I Get a...");
+
+        Assert.DoesNotContain("Get}", release.Title);
+    }
+
     // Bandcamp has no year: the album ends at the first "[" instead.
     [Fact]
     public void A_title_without_a_year_parses_back_too()

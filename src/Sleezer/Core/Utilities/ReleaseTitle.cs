@@ -92,7 +92,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         }
 
         // "Can I Get a..." cuts to "Can I Get": a brace is closed only if the cut left one open.
-        private static string CloseBrace(string text) => OutsideBraces(text, text.Length) ? text : text + "}";
+        private static string CloseBrace(string text) => text.Count(c => c == '{') > text.Count(c => c == '}') ? text + "}" : text;
 
         private static bool OutsideBraces(string text, int index) => text[..index].Count(c => c == '{') == text[..index].Count(c => c == '}');
 
