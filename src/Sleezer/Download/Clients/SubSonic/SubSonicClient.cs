@@ -51,7 +51,12 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
 
         public override Task<string> Download(RemoteAlbum remoteAlbum, IIndexer indexer)
         {
-            UseIndexerLogin();
+            // The release's own indexer: with several SubSonic servers, fetch from the one that found it.
+            if (indexer?.Definition?.Settings is SubSonicIndexerSettings source)
+                Settings.UseLogin(source);
+            else
+                UseIndexerLogin();
+
             return _downloadManager.Download(remoteAlbum, indexer, _namingService.GetConfig(), this);
         }
 

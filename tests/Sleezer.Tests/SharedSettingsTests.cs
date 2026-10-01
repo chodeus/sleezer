@@ -100,6 +100,24 @@ public class SharedLoginSettingsTests
     }
 
     [Fact]
+    public void A_new_slskd_server_drops_the_old_servers_download_folder()
+    {
+        SlskdProviderSettings client = new() { BaseUrl = "http://old-host:5030", DownloadPath = "/old/downloads", SubdirectoryPattern = "{user}", IsLocalhost = true };
+
+        Assert.True(client.UseLogin(new SlskdSettings { BaseUrl = "http://new-host:5030", ApiKey = "key-b" }));
+        Assert.Equal((string.Empty, (string?)null, false), (client.DownloadPath, client.SubdirectoryPattern, client.IsLocalhost));
+    }
+
+    [Fact]
+    public void The_same_slskd_server_keeps_its_download_folder()
+    {
+        SlskdProviderSettings client = new() { BaseUrl = "http://host-a:5030", ApiKey = "key-a", DownloadPath = "/downloads" };
+
+        Assert.False(client.UseLogin(new SlskdSettings { BaseUrl = "http://host-a:5030", ApiKey = "key-b" }));
+        Assert.Equal(("/downloads", "key-b"), (client.DownloadPath, client.ApiKey));
+    }
+
+    [Fact]
     public void SubSonic_client_takes_the_indexer_server_and_login()
     {
         SubSonicProviderSettings client = new();
@@ -225,5 +243,9 @@ public class SharedSettingsCopyTests
         Assert.Contains(Plan([Indexer(5, "Peer A", new SlskdSettings { BaseUrl = "http://peer-a:5030", ApiKey = "key-a" })], [client]).Notes,
             n => n.StartsWith("Peer client: its own login matched no indexer"));
         Assert.Contains(Plan([], [client]).Notes, n => n.StartsWith("Peer client: there is no matching indexer"));
+
+        IndexerDefinition other = Indexer(6, "Peer B", new SlskdSettings { BaseUrl = "http://peer-b:5030", ApiKey = "key-b" });
+        Assert.Contains(Plan([Indexer(5, "Peer A", new SlskdSettings { BaseUrl = "http://peer-a:5030", ApiKey = "key-a" }), other], [client]).Notes,
+            n => n.StartsWith("Peer client: its own login matched none of the 2 indexers"));
     }
 }

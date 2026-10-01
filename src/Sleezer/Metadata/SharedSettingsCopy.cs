@@ -95,11 +95,11 @@ namespace NzbDrone.Plugin.Sleezer.Metadata
                         break;
                     case SlskdProviderSettings s:
                         LinkClient(d, indexers.Where(i => i.Settings is SlskdSettings i2 && i2.BaseUrl == s.BaseUrl && i2.ApiKey == s.ApiKey),
-                            indexers.Count(i => i.Settings is SlskdSettings), clientIndexerIds, notes);
+                            indexers.Count(i => i.Settings is SlskdSettings), s.IndexerId, clientIndexerIds, notes);
                         break;
                     case SubSonicProviderSettings s:
                         LinkClient(d, indexers.Where(i => i.Settings is SubSonicIndexerSettings i2 && i2.BaseUrl == s.ServerUrl && i2.Username == s.Username),
-                            indexers.Count(i => i.Settings is SubSonicIndexerSettings), clientIndexerIds, notes);
+                            indexers.Count(i => i.Settings is SubSonicIndexerSettings), s.IndexerId, clientIndexerIds, notes);
                         break;
                 }
             }
@@ -144,13 +144,15 @@ namespace NzbDrone.Plugin.Sleezer.Metadata
             return value;
         }
 
-        private static void LinkClient(ProviderDefinition client, IEnumerable<ProviderDefinition> matching, int indexerCount, Dictionary<int, int> ids, List<string> notes)
+        private static void LinkClient(ProviderDefinition client, IEnumerable<ProviderDefinition> matching, int indexerCount, int indexerId, Dictionary<int, int> ids, List<string> notes)
         {
             List<ProviderDefinition> found = matching.ToList();
             if (found.Count >= 1 && indexerCount > 1)
                 ids[client.Id] = found[0].Id;
-            else if (found.Count == 0 && indexerCount > 0)
+            else if (found.Count == 0 && indexerCount == 1)
                 notes.Add($"{client.Name}: its own login matched no indexer; it now uses the indexer's. Check it under Download Clients.");
+            else if (found.Count == 0 && indexerCount > 1 && indexerId == 0)
+                notes.Add($"{client.Name}: its own login matched none of the {indexerCount} indexers; pick one under Indexer or the client stops working.");
             else if (indexerCount == 0)
                 notes.Add($"{client.Name}: there is no matching indexer to take a login from; add one or the client stops working.");
         }

@@ -116,16 +116,20 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek
         public SlskdDestinationConfig? GetDestinationConfig() =>
             string.IsNullOrEmpty(DownloadPath) ? null : new SlskdDestinationConfig(DownloadPath, SubdirectoryPattern);
 
-        /// <summary>Takes the URL and API key from the Slskd indexer this client reuses.</summary>
-        public void UseLogin(SlskdSettings indexer)
+        /// <summary>Takes the URL and API key from the Slskd indexer this client reuses; true when the server changed.</summary>
+        public bool UseLogin(SlskdSettings indexer)
         {
-            if (BaseUrl != indexer.BaseUrl)
-            {
-                BaseUrl = indexer.BaseUrl;
-                _host = null;
-            }
-
             ApiKey = indexer.ApiKey;
+            if (BaseUrl == indexer.BaseUrl)
+                return false;
+
+            // The old server's download folder no longer applies; the caller fetches the new one.
+            BaseUrl = indexer.BaseUrl;
+            _host = null;
+            IsLocalhost = false;
+            DownloadPath = string.Empty;
+            SubdirectoryPattern = null;
+            return true;
         }
 
         public TimeSpan? GetTimeout() => TimeoutMinutes == null ? null : TimeSpan.FromMinutes(TimeoutMinutes.Value);

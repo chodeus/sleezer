@@ -42,28 +42,27 @@ namespace NzbDrone.Plugin.Sleezer.Metadata
 
             MetadataDefinition? ffmpegEntry = entries.FirstOrDefault(d => d.Settings is FFmpegSettings);
             MetadataDefinition? lyricsEntry = entries.FirstOrDefault(d => d.Settings is LyricsSettings);
-            FFmpegSettings? ffmpeg = ffmpegEntry?.Settings as FFmpegSettings;
+            if (ffmpegEntry?.Settings is not FFmpegSettings ffmpeg || lyricsEntry == null)
+            {
+                logger.Warn("Sleezer settings copy deferred to the next start: the {Entry} metadata entry is missing", lyricsEntry == null ? "Lyrics" : "FFmpeg");
+                return;
+            }
+
             List<DownloadClientDefinition> clients = downloadClientFactory.All();
 
             SharedSettingsPlan plan = SharedSettingsCopy.Plan(
                 indexerFactory.All(),
                 clients,
-                ffmpeg?.PreImportTaggingClients ?? [],
-                ffmpeg?.StripFeaturedArtists ?? false);
+                ffmpeg.PreImportTaggingClients,
+                ffmpeg.StripFeaturedArtists);
 
-            if (ffmpeg != null)
-            {
-                ffmpeg.TidalExtractFlac = plan.TidalExtractFlac;
-                ffmpeg.TidalReEncodeAAC = plan.TidalReEncodeAAC;
-                metadataFactory.Update(ffmpegEntry!);
-            }
+            ffmpeg.TidalExtractFlac = plan.TidalExtractFlac;
+            ffmpeg.TidalReEncodeAAC = plan.TidalReEncodeAAC;
+            metadataFactory.Update(ffmpegEntry);
 
-            if (lyricsEntry != null)
-            {
-                lyricsEntry.Settings = plan.Lyrics;
-                lyricsEntry.Enable = plan.LyricsEnabled;
-                metadataFactory.Update(lyricsEntry);
-            }
+            lyricsEntry.Settings = plan.Lyrics;
+            lyricsEntry.Enable = plan.LyricsEnabled;
+            metadataFactory.Update(lyricsEntry);
 
             foreach (DownloadClientDefinition client in clients)
             {

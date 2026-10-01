@@ -19,6 +19,7 @@ public class SlskdClient : DownloadClientBase<SlskdProviderSettings>
     private readonly ISlskdDownloadManager _manager;
     private readonly ISlskdApiClient _apiClient;
     private readonly Lazy<IIndexerFactory> _indexerFactory;
+    private readonly Lazy<IDownloadClientFactory> _clientFactory;
 
     public override string Name => "Slskd";
     public override string Protocol => nameof(SoulseekDownloadProtocol);
@@ -31,12 +32,14 @@ public class SlskdClient : DownloadClientBase<SlskdProviderSettings>
         IRemotePathMappingService remotePathMappingService,
         ILocalizationService localizationService,
         Lazy<IIndexerFactory> indexerFactory,
+        Lazy<IDownloadClientFactory> clientFactory,
         Logger logger)
         : base(configService, diskProvider, remotePathMappingService, localizationService, logger)
     {
         _manager = manager;
         _apiClient = apiClient;
         _indexerFactory = indexerFactory;
+        _clientFactory = clientFactory;
     }
 
     public override async Task<string> Download(RemoteAlbum remoteAlbum, IIndexer indexer) =>
@@ -69,7 +72,7 @@ public class SlskdClient : DownloadClientBase<SlskdProviderSettings>
     {
         try
         {
-            Connected();
+            Connected(save: false);
         }
         catch (DownloadClientException ex)
         {
@@ -107,10 +110,21 @@ public class SlskdClient : DownloadClientBase<SlskdProviderSettings>
             ? IndexerLogin.Options<SlskdSettings>(_indexerFactory.Value.All())
             : base.RequestAction(action, query);
 
-    // Lazy: the indexer factory is resolved alongside the download clients.
-    private SlskdProviderSettings Connected()
+    // Lazy: both factories are resolved alongside the download clients.
+    // Test passes save: false, so an unsaved form is never written.
+    private SlskdProviderSettings Connected(bool save = true)
     {
-        Settings.UseLogin(IndexerLogin.Find<SlskdSettings>(_indexerFactory.Value.All(), Settings.IndexerId, "Slskd"));
+        if (!Settings.UseLogin(IndexerLogin.Find<SlskdSettings>(_indexerFactory.Value.All(), Settings.IndexerId, "Slskd")))
+            return Settings;
+
+        ValidationFailure? failure = _apiClient.TestConnectionAsync(Settings).GetAwaiter().GetResult();
+        if (failure != null)
+            throw new DownloadClientException($"Slskd at {Settings.BaseUrl}: {failure.ErrorMessage}");
+
+        // Saved so the new server's download folder is fetched once, not on every queue poll.
+        if (save && Definition is DownloadClientDefinition { Id: > 0 } definition)
+            _clientFactory.Value.Update(definition);
+
         return Settings;
     }
 
