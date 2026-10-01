@@ -142,7 +142,10 @@ public class PreImportTagger : IPreImportTagger
     {
         try
         {
-            return await TagInternalAsync(album, artist, albumRelease, sourceId, completedFolderPath, confidenceThreshold, stripFeaturedArtists, verifyAllWithFingerprint, fingerprintTitleFallback, preferDigitalMedia, ct);
+            TaggingResult result = await TagInternalAsync(album, artist, albumRelease, sourceId, completedFolderPath, confidenceThreshold, stripFeaturedArtists, verifyAllWithFingerprint, fingerprintTitleFallback, preferDigitalMedia, ct);
+            if (stripFeaturedArtists)
+                StripCreditsFromUntaggedFiles(completedFolderPath, result.TaggedFiles, artist.Name);
+            return result;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -569,6 +572,38 @@ public class PreImportTagger : IPreImportTagger
         {
             _logger.Warn(ex, "Pre-import tag: write failed for {Path}", localTrack.Path);
             return null;
+        }
+    }
+
+    // Files left with store tags still carry "(feat. X)" in title and album, which Lidarr's
+    // import scores against MusicBrainz titles that never do.
+    private void StripCreditsFromUntaggedFiles(string folderPath, IReadOnlyList<TaggedFile>? taggedFiles, string? artistName)
+    {
+        if (!_diskProvider.FolderExists(folderPath))
+            return;
+
+        HashSet<string> tagged = new((taggedFiles ?? []).Select(t => t.FinalPath), StringComparer.OrdinalIgnoreCase);
+        foreach (string path in EnumerateAudioFiles(folderPath).Where(p => !tagged.Contains(p)))
+        {
+            try
+            {
+                using TagLib.File file = TagLib.File.Create(path);
+                string[] credited = [.. file.Tag.Performers, .. file.Tag.AlbumArtists];
+                string title = FeaturedArtistStripper.StripCredits(file.Tag.Title, credited);
+                string albumTitle = FeaturedArtistStripper.StripCredits(file.Tag.Album, credited);
+                string[] albumArtists = [.. file.Tag.AlbumArtists.Select(a => FeaturedArtistStripper.Strip(FeaturedArtistStripper.StripGuestCredits(a, artistName)))];
+                if (title == (file.Tag.Title ?? string.Empty) && albumTitle == (file.Tag.Album ?? string.Empty) && albumArtists.SequenceEqual(file.Tag.AlbumArtists))
+                    continue;
+
+                file.Tag.Title = title;
+                file.Tag.Album = albumTitle;
+                file.Tag.AlbumArtists = albumArtists;
+                file.Save();
+            }
+            catch (Exception ex)
+            {
+                _logger.Warn(ex, "Pre-import tag: credit strip failed for {Path}", path);
+            }
         }
     }
 

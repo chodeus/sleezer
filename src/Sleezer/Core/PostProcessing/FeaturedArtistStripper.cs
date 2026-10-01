@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using NzbDrone.Common.Extensions;
 using NzbDrone.Core.Parser.Model;
 
 namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing;
@@ -24,6 +25,28 @@ public static class FeaturedArtistStripper
         string cleaned = BracketedFeatPattern.Replace(input, string.Empty);
         return cleaned.Trim();
     }
+
+    private static readonly Regex BracketedWithPattern = new(
+        @"\s*[\(\[\{]with\s([^\)\]\}]+)[\)\]\}]",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static readonly Regex NameSeparatorPattern = new(
+        @"\s*(?:,|&|\band\b)\s*",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// <see cref="Strip"/>, plus a "(with X)" credit whose every name is one of the credited artists;
+    /// any other "(with …)" is title text ("Dancing (With Myself)").
+    /// </summary>
+    public static string StripCredits(string? input, IEnumerable<string?> creditedArtists)
+    {
+        string text = Strip(input);
+        HashSet<string> credited = [.. creditedArtists.SelectMany(Names)];
+        return BracketedWithPattern.Replace(text, m => Names(m.Groups[1].Value).All(credited.Contains) ? string.Empty : m.Value).Trim();
+    }
+
+    private static IEnumerable<string> Names(string? text) =>
+        NameSeparatorPattern.Split(text ?? string.Empty).Select(n => n.RemoveAccent().Trim().ToLowerInvariant()).Where(n => n.Length > 0);
 
     private static readonly Regex GuestCreditSeparatorPattern = new(
         @"^(?:\s*[,;]|\s+(?:feat\.?|featuring|ft\.?)\s)",

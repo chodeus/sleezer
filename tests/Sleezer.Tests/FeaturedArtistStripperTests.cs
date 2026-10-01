@@ -147,4 +147,25 @@ public class FeaturedArtistStripperTests
         Assert.Equal("Album Title (Remixer Remix)", info.AlbumTitle);
         Assert.Equal("Song Title", info.Title);
     }
+
+    // Live 2026-10-01: store singles reached Lidarr with "(feat. X)" / "(with X)" still in title and album.
+    [Theory]
+    [InlineData("Run It Back (feat. Caroline Byrne) (Luuk Van Dijk Remix)", "Run It Back (Luuk Van Dijk Remix)")]
+    [InlineData("One More Dance (with Carmen Soliman) [Arabic Version]", "One More Dance [Arabic Version]")]
+    [InlineData("Come Find Me (with Clementine Douglas) (GudGroove Remix)", "Come Find Me (GudGroove Remix)")]
+    [InlineData("Song (with Carmen Soliman & Guest Two)", "Song")]
+    [InlineData("Dancing (With Myself)", "Dancing (With Myself)")]
+    [InlineData("Song (with Someone Else)", "Song (with Someone Else)")]
+    public void StripCredits_drops_feat_and_a_with_credit_naming_credited_artists(string input, string expected)
+    {
+        string[] credited = ["R3HAB", "Carmen Soliman", "MK", "Clementine Douglas", "Guest Two"];
+
+        Assert.Equal(expected, FeaturedArtistStripper.StripCredits(input, credited));
+    }
+
+    [Fact]
+    public void StripCredits_reads_credited_artists_joined_in_one_tag()
+    {
+        Assert.Equal("Song", FeaturedArtistStripper.StripCredits("Song (with Clementine Douglas)", ["MK, Clementine Douglas"]));
+    }
 }
