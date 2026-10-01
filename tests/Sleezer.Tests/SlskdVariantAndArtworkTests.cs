@@ -77,6 +77,8 @@ public class VariantQualifierDetectionTests
     [InlineData("Track Title (Remixer Name's Late Night Mix)", true)]
     [InlineData("Track Title (1986 Studio Session)", true)]
     [InlineData("Track Title (Original Mix)", false)]
+    [InlineData("Track Title (It's a Mix)", false)]
+    [InlineData("Track Title (That’s the Mix)", false)]
     [InlineData("The Album Sessions", false)]             // "sessions" as a title word
     [InlineData("Proposition", false)]
     [InlineData("GLXY - Mind Less", false)]
