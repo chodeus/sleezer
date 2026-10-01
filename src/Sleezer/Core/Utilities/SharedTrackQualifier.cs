@@ -1,0 +1,38 @@
+using System.Text.RegularExpressions;
+
+namespace NzbDrone.Plugin.Sleezer.Core.Utilities
+{
+    /// <summary>A bracket every track of a store album carries ("(Mixed)", "(Original Soundtrack)"); MusicBrainz track titles leave it out.</summary>
+    public static partial class SharedTrackQualifier
+    {
+        [GeneratedRegex(@"\s*[\(\[]([^\(\)\[\]]+)[\)\]]")]
+        private static partial Regex Bracket();
+
+        /// <summary>
+        /// The titles without the bracket they all share, when the target album's tracklists never carry it.
+        /// Unchanged when the tracklists are unknown or the bracket marks a variant ("(Live)").
+        /// </summary>
+        // The target decides: MusicBrainz keeps "(Taylor's Version)" and some "[mix cut]" on every track.
+        public static IReadOnlyList<string> Drop(IReadOnlyList<string> titles, IEnumerable<string?> targetTrackTitles)
+        {
+            List<string> targetTitles = [.. targetTrackTitles.OfType<string>()];
+            if (titles.Count < 2 || targetTitles.Count == 0)
+                return titles;
+
+            HashSet<string> target = new(targetTitles.SelectMany(BracketsOf), StringComparer.OrdinalIgnoreCase);
+
+            HashSet<string> shared = BracketsOf(titles[0]);
+            foreach (string title in titles.Skip(1))
+                shared.IntersectWith(BracketsOf(title));
+
+            shared.RemoveWhere(inner => target.Contains(inner) || VariantQualifiers.HasVariantQualifier($"({inner})"));
+            if (shared.Count == 0)
+                return titles;
+
+            return [.. titles.Select(t => Bracket().Replace(t, m => shared.Contains(m.Groups[1].Value.Trim()) ? string.Empty : m.Value).Trim())];
+        }
+
+        private static HashSet<string> BracketsOf(string title) =>
+            new(Bracket().Matches(title).Select(m => m.Groups[1].Value.Trim()), StringComparer.OrdinalIgnoreCase);
+    }
+}

@@ -142,7 +142,9 @@ public class PreImportTagger : IPreImportTagger
     {
         try
         {
-            return await TagInternalAsync(album, artist, albumRelease, sourceId, completedFolderPath, confidenceThreshold, stripFeaturedArtists, verifyAllWithFingerprint, fingerprintTitleFallback, preferDigitalMedia, ct);
+            TaggingResult result = await TagInternalAsync(album, artist, albumRelease, sourceId, completedFolderPath, confidenceThreshold, stripFeaturedArtists, verifyAllWithFingerprint, fingerprintTitleFallback, preferDigitalMedia, ct);
+            DropSharedBracketFromUntaggedFiles(completedFolderPath, result.TaggedFiles, album);
+            return result;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -570,6 +572,46 @@ public class PreImportTagger : IPreImportTagger
             _logger.Warn(ex, "Pre-import tag: write failed for {Path}", localTrack.Path);
             return null;
         }
+    }
+
+    // Store copies of DJ mixes and soundtracks put "(Mixed)" or "(Original Soundtrack)" on every
+    // track title, which Lidarr's import scores against MusicBrainz titles without it.
+    private void DropSharedBracketFromUntaggedFiles(string folderPath, IReadOnlyList<TaggedFile>? taggedFiles, Album album)
+    {
+        if (!_diskProvider.FolderExists(folderPath))
+            return;
+
+        HashSet<string> tagged = new((taggedFiles ?? []).Select(t => t.FinalPath), StringComparer.OrdinalIgnoreCase);
+        List<string> paths = [.. EnumerateAudioFiles(folderPath).Where(p => !tagged.Contains(p)).Order(StringComparer.Ordinal)];
+        if (paths.Count < 2)
+            return;
+
+        try
+        {
+            List<string> titles = [.. paths.Select(ReadTitle)];
+            IEnumerable<string?> target = (album.AlbumReleases?.Value ?? []).SelectMany(VariantQualifiers.TracklistOf);
+            IReadOnlyList<string> dropped = SharedTrackQualifier.Drop(titles, target);
+
+            for (int i = 0; i < paths.Count; i++)
+            {
+                if (dropped[i] == titles[i])
+                    continue;
+
+                using TagLib.File file = TagLib.File.Create(paths[i]);
+                file.Tag.Title = dropped[i];
+                file.Save();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Warn(ex, "Pre-import tag: shared-bracket strip failed for {Folder}", folderPath);
+        }
+    }
+
+    private static string ReadTitle(string path)
+    {
+        using TagLib.File file = TagLib.File.Create(path);
+        return file.Tag.Title ?? string.Empty;
     }
 
     /// <summary>
