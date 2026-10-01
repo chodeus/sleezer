@@ -60,6 +60,9 @@ public class StoreVersionFilterTests
     [InlineData("Song", "Radio Edit", "Song (Radio Edit)")]
     [InlineData("Song (Radio Edit)", "Radio Edit", "Song (Radio Edit)")]
     [InlineData("Song", null, "Song")]
+    [InlineData("Live Forever", "Live", "Live Forever (Live)")]
+    [InlineData("Song", "(Single Version / Remastered 2023)", "Song (Single Version)")]
+    [InlineData("Song (Single Version / Remastered 2023)", "(Single Version / Remastered 2023)", "Song (Single Version)")]
     public void A_title_carries_only_its_meaningful_version(string title, string? version, string expected) =>
         Assert.Equal(expected, StoreVersionFilter.TitleWithVersion(title, version));
 

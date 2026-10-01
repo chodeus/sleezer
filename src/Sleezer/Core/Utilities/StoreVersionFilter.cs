@@ -41,14 +41,21 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         /// <summary>A store title with its meaningful version; a title that already ends in the boilerplate version loses it.</summary>
         public static string TitleWithVersion(string title, string? version)
         {
-            string? meaningful = Meaningful(version);
-            if (!string.IsNullOrWhiteSpace(version) && meaningful != version.Trim() && title.EndsWith($"({version.Trim()})", StringComparison.Ordinal))
-                title = title[..^(version.Trim().Length + 2)].TrimEnd();
+            string? original = Unbracketed(version);
+            string? meaningful = Unbracketed(Meaningful(version));
+            if (original != null && meaningful != original && title.EndsWith($"({original})", StringComparison.Ordinal))
+                title = title[..^(original.Length + 2)].TrimEnd();
 
             // Some store titles already carry their version (Tidal album 311544258).
-            return !string.IsNullOrEmpty(meaningful) && !title.Contains(meaningful, StringComparison.InvariantCulture)
-                ? $"{title} ({meaningful})"
-                : title;
+            return string.IsNullOrEmpty(meaningful) || title.Contains($"({meaningful})", StringComparison.InvariantCulture) || title.Contains($"[{meaningful}]", StringComparison.InvariantCulture)
+                ? title
+                : $"{title} ({meaningful})";
+        }
+
+        private static string? Unbracketed(string? version)
+        {
+            string? trimmed = version?.Trim();
+            return trimmed is ['(', .., ')'] ? trimmed[1..^1].Trim() : string.IsNullOrEmpty(trimmed) ? null : trimmed;
         }
     }
 }
