@@ -26,8 +26,8 @@ namespace NzbDrone.Core.Download.Clients.Deezer
             using TagLib.File file = TagLib.File.Create(trackPath);
             var tag = file.Tag;
 
-            tag.Title = TitleWithVersion(data["SNG_TITLE"]?.ToString(), StoreVersionFilter.Meaningful(data["VERSION"]?.ToString()));
-            tag.Album = TitleWithVersion(albumData?["ALB_TITLE"]?.ToString() ?? data["ALB_TITLE"]?.ToString(), StoreVersionFilter.Meaningful(albumData?["VERSION"]?.ToString()));
+            tag.Title = TitleWithVersion(data["SNG_TITLE"]?.ToString(), data["VERSION"]?.ToString());
+            tag.Album = TitleWithVersion(albumData?["ALB_TITLE"]?.ToString() ?? data["ALB_TITLE"]?.ToString(), albumData?["VERSION"]?.ToString());
 
             var performers = Names(data["ARTISTS"]) ?? Names(data["ART_NAME"]?.ToString());
             if (performers != null)
@@ -72,12 +72,8 @@ namespace NzbDrone.Core.Download.Clients.Deezer
             file.Save();
         }
 
-        private static string? TitleWithVersion(string? title, string? version)
-        {
-            if (string.IsNullOrWhiteSpace(title))
-                return title;
-            return string.IsNullOrWhiteSpace(version) ? title : $"{title} {version.Trim()}";
-        }
+        private static string? TitleWithVersion(string? title, string? version) =>
+            string.IsNullOrWhiteSpace(title) ? title : StoreVersionFilter.TitleWithVersion(title, version);
 
         private static string[]? Names(JToken? artists)
         {

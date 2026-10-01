@@ -196,9 +196,9 @@ namespace NzbDrone.Core.Download.Clients.Qobuz
             var page = s.GetTrack(trackId, true);
             var albumPage = page.Album?.Id is string albumId ? s.GetAlbum(albumId, true) : null;
 
-            track.Tag.Title = new Track { Title = page.Title, Version = StoreVersionFilter.Meaningful(page.Version)!, Work = page.Work }.CompleteTitle;
+            track.Tag.Title = StoreVersionFilter.TitleWithVersion(new Track { Title = page.Title, Work = page.Work }.CompleteTitle, page.Version);
             if ((albumPage ?? page.Album) is { } album)
-                track.Tag.Album = new Album { Title = album.Title, Version = StoreVersionFilter.Meaningful(album.Version)! }.CompleteTitle;
+                track.Tag.Album = StoreVersionFilter.TitleWithVersion(new Album { Title = album.Title }.CompleteTitle, album.Version);
 
             if (page.Performer?.Name is string performer)
                 track.Tag.Performers = [performer];
