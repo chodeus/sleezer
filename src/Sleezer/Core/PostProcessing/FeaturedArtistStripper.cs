@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using NzbDrone.Common.Extensions;
 using NzbDrone.Core.Parser.Model;
 
 namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing;
@@ -24,6 +25,37 @@ public static class FeaturedArtistStripper
         string cleaned = BracketedFeatPattern.Replace(input, string.Empty);
         return cleaned.Trim();
     }
+
+    private static readonly Regex BracketedWithPattern = new(
+        @"\s*[\(\[\{]with\s([^\)\]\}]+)[\)\]\}]",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static readonly Regex OnlySeparatorsPattern = new(
+        @"^(?:\s|,|&|\band\b)*$",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// <see cref="Strip"/>, plus a "(with X)" credit naming credited artists, whole or as listed;
+    /// any other "(with …)" is title text ("Dancing (With Myself)").
+    /// </summary>
+    // Credited entries split only on commas (joined tags list artists that way), so "Simon & Garfunkel" never credits "Simon".
+    public static string StripCredits(string? input, IEnumerable<string?> creditedArtists)
+    {
+        string text = Strip(input);
+        string[] credited = [.. creditedArtists.OfType<string>().SelectMany(a => a.Split(',').Prepend(a)).Select(Fold).Where(n => n.Length > 0).Distinct().OrderByDescending(n => n.Length)];
+        return BracketedWithPattern.Replace(text, m => NamesOnlyCredited(m.Groups[1].Value, credited) ? string.Empty : m.Value).Trim();
+    }
+
+    // Whole credited names are removed, longest first; a credit leaves only separators behind.
+    private static bool NamesOnlyCredited(string clause, IEnumerable<string> credited)
+    {
+        string rest = Fold(clause);
+        foreach (string name in credited)
+            rest = Regex.Replace(rest, $@"(?<!\w){Regex.Escape(name)}(?!\w)", " ");
+        return rest != Fold(clause) && OnlySeparatorsPattern.IsMatch(rest);
+    }
+
+    private static string Fold(string name) => name.RemoveAccent().Trim().ToLowerInvariant();
 
     private static readonly Regex GuestCreditSeparatorPattern = new(
         @"^(?:\s*[,;]|\s+(?:feat\.?|featuring|ft\.?)\s)",
