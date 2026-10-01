@@ -21,10 +21,11 @@ namespace NzbDrone.Core.Download.Clients.Deezer
         [FieldDefinition(0, Label = "Download Path", Type = FieldType.Textbox)]
         public string DownloadPath { get; set; } = "";
 
-        [FieldDefinition(1, Label = "Save Synced Lyrics", HelpText = "Saves synced lyrics to a separate .lrc file if available. Requires .lrc to be allowed under Import Extra Files.", Type = FieldType.Checkbox)]
+        // Moved to the Lyrics metadata entry; hidden so the one-time copy can read them.
+        [FieldDefinition(1, Label = "Save Synced Lyrics", Type = FieldType.Checkbox, Hidden = HiddenType.Hidden)]
         public bool SaveSyncedLyrics { get; set; } = false;
 
-        [FieldDefinition(2, Label = "Use LRCLIB as Backup Lyric Provider", HelpText = "If Deezer does not have plain or synced lyrics for a track, the plugin will attempt to get them from LRCLIB.", Type = FieldType.Checkbox)]
+        [FieldDefinition(2, Label = "Use LRCLIB as Backup Lyric Provider", Type = FieldType.Checkbox, Hidden = HiddenType.Hidden)]
         public bool UseLRCLIB { get; set; } = false;
 
         [FieldDefinition(3, Label = "Allow Track Substitution", HelpText = "When a track is unavailable, download Deezer's own alternative for the same recording (matched by ISRC, or an exact title/version/duration match). Never a search — a different recording is always refused.", Type = FieldType.Checkbox)]

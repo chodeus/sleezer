@@ -114,7 +114,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
     {
         private static readonly FFmpegSettingsValidator Validator = new();
 
-        [FieldDefinition(0, Label = "FFmpeg Path", Type = FieldType.Path, Section = MetadataSectionType.Metadata, Placeholder = "/downloads/FFmpeg", HelpText = "Required. Where Sleezer keeps ffmpeg for conversion and for the corrupt scan's decode check. Saving installs ffmpeg here if it is missing (from chodeus/ffmpeg-static, checked for updates daily). A newer ffmpeg on the host PATH is preferred over the downloaded copy.", HelpTextWarning = "Enable only switches on conversion, and conversion runs on EVERY track Lidarr imports, torrent and Usenet included. The corrupt scan and pre-import tagging below run on the Sleezer downloaders you pick, whether or not this entry is enabled.")]
+        [FieldDefinition(0, Label = "FFmpeg Path", Type = FieldType.Path, Section = MetadataSectionType.Metadata, Placeholder = "/downloads/FFmpeg", HelpText = "Required. Where Sleezer keeps ffmpeg for conversion, the corrupt scan's decode check and Tidal's M4A handling. Saving installs ffmpeg here if it is missing (from chodeus/ffmpeg-static, checked for updates daily). A newer ffmpeg on the host PATH is preferred over the downloaded copy.", HelpTextWarning = "Enable only switches on conversion, and conversion runs on EVERY track Lidarr imports, torrent and Usenet included. The corrupt scan and the Tidal options below run whether or not this entry is enabled.")]
         public string FFmpegPath { get; set; } = string.Empty;
 
         [FieldDefinition(1, Label = "Convert MP3", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Convert MP3 files. Applies to all imports (torrent/Usenet/plugin) when this provider is enabled.")]
@@ -144,10 +144,17 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
         [FieldDefinition(10, Label = "Run Corrupt Scan On", Type = FieldType.TagSelect, SelectOptions = typeof(PostProcessClient), Section = MetadataSectionType.Metadata, Placeholder = "Type to add a client", HelpText = "After download, scan audio files for corruption on the selected Sleezer downloaders: size, TagLib parse and, when ffmpeg can be found, a decode. One corrupt file fails the whole download: its folder is deleted and the release is re-searched. Empty = scan disabled. Runs whether or not this entry is enabled; not on torrent or Usenet downloads.")]
         public IEnumerable<int> CorruptionScanClients { get; set; } = Array.Empty<int>();
 
-        [FieldDefinition(11, Label = "Run Pre-Import Tagging On", Type = FieldType.TagSelect, SelectOptions = typeof(PostProcessClient), Section = MetadataSectionType.Metadata, Placeholder = "Type to add a client", HelpText = "Run Lidarr's identification + tag writer on downloaded files before import for the selected Sleezer downloaders, so untagged or mistagged releases match cleanly. Does not use ffmpeg. Empty = tagging disabled. Runs whether or not this entry is enabled; not on torrent or Usenet downloads.")]
+        [FieldDefinition(13, Label = "Tidal: Extract FLAC From M4A", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Pull the FLAC stream out of the M4A files Tidal serves, without re-encoding.")]
+        public bool TidalExtractFlac { get; set; }
+
+        [FieldDefinition(14, Label = "Tidal: Re-encode AAC Into MP3", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Re-encode the AAC stream in Tidal's M4A files into MP3.")]
+        public bool TidalReEncodeAAC { get; set; }
+
+        // Moved to Sleezer Download Rules; kept hidden so the one-time copy can read them.
+        [FieldDefinition(11, Label = "Run Pre-Import Tagging On", Type = FieldType.TagSelect, SelectOptions = typeof(PostProcessClient), Hidden = HiddenType.Hidden)]
         public IEnumerable<int> PreImportTaggingClients { get; set; } = Array.Empty<int>();
 
-        [FieldDefinition(12, Label = "Remove Featured Artists From Tags", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Pre-import tagging always ignores '(feat. X)' when matching files for the clients selected above. This also removes it from the title and artist tags of the files it tags, renaming them to match, and removes it, and a '(with X)' naming a credited artist, from the title and album tags of the files it can't match.")]
+        [FieldDefinition(12, Label = "Remove Featured Artists From Tags", Type = FieldType.Checkbox, Hidden = HiddenType.Hidden)]
         public bool StripFeaturedArtists { get; set; }
 
         public NzbDroneValidationResult Validate() => new(Validator.Validate(this));

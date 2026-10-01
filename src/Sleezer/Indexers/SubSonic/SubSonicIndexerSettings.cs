@@ -43,7 +43,7 @@ public class SubSonicIndexerSettingsValidator : AbstractValidator<SubSonicIndexe
     }
 }
 
-public class SubSonicIndexerSettings : IIndexerSettings, IStoreMatchingSettings
+public class SubSonicIndexerSettings : IIndexerSettings
 {
     private static readonly SubSonicIndexerSettingsValidator Validator = new();
 
@@ -71,7 +71,8 @@ public class SubSonicIndexerSettings : IIndexerSettings, IStoreMatchingSettings
     [FieldDefinition(7, Type = FieldType.Number, Label = "Early Download Limit", Unit = "days", HelpText = "Time before release date Lidarr will download from this indexer, empty is no limit.", Advanced = true)]
     public int? EarlyReleaseLimit { get; set; }
 
-    [FieldDefinition(8, Label = "Strict Matching", Type = FieldType.Checkbox, HelpText = StrictMatchingHelp.TitleOnly)]
+    // Moved to Sleezer Download Rules; hidden so the one-time copy can read them.
+    [FieldDefinition(8, Label = "Strict Matching", Type = FieldType.Checkbox, Hidden = HiddenType.Hidden)]
     public bool StrictMatching { get; set; } = true;
 
     public NzbDroneValidationResult Validate() => new(Validator.Validate(this));

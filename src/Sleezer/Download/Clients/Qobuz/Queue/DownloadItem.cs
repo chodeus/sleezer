@@ -7,12 +7,13 @@ using System.Threading;
 using System.Threading.Tasks;
 using NLog;
 using NzbDrone.Core.Parser.Model;
+using NzbDrone.Plugin.Sleezer.Core.Download;
+using NzbDrone.Plugin.Sleezer.Core.Model;
 using NzbDrone.Plugin.Sleezer.Core.Qobuz;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
+using NzbDrone.Plugin.Sleezer.Metadata.Lyrics;
 using NzbDrone.Plugin.Sleezer.Qobuz;
 using QobuzApiSharp.Models.Content;
-
-using NzbDrone.Plugin.Sleezer.Core.Download;
 
 namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
 {
@@ -29,6 +30,7 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
         private Track[] _tracks = [];
         // The session _qobuzAlbum and _tracks came from; every call for this item goes through it.
         private QobuzAPI _api = null!;
+        private SharedDownloadOptions _options = SharedDownloadOptions.Default;
         private QobuzURL _qobuzUrl = null!;
         private Album _qobuzAlbum = null!;
         private byte[]? _albumArt;
@@ -132,16 +134,17 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
 
         internal void CaptureSettings(QobuzSettings settings) => Settings = settings;
 
-        public async Task DoDownload(QobuzSettings settings, Logger logger, CancellationToken cancellation = default)
+        public async Task DoDownload(QobuzSettings settings, SharedDownloadOptions options, Logger logger, CancellationToken cancellation = default)
         {
+            _options = options;
             if (!ReferenceEquals(_api, QobuzAPI.Instance))
                 await LoadAlbum(cancellation);
 
             int flaggedUnstreamable = QobuzAlbumFailure.FlaggedUnstreamable(_tracks.Select(track => track.Streamable));
-            string? failFast = QobuzAlbumFailure.Reason(flaggedUnstreamable, settings.RequireCompleteAlbum);
+            string? failFast = QobuzAlbumFailure.Reason(flaggedUnstreamable, _options.WholeAlbumsOnly);
             if (failFast != null)
             {
-                logger.Warn("Qobuz album {Title} has {Count} of {Total} track(s) not streamable for this account; failing before download because Require Complete Album is on",
+                logger.Warn("Qobuz album {Title} has {Count} of {Total} track(s) not streamable for this account; failing before download because Whole Albums Only is on",
                     Title, flaggedUnstreamable, TrackCount);
                 Interlocked.Add(ref _skippedTracks, flaggedUnstreamable);
                 Interlocked.Add(ref _unstreamableTracks, flaggedUnstreamable);
@@ -159,13 +162,13 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
 
             bool incomplete = FailedTracks > 0
                 || CompletedTracks + SkippedTracks < TrackCount
-                || (settings.RequireCompleteAlbum && SkippedTracks > 0);
+                || (_options.WholeAlbumsOnly && SkippedTracks > 0);
 
             if (incomplete)
             {
                 logger.Warn("Qobuz download incomplete for {Title}: {Completed}/{Total} tracks, {Failed} failed, {Skipped} skipped",
                     Title, CompletedTracks, TrackCount, FailedTracks, SkippedTracks);
-                FailureMessage = QobuzAlbumFailure.Reason(Volatile.Read(ref _unstreamableTracks), settings.RequireCompleteAlbum);
+                FailureMessage = QobuzAlbumFailure.Reason(Volatile.Read(ref _unstreamableTracks), _options.WholeAlbumsOnly);
                 Status = DownloadItemStatus.Failed;
                 CleanUpFailedDownload(settings, logger);
                 return;
@@ -308,7 +311,7 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
                 throw new InvalidOperationException($"Qobuz track {trackId} downloaded only {fileSize} bytes; treating as a failed transfer.");
             }
 
-            (string? plainLyrics, string? syncLyrics) = await FetchLyrics(page, settings, logger, cancellation);
+            (string? plainLyrics, string? syncLyrics) = await FetchLyrics(page, _options.Lyrics, logger, cancellation);
 
             bool embedArt = (QobuzArtworkPlacement)settings.ArtworkPlacement != QobuzArtworkPlacement.Sidecar;
             await api.Client.ApplyMetadataToFile(trackId, outPath, _albumArt, embedArt, plainLyrics ?? string.Empty, cancellation);
@@ -322,10 +325,10 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
             }
         }
 
-        private static async Task<(string? Plain, string? Synced)> FetchLyrics(Track page, QobuzSettings settings, Logger logger, CancellationToken cancellation)
+        private static async Task<(string? Plain, string? Synced)> FetchLyrics(Track page, LyricsSettings lyricOptions, Logger logger, CancellationToken cancellation)
         {
             // Qobuz serves no lyrics of its own, so LRCLIB is the only source here.
-            if (!settings.UseLRCLIB)
+            if (!lyricOptions.UseLRCLIB)
                 return (null, null);
 
             (string? PlainLyrics, string? SyncLyrics)? lyrics;
@@ -350,7 +353,7 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
             if (lyrics == null)
                 return (null, null);
 
-            return (lyrics.Value.PlainLyrics, settings.SaveSyncedLyrics ? lyrics.Value.SyncLyrics : null);
+            return (lyrics.Value.PlainLyrics, lyricOptions.SaveSyncedLyrics ? lyrics.Value.SyncLyrics : null);
         }
 
         private async Task<byte[]?> FetchAlbumArt(QobuzSettings settings, Logger logger, CancellationToken cancellation)

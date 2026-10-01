@@ -1,20 +1,21 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
-using Newtonsoft.Json.Linq;
-using NLog;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using Newtonsoft.Json.Linq;
+using NLog;
 using NzbDrone.Common.Http;
 using NzbDrone.Core.Download.Clients.Deezer;
 using NzbDrone.Core.Parser.Model;
-using System.Collections.Concurrent;
 using NzbDrone.Plugin.Sleezer.Core.Deezer;
 using NzbDrone.Plugin.Sleezer.Core.Model;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Deezer;
-using System.Globalization;
+using NzbDrone.Plugin.Sleezer.Metadata.DownloadRules;
 
 namespace NzbDrone.Core.Indexers.Deezer
 {
@@ -27,6 +28,8 @@ namespace NzbDrone.Core.Indexers.Deezer
         private static readonly TimeSpan IndexerParseTimeout = TimeSpan.FromMinutes(2);
 
         public DeezerIndexerSettings Settings { get; set; } = null!;
+
+        public DownloadRulesSettings Rules { get; set; } = new();
 
         public IList<ReleaseInfo> ParseResponse(IndexerResponse response)
         {
@@ -102,7 +105,7 @@ namespace NzbDrone.Core.Indexers.Deezer
             // zero-filesize one; catching it here saves a grab that fails mid-download.
             var blocked = songs.Where(d => DeezerTrackRights.Streamable(d) == false).ToList();
 
-            if (Settings.HideAlbumsWithMissing && (missing128 || blocked.Count > 0))
+            if (Rules.WholeAlbumsOnly && (missing128 || blocked.Count > 0))
             {
                 _logger.Debug("Deezer hid album {AlbumId} '{Title}' — {Blocked} track(s) not streamable in your country, missing formats: {Missing}",
                     result.AlbumId, result.AlbumTitle, blocked.Count, missing128);
@@ -139,7 +142,7 @@ namespace NzbDrone.Core.Indexers.Deezer
             var durations = songs.Select(d => d["DURATION"]?.Value<int>() ?? 0).ToList();
             var facts = new AlbumFacts(durations.Count, durations.Sum(), durations);
 
-            // MP3 128 — always available baseline (unless filtered by HideAlbumsWithMissing above)
+            // MP3 128 — always available baseline (unless Whole Albums Only filtered it above)
             if (!missing128)
                 torrentInfos.Add(ToReleaseInfo(result, 1, size128, explicitType, facts));
 
@@ -159,7 +162,7 @@ namespace NzbDrone.Core.Indexers.Deezer
             {
                 torrentInfos.Add(ToReleaseInfo(result, 9, sizeFlac, explicitType, facts));
             }
-            else if (missingFlac && Settings.AllowMp3FallbackForMissingFlac && flacOrMp3320CoversAll && hasLossless && hasHq)
+            else if (missingFlac && !Rules.WholeAlbumsOnly && flacOrMp3320CoversAll && hasLossless && hasHq)
             {
                 // Size reflects what will actually be downloaded: FLAC where available, MP3 320 otherwise.
                 var sizeMixed = songs.Sum(d =>

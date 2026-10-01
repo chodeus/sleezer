@@ -7,18 +7,21 @@ using Newtonsoft.Json.Linq;
 using NLog;
 using NzbDrone.Common.Http;
 using NzbDrone.Core.Parser.Model;
+using NzbDrone.Plugin.Sleezer.Core.Model;
 using NzbDrone.Plugin.Sleezer.Core.Tidal;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
+using NzbDrone.Plugin.Sleezer.Metadata.DownloadRules;
 using NzbDrone.Plugin.Sleezer.Tidal;
 using TidalSharp.Data;
 using TidalSharp.Exceptions;
-using NzbDrone.Plugin.Sleezer.Core.Model;
-using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
 namespace NzbDrone.Core.Indexers.Tidal
 {
     public class TidalParser : IParseIndexerResponse
     {
         public TidalIndexerSettings Settings { get; set; } = null!;
+
+        public DownloadRulesSettings Rules { get; set; } = new();
         public Logger? Logger { get; set; }
 
         public IList<ReleaseInfo> ParseResponse(IndexerResponse response)
@@ -75,7 +78,7 @@ namespace NzbDrone.Core.Indexers.Tidal
 
         private IEnumerable<ReleaseInfo> ProcessAlbumResult(TidalSearchResponse.Album result)
         {
-            if (Settings.HideAlbumsWithMissing && TidalAlbumAvailability.Unavailable(result.AllowStreaming, result.StreamReady))
+            if (Rules.HideUnstreamable && TidalAlbumAvailability.Unavailable(result.AllowStreaming, result.StreamReady))
             {
                 Logger?.Debug("Tidal hid album {AlbumId} '{Title}': not streamable for this account", result.Id, result.Title);
                 return [];

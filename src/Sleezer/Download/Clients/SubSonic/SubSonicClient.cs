@@ -1,15 +1,16 @@
+using System.Text.Json;
 using FluentValidation.Results;
 using NLog;
 using NzbDrone.Common.Disk;
 using NzbDrone.Common.Http;
 using NzbDrone.Core.Configuration;
 using NzbDrone.Core.Download;
+using NzbDrone.Core.Download.Clients;
 using NzbDrone.Core.Indexers;
 using NzbDrone.Core.Localization;
 using NzbDrone.Core.Organizer;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Core.RemotePathMappings;
-using System.Text.Json;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Indexers.SubSonic;
 
@@ -24,6 +25,7 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
         private readonly ISubSonicDownloadManager _downloadManager;
         private readonly INamingConfigService _namingService;
         private readonly IEnumerable<IHttpRequestInterceptor> _requestInterceptors;
+        private readonly Lazy<IIndexerFactory> _indexerFactory;
 
         public SubSonicClient(
             ISubSonicDownloadManager downloadManager,
@@ -33,9 +35,11 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
             IRemotePathMappingService remotePathMappingService,
             ILocalizationService localizationService,
             IEnumerable<IHttpRequestInterceptor> requestInterceptors,
+            Lazy<IIndexerFactory> indexerFactory,
             Logger logger)
             : base(configService, diskProvider, remotePathMappingService, localizationService, logger)
         {
+            _indexerFactory = indexerFactory;
             _downloadManager = downloadManager;
             _requestInterceptors = requestInterceptors;
             _namingService = namingConfigService;
@@ -46,7 +50,10 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
         public new SubSonicProviderSettings Settings => base.Settings;
 
         public override Task<string> Download(RemoteAlbum remoteAlbum, IIndexer indexer)
-            => _downloadManager.Download(remoteAlbum, indexer, _namingService.GetConfig(), this);
+        {
+            UseIndexerLogin();
+            return _downloadManager.Download(remoteAlbum, indexer, _namingService.GetConfig(), this);
+        }
 
         public override IEnumerable<DownloadClientItem> GetItems()
             => _downloadManager.GetItems();
@@ -76,6 +83,16 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
             if (!_diskProvider.FolderWritable(Settings.DownloadPath))
             {
                 failures.Add(new ValidationFailure("DownloadPath", "Download path is not writable"));
+            }
+
+            try
+            {
+                UseIndexerLogin();
+            }
+            catch (DownloadClientException ex)
+            {
+                failures.Add(new ValidationFailure(nameof(SubSonicProviderSettings.IndexerId), ex.Message));
+                return;
             }
 
             // Test SubSonic connection
@@ -144,5 +161,14 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
                     $"Error connecting to SubSonic: {ex.Message}"));
             }
         }
+
+        public override object RequestAction(string action, IDictionary<string, string> query) =>
+            action == IndexerLogin.OptionsAction
+                ? IndexerLogin.Options<SubSonicIndexerSettings>(_indexerFactory.Value.All())
+                : base.RequestAction(action, query);
+
+        // Lazy: the indexer factory is resolved alongside the download clients.
+        private void UseIndexerLogin() =>
+            Settings.UseLogin(IndexerLogin.Find<SubSonicIndexerSettings>(_indexerFactory.Value.All(), Settings.IndexerId, "SubSonic"));
     }
 }

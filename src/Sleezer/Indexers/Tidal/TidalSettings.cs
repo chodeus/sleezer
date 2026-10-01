@@ -15,7 +15,7 @@ namespace NzbDrone.Core.Indexers.Tidal
         }
     }
 
-    public class TidalIndexerSettings : IIndexerSettings, IStoreMatchingSettings
+    public class TidalIndexerSettings : IIndexerSettings
     {
         private static readonly TidalIndexerSettingsValidator Validator = new();
 
@@ -47,16 +47,14 @@ namespace NzbDrone.Core.Indexers.Tidal
         [FieldDefinition(5, Label = "User Id", Type = FieldType.Number, Hidden = HiddenType.Hidden)]
         public long UserId { get; set; }
 
-        [FieldDefinition(10, Label = "Hide Albums This Account Can't Stream", HelpText = "Hide albums Tidal marks as not streamable for this account. Albums Tidal gives no streaming flag for are kept.", Type = FieldType.Checkbox)]
+        // Moved to Sleezer Download Rules; hidden so the one-time copy can read them.
+        [FieldDefinition(10, Label = "Hide Albums This Account Can't Stream", Type = FieldType.Checkbox, Hidden = HiddenType.Hidden)]
         public bool HideAlbumsWithMissing { get; set; } = true;
-
-        [FieldDefinition(11, Label = "Hide Clean Releases", HelpText = "Skip albums labelled as 'Clean'. Non-clean releases are tagged [Explicit] in the title so you can filter with release profiles.", Type = FieldType.Checkbox)]
-        public bool HideCleanReleases { get; set; } = true;
 
         [FieldDefinition(12, Type = FieldType.Number, Label = "Early Download Limit", Unit = "days", HelpText = "Time before release date Lidarr will download from this indexer, empty is no limit", Advanced = true)]
         public int? EarlyReleaseLimit { get; set; }
 
-        [FieldDefinition(13, Label = "Strict Matching", Type = FieldType.Checkbox, HelpText = StrictMatchingHelp.TitleOnly)]
+        [FieldDefinition(13, Label = "Strict Matching", Type = FieldType.Checkbox, Hidden = HiddenType.Hidden)]
         public bool StrictMatching { get; set; } = true;
 
         [FieldDefinition(99, Label = "Authenticate with Tidal", Type = FieldType.OAuth)]

@@ -15,11 +15,10 @@ using NLog;
 using NzbDrone.Common.Instrumentation;
 using NzbDrone.Common.Instrumentation.Extensions;
 using NzbDrone.Core.Parser.Model;
-using NzbDrone.Plugin.Sleezer.Deezer;
-
 using NzbDrone.Plugin.Sleezer.Core.Download;
-
+using NzbDrone.Plugin.Sleezer.Core.Model;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
+using NzbDrone.Plugin.Sleezer.Deezer;
 
 namespace NzbDrone.Core.Download.Clients.Deezer.Queue
 {
@@ -116,14 +115,16 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
 
         private (long id, long size, Bitrate bitrate)[] _tracks = null!;
         private DeezerURL _deezerUrl = null!;
+        private SharedDownloadOptions _options = SharedDownloadOptions.Default;
         private JToken _deezerAlbum = null!;
         private DateTime _lastARLValidityCheck = DateTime.MinValue;
         private byte[]? _albumArt;
         // The session _deezerAlbum and _tracks came from; every call for this item goes through it.
         private DeezerAPI _api = null!;
 
-        public async Task DoDownload(DeezerSettings settings, Logger logger, CancellationToken cancellation = default)
+        public async Task DoDownload(DeezerSettings settings, SharedDownloadOptions options, Logger logger, CancellationToken cancellation = default)
         {
+            _options = options;
             if (!ReferenceEquals(_api, DeezerAPI.Instance))
             {
                 _api = DeezerAPI.Instance;
@@ -348,18 +349,18 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
             {
                 plainLyrics = lyrics.Value.plainLyrics;
 
-                if (settings.SaveSyncedLyrics)
+                if (_options.Lyrics.SaveSyncedLyrics)
                     syncLyrics = lyrics.Value.syncLyrics;
             }
 
-            if (settings.UseLRCLIB && (string.IsNullOrWhiteSpace(plainLyrics) || (settings.SaveSyncedLyrics && !(syncLyrics?.Any() ?? false))))
+            if (_options.Lyrics.UseLRCLIB && (string.IsNullOrWhiteSpace(plainLyrics) || (_options.Lyrics.SaveSyncedLyrics && !(syncLyrics?.Any() ?? false))))
             {
                 lyrics = await _api.Client.Downloader.FetchLyricsFromLRCLIB("lrclib.net", songTitle, artistName, albumTitle, duration, cancellation);
                 if (lyrics.HasValue)
                 {
                     if (string.IsNullOrWhiteSpace(plainLyrics))
                         plainLyrics = lyrics.Value.plainLyrics;
-                    if (settings.SaveSyncedLyrics && !(syncLyrics?.Any() ?? false))
+                    if (_options.Lyrics.SaveSyncedLyrics && !(syncLyrics?.Any() ?? false))
                         syncLyrics = lyrics.Value.syncLyrics;
                 }
             }

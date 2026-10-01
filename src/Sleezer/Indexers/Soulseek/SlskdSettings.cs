@@ -141,7 +141,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         [FieldDefinition(10, Type = FieldType.Number, Label = "Min File Count", HelpText = "Minimum files per response", Advanced = true)]
         public int MinimumResponseFileCount { get; set; } = 1;
 
-        [FieldDefinition(11, Type = FieldType.Select, SelectOptions = typeof(TrackCountFilterType), Label = "Track Count Filter", HelpText = "Filter releases by track count matching", Advanced = true)]
+        // Set per search from Whole Albums Only (Sleezer Download Rules); see WithWholeAlbumsOnly.
+        [FieldDefinition(11, Label = "Track Count Filter", Type = FieldType.Select, SelectOptions = typeof(TrackCountFilterType), Hidden = HiddenType.Hidden)]
         public int TrackCountFilter { get; set; } = (int)TrackCountFilterType.Disabled;
 
         [FieldDefinition(12, Type = FieldType.Number, Label = "Response Limit", HelpText = "Max search responses", Advanced = true)]
@@ -149,15 +150,6 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
         [FieldDefinition(13, Type = FieldType.Number, Label = "Timeout", Unit = "seconds", HelpText = "How long slskd searches the Soulseek network. Soulseek peers commonly answer after 5-20s, so low values silently drop most results.", Advanced = true)]
         public double TimeoutInSeconds { get; set; } = 15;
-
-        [FieldDefinition(14, Type = FieldType.Checkbox, Label = "Append Year", HelpText = "Also try a year-tagged search variant after the plain artist+album query (ignored when templates are set)", Advanced = true)]
-        public bool AppendYear { get; set; }
-
-        [FieldDefinition(15, Type = FieldType.Checkbox, Label = "Normalize Search", HelpText = "Remove accents and special characters (é→e, ü→u)", Advanced = true)]
-        public bool NormalizedSeach { get; set; } = true;
-
-        [FieldDefinition(16, Type = FieldType.Checkbox, Label = "Volume Variations", HelpText = "Try alternate volume formats (Vol.1 <-> Volume I)", Advanced = true)]
-        public bool HandleVolumeVariations { get; set; }
 
         [FieldDefinition(17, Label = "Enable Fallback Search", Type = FieldType.Checkbox, HelpText = "If no results are found, perform a secondary search using additional metadata.", Advanced = true)]
         public bool UseFallbackSearch { get; set; }
@@ -186,10 +178,22 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         [FieldDefinition(25, Type = FieldType.Select, SelectOptions = typeof(MatchStrictnessType), Label = "Match Strictness", HelpText = "How aggressively to fuzzy-match peer folder names against the queried artist/album. Strict = fewer false positives; Loose = more candidates from messy metadata.", Advanced = true)]
         public int MatchStrictness { get; set; } = (int)MatchStrictnessType.Normal;
 
-        [FieldDefinition(26, Type = FieldType.Checkbox, Label = "Require Coherent Single Source", HelpText = "For a multi-track single or EP, reject sources that hold only SOME of the wanted tracks. Stops a single being stitched together from different albums — but a single that exists only scattered across albums won't be assembled at all. When off, coherent sources are still preferred; partial ones are just downranked.", Advanced = true)]
+        [FieldDefinition(26, Label = "Require Coherent Single Source", Type = FieldType.Checkbox, Hidden = HiddenType.Hidden)]
         public bool RequireCoherentSingleSource { get; set; }
 
         public NzbDroneValidationResult Validate() => new(Validator.Validate(this));
+
+        public static TrackCountFilterType TrackCountFilterFor(bool wholeAlbumsOnly) =>
+            wholeAlbumsOnly ? TrackCountFilterType.Lower : TrackCountFilterType.Disabled;
+
+        /// <summary>A copy with Whole Albums Only applied to the track count filter and single-source check.</summary>
+        public SlskdSettings WithWholeAlbumsOnly(bool wholeAlbumsOnly)
+        {
+            SlskdSettings copy = (SlskdSettings)MemberwiseClone();
+            copy.TrackCountFilter = (int)TrackCountFilterFor(wholeAlbumsOnly);
+            copy.RequireCoherentSingleSource = wholeAlbumsOnly;
+            return copy;
+        }
     }
 
     public enum MatchStrictnessType
@@ -203,7 +207,6 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         [FieldOption(Label = "Loose", Hint = "Looser fuzzy thresholds; more candidate folders.")]
         Loose = -5
     }
-
 
     public enum GrabLimitIntervalType
     {

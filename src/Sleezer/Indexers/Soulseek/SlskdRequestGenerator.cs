@@ -1,3 +1,8 @@
+using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Net;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using NLog;
 using NzbDrone.Common.Http;
 using NzbDrone.Common.Instrumentation;
@@ -6,11 +11,6 @@ using NzbDrone.Core.Indexers;
 using NzbDrone.Core.Indexers.Exceptions;
 using NzbDrone.Core.IndexerSearch.Definitions;
 using NzbDrone.Core.Music;
-using System.Collections.Concurrent;
-using System.Diagnostics;
-using System.Net;
-using System.Text.Json;
-using System.Text.Json.Nodes;
 using NzbDrone.Plugin.Sleezer.Core.Replacements;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Indexers.Soulseek.Search.Core;
@@ -368,7 +368,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 .SetHeader("X-API-KEY", Settings.ApiKey)
                 .Build();
 
-            TrackCountFilterType filterType = (TrackCountFilterType)Settings.TrackCountFilter;
+            TrackCountFilterType filterType = SlskdSettings.TrackCountFilterFor(_indexer.Rules.WholeAlbumsOnly);
 
             int minimumFiles = filterType switch
             {
