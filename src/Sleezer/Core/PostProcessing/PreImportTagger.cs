@@ -143,7 +143,7 @@ public class PreImportTagger : IPreImportTagger
         try
         {
             // Tagging rewrites titles, so the shared bracket is judged on every file's original title.
-            IReadOnlyDictionary<string, string> originalTitles = ReadTitles(completedFolderPath);
+            IReadOnlyDictionary<string, string> originalTitles = ReadTitles(completedFolderPath, ct);
             TaggingResult result = await TagInternalAsync(album, artist, albumRelease, sourceId, completedFolderPath, confidenceThreshold, stripFeaturedArtists, verifyAllWithFingerprint, fingerprintTitleFallback, preferDigitalMedia, ct);
             if (stripFeaturedArtists)
                 StripCreditsFromUntaggedFiles(completedFolderPath, result.TaggedFiles, artist.Name, ct);
@@ -614,16 +614,24 @@ public class PreImportTagger : IPreImportTagger
     }
 
     // Empty when the folder is missing or any title can't be read: a partial set can't judge what is shared.
-    private IReadOnlyDictionary<string, string> ReadTitles(string folderPath)
+    private IReadOnlyDictionary<string, string> ReadTitles(string folderPath, CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
         if (!_diskProvider.FolderExists(folderPath))
             return new Dictionary<string, string>();
 
         try
         {
-            return EnumerateAudioFiles(folderPath).ToDictionary(p => p, ReadTitle, StringComparer.OrdinalIgnoreCase);
+            Dictionary<string, string> titles = new(StringComparer.OrdinalIgnoreCase);
+            foreach (string path in EnumerateAudioFiles(folderPath))
+            {
+                ct.ThrowIfCancellationRequested();
+                titles[path] = ReadTitle(path);
+            }
+
+            return titles;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.Debug(ex, "Pre-import tag: could not read titles under {Folder}", folderPath);
             return new Dictionary<string, string>();
