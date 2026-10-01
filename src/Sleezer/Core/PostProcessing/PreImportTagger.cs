@@ -143,7 +143,9 @@ public class PreImportTagger : IPreImportTagger
         try
         {
             TaggingResult result = await TagInternalAsync(album, artist, albumRelease, sourceId, completedFolderPath, confidenceThreshold, stripFeaturedArtists, verifyAllWithFingerprint, fingerprintTitleFallback, preferDigitalMedia, ct);
-            DropSharedBracketFromUntaggedFiles(completedFolderPath, result.TaggedFiles, album);
+            if (stripFeaturedArtists)
+                StripCreditsFromUntaggedFiles(completedFolderPath, result.TaggedFiles, artist.Name, ct);
+            DropSharedBracketFromUntaggedFiles(completedFolderPath, result.TaggedFiles, album, ct);
             return result;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -576,7 +578,7 @@ public class PreImportTagger : IPreImportTagger
 
     // Store copies of DJ mixes and soundtracks put "(Mixed)" or "(Original Soundtrack)" on every
     // track title, which Lidarr's import scores against MusicBrainz titles without it.
-    private void DropSharedBracketFromUntaggedFiles(string folderPath, IReadOnlyList<TaggedFile>? taggedFiles, Album album)
+    private void DropSharedBracketFromUntaggedFiles(string folderPath, IReadOnlyList<TaggedFile>? taggedFiles, Album album, CancellationToken ct)
     {
         if (!_diskProvider.FolderExists(folderPath))
             return;
@@ -594,6 +596,7 @@ public class PreImportTagger : IPreImportTagger
 
             for (int i = 0; i < paths.Count; i++)
             {
+                ct.ThrowIfCancellationRequested();
                 if (dropped[i] == titles[i])
                     continue;
 
@@ -602,7 +605,7 @@ public class PreImportTagger : IPreImportTagger
                 file.Save();
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.Warn(ex, "Pre-import tag: shared-bracket strip failed for {Folder}", folderPath);
         }
@@ -612,6 +615,40 @@ public class PreImportTagger : IPreImportTagger
     {
         using TagLib.File file = TagLib.File.Create(path);
         return file.Tag.Title ?? string.Empty;
+    }
+
+    // Files left with store tags still carry "(feat. X)" in title and album, which Lidarr's
+    // import scores against MusicBrainz titles that never do.
+    private void StripCreditsFromUntaggedFiles(string folderPath, IReadOnlyList<TaggedFile>? taggedFiles, string? artistName, CancellationToken ct)
+    {
+        if (!_diskProvider.FolderExists(folderPath))
+            return;
+
+        HashSet<string> tagged = new((taggedFiles ?? []).Select(t => t.FinalPath), StringComparer.OrdinalIgnoreCase);
+        foreach (string path in EnumerateAudioFiles(folderPath).Where(p => !tagged.Contains(p)))
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                using TagLib.File file = TagLib.File.Create(path);
+                string[] credited = [.. file.Tag.Performers, .. file.Tag.AlbumArtists];
+                string title = FeaturedArtistStripper.StripCredits(file.Tag.Title, credited);
+                string albumTitle = FeaturedArtistStripper.StripCredits(file.Tag.Album, credited);
+                string[] albumArtists = [.. file.Tag.AlbumArtists.Select(a => FeaturedArtistStripper.Strip(FeaturedArtistStripper.StripGuestCredits(a, artistName)))];
+                if (title == (file.Tag.Title ?? string.Empty) && albumTitle == (file.Tag.Album ?? string.Empty) && albumArtists.SequenceEqual(file.Tag.AlbumArtists))
+                    continue;
+
+                file.Tag.Title = title;
+                file.Tag.Album = albumTitle;
+                file.Tag.AlbumArtists = albumArtists;
+                ct.ThrowIfCancellationRequested();
+                file.Save();
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.Warn(ex, "Pre-import tag: credit strip failed for {Path}", path);
+            }
+        }
     }
 
     /// <summary>
