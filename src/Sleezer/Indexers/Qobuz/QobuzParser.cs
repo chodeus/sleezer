@@ -10,6 +10,7 @@ using NzbDrone.Common.Http;
 using NzbDrone.Core.Parser;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Plugin.Sleezer.Core.Model;
+using NzbDrone.Plugin.Sleezer.Core.Qobuz;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Qobuz;
 using QobuzApiSharp.Models.Content;
@@ -186,10 +187,7 @@ namespace NzbDrone.Core.Indexers.Qobuz
         }
 
         private static List<string> MainArtistsOf(Album album) =>
-            album.Artists?
-                .Where(a => a?.Name != null && a.Roles?.Any(r => string.Equals(r, "main-artist", StringComparison.OrdinalIgnoreCase)) == true)
-                .Select(a => a.Name)
-                .ToList() ?? [];
+            QobuzAlbumArtists.Main(album.Artists?.Where(a => a != null).Select(a => (a.Name, (IReadOnlyCollection<string>?)a.Roles)) ?? []);
 
         private static ReleaseInfo ToReleaseInfo(Album x, AudioQuality bitrate, string? releaseType, QobuzAPI api)
         {

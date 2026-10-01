@@ -74,6 +74,12 @@ public class VariantQualifierDetectionTests
     [InlineData("Best of Both Worlds (Live)", true)]
     [InlineData("Dreams (Extended Version)", true)]
     [InlineData("Never Say Never (Colyn Remix)", true)]
+    [InlineData("Track Title (Remixer Name's Late Night Mix)", true)]
+    [InlineData("Track Title (1986 Studio Session)", true)]
+    [InlineData("Track Title (Original Mix)", false)]
+    [InlineData("Track Title (It's a Mix)", false)]
+    [InlineData("Track Title (That’s the Mix)", false)]
+    [InlineData("The Album Sessions", false)]             // "sessions" as a title word
     [InlineData("Proposition", false)]
     [InlineData("GLXY - Mind Less", false)]
     [InlineData("OK Computer (Deluxe Edition)", false)]   // edition, not a variant
@@ -82,6 +88,29 @@ public class VariantQualifierDetectionTests
     public void Qualifier_detection_matches_the_variant_profile(string title, bool expected)
     {
         Assert.Equal(expected, VariantQualifiers.HasVariantQualifier(title));
+    }
+}
+
+public class NamedMixAndSessionConflictTests
+{
+    [Theory]
+    [InlineData("Track Title", "Track Title (Remixer Name's Late Night Mix)", true)]
+    [InlineData("Track Title", "Track Title (Remixer Name’s Late Night Mix)", true)]
+    [InlineData("Track Title (Remixer Name's Late Night mix)", "Track Title (Remixer Name's Late Night Mix)", false)]
+    [InlineData("Track Title", "Track Title (1986 Studio Session)", true)]
+    [InlineData("The Album Sessions", "The Album Sessions", false)]
+    [InlineData("Track Title", "Track Title (Original Mix)", false)]
+    public void A_named_mix_or_a_session_is_a_different_recording(string searched, string candidate, bool conflict)
+    {
+        Assert.Equal(conflict, VariantQualifiers.RemixSignaturesConflict(searched, candidate));
+    }
+
+    [Theory]
+    [InlineData("Track Title (Love's Subtitle) (original mix)", false)]
+    [InlineData("Track Title (Love's Subtitle) (Remixer Name's vocal mix)", true)]
+    public void A_possessive_names_a_mix_only_inside_its_own_bracket(string title, bool variantTrack)
+    {
+        Assert.Equal(variantTrack, VariantQualifiers.IsVariantTrack(title));
     }
 }
 

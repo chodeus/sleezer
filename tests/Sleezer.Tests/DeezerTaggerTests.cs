@@ -64,6 +64,26 @@ public class DeezerTaggerTests
     }
 
     [Fact]
+    public void A_title_that_already_ends_in_its_boilerplate_version_loses_it()
+    {
+        var trackPage = JObject.Parse("""{ "DATA": { "SNG_ID": "1", "SNG_TITLE": "Angel (Album Version)", "VERSION": "(Album Version)", "ART_NAME": "Dimension", "ALB_TITLE": "Organ" } }""");
+        var albumPage = JObject.Parse("""{ "DATA": { "ALB_TITLE": "Organ" }, "SONGS": { "total": 1, "data": [] } }""");
+
+        var path = CopyFixture();
+        try
+        {
+            DeezerTagger.Apply(path, trackPage, albumPage, albumArt: null, lyrics: string.Empty);
+
+            using var file = TagLib.File.Create(path);
+            Assert.Equal("Angel", file.Tag.Title);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void Missing_release_date_and_art_do_not_throw()
     {
         // DeezNET crashed on a missing PHYSICAL_RELEASE_DATE (culture-sensitive DateTime.Parse).
