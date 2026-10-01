@@ -150,15 +150,15 @@ public class FeaturedArtistStripperTests
 
     // Live 2026-10-01: store singles reached Lidarr with "(feat. X)" / "(with X)" still in title and album.
     [Theory]
-    [InlineData("Run It Back (feat. Caroline Byrne) (Luuk Van Dijk Remix)", "Run It Back (Luuk Van Dijk Remix)")]
-    [InlineData("One More Dance (with Carmen Soliman) [Arabic Version]", "One More Dance [Arabic Version]")]
-    [InlineData("Come Find Me (with Clementine Douglas) (GudGroove Remix)", "Come Find Me (GudGroove Remix)")]
-    [InlineData("Song (with Carmen Soliman & Guest Two)", "Song")]
-    [InlineData("Dancing (With Myself)", "Dancing (With Myself)")]
-    [InlineData("Song (with Someone Else)", "Song (with Someone Else)")]
+    [InlineData("Track Title (feat. Guest Artist) (Remixer Name Remix)", "Track Title (Remixer Name Remix)")]
+    [InlineData("Track Title (with Guest Artist) [Other Language Version]", "Track Title [Other Language Version]")]
+    [InlineData("Track Title (with Second Guest) (Remixer Name Remix)", "Track Title (Remixer Name Remix)")]
+    [InlineData("Track Title (with Guest Artist & Second Guest)", "Track Title")]
+    [InlineData("Track Title (With Myself)", "Track Title (With Myself)")]
+    [InlineData("Track Title (with Someone Else)", "Track Title (with Someone Else)")]
     public void StripCredits_drops_feat_and_a_with_credit_naming_credited_artists(string input, string expected)
     {
-        string[] credited = ["R3HAB", "Carmen Soliman", "MK", "Clementine Douglas", "Guest Two"];
+        string[] credited = ["Artist Name", "Guest Artist", "Second Guest"];
 
         Assert.Equal(expected, FeaturedArtistStripper.StripCredits(input, credited));
     }
@@ -166,6 +166,6 @@ public class FeaturedArtistStripperTests
     [Fact]
     public void StripCredits_reads_credited_artists_joined_in_one_tag()
     {
-        Assert.Equal("Song", FeaturedArtistStripper.StripCredits("Song (with Clementine Douglas)", ["MK, Clementine Douglas"]));
+        Assert.Equal("Track Title", FeaturedArtistStripper.StripCredits("Track Title (with Guest Artist)", ["Artist Name, Guest Artist"]));
     }
 }
