@@ -58,6 +58,16 @@ public class ReleaseTitleTests
     }
 
     [Fact]
+    public void A_cut_inside_a_brace_after_a_stray_closer_still_closes_it()
+    {
+        StoreReleaseInfo release = Composed("Some Artist", "Store Wording");
+
+        ReleaseTitle.AsSearchedAlbum(release, "Some Artist", "Album] (Can I Get a...");
+
+        Assert.Contains("{Can I Get}", release.Title);
+    }
+
+    [Fact]
     public void A_cut_after_a_stray_closer_gains_no_second_one()
     {
         StoreReleaseInfo release = Composed("Some Artist", "Store Wording");
