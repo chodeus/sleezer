@@ -35,18 +35,21 @@ public static class FeaturedArtistStripper
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     /// <summary>
-    /// <see cref="Strip"/>, plus a "(with X)" credit whose every name is one of the credited artists;
+    /// <see cref="Strip"/>, plus a "(with X)" credit naming credited artists, whole or as listed;
     /// any other "(with …)" is title text ("Dancing (With Myself)").
     /// </summary>
+    // Credited entries split only on commas (joined tags list artists that way), so "Simon & Garfunkel" never credits "Simon".
     public static string StripCredits(string? input, IEnumerable<string?> creditedArtists)
     {
         string text = Strip(input);
-        HashSet<string> credited = [.. creditedArtists.SelectMany(Names)];
-        return BracketedWithPattern.Replace(text, m => Names(m.Groups[1].Value).All(credited.Contains) ? string.Empty : m.Value).Trim();
+        HashSet<string> credited = [.. creditedArtists.OfType<string>().SelectMany(a => a.Split(',').Prepend(a)).Select(Fold).Where(n => n.Length > 0)];
+        return BracketedWithPattern.Replace(text, m =>
+            credited.Contains(Fold(m.Groups[1].Value)) || NameSeparatorPattern.Split(m.Groups[1].Value).Select(Fold).All(credited.Contains)
+                ? string.Empty
+                : m.Value).Trim();
     }
 
-    private static IEnumerable<string> Names(string? text) =>
-        NameSeparatorPattern.Split(text ?? string.Empty).Select(n => n.RemoveAccent().Trim().ToLowerInvariant()).Where(n => n.Length > 0);
+    private static string Fold(string name) => name.RemoveAccent().Trim().ToLowerInvariant();
 
     private static readonly Regex GuestCreditSeparatorPattern = new(
         @"^(?:\s*[,;]|\s+(?:feat\.?|featuring|ft\.?)\s)",

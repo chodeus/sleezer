@@ -144,7 +144,7 @@ public class PreImportTagger : IPreImportTagger
         {
             TaggingResult result = await TagInternalAsync(album, artist, albumRelease, sourceId, completedFolderPath, confidenceThreshold, stripFeaturedArtists, verifyAllWithFingerprint, fingerprintTitleFallback, preferDigitalMedia, ct);
             if (stripFeaturedArtists)
-                StripCreditsFromUntaggedFiles(completedFolderPath, result.TaggedFiles, artist.Name);
+                StripCreditsFromUntaggedFiles(completedFolderPath, result.TaggedFiles, artist.Name, ct);
             return result;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -577,7 +577,7 @@ public class PreImportTagger : IPreImportTagger
 
     // Files left with store tags still carry "(feat. X)" in title and album, which Lidarr's
     // import scores against MusicBrainz titles that never do.
-    private void StripCreditsFromUntaggedFiles(string folderPath, IReadOnlyList<TaggedFile>? taggedFiles, string? artistName)
+    private void StripCreditsFromUntaggedFiles(string folderPath, IReadOnlyList<TaggedFile>? taggedFiles, string? artistName, CancellationToken ct)
     {
         if (!_diskProvider.FolderExists(folderPath))
             return;
@@ -585,6 +585,7 @@ public class PreImportTagger : IPreImportTagger
         HashSet<string> tagged = new((taggedFiles ?? []).Select(t => t.FinalPath), StringComparer.OrdinalIgnoreCase);
         foreach (string path in EnumerateAudioFiles(folderPath).Where(p => !tagged.Contains(p)))
         {
+            ct.ThrowIfCancellationRequested();
             try
             {
                 using TagLib.File file = TagLib.File.Create(path);
@@ -598,9 +599,10 @@ public class PreImportTagger : IPreImportTagger
                 file.Tag.Title = title;
                 file.Tag.Album = albumTitle;
                 file.Tag.AlbumArtists = albumArtists;
+                ct.ThrowIfCancellationRequested();
                 file.Save();
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 _logger.Warn(ex, "Pre-import tag: credit strip failed for {Path}", path);
             }
