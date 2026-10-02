@@ -15,7 +15,7 @@ public class SubSonicUrlRedactorTests
     [InlineData(
         "http://music.example/rest/getAlbum.view?id=al-1&songCount=5&U=user-a",
         "http://music.example/rest/getAlbum.view?id=al-1&songCount=5&U=(removed)")]
-    public void Login_parameters_are_removed_and_the_rest_kept(string url, string expected) =>
+    public void Login_values_are_replaced_and_the_rest_kept(string url, string expected) =>
         Assert.Equal(expected, SubSonicUrlRedactor.Redact(url));
 
     [Fact]

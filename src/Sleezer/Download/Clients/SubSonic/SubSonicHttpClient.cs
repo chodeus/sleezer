@@ -246,7 +246,7 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
             }
             catch (Exception ex)
             {
-                throw new Exception($"HTTP GET request failed for URL '{url}': {ex.Message}", ex);
+                throw new Exception($"HTTP GET request failed for URL '{SubSonicUrlRedactor.Redact(url)}': {ex.Message}", ex);
             }
         }
     }
