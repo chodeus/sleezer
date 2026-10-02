@@ -223,6 +223,8 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Utilities\HeldReleaseCheck.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Core\Utilities\DownloadFolders.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Utilities\IndexerLogin.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Metadata\SharedSettingsCopy.cs"

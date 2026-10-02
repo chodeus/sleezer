@@ -295,7 +295,7 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
 
             var outPath = Path.Combine(
                 settings.DownloadPath,
-                MetadataUtilities.GetFilledTemplate(DirectoryTemplate, ext, page, _qobuzAlbum),
+                DownloadFolders.WithStoreId(MetadataUtilities.GetFilledTemplate(DirectoryTemplate, ext, page, _qobuzAlbum), _qobuzUrl.Id),
                 MetadataUtilities.GetFilledTemplate(FileTemplate, ext, page, _qobuzAlbum));
 
             var outDir = Path.GetDirectoryName(outPath)!;

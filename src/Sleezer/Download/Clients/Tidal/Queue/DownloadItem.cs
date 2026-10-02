@@ -212,7 +212,7 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
             string ext = (await instance.Client.Downloader.GetExtensionForTrack(track, Bitrate, cancellation)).TrimStart('.');
             string outPath = Path.Combine(
                 settings.DownloadPath,
-                MetadataUtilities.GetFilledTemplate("%albumartist%/%album%/", ext, page, _tidalAlbum!),
+                DownloadFolders.WithStoreId(MetadataUtilities.GetFilledTemplate("%albumartist%/%album%/", ext, page, _tidalAlbum!), _tidalUrl!.Id.ToString()),
                 MetadataUtilities.GetFilledTemplate("%volume% - %track% - %title%.%ext%", ext, page, _tidalAlbum!));
             string outDir = Path.GetDirectoryName(outPath)!;
 
