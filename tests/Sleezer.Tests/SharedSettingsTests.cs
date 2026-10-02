@@ -120,11 +120,12 @@ public class SharedLoginSettingsTests
     [Fact]
     public void SubSonic_client_takes_the_indexer_server_and_login()
     {
-        SubSonicProviderSettings client = new();
+        SubSonicProviderSettings client = new() { DownloadPath = "/downloads" };
 
-        client.UseLogin(new SubSonicIndexerSettings { BaseUrl = "http://music.example", Username = "user-a", Password = "pass-a", UseTokenAuth = false, RequestTimeout = 90 });
+        SubSonicProviderSettings copy = client.WithLogin(new SubSonicIndexerSettings { BaseUrl = "http://music.example", Username = "user-a", Password = "pass-a", UseTokenAuth = false, RequestTimeout = 90 });
 
-        Assert.Equal(("http://music.example", "user-a", "pass-a", false, 90), (client.ServerUrl, client.Username, client.Password, client.UseTokenAuth, client.RequestTimeout));
+        Assert.Equal(("http://music.example", "user-a", "pass-a", false, 90, "/downloads"), (copy.ServerUrl, copy.Username, copy.Password, copy.UseTokenAuth, copy.RequestTimeout, copy.DownloadPath));
+        Assert.Equal((string.Empty, string.Empty), (client.ServerUrl, client.Username));
     }
 
     [Theory]

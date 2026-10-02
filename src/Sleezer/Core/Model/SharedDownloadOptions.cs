@@ -11,10 +11,10 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
     {
         public static SharedDownloadOptions Default { get; } = new(new LyricsSettings(), true, false, false);
 
-        // A missing Download Rules entry falls back to its defaults, which are the strict ones.
         public static SharedDownloadOptions Read(IMetadataFactory factory)
         {
-            DownloadRulesSettings rules = SharedSettings.Read<DownloadRulesSettings>(factory) ?? new();
+            DownloadRulesSettings rules = SharedSettings.Read<DownloadRulesSettings>(factory)
+                ?? throw new InvalidOperationException("No Sleezer Download Rules metadata entry found; not downloading without its rules.");
             FFmpegSettings? ffmpeg = SharedSettings.Read<FFmpegSettings>(factory);
             return new(
                 LyricsSettings.Effective(SharedSettings.Definition<LyricsSettings>(factory)),

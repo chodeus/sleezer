@@ -52,12 +52,11 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
         public override Task<string> Download(RemoteAlbum remoteAlbum, IIndexer indexer)
         {
             // The release's own indexer: with several SubSonic servers, fetch from the one that found it.
-            if (indexer.Definition?.Settings is SubSonicIndexerSettings source)
-                Settings.UseLogin(source);
-            else
-                UseIndexerLogin();
+            SubSonicProviderSettings settings = indexer.Definition?.Settings is SubSonicIndexerSettings source
+                ? Settings.WithLogin(source)
+                : WithIndexerLogin();
 
-            return _downloadManager.Download(remoteAlbum, indexer, _namingService.GetConfig(), this);
+            return _downloadManager.Download(remoteAlbum, indexer, _namingService.GetConfig(), this, settings);
         }
 
         public override IEnumerable<DownloadClientItem> GetItems()
@@ -90,9 +89,10 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
                 failures.Add(new ValidationFailure("DownloadPath", "Download path is not writable"));
             }
 
+            SubSonicProviderSettings settings;
             try
             {
-                UseIndexerLogin();
+                settings = WithIndexerLogin();
             }
             catch (DownloadClientException ex)
             {
@@ -103,16 +103,16 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
             // Test SubSonic connection
             try
             {
-                string baseUrl = Settings.ServerUrl.TrimEnd('/');
+                string baseUrl = settings.ServerUrl.TrimEnd('/');
                 System.Text.StringBuilder urlBuilder = new($"{baseUrl}/rest/ping.view");
-                SubSonicAuthHelper.AppendAuthParameters(urlBuilder, Settings.Username, Settings.Password, Settings.UseTokenAuth);
+                SubSonicAuthHelper.AppendAuthParameters(urlBuilder, settings.Username, settings.Password, settings.UseTokenAuth);
                 urlBuilder.Append("&f=json");
                 string testUrl = urlBuilder.ToString();
 
-                SubSonicHttpClient httpClient = new(Settings.ServerUrl, _requestInterceptors, TimeSpan.FromSeconds(Settings.RequestTimeout));
+                SubSonicHttpClient httpClient = new(settings.ServerUrl, _requestInterceptors, TimeSpan.FromSeconds(settings.RequestTimeout));
                 using HttpRequestMessage request = httpClient.CreateRequest(HttpMethod.Get, testUrl);
 
-                _logger.Trace("Testing SubSonic connection to: {BaseUrl}", Settings.ServerUrl);
+                _logger.Trace("Testing SubSonic connection to: {BaseUrl}", settings.ServerUrl);
 
                 HttpResponseMessage response = httpClient.SendAsync(request, CancellationToken.None).GetAwaiter().GetResult();
                 response.EnsureSuccessStatusCode();
@@ -128,7 +128,7 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
 
                     if (pingResponse.Status == "ok")
                     {
-                        _logger.Debug($"Successfully connected to SubSonic server as {Settings.Username} (API version: {pingResponse.Version})");
+                        _logger.Debug($"Successfully connected to SubSonic server as {settings.Username} (API version: {pingResponse.Version})");
                         return;
                     }
                     else if (pingResponse.Error != null)
@@ -173,7 +173,7 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
                 : base.RequestAction(action, query);
 
         // Lazy: the indexer factory is resolved alongside the download clients.
-        private void UseIndexerLogin() =>
-            Settings.UseLogin(IndexerLogin.Find<SubSonicIndexerSettings>(_indexerFactory.Value.All(), Settings.IndexerId, "SubSonic"));
+        private SubSonicProviderSettings WithIndexerLogin() =>
+            Settings.WithLogin(IndexerLogin.Find<SubSonicIndexerSettings>(_indexerFactory.Value.All(), Settings.IndexerId, "SubSonic"));
     }
 }

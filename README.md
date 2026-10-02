@@ -176,7 +176,7 @@ Bandcamp only ever surfaces **music you have already bought**. It searches your 
 * Downloads arrive as a ZIP for multi-track releases; the client extracts it and normalises file permissions, which matters on Unraid where Lidarr runs as `99:100`.
 * The `identity` cookie expires. When searches suddenly return nothing, re-copy it.
 * Bandcamp is not a streaming catalogue — there is no RSS feed and no way to discover releases you have not purchased.
-* Results are checked against MusicBrainz under **Strict Matching**, as on the store indexers.
+* Results are checked against MusicBrainz under **Strict Matching**, one of the shared [Download Rules](#download-rules--lyrics-).
 
 ### Soulseek (Slskd) Setup 🐟
 

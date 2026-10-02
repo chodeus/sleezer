@@ -51,7 +51,7 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
         [FieldDefinition(0, Label = "Download Path", Type = FieldType.Path, HelpText = "Directory where downloaded files will be saved")]
         public string DownloadPath { get; set; } = string.Empty;
 
-        // Copied from the SubSonic indexer before each use (UseLogin); hidden, and the password is still masked by the API.
+        // Filled from the SubSonic indexer on a per-use copy (WithLogin); hidden, and the password is still masked by the API.
         [FieldDefinition(1, Label = "Server URL", Type = FieldType.Textbox, Hidden = HiddenType.Hidden)]
         public string ServerUrl { get; set; } = string.Empty;
 
@@ -87,14 +87,16 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
 
         public NzbDroneValidationResult Validate() => new(Validator.Validate(this));
 
-        /// <summary>Takes the server and login from the SubSonic indexer this client reuses.</summary>
-        public void UseLogin(SubSonicIndexerSettings indexer)
+        /// <summary>A copy carrying the server and login of a SubSonic indexer; the shared settings stay untouched.</summary>
+        public SubSonicProviderSettings WithLogin(SubSonicIndexerSettings indexer)
         {
-            ServerUrl = indexer.BaseUrl;
-            Username = indexer.Username;
-            Password = indexer.Password;
-            UseTokenAuth = indexer.UseTokenAuth;
-            RequestTimeout = indexer.RequestTimeout;
+            SubSonicProviderSettings copy = (SubSonicProviderSettings)MemberwiseClone();
+            copy.ServerUrl = indexer.BaseUrl;
+            copy.Username = indexer.Username;
+            copy.Password = indexer.Password;
+            copy.UseTokenAuth = indexer.UseTokenAuth;
+            copy.RequestTimeout = indexer.RequestTimeout;
+            return copy;
         }
     }
 

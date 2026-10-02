@@ -43,7 +43,7 @@ public class SlskdClient : DownloadClientBase<SlskdProviderSettings>
     }
 
     public override async Task<string> Download(RemoteAlbum remoteAlbum, IIndexer indexer) =>
-        await _manager.DownloadAsync(remoteAlbum, Definition.Id, Connected());
+        await _manager.DownloadAsync(remoteAlbum, Definition.Id, await ConnectedAsync());
 
     public override IEnumerable<DownloadClientItem> GetItems()
     {
@@ -110,16 +110,19 @@ public class SlskdClient : DownloadClientBase<SlskdProviderSettings>
             ? IndexerLogin.Options<SlskdSettings>(_indexerFactory.Value.All())
             : base.RequestAction(action, query);
 
+    // For Lidarr's synchronous GetItems, RemoveItem, GetStatus and Test; Download awaits ConnectedAsync.
+    private SlskdProviderSettings Connected(bool save = true) => ConnectedAsync(save).GetAwaiter().GetResult();
+
     // Lazy: both factories are resolved alongside the download clients.
     // Test passes save: false, so an unsaved form is never written.
-    private SlskdProviderSettings Connected(bool save = true)
+    private async Task<SlskdProviderSettings> ConnectedAsync(bool save = true)
     {
         // An empty download folder means a refresh is still owed, including one that failed last time.
         bool serverChanged = Settings.UseLogin(IndexerLogin.Find<SlskdSettings>(_indexerFactory.Value.All(), Settings.IndexerId, "Slskd"));
         if (!serverChanged && !string.IsNullOrEmpty(Settings.DownloadPath))
             return Settings;
 
-        ValidationFailure? failure = _apiClient.TestConnectionAsync(Settings).GetAwaiter().GetResult();
+        ValidationFailure? failure = await _apiClient.TestConnectionAsync(Settings);
         if (failure != null)
             throw new DownloadClientException($"Slskd at {Settings.BaseUrl}: {failure.ErrorMessage}");
 
