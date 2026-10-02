@@ -3,6 +3,8 @@ using NzbDrone.Core.Annotations;
 using NzbDrone.Core.ThingiProvider;
 using NzbDrone.Core.Validation;
 using NzbDrone.Core.Validation.Paths;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
+using NzbDrone.Plugin.Sleezer.Indexers.SubSonic;
 
 namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
 {
@@ -15,19 +17,8 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
                 .IsValidPath()
                 .WithMessage("Download path must be a valid directory.");
 
-            // Validate ServerUrl
-            RuleFor(x => x.ServerUrl)
-                .NotEmpty().WithMessage("Server URL is required.")
-                .Must(url => Uri.IsWellFormedUriString(url, UriKind.Absolute))
-                .WithMessage("Server URL must be a valid URL.");
-
-            // Validate Username
-            RuleFor(x => x.Username)
-                .NotEmpty().WithMessage("Username is required.");
-
-            // Validate Password
-            RuleFor(x => x.Password)
-                .NotEmpty().WithMessage("Password is required.");
+            RuleFor(x => x.IndexerId)
+                .GreaterThanOrEqualTo(0);
 
             // Validate ConnectionRetries
             RuleFor(x => x.ConnectionRetries)
@@ -47,12 +38,6 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
                 .WithMessage("Max download speed must be greater than or equal to 0.")
                 .LessThanOrEqualTo(100_000)
                 .WithMessage("Max download speed must be less than or equal to 100 MB/s.");
-
-            // Validate RequestTimeout
-            RuleFor(x => x.RequestTimeout)
-                .GreaterThanOrEqualTo(10)
-                .LessThanOrEqualTo(300)
-                .WithMessage("Request timeout must be between 10 and 300 seconds.");
         }
     }
 
@@ -66,17 +51,21 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
         [FieldDefinition(0, Label = "Download Path", Type = FieldType.Path, HelpText = "Directory where downloaded files will be saved")]
         public string DownloadPath { get; set; } = string.Empty;
 
-        [FieldDefinition(1, Label = "Server URL", Type = FieldType.Textbox, HelpText = "URL of your SubSonic server", Placeholder = "https://music.example.com")]
+        // Filled from the SubSonic indexer on a per-use copy (WithLogin); hidden, and the password is still masked by the API.
+        [FieldDefinition(1, Label = "Server URL", Type = FieldType.Textbox, Hidden = HiddenType.Hidden)]
         public string ServerUrl { get; set; } = string.Empty;
 
-        [FieldDefinition(2, Label = "Username", Type = FieldType.Textbox, HelpText = "Your SubSonic username")]
+        [FieldDefinition(2, Label = "Username", Type = FieldType.Textbox, Hidden = HiddenType.Hidden)]
         public string Username { get; set; } = string.Empty;
 
-        [FieldDefinition(3, Label = "Password", Type = FieldType.Password, HelpText = "Your SubSonic password", Privacy = PrivacyLevel.Password)]
+        [FieldDefinition(3, Label = "Password", Type = FieldType.Password, Privacy = PrivacyLevel.Password, Hidden = HiddenType.Hidden)]
         public string Password { get; set; } = string.Empty;
 
-        [FieldDefinition(4, Label = "Use Token Authentication", Type = FieldType.Checkbox, HelpText = "Use secure token-based authentication (API 1.13.0+). Disable for older servers.", Advanced = true)]
+        [FieldDefinition(4, Label = "Use Token Authentication", Type = FieldType.Checkbox, Hidden = HiddenType.Hidden)]
         public bool UseTokenAuth { get; set; } = true;
+
+        [FieldDefinition(5, Label = "Indexer", Type = FieldType.Select, SelectOptionsProviderAction = IndexerLogin.OptionsAction, HelpText = "The SubSonic indexer whose server and login Test uses. Downloads use the indexer that found the release, and this one only when that indexer isn't a SubSonic one. Automatic takes the only one.")]
+        public int IndexerId { get; set; }
 
         [FieldDefinition(6, Type = FieldType.Number, Label = "Connection Retries", HelpText = "Number of times to retry failed connections", Advanced = true)]
         public int ConnectionRetries { get; set; } = 3;
@@ -93,10 +82,22 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
         [FieldDefinition(10, Label = "Max Bit Rate", Type = FieldType.Number, HelpText = "Maximum bit rate in kbps (0 for original quality)", Unit = "kbps", Advanced = true)]
         public int MaxBitRate { get; set; }
 
-        [FieldDefinition(11, Type = FieldType.Number, Label = "Request Timeout", Unit = "seconds", HelpText = "Timeout for requests to SubSonic server", Advanced = true)]
+        [FieldDefinition(11, Type = FieldType.Number, Label = "Request Timeout", Hidden = HiddenType.Hidden)]
         public int RequestTimeout { get; set; } = 60;
 
         public NzbDroneValidationResult Validate() => new(Validator.Validate(this));
+
+        /// <summary>A copy carrying the server and login of a SubSonic indexer; the shared settings stay untouched.</summary>
+        public SubSonicProviderSettings WithLogin(SubSonicIndexerSettings indexer)
+        {
+            SubSonicProviderSettings copy = (SubSonicProviderSettings)MemberwiseClone();
+            copy.ServerUrl = indexer.BaseUrl;
+            copy.Username = indexer.Username;
+            copy.Password = indexer.Password;
+            copy.UseTokenAuth = indexer.UseTokenAuth;
+            copy.RequestTimeout = indexer.RequestTimeout;
+            return copy;
+        }
     }
 
     /// <summary>

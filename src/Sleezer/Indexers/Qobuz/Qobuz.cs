@@ -6,14 +6,15 @@ using FluentValidation.Results;
 using NLog;
 using NzbDrone.Common.Http;
 using NzbDrone.Core.Configuration;
+using NzbDrone.Core.Extras.Metadata;
 using NzbDrone.Core.IndexerSearch.Definitions;
+using NzbDrone.Core.Music;
 using NzbDrone.Core.Parser;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Plugin.Sleezer.Core.Qobuz;
+using NzbDrone.Plugin.Sleezer.Core.Replacements;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Qobuz;
-using NzbDrone.Plugin.Sleezer.Core.Replacements;
-using NzbDrone.Core.Music;
 
 namespace NzbDrone.Core.Indexers.Qobuz
 {
@@ -31,8 +32,9 @@ namespace NzbDrone.Core.Indexers.Qobuz
             IConfigService configService,
             IParsingService parsingService,
             IArtistService artistService,
+            IMetadataFactory metadataFactory,
             Logger logger)
-            : base(httpClient, indexerStatusService, configService, parsingService, artistService, logger)
+            : base(httpClient, indexerStatusService, configService, parsingService, artistService, metadataFactory, logger)
         {
         }
 
@@ -50,6 +52,7 @@ namespace NzbDrone.Core.Indexers.Qobuz
         public override IParseIndexerResponse GetParser() => new QobuzParser
         {
             Settings = Settings,
+            Rules = Rules,
             Logger = _logger
         };
 

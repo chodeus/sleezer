@@ -1,9 +1,9 @@
+using System.Collections.Concurrent;
+using System.Text.RegularExpressions;
 using FuzzySharp;
 using Newtonsoft.Json;
 using NLog;
 using NzbDrone.Core.Indexers;
-using System.Collections.Concurrent;
-using System.Text.RegularExpressions;
 using NzbDrone.Plugin.Sleezer.Core.Model;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek.Models;
@@ -197,7 +197,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                         else if (settings?.RequireCoherentSingleSource == true)
                         {
                             matchedSearchCriteria = false;
-                            _logger.Debug("Single/EP target '{Album}': source '{Dir}' covers {Covered}/{Wanted} matchable tracks and RequireCoherentSingleSource is on — rejecting partial source", searchData.Album, directory.Key, coveredTrackCount, wantedTrackTitleCount);
+                            _logger.Debug("Single/EP target '{Album}': source '{Dir}' covers {Covered}/{Wanted} matchable tracks and Whole Albums Only is on — rejecting partial source", searchData.Album, directory.Key, coveredTrackCount, wantedTrackTitleCount);
                         }
                         else
                             coherencePriorityDelta -= PartialSourcePenalty;

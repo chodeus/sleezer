@@ -6,15 +6,16 @@ using FluentValidation.Results;
 using NLog;
 using NzbDrone.Common.Http;
 using NzbDrone.Core.Configuration;
+using NzbDrone.Core.Extras.Metadata;
 using NzbDrone.Core.Indexers.Exceptions;
+using NzbDrone.Core.Music;
 using NzbDrone.Core.Parser;
 using NzbDrone.Core.Parser.Model;
+using NzbDrone.Plugin.Sleezer.Core.Replacements;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Tidal;
 using TidalSharp;
 using TidalSharp.Data;
-using NzbDrone.Plugin.Sleezer.Core.Replacements;
-using NzbDrone.Core.Music;
 
 namespace NzbDrone.Core.Indexers.Tidal
 {
@@ -55,8 +56,9 @@ namespace NzbDrone.Core.Indexers.Tidal
             IConfigService configService,
             IParsingService parsingService,
             IArtistService artistService,
+            IMetadataFactory metadataFactory,
             Logger logger)
-            : base(httpClient, indexerStatusService, configService, parsingService, artistService, logger)
+            : base(httpClient, indexerStatusService, configService, parsingService, artistService, metadataFactory, logger)
         {
             _indexerRepository = indexerRepository;
         }
@@ -81,6 +83,7 @@ namespace NzbDrone.Core.Indexers.Tidal
             return new TidalParser
             {
                 Settings = Settings,
+                Rules = Rules,
                 Logger = _logger
             };
         }

@@ -14,7 +14,7 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
 {
     public interface ISubSonicDownloadManager
     {
-        Task<string> Download(RemoteAlbum remoteAlbum, IIndexer indexer, NamingConfig namingConfig, SubSonicClient provider);
+        Task<string> Download(RemoteAlbum remoteAlbum, IIndexer indexer, NamingConfig namingConfig, SubSonicClient provider, SubSonicProviderSettings settings);
 
         IEnumerable<DownloadClientItem> GetItems();
 
@@ -34,11 +34,11 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
         private readonly IEnumerable<IHttpRequestInterceptor> _requestInterceptors = requestInterceptors;
         private readonly IAudioTagService _audioTagService = audioTagService;
 
-        public async Task<string> Download(RemoteAlbum remoteAlbum, IIndexer indexer, NamingConfig namingConfig, SubSonicClient provider)
+        public async Task<string> Download(RemoteAlbum remoteAlbum, IIndexer indexer, NamingConfig namingConfig, SubSonicClient provider, SubSonicProviderSettings settings)
         {
             try
             {
-                SubSonicDownloadRequest downloadRequest = await CreateDownloadRequest(remoteAlbum, indexer, namingConfig, provider);
+                SubSonicDownloadRequest downloadRequest = await CreateDownloadRequest(remoteAlbum, indexer, namingConfig, provider, settings);
                 _queue.Add(downloadRequest);
 
                 _logger.Debug($"Added download: {downloadRequest.ID} | {remoteAlbum.Release.Title}");
@@ -77,9 +77,10 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
             RemoteAlbum remoteAlbum,
             IIndexer indexer,
             NamingConfig namingConfig,
-            SubSonicClient provider)
+            SubSonicClient provider,
+            SubSonicProviderSettings settings)
         {
-            string baseUrl = provider.Settings.ServerUrl.TrimEnd('/');
+            string baseUrl = settings.ServerUrl.TrimEnd('/');
             string downloadUrl = remoteAlbum.Release.DownloadUrl;
 
             if (!downloadUrl.StartsWith(baseUrl))
@@ -93,27 +94,27 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
             SubSonicDownloadOptions options = new()
             {
                 Handler = _requesthandler,
-                DownloadPath = provider.Settings.DownloadPath,
+                DownloadPath = settings.DownloadPath,
                 BaseUrl = baseUrl,
-                Username = provider.Settings.Username,
-                Password = provider.Settings.Password,
-                UseTokenAuth = provider.Settings.UseTokenAuth,
-                MaxDownloadSpeed = provider.Settings.MaxDownloadSpeed * 1024, // Convert KB/s to bytes/s
-                RequestTimeout = provider.Settings.RequestTimeout,
+                Username = settings.Username,
+                Password = settings.Password,
+                UseTokenAuth = settings.UseTokenAuth,
+                MaxDownloadSpeed = settings.MaxDownloadSpeed * 1024, // Convert KB/s to bytes/s
+                RequestTimeout = settings.RequestTimeout,
                 NamingConfig = namingConfig,
                 RequestInterceptors = _requestInterceptors,
                 DelayBetweenAttemps = TimeSpan.FromSeconds(2),
-                NumberOfAttempts = (byte)provider.Settings.ConnectionRetries,
+                NumberOfAttempts = (byte)settings.ConnectionRetries,
                 ClientInfo = DownloadClientItemClientInfo.FromDownloadClient(provider, false),
                 PostProcess = _postProcess,
                 IsTrack = isTrack,
                 ItemId = itemId,
-                PreferredFormat = (PreferredFormatEnum)provider.Settings.PreferredFormat,
-                MaxBitRate = provider.Settings.MaxBitRate,
+                PreferredFormat = (PreferredFormatEnum)settings.PreferredFormat,
+                MaxBitRate = settings.MaxBitRate,
                 AudioTagService = _audioTagService
             };
 
-            _requesthandler.MaxParallelism = provider.Settings.MaxParallelDownloads;
+            _requesthandler.MaxParallelism = settings.MaxParallelDownloads;
 
             return await Task.FromResult(new SubSonicDownloadRequest(remoteAlbum, options));
         }

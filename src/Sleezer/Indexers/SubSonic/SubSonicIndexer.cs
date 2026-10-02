@@ -1,14 +1,15 @@
+using System.Text.Json;
 using FluentValidation.Results;
 using NLog;
 using NzbDrone.Common.Http;
 using NzbDrone.Core.Configuration;
+using NzbDrone.Core.Extras.Metadata;
 using NzbDrone.Core.Indexers;
+using NzbDrone.Core.Music;
 using NzbDrone.Core.Parser;
 using NzbDrone.Core.ThingiProvider;
-using System.Text.Json;
-using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Core.Replacements;
-using NzbDrone.Core.Music;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
 namespace NzbDrone.Plugin.Sleezer.Indexers.SubSonic
 {
@@ -36,8 +37,9 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.SubSonic
             IConfigService configService,
             IParsingService parsingService,
             IArtistService artistService,
+            IMetadataFactory metadataFactory,
             Logger logger)
-            : base(httpClient, statusService, configService, parsingService, artistService, logger)
+            : base(httpClient, statusService, configService, parsingService, artistService, metadataFactory, logger)
         {
             _requestGenerator = requestGenerator;
             _parser = parser;

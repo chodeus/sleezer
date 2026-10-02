@@ -4,10 +4,13 @@ using NzbDrone.Common.Disk;
 using NzbDrone.Common.Extensions;
 using NzbDrone.Core.Configuration;
 using NzbDrone.Core.Download;
+using NzbDrone.Core.Download.Clients;
 using NzbDrone.Core.Indexers;
 using NzbDrone.Core.Localization;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Core.RemotePathMappings;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
+using NzbDrone.Plugin.Sleezer.Indexers.Soulseek;
 
 namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
 
@@ -15,6 +18,8 @@ public class SlskdClient : DownloadClientBase<SlskdProviderSettings>
 {
     private readonly ISlskdDownloadManager _manager;
     private readonly ISlskdApiClient _apiClient;
+    private readonly Lazy<IIndexerFactory> _indexerFactory;
+    private readonly Lazy<IDownloadClientFactory> _clientFactory;
 
     public override string Name => "Slskd";
     public override string Protocol => nameof(SoulseekDownloadProtocol);
@@ -26,20 +31,24 @@ public class SlskdClient : DownloadClientBase<SlskdProviderSettings>
         IDiskProvider diskProvider,
         IRemotePathMappingService remotePathMappingService,
         ILocalizationService localizationService,
+        Lazy<IIndexerFactory> indexerFactory,
+        Lazy<IDownloadClientFactory> clientFactory,
         Logger logger)
         : base(configService, diskProvider, remotePathMappingService, localizationService, logger)
     {
         _manager = manager;
         _apiClient = apiClient;
+        _indexerFactory = indexerFactory;
+        _clientFactory = clientFactory;
     }
 
     public override async Task<string> Download(RemoteAlbum remoteAlbum, IIndexer indexer) =>
-        await _manager.DownloadAsync(remoteAlbum, Definition.Id, Settings);
+        await _manager.DownloadAsync(remoteAlbum, Definition.Id, await ConnectedAsync());
 
     public override IEnumerable<DownloadClientItem> GetItems()
     {
         DownloadClientItemClientInfo clientInfo = DownloadClientItemClientInfo.FromDownloadClient(this, false);
-        foreach (DownloadClientItem item in _manager.GetItems(Definition.Id, Settings, GetRemoteToLocal()))
+        foreach (DownloadClientItem item in _manager.GetItems(Definition.Id, Connected(), GetRemoteToLocal()))
         {
             item.DownloadClientInfo = clientInfo;
             yield return item;
@@ -47,16 +56,30 @@ public class SlskdClient : DownloadClientBase<SlskdProviderSettings>
     }
 
     public override void RemoveItem(DownloadClientItem clientItem, bool deleteData) =>
-        _manager.RemoveItem(clientItem, deleteData, Definition.Id, Settings);
+        _manager.RemoveItem(clientItem, deleteData, Definition.Id, Connected());
 
-    public override DownloadClientInfo GetStatus() => new()
+    public override DownloadClientInfo GetStatus()
     {
-        IsLocalhost = Settings.IsLocalhost,
-        OutputRootFolders = [_remotePathMappingService.RemapRemoteToLocal(Settings.Host, new OsPath(Settings.DownloadPath))]
-    };
+        SlskdProviderSettings settings = Connected();
+        return new()
+        {
+            IsLocalhost = settings.IsLocalhost,
+            OutputRootFolders = [_remotePathMappingService.RemapRemoteToLocal(settings.Host, new OsPath(settings.DownloadPath))]
+        };
+    }
 
     protected override void Test(List<ValidationFailure> failures)
     {
+        try
+        {
+            Connected(save: false);
+        }
+        catch (DownloadClientException ex)
+        {
+            failures.Add(new ValidationFailure(nameof(SlskdProviderSettings.IndexerId), ex.Message));
+            return;
+        }
+
         // Explicit type argument prevents the compiler from inferring TSource = ValidationFailure?
         // (which would mismatch the List<ValidationFailure> parameter).
         var failure = _apiClient.TestConnectionAsync(Settings).GetAwaiter().GetResult();
@@ -80,6 +103,34 @@ public class SlskdClient : DownloadClientBase<SlskdProviderSettings>
         ValidationFailure folderFailure = TestFolder(localPath.FullPath, "DownloadPath");
         if (folderFailure != null)
             failures.Add(folderFailure);
+    }
+
+    public override object RequestAction(string action, IDictionary<string, string> query) =>
+        action == IndexerLogin.OptionsAction
+            ? IndexerLogin.Options<SlskdSettings>(_indexerFactory.Value.All())
+            : base.RequestAction(action, query);
+
+    // For Lidarr's synchronous GetItems, RemoveItem, GetStatus and Test; Download awaits ConnectedAsync.
+    private SlskdProviderSettings Connected(bool save = true) => ConnectedAsync(save).GetAwaiter().GetResult();
+
+    // Lazy: both factories are resolved alongside the download clients.
+    // Test passes save: false, so an unsaved form is never written.
+    private async Task<SlskdProviderSettings> ConnectedAsync(bool save = true)
+    {
+        // An empty download folder means a refresh is still owed, including one that failed last time.
+        bool serverChanged = Settings.UseLogin(IndexerLogin.Find<SlskdSettings>(_indexerFactory.Value.All(), Settings.IndexerId, "Slskd"));
+        if (!serverChanged && !string.IsNullOrEmpty(Settings.DownloadPath))
+            return Settings;
+
+        ValidationFailure? failure = await _apiClient.TestConnectionAsync(Settings);
+        if (failure != null)
+            throw new DownloadClientException($"Slskd at {Settings.BaseUrl}: {failure.ErrorMessage}");
+
+        // Saved so the new server's download folder is fetched once, not on every queue poll.
+        if (save && Definition is DownloadClientDefinition { Id: > 0 } definition)
+            _clientFactory.Value.Update(definition);
+
+        return Settings;
     }
 
     private OsPath GetRemoteToLocal() =>

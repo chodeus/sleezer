@@ -4,6 +4,7 @@ using NzbDrone.Common.Disk;
 using NzbDrone.Core.Extras.Metadata;
 using NzbDrone.Core.Music;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
+using NzbDrone.Plugin.Sleezer.Metadata.DownloadRules;
 using NzbDrone.Plugin.Sleezer.Metadata.FFmpeg;
 
 namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
@@ -37,9 +38,11 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
         public async Task<bool> RunAsync(PostProcessRequest request, CancellationToken ct)
         {
             FFmpegSettings? sharedSettings;
+            DownloadRulesSettings? rules;
             try
             {
                 sharedSettings = GetSharedSettings();
+                rules = SharedSettings.Read<DownloadRulesSettings>(metadataFactory);
             }
             catch (Exception ex)
             {
@@ -52,15 +55,15 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
             // the ordinary unconfigured state is a seeded definition with empty client
             // lists. Lidarr seeds one per provider at startup, so null means we cannot tell
             // what was asked for — fail rather than import unverified.
-            if (sharedSettings == null)
+            if (sharedSettings == null || rules == null)
             {
-                logger.Error("[post-process] {Client} item {ID}: no FFmpeg metadata definition found; failing the item rather than importing it unverified",
-                    request.Client, request.DownloadId);
+                logger.Error("[post-process] {Client} item {ID}: no {Entry} metadata definition found; failing the item rather than importing it unverified",
+                    request.Client, request.DownloadId, sharedSettings == null ? "FFmpeg" : "Sleezer Download Rules");
                 return false;
             }
 
-            bool scanEnabled = sharedSettings?.CorruptionScanClients?.Contains((int)request.Client) ?? false;
-            bool tagEnabled = sharedSettings?.PreImportTaggingClients?.Contains((int)request.Client) ?? false;
+            bool scanEnabled = sharedSettings.CorruptionScanClients?.Contains((int)request.Client) ?? false;
+            bool tagEnabled = rules.PreImportTaggingClients?.Contains((int)request.Client) ?? false;
 
             if (!scanEnabled && !tagEnabled)
             {
@@ -80,7 +83,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
             // Tag first, scan second, so the scan validates the exact bytes Lidarr is
             // about to import rather than the pre-tag ones.
             if (tagEnabled)
-                await TagAsync(request, sharedSettings, ct);
+                await TagAsync(request, rules.StripFeaturedArtists, ct);
 
             if (!scanEnabled)
                 return true;
@@ -114,29 +117,13 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
         public FFmpegSettings? GetSharedSettings() => ReadSharedSettings(metadataFactory);
 
         /// <summary>The one reader for the shared post-processing settings.</summary>
-        public static FFmpegSettings? ReadSharedSettings(IMetadataFactory factory)
-        {
-            try
-            {
-                return factory.All()
-                    .Where(d => d.Settings is FFmpegSettings)
-                    .Select(d => d.Settings as FFmpegSettings)
-                    .FirstOrDefault(s => s != null);
-            }
-            catch (Exception ex)
-            {
-                // Deliberately not swallowed: returning null here is indistinguishable
-                // from "the operator turned both toggles off", so a transient settings
-                // failure would import content that was never scanned or tagged.
-                throw new InvalidOperationException("Could not read the shared post-processing settings.", ex);
-            }
-        }
+        public static FFmpegSettings? ReadSharedSettings(IMetadataFactory factory) => SharedSettings.Read<FFmpegSettings>(factory);
 
         /// <summary>Applies the configured FFmpeg directory, fetching the binaries if missing.</summary>
         public Task EnsureFFmpegResolvedAsync(CancellationToken ct) =>
             _ffmpeg.ResolveAsync(GetSharedSettings()?.FFmpegPath, ct);
 
-        private async Task TagAsync(PostProcessRequest request, FFmpegSettings? sharedSettings, CancellationToken ct)
+        private async Task TagAsync(PostProcessRequest request, bool stripFeaturedArtists, CancellationToken ct)
         {
             Album? album = request.Album;
             Artist? artist = album?.Artist?.Value;
@@ -159,7 +146,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
                 request.DownloadId,
                 request.Folder,
                 TagConfidenceThreshold,
-                sharedSettings?.StripFeaturedArtists ?? false,
+                stripFeaturedArtists,
                 ct,
                 preferDigitalMedia: request.Client.IsDigitalStorefront());
 

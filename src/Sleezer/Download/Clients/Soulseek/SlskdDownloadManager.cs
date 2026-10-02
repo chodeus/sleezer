@@ -1,3 +1,6 @@
+using System.Collections.Concurrent;
+using System.IO;
+using System.Text.Json;
 using NLog;
 using NzbDrone.Common.Disk;
 using NzbDrone.Common.Extensions;
@@ -5,20 +8,18 @@ using NzbDrone.Common.Instrumentation;
 using NzbDrone.Core.Download;
 using NzbDrone.Core.Download.Clients;
 using NzbDrone.Core.Download.History;
-using NzbDrone.Core.History;
-using NzbDrone.Core.Parser.Model;
-using NzbDrone.Core.RemotePathMappings;
-using System.Collections.Concurrent;
-using System.IO;
-using System.Text.Json;
 using NzbDrone.Core.Extras.Metadata;
+using NzbDrone.Core.History;
 using NzbDrone.Core.Indexers;
 using NzbDrone.Core.Music;
+using NzbDrone.Core.Parser.Model;
+using NzbDrone.Core.RemotePathMappings;
 using NzbDrone.Plugin.Sleezer.Core.Model;
-using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Core.PostProcessing;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek.Models;
 using NzbDrone.Plugin.Sleezer.Indexers.Soulseek;
+using NzbDrone.Plugin.Sleezer.Metadata.DownloadRules;
 using NzbDrone.Plugin.Sleezer.Metadata.FFmpeg;
 
 namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
@@ -1207,9 +1208,11 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }
 
         FFmpegSettings? sharedSettings;
+        DownloadRulesSettings? rules;
         try
         {
             sharedSettings = PostProcessRunner.ReadSharedSettings(_metadataFactory);
+            rules = SharedSettings.Read<DownloadRulesSettings>(_metadataFactory);
         }
         catch (Exception ex)
         {
@@ -1220,15 +1223,16 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             return;
         }
 
-        if (sharedSettings == null)
+        if (sharedSettings == null || rules == null)
         {
             item.PostProcessFailure = "Post-processing settings are missing";
-            _logger.Error("[post-process] {ItemId}: no FFmpeg metadata definition found; failing the item rather than importing it unverified", item.ID);
+            _logger.Error("[post-process] {ItemId}: no {Entry} metadata definition found; failing the item rather than importing it unverified",
+                item.ID, sharedSettings == null ? "FFmpeg" : "Sleezer Download Rules");
             return;
         }
 
-        bool scanEnabled = sharedSettings?.CorruptionScanClients?.Contains((int)PostProcessClient.Slskd) ?? false;
-        bool tagEnabled = sharedSettings?.PreImportTaggingClients?.Contains((int)PostProcessClient.Slskd) ?? false;
+        bool scanEnabled = sharedSettings.CorruptionScanClients?.Contains((int)PostProcessClient.Slskd) ?? false;
+        bool tagEnabled = rules.PreImportTaggingClients?.Contains((int)PostProcessClient.Slskd) ?? false;
         bool mergeNeeded = item.IsMultiDirectory && !item.DiscFoldersMerged;
 
         if (!scanEnabled && !tagEnabled && !mergeNeeded)
@@ -1317,7 +1321,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                         item.ID,
                         folderPath,
                         PostProcessRunner.TagConfidenceThreshold,
-                        sharedSettings?.StripFeaturedArtists ?? false,
+                        rules.StripFeaturedArtists,
                         cts.Token,
                         verifyAllWithFingerprint: settings.VerifyImportsWithFingerprint,
                         fingerprintTitleFallback: true,

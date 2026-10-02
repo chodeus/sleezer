@@ -76,6 +76,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
                 searchIdForCleanup = searchResponse.Id;
                 SlskdSearchData searchTextData = SlskdSearchData.FromJson(indexerResponse.HttpRequest.ContentSummary);
+                SlskdSettings settings = Settings.WithWholeAlbumsOnly(_indexer.Rules.WholeAlbumsOnly);
                 HashSet<string>? ignoredUsers = GetIgnoredUsers(Settings.IgnoreListPath);
                 HashSet<string> rateLimitedUsers = GetRateLimitedUsers();
                 (HashSet<string> recentlyFailedIds, Dictionary<string, int> recentlyFailedUsers) = GetRecentFailureState();
@@ -131,7 +132,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
                         if (searchTextData.MinimumFiles > 0 || searchTextData.MaximumFiles.HasValue)
                         {
-                            bool filterActive = (TrackCountFilterType)Settings.TrackCountFilter != TrackCountFilterType.Disabled;
+                            bool filterActive = (TrackCountFilterType)settings.TrackCountFilter != TrackCountFilterType.Disabled;
                             int fileCount = filterActive
                                 ? finalGroup.Count(f => AudioFormatHelper.GetAudioCodecFromExtension(f.Extension ?? Path.GetExtension(f.Filename) ?? "") != AudioFormat.Unknown)
                                 : finalGroup.Count();
@@ -149,7 +150,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                             }
                         }
 
-                        AlbumData albumData = _itemsParser.CreateAlbumData(finalGroup, searchTextData, folderData, Settings, searchTextData.TrackCount);
+                        AlbumData albumData = _itemsParser.CreateAlbumData(finalGroup, searchTextData, folderData, settings, searchTextData.TrackCount);
 
                         // Carries the search this release came from; the display link
                         // points at the peer, so grab cleanup matches on this instead.

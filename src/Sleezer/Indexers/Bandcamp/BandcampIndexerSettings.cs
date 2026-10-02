@@ -16,7 +16,7 @@ namespace NzbDrone.Core.Indexers.Bandcamp
         }
     }
 
-    public class BandcampIndexerSettings : IIndexerSettings, IStoreMatchingSettings
+    public class BandcampIndexerSettings : IIndexerSettings
     {
         private static readonly BandcampIndexerSettingsValidator Validator = new BandcampIndexerSettingsValidator();
 
@@ -34,7 +34,8 @@ namespace NzbDrone.Core.Indexers.Bandcamp
         [FieldDefinition(2, Type = FieldType.Number, Label = "Early Download Limit", HelpText = "Time before release date Lidarr will download from this indexer, empty is no limit", Unit = "days", Advanced = true)]
         public int? EarlyReleaseLimit { get; set; }
 
-        [FieldDefinition(3, Label = "Strict Matching", Type = FieldType.Checkbox, HelpText = StrictMatchingHelp.Tracks)]
+        // Moved to Sleezer Download Rules; hidden so the one-time copy can read them.
+        [FieldDefinition(3, Label = "Strict Matching", Type = FieldType.Checkbox, Hidden = HiddenType.Hidden)]
         public bool StrictMatching { get; set; } = true;
 
         public NzbDroneValidationResult Validate()

@@ -10,14 +10,15 @@ using NzbDrone.Common.Extensions;
 using NzbDrone.Common.Http;
 using NzbDrone.Core.Configuration;
 using NzbDrone.Core.Download.Clients.Bandcamp;
+using NzbDrone.Core.Extras.Metadata;
 using NzbDrone.Core.Indexers.Exceptions;
 using NzbDrone.Core.IndexerSearch.Definitions;
+using NzbDrone.Core.Music;
 using NzbDrone.Core.Parser;
 using NzbDrone.Core.Parser.Model;
+using NzbDrone.Plugin.Sleezer.Core.Model;
 using NzbDrone.Plugin.Sleezer.Core.Replacements;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
-using NzbDrone.Plugin.Sleezer.Core.Model;
-using NzbDrone.Core.Music;
 
 namespace NzbDrone.Core.Indexers.Bandcamp
 {
@@ -47,8 +48,9 @@ namespace NzbDrone.Core.Indexers.Bandcamp
                                IConfigService configService,
                                IParsingService parsingService,
                                IArtistService artistService,
+                               IMetadataFactory metadataFactory,
                                Logger logger)
-            : base(httpClient, indexerStatusService, configService, parsingService, artistService, logger)
+            : base(httpClient, indexerStatusService, configService, parsingService, artistService, metadataFactory, logger)
         {
             _apiClient = apiClient;
         }
