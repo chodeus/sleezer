@@ -1,5 +1,3 @@
-using NzbDrone.Plugin.Sleezer.Core.Utilities;
-
 ﻿using FluentValidation;
 using NzbDrone.Core.Annotations;
 using NzbDrone.Core.ThingiProvider;

@@ -147,7 +147,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata
         private static void LinkClient(ProviderDefinition client, IEnumerable<ProviderDefinition> matching, int indexerCount, int indexerId, Dictionary<int, int> ids, List<string> notes)
         {
             List<ProviderDefinition> found = matching.ToList();
-            if (found.Count >= 1 && indexerCount > 1)
+            if (found.Count >= 1 && indexerCount > 1 && indexerId == 0)
                 ids[client.Id] = found[0].Id;
             else if (found.Count == 0 && indexerCount == 1)
                 notes.Add($"{client.Name}: its own login matched no indexer; it now uses the indexer's. Check it under Download Clients.");

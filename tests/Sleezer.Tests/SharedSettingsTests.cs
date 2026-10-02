@@ -236,6 +236,16 @@ public class SharedSettingsCopyTests
     }
 
     [Fact]
+    public void A_client_keeps_an_indexer_it_was_already_set_to()
+    {
+        SlskdProviderSettings client = new() { BaseUrl = "http://peer-b:5030", ApiKey = "key-b", IndexerId = 5 };
+        IndexerDefinition a = Indexer(5, "Peer A", new SlskdSettings { BaseUrl = "http://peer-a:5030", ApiKey = "key-a" });
+        IndexerDefinition b = Indexer(6, "Peer B", new SlskdSettings { BaseUrl = "http://peer-b:5030", ApiKey = "key-b" });
+
+        Assert.Empty(Plan([a, b], [Client(9, "Peer client", client)]).ClientIndexerIds);
+    }
+
+    [Fact]
     public void A_client_whose_login_matches_no_indexer_is_reported()
     {
         DownloadClientDefinition client = Client(9, "Peer client", new SlskdProviderSettings { BaseUrl = "http://peer-c:5030", ApiKey = "key-c" });

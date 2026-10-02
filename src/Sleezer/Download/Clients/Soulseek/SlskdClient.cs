@@ -114,7 +114,9 @@ public class SlskdClient : DownloadClientBase<SlskdProviderSettings>
     // Test passes save: false, so an unsaved form is never written.
     private SlskdProviderSettings Connected(bool save = true)
     {
-        if (!Settings.UseLogin(IndexerLogin.Find<SlskdSettings>(_indexerFactory.Value.All(), Settings.IndexerId, "Slskd")))
+        // An empty download folder means a refresh is still owed, including one that failed last time.
+        bool serverChanged = Settings.UseLogin(IndexerLogin.Find<SlskdSettings>(_indexerFactory.Value.All(), Settings.IndexerId, "Slskd"));
+        if (!serverChanged && !string.IsNullOrEmpty(Settings.DownloadPath))
             return Settings;
 
         ValidationFailure? failure = _apiClient.TestConnectionAsync(Settings).GetAwaiter().GetResult();
