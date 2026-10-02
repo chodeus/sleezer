@@ -53,9 +53,10 @@ namespace NzbDrone.Plugin.Sleezer.HealthChecks
 
             List<string> found = problems.Where(p => p != null).Select(p => p!).ToList();
 
+            // Properties, not the result constructor: the plugins branch and develop disagree on its parameters.
             return found.Count == 0
                 ? new HealthCheck(GetType())
-                : new HealthCheck(GetType(), HealthCheckResult.Error, string.Join(" ", found));
+                : new HealthCheck(GetType()) { Type = HealthCheckResult.Error, Message = string.Join(" ", found) };
         }
     }
 }
