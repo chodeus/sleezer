@@ -27,10 +27,10 @@ namespace NzbDrone.Core.Indexers.Tidal
         // Hidden token storage populated by the FieldType.OAuth flow's getOAuthToken
         // callback. Same shape as Spotify's import-list settings — Lidarr's UI sets
         // these from the dictionary returned by RequestAction("getOAuthToken").
-        [FieldDefinition(0, Label = "Access Token", Type = FieldType.Textbox, Hidden = HiddenType.Hidden)]
+        [FieldDefinition(0, Label = "Access Token", Type = FieldType.Textbox, Privacy = PrivacyLevel.ApiKey, Hidden = HiddenType.Hidden)]
         public string AccessToken { get; set; } = "";
 
-        [FieldDefinition(1, Label = "Refresh Token", Type = FieldType.Textbox, Hidden = HiddenType.Hidden)]
+        [FieldDefinition(1, Label = "Refresh Token", Type = FieldType.Textbox, Privacy = PrivacyLevel.ApiKey, Hidden = HiddenType.Hidden)]
         public string RefreshToken { get; set; } = "";
 
         [FieldDefinition(2, Label = "Token Type", Type = FieldType.Textbox, Hidden = HiddenType.Hidden)]
