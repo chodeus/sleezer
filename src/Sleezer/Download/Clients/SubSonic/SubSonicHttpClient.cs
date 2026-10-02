@@ -87,7 +87,7 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
             }
             catch (Exception ex)
             {
-                throw new Exception($"HTTP request failed for URL '{SubSonicUrlRedactor.Redact(request.RequestUri?.ToString())}': {ex.Message}", ex);
+                throw new Exception($"HTTP request failed for URL '{SubSonicUrlRedactor.Redact(request.RequestUri?.ToString())}': {SubSonicUrlRedactor.Redact(ex.Message)}", ex);
             }
         }
 
@@ -246,7 +246,7 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
             }
             catch (Exception ex)
             {
-                throw new Exception($"HTTP GET request failed for URL '{SubSonicUrlRedactor.Redact(url)}': {ex.Message}", ex);
+                throw new Exception($"HTTP GET request failed for URL '{SubSonicUrlRedactor.Redact(url)}': {SubSonicUrlRedactor.Redact(ex.Message)}", ex);
             }
         }
     }

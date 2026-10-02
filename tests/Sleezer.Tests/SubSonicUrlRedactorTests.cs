@@ -23,6 +23,11 @@ public class SubSonicUrlRedactorTests
         Assert.Equal("http://x/rest/a?songCount=5&type=album&size=1", SubSonicUrlRedactor.Redact("http://x/rest/a?songCount=5&type=album&size=1"));
 
     [Fact]
+    public void A_url_inside_an_error_message_is_redacted_too() =>
+        Assert.Equal("Request to http://x/rest/ping.view?u=(removed)&t=(removed)&s=(removed) timed out",
+            SubSonicUrlRedactor.Redact("Request to http://x/rest/ping.view?u=user-a&t=tok&s=salt timed out"));
+
+    [Fact]
     public void A_missing_url_is_empty() => Assert.Equal(string.Empty, SubSonicUrlRedactor.Redact(null));
 }
 
