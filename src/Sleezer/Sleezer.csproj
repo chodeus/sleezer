@@ -12,7 +12,9 @@
 		<Author>chodeus</Author>
 		<RepoUrl>https://github.com/chodeus/sleezer</RepoUrl>
 		<CI>false</CI>
-		<InformationalVersion>$(AssemblyVersion)-$(Branch)</InformationalVersion>
+		<!-- Lidarr reads a suffix as a pre-release: main builds carry none, as their releases don't. -->
+		<InformationalVersion>$(AssemblyVersion)</InformationalVersion>
+		<InformationalVersion Condition="'$(Branch)' != '' AND '$(Branch)' != 'main' AND '$(Branch)' != 'master'">$(AssemblyVersion)-$(Branch)</InformationalVersion>
 		<DefineConstants Condition="'$(CI)' == true">$(DefineConstants);CI</DefineConstants>
 		<DefineConstants Condition="'$(Branch)' == 'main'">$(DefineConstants);MASTER_BRANCH</DefineConstants>
 		<DefineConstants Condition="'$(Branch)' == 'develop'">$(DefineConstants);DEV_BRANCH</DefineConstants>
