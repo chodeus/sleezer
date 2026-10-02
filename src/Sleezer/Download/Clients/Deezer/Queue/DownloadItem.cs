@@ -281,7 +281,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
             var duration = metadataPage["DATA"]!["DURATION"]!.Value<int>();
 
             var ext = trackBitrate == Bitrate.FLAC ? "flac" : "mp3";
-            var outPath = Path.Combine(settings.DownloadPath, MetadataUtilities.GetFilledTemplate("%albumartist%/%album%/", ext, metadataPage, _deezerAlbum), MetadataUtilities.GetFilledTemplate("%track% - %title%.%ext%", ext, metadataPage, _deezerAlbum));
+            var outPath = Path.Combine(settings.DownloadPath, DownloadFolders.WithStoreId(MetadataUtilities.GetFilledTemplate("%albumartist%/%album%/", ext, metadataPage, _deezerAlbum), _deezerUrl.Id.ToString()), MetadataUtilities.GetFilledTemplate("%track% - %title%.%ext%", ext, metadataPage, _deezerAlbum));
             var outDir = Path.GetDirectoryName(outPath)!;
 
             DownloadFolder = outDir;
