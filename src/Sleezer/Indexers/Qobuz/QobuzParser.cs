@@ -12,6 +12,7 @@ using NzbDrone.Core.Parser.Model;
 using NzbDrone.Plugin.Sleezer.Core.Model;
 using NzbDrone.Plugin.Sleezer.Core.Qobuz;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
+using NzbDrone.Plugin.Sleezer.Metadata.DownloadRules;
 using NzbDrone.Plugin.Sleezer.Qobuz;
 using QobuzApiSharp.Models.Content;
 
@@ -36,6 +37,8 @@ namespace NzbDrone.Core.Indexers.Qobuz
         private static readonly Regex LocalePrefix = new(@"(qobuz\.com/)[a-z]{2}-[a-z]{2}/", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         public QobuzIndexerSettings Settings { get; set; } = null!;
+
+        public DownloadRulesSettings Rules { get; set; } = new();
         public Logger Logger { get; set; } = null!;
 
         public IList<ReleaseInfo> ParseResponse(IndexerResponse response)
@@ -48,7 +51,7 @@ namespace NzbDrone.Core.Indexers.Qobuz
             if (albums.Count == 0)
                 return [];
 
-            if (Settings.HideNonStreamable)
+            if (Rules.HideUnstreamable)
             {
                 int before = albums.Count;
                 albums = [.. albums.Where(a => a.Streamable ?? true)];

@@ -3,6 +3,7 @@ using NzbDrone.Core.Annotations;
 using NzbDrone.Core.ThingiProvider;
 using NzbDrone.Core.Validation;
 using System.Text.RegularExpressions;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Indexers.Soulseek;
 
 namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek
@@ -11,16 +12,8 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek
     {
         public SlskdProviderSettingsValidator()
         {
-            // Base URL validation
-            RuleFor(c => c.BaseUrl)
-                .ValidRootUrl()
-                .Must(url => !url.EndsWith('/'))
-                .WithMessage("Base URL must not end with a slash ('/').");
-
-            // API Key validation
-            RuleFor(c => c.ApiKey)
-                .NotEmpty()
-                .WithMessage("API Key is required.");
+            RuleFor(c => c.IndexerId)
+                .GreaterThanOrEqualTo(0);
 
             // Timeout validation (only if it has a value)
             RuleFor(c => c.TimeoutMinutes)
@@ -60,11 +53,15 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek
         private static readonly SlskdProviderSettingsValidator Validator = new();
         private string? _host;
 
-        [FieldDefinition(0, Label = "URL", Type = FieldType.Url, Placeholder = "http://localhost:5030", HelpText = "The URL of your Slskd instance.")]
+        // Copied from the Slskd indexer before each use (UseLogin); hidden, and still masked by the API.
+        [FieldDefinition(0, Label = "URL", Type = FieldType.Url, Hidden = HiddenType.Hidden)]
         public string BaseUrl { get; set; } = "http://localhost:5030";
 
-        [FieldDefinition(1, Label = "API Key", Type = FieldType.Textbox, Privacy = PrivacyLevel.ApiKey, HelpText = "The API key for your Slskd instance. You can find or set this in the Slskd's settings under 'Options'.", Placeholder = "Enter your API key")]
+        [FieldDefinition(1, Label = "API Key", Type = FieldType.Textbox, Privacy = PrivacyLevel.ApiKey, Hidden = HiddenType.Hidden)]
         public string ApiKey { get; set; } = string.Empty;
+
+        [FieldDefinition(2, Label = "Indexer", Type = FieldType.Select, SelectOptionsProviderAction = IndexerLogin.OptionsAction, HelpText = "The Slskd indexer whose URL and API key this client uses. Automatic takes the only one.")]
+        public int IndexerId { get; set; }
 
         [FieldDefinition(3, Label = "Timeout", Type = FieldType.Textbox, HelpText = "Maximum time to wait for a response from the Slskd instance before timing out. Fractional values allowed (e.g. 1.5 = 1 minute 30 seconds). Leave blank for no timeout.", Unit = "minutes", Advanced = true, Placeholder = "Enter timeout in minutes")]
         public double? TimeoutMinutes { get; set; }
@@ -116,6 +113,22 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek
 
         public SlskdDestinationConfig? GetDestinationConfig() =>
             string.IsNullOrEmpty(DownloadPath) ? null : new SlskdDestinationConfig(DownloadPath, SubdirectoryPattern);
+
+        /// <summary>Takes the URL and API key from the Slskd indexer this client reuses; true when the server changed.</summary>
+        public bool UseLogin(SlskdSettings indexer)
+        {
+            ApiKey = indexer.ApiKey;
+            if (BaseUrl == indexer.BaseUrl)
+                return false;
+
+            // The old server's download folder no longer applies; the caller fetches the new one.
+            BaseUrl = indexer.BaseUrl;
+            _host = null;
+            IsLocalhost = false;
+            DownloadPath = string.Empty;
+            SubdirectoryPattern = null;
+            return true;
+        }
 
         public TimeSpan? GetTimeout() => TimeoutMinutes == null ? null : TimeSpan.FromMinutes(TimeoutMinutes.Value);
 

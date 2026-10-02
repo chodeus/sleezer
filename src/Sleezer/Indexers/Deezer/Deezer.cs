@@ -6,11 +6,12 @@ using NzbDrone.Common.Cache;
 using NzbDrone.Common.Http;
 using NzbDrone.Core.Configuration;
 using NzbDrone.Core.Download.Clients.Deezer;
+using NzbDrone.Core.Extras.Metadata;
+using NzbDrone.Core.Music;
 using NzbDrone.Core.Parser;
 using NzbDrone.Plugin.Sleezer.Core.Deezer;
-using NzbDrone.Plugin.Sleezer.Deezer;
 using NzbDrone.Plugin.Sleezer.Core.Replacements;
-using NzbDrone.Core.Music;
+using NzbDrone.Plugin.Sleezer.Deezer;
 
 namespace NzbDrone.Core.Indexers.Deezer
 {
@@ -31,8 +32,9 @@ namespace NzbDrone.Core.Indexers.Deezer
             IConfigService configService,
             IParsingService parsingService,
             IArtistService artistService,
+            IMetadataFactory metadataFactory,
             Logger logger)
-            : base(httpClient, indexerStatusService, configService, parsingService, artistService, logger)
+            : base(httpClient, indexerStatusService, configService, parsingService, artistService, metadataFactory, logger)
         {
             _deezerProxy = deezerProxy;
         }
@@ -69,7 +71,8 @@ namespace NzbDrone.Core.Indexers.Deezer
         {
             return new DeezerParser()
             {
-                Settings = Settings
+                Settings = Settings,
+                Rules = Rules
             };
         }
     }

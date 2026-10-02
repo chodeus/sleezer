@@ -1,6 +1,7 @@
 using NLog;
 using NzbDrone.Common.Http;
 using NzbDrone.Core.Configuration;
+using NzbDrone.Core.Extras.Metadata;
 using NzbDrone.Core.Indexers;
 using NzbDrone.Core.IndexerSearch.Definitions;
 using NzbDrone.Core.Music;
@@ -8,6 +9,7 @@ using NzbDrone.Core.Parser;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Plugin.Sleezer.Core.Model;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
+using NzbDrone.Plugin.Sleezer.Metadata.DownloadRules;
 
 namespace NzbDrone.Plugin.Sleezer.Core.Replacements
 {
@@ -16,6 +18,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Replacements
         where TSettings : IIndexerSettings, new()
     {
         private readonly IArtistService _artistService;
+        private readonly IMetadataFactory _metadataFactory;
 
         protected SleezerHttpIndexerBase(
             IHttpClient httpClient,
@@ -23,10 +26,12 @@ namespace NzbDrone.Plugin.Sleezer.Core.Replacements
             IConfigService configService,
             IParsingService parsingService,
             IArtistService artistService,
+            IMetadataFactory metadataFactory,
             Logger logger)
             : base(httpClient, indexerStatusService, configService, parsingService, logger)
         {
             _artistService = artistService;
+            _metadataFactory = metadataFactory;
         }
 
         /// <summary>Indexer-specific filtering, applied before the shared guards and the count.</summary>
@@ -73,8 +78,10 @@ namespace NzbDrone.Plugin.Sleezer.Core.Replacements
             return false;
         }
 
-        // Indexers without the setting always verify.
-        private bool StrictMatching => Settings is not IStoreMatchingSettings { StrictMatching: false };
+        /// <summary>The shared Download Rules; their defaults, the strict ones, when the entry is missing.</summary>
+        protected DownloadRulesSettings Rules => SharedSettings.Read<DownloadRulesSettings>(_metadataFactory) ?? new();
+
+        private bool StrictMatching => Rules.StrictMatching;
 
         // For an override that never calls base.Fetch.
         protected IList<ReleaseInfo> RefineStoreResults(IList<ReleaseInfo> releases, AlbumSearchCriteria searchCriteria) =>

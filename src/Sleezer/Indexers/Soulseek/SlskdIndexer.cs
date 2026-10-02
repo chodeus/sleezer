@@ -1,3 +1,4 @@
+using System.Net;
 using FluentValidation.Results;
 using Newtonsoft.Json;
 using NLog;
@@ -5,17 +6,18 @@ using NzbDrone.Common.Extensions;
 using NzbDrone.Common.Http;
 using NzbDrone.Core.Configuration;
 using NzbDrone.Core.Download.History;
+using NzbDrone.Core.Extras.Metadata;
 using NzbDrone.Core.History;
 using NzbDrone.Core.Indexers;
 using NzbDrone.Core.Music;
 using NzbDrone.Core.Parser;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Core.Queue;
-using System.Net;
 using NzbDrone.Plugin.Sleezer.Core.Replacements;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
 using NzbDrone.Plugin.Sleezer.Indexers.Soulseek.Search.Core;
+using NzbDrone.Plugin.Sleezer.Metadata.DownloadRules;
 
 namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 {
@@ -31,11 +33,16 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         private readonly SlskdRequestGenerator _indexerRequestGenerator;
         private readonly IParseIndexerResponse _parseIndexerResponse;
 
+        private readonly IMetadataFactory _metadataFactory;
+
         internal new SlskdSettings Settings => base.Settings;
 
-        public SlskdIndexer(IHttpClient httpClient, Lazy<IIndexerFactory> indexerFactory, IIndexerStatusService indexerStatusService, ISlskdSearchChain slskdSearchChain, ISlskdItemsParser slskdItemsParser, IHistoryService historyService, IDownloadHistoryService downloadHistoryService, IQueueService queueService, IConfigService configService, IParsingService parsingService, IArtistService artistService, ISlskdCorruptUserTracker corruptUserTracker, Logger logger)
+        internal DownloadRulesSettings Rules => SharedSettings.Read<DownloadRulesSettings>(_metadataFactory) ?? new();
+
+        public SlskdIndexer(IHttpClient httpClient, Lazy<IIndexerFactory> indexerFactory, IIndexerStatusService indexerStatusService, ISlskdSearchChain slskdSearchChain, ISlskdItemsParser slskdItemsParser, IHistoryService historyService, IDownloadHistoryService downloadHistoryService, IQueueService queueService, IConfigService configService, IParsingService parsingService, IArtistService artistService, ISlskdCorruptUserTracker corruptUserTracker, IMetadataFactory metadataFactory, Logger logger)
           : base(httpClient, indexerStatusService, configService, parsingService, artistService, logger)
         {
+            _metadataFactory = metadataFactory;
             _parseIndexerResponse = new SlskdIndexerParser(this, indexerFactory, httpClient, slskdItemsParser, historyService, downloadHistoryService, queueService, corruptUserTracker);
             _indexerRequestGenerator = new SlskdRequestGenerator(this, slskdSearchChain, httpClient);
         }

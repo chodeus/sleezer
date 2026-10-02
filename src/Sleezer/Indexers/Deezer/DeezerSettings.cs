@@ -15,7 +15,7 @@ namespace NzbDrone.Core.Indexers.Deezer
         }
     }
 
-    public class DeezerIndexerSettings : IIndexerSettings, IStoreMatchingSettings
+    public class DeezerIndexerSettings : IIndexerSettings
     {
         private static readonly DeezerIndexerSettingsValidator Validator = new DeezerIndexerSettingsValidator();
 
@@ -28,19 +28,20 @@ namespace NzbDrone.Core.Indexers.Deezer
             set => _arl = value?.Trim() ?? "";
         }
 
-        [FieldDefinition(1, Label = "Hide Albums This Account Can't Stream", HelpText = "Hide albums with any track Deezer will not serve this account: not licensed in your country, or with no MP3 128 file, which Deezer treats as its baseline, even when you only take FLAC. A blocked track otherwise fails part-way through the download.", Type = FieldType.Checkbox)]
+        // Moved to Sleezer Download Rules; hidden so the one-time copy can read them.
+        [FieldDefinition(1, Label = "Hide Albums This Account Can't Stream", Type = FieldType.Checkbox, Hidden = HiddenType.Hidden)]
         public bool HideAlbumsWithMissing { get; set; } = true;
 
         [FieldDefinition(2, Label = "Hide Clean Releases", HelpText = "Skip albums labelled as 'Clean' (explicit content censored). Non-clean releases are labelled [Explicit] in the title so you can filter with release profiles.", Type = FieldType.Checkbox)]
         public bool HideCleanReleases { get; set; } = true;
 
-        [FieldDefinition(3, Label = "Allow MP3 320 Fallback for Missing FLAC Tracks", Type = FieldType.Checkbox, HelpText = "Offer FLAC releases even when some tracks lack a FLAC version on Deezer; missing tracks are downloaded as MP3 320 instead. Lidarr sees the mixed quality and may keep re-searching the MP3 tracks as upgrade candidates forever, since the FLAC simply doesn't exist on Deezer.", Advanced = true)]
+        [FieldDefinition(3, Label = "Allow MP3 320 Fallback for Missing FLAC Tracks", Type = FieldType.Checkbox, Hidden = HiddenType.Hidden)]
         public bool AllowMp3FallbackForMissingFlac { get; set; } = false;
 
         [FieldDefinition(4, Type = FieldType.Number, Label = "Early Download Limit", Unit = "days", HelpText = "Time before release date Lidarr will download from this indexer, empty is no limit", Advanced = true)]
         public int? EarlyReleaseLimit { get; set; }
 
-        [FieldDefinition(5, Label = "Strict Matching", Type = FieldType.Checkbox, HelpText = StrictMatchingHelp.TracksAndLength)]
+        [FieldDefinition(5, Label = "Strict Matching", Type = FieldType.Checkbox, Hidden = HiddenType.Hidden)]
         public bool StrictMatching { get; set; } = true;
 
         // this is hardcoded so this doesn't need to exist except that it's required by the interface

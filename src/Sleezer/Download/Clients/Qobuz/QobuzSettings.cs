@@ -30,13 +30,15 @@ namespace NzbDrone.Core.Download.Clients.Qobuz
         [FieldDefinition(0, Label = "Download Path", Type = FieldType.Textbox)]
         public string DownloadPath { get; set; } = "";
 
-        [FieldDefinition(1, Label = "Require Complete Album", Type = FieldType.Checkbox, HelpText = "Fail the whole album if any track can't be downloaded, instead of importing it with tracks missing. Recommended — it lets Lidarr retry or pick another release.")]
+        // Moved to Sleezer Download Rules; hidden so the one-time copy can read them.
+        [FieldDefinition(1, Label = "Require Complete Album", Type = FieldType.Checkbox, Hidden = HiddenType.Hidden)]
         public bool RequireCompleteAlbum { get; set; } = true;
 
-        [FieldDefinition(2, Label = "Save Synced Lyrics", Type = FieldType.Checkbox, HelpText = "Saves synced lyrics to a separate .lrc file if available. Requires .lrc to be allowed under Import Extra Files.")]
+        // Moved to the Lyrics metadata entry; hidden so the one-time copy can read them.
+        [FieldDefinition(2, Label = "Save Synced Lyrics", Type = FieldType.Checkbox, Hidden = HiddenType.Hidden)]
         public bool SaveSyncedLyrics { get; set; }
 
-        [FieldDefinition(3, Label = "Use LRCLIB as Lyric Provider", Type = FieldType.Checkbox, HelpText = "Qobuz supplies no lyrics of its own; this fetches them from LRCLIB instead.")]
+        [FieldDefinition(3, Label = "Use LRCLIB as Lyric Provider", Type = FieldType.Checkbox, Hidden = HiddenType.Hidden)]
         public bool UseLRCLIB { get; set; }
 
         [FieldDefinition(4, Label = "Artwork Size", Type = FieldType.Select, SelectOptions = typeof(QobuzArtworkSize), HelpText = "Cover resolution embedded in tracks and written as a sidecar. 'Custom' downscales Qobuz's original.")]

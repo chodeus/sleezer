@@ -7,14 +7,13 @@ using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 using NLog;
 using NzbDrone.Core.Parser.Model;
+using NzbDrone.Plugin.Sleezer.Core.Download;
+using NzbDrone.Plugin.Sleezer.Core.Model;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Tidal;
 using TagLib;
 using TidalSharp;
 using TidalSharp.Data;
-
-using NzbDrone.Plugin.Sleezer.Core.Download;
-
-using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
 namespace NzbDrone.Core.Download.Clients.Tidal.Queue
 {
@@ -104,10 +103,12 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
         private TidalURL? _tidalUrl;
         // The session _tracks came from; every call for this item goes through it.
         private TidalAPI _api = null!;
+        private SharedDownloadOptions _options = SharedDownloadOptions.Default;
         private JObject? _tidalAlbum;
 
-        public async Task DoDownload(TidalSettings settings, Logger logger, CancellationToken cancellation = default)
+        public async Task DoDownload(TidalSettings settings, SharedDownloadOptions options, Logger logger, CancellationToken cancellation = default)
         {
+            _options = options;
             var live = TidalAPI.Instance ?? throw new InvalidOperationException("Tidal API not initialized");
             if (!ReferenceEquals(_api, live))
             {
@@ -249,18 +250,18 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
             if (lyrics.HasValue)
             {
                 plainLyrics = lyrics.Value.plainLyrics ?? string.Empty;
-                if (settings.SaveSyncedLyrics)
+                if (_options.Lyrics.SaveSyncedLyrics)
                     syncLyrics = lyrics.Value.syncLyrics;
             }
 
-            if (settings.UseLRCLIB && (string.IsNullOrWhiteSpace(plainLyrics) || (settings.SaveSyncedLyrics && !(syncLyrics?.Any() ?? false))))
+            if (_options.Lyrics.UseLRCLIB && (string.IsNullOrWhiteSpace(plainLyrics) || (_options.Lyrics.SaveSyncedLyrics && !(syncLyrics?.Any() ?? false))))
             {
                 lyrics = await instance.Client.Downloader.FetchLyricsFromLRCLIB("lrclib.net", songTitle, artistName, albumTitle, duration, cancellation);
                 if (lyrics.HasValue)
                 {
                     if (string.IsNullOrWhiteSpace(plainLyrics))
                         plainLyrics = lyrics.Value.plainLyrics ?? string.Empty;
-                    if (settings.SaveSyncedLyrics && !(syncLyrics?.Any() ?? false))
+                    if (_options.Lyrics.SaveSyncedLyrics && !(syncLyrics?.Any() ?? false))
                         syncLyrics = lyrics.Value.syncLyrics;
                 }
             }
@@ -297,7 +298,7 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
 
         private string HandleAudioConversion(string filePath, TidalSettings settings, Logger logger)
         {
-            if (!settings.ExtractFlac && !settings.ReEncodeAAC)
+            if (!_options.TidalExtractFlac && !_options.TidalReEncodeAAC)
                 return filePath;
 
             string[] codecs;
@@ -315,7 +316,7 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
                 logger.Warn(ex, "Tidal: skipping audio conversion for {Path} — ffprobe unavailable", filePath);
                 return filePath;
             }
-            if (codecs.Contains("flac") && settings.ExtractFlac)
+            if (codecs.Contains("flac") && _options.TidalExtractFlac)
             {
                 string newFilePath = Path.ChangeExtension(filePath, "flac");
                 try
@@ -334,7 +335,7 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
                 }
             }
 
-            if (codecs.Contains("aac") && settings.ReEncodeAAC)
+            if (codecs.Contains("aac") && _options.TidalReEncodeAAC)
             {
                 string newFilePath = Path.ChangeExtension(filePath, "mp3");
                 try

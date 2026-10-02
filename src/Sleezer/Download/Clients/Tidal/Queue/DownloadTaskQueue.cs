@@ -8,6 +8,7 @@ using NzbDrone.Common.Disk;
 using NzbDrone.Core.Extras.Metadata;
 using NzbDrone.Core.Music;
 using NzbDrone.Plugin.Sleezer.Core.Download;
+using NzbDrone.Plugin.Sleezer.Core.Model;
 using NzbDrone.Plugin.Sleezer.Core.PostProcessing;
 using NzbDrone.Plugin.Sleezer.Metadata.FFmpeg;
 
@@ -20,6 +21,7 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
         private readonly DownloadPump<DownloadItem> _pump;
         private readonly Logger _logger;
         private readonly PostProcessRunner _postProcess;
+        private readonly IMetadataFactory _metadataFactory;
         private readonly IDiskProvider _diskProvider;
 
         private TidalSettings? _settings;
@@ -40,6 +42,7 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
             _settings = settings;
             _diskProvider = diskProvider;
             _logger = logger;
+            _metadataFactory = metadataFactory;
             _postProcess = new PostProcessRunner(corruptionScanner, corruptionFailureHandler, preImportTagger, metadataFactory, diskProvider, logger);
             _pump = new DownloadPump<DownloadItem>(capacity, ConcurrentAlbums, "Tidal", logger, RunItemAsync);
         }
@@ -80,7 +83,7 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
             // configured directory here, where the need is. It resolves, never installs.
             FFMPEG.SetBinaryDirectory(_postProcess.GetSharedSettings()?.FFmpegPath);
 
-            await item.DoDownload(_settings, _logger, token);
+            await item.DoDownload(_settings, SharedDownloadOptions.Read(_metadataFactory), _logger, token);
 
             await PostProcessGate.RunHeldAsync(item, () => RunPostProcessAsync(item, token));
 

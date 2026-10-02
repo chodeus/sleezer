@@ -62,7 +62,7 @@ public sealed class SearchPipeline : ISlskdSearchChain
 
     private SearchContext ApplyNormalization(SearchContext context, QueryType queryType)
     {
-        if (!queryType.HasFlag(QueryType.NeedsNormalization) || !context.Settings.NormalizedSeach)
+        if (!queryType.HasFlag(QueryType.NeedsNormalization))
             return context with { QueryType = queryType };
 
         var normalized = QueryNormalizer.Normalize(context with { QueryType = queryType });

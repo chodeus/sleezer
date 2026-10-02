@@ -1,15 +1,16 @@
+using System.Text.Json;
 using FluentValidation.Results;
 using NLog;
 using NzbDrone.Common.Disk;
 using NzbDrone.Common.Http;
 using NzbDrone.Core.Configuration;
 using NzbDrone.Core.Download;
+using NzbDrone.Core.Download.Clients;
 using NzbDrone.Core.Indexers;
 using NzbDrone.Core.Localization;
 using NzbDrone.Core.Organizer;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Core.RemotePathMappings;
-using System.Text.Json;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Indexers.SubSonic;
 
@@ -24,6 +25,7 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
         private readonly ISubSonicDownloadManager _downloadManager;
         private readonly INamingConfigService _namingService;
         private readonly IEnumerable<IHttpRequestInterceptor> _requestInterceptors;
+        private readonly Lazy<IIndexerFactory> _indexerFactory;
 
         public SubSonicClient(
             ISubSonicDownloadManager downloadManager,
@@ -33,9 +35,11 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
             IRemotePathMappingService remotePathMappingService,
             ILocalizationService localizationService,
             IEnumerable<IHttpRequestInterceptor> requestInterceptors,
+            Lazy<IIndexerFactory> indexerFactory,
             Logger logger)
             : base(configService, diskProvider, remotePathMappingService, localizationService, logger)
         {
+            _indexerFactory = indexerFactory;
             _downloadManager = downloadManager;
             _requestInterceptors = requestInterceptors;
             _namingService = namingConfigService;
@@ -46,7 +50,14 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
         public new SubSonicProviderSettings Settings => base.Settings;
 
         public override Task<string> Download(RemoteAlbum remoteAlbum, IIndexer indexer)
-            => _downloadManager.Download(remoteAlbum, indexer, _namingService.GetConfig(), this);
+        {
+            // The release's own indexer: with several SubSonic servers, fetch from the one that found it.
+            SubSonicProviderSettings settings = indexer.Definition?.Settings is SubSonicIndexerSettings source
+                ? Settings.WithLogin(source)
+                : WithIndexerLogin();
+
+            return _downloadManager.Download(remoteAlbum, indexer, _namingService.GetConfig(), this, settings);
+        }
 
         public override IEnumerable<DownloadClientItem> GetItems()
             => _downloadManager.GetItems();
@@ -66,31 +77,39 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
 
         protected override void Test(List<ValidationFailure> failures)
         {
-            // Test download path
-            if (!_diskProvider.FolderExists(Settings.DownloadPath))
+            // Both checks run so every problem is reported; the connection test needs both to pass.
+            SubSonicProviderSettings? settings = null;
+            try
             {
-                failures.Add(new ValidationFailure("DownloadPath", "Download path does not exist"));
-                return;
+                settings = WithIndexerLogin();
+            }
+            catch (DownloadClientException ex)
+            {
+                failures.Add(new ValidationFailure(nameof(SubSonicProviderSettings.IndexerId), ex.Message));
             }
 
-            if (!_diskProvider.FolderWritable(Settings.DownloadPath))
-            {
+            bool downloadPathExists = _diskProvider.FolderExists(Settings.DownloadPath);
+            if (!downloadPathExists)
+                failures.Add(new ValidationFailure("DownloadPath", "Download path does not exist"));
+            else if (!_diskProvider.FolderWritable(Settings.DownloadPath))
                 failures.Add(new ValidationFailure("DownloadPath", "Download path is not writable"));
-            }
+
+            if (settings == null || !downloadPathExists)
+                return;
 
             // Test SubSonic connection
             try
             {
-                string baseUrl = Settings.ServerUrl.TrimEnd('/');
+                string baseUrl = settings.ServerUrl.TrimEnd('/');
                 System.Text.StringBuilder urlBuilder = new($"{baseUrl}/rest/ping.view");
-                SubSonicAuthHelper.AppendAuthParameters(urlBuilder, Settings.Username, Settings.Password, Settings.UseTokenAuth);
+                SubSonicAuthHelper.AppendAuthParameters(urlBuilder, settings.Username, settings.Password, settings.UseTokenAuth);
                 urlBuilder.Append("&f=json");
                 string testUrl = urlBuilder.ToString();
 
-                SubSonicHttpClient httpClient = new(Settings.ServerUrl, _requestInterceptors, TimeSpan.FromSeconds(Settings.RequestTimeout));
+                SubSonicHttpClient httpClient = new(settings.ServerUrl, _requestInterceptors, TimeSpan.FromSeconds(settings.RequestTimeout));
                 using HttpRequestMessage request = httpClient.CreateRequest(HttpMethod.Get, testUrl);
 
-                _logger.Trace("Testing SubSonic connection to: {BaseUrl}", Settings.ServerUrl);
+                _logger.Trace("Testing SubSonic connection to: {BaseUrl}", settings.ServerUrl);
 
                 HttpResponseMessage response = httpClient.SendAsync(request, CancellationToken.None).GetAwaiter().GetResult();
                 response.EnsureSuccessStatusCode();
@@ -106,7 +125,7 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
 
                     if (pingResponse.Status == "ok")
                     {
-                        _logger.Debug($"Successfully connected to SubSonic server as {Settings.Username} (API version: {pingResponse.Version})");
+                        _logger.Debug($"Successfully connected to SubSonic server as {settings.Username} (API version: {pingResponse.Version})");
                         return;
                     }
                     else if (pingResponse.Error != null)
@@ -144,5 +163,14 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
                     $"Error connecting to SubSonic: {ex.Message}"));
             }
         }
+
+        public override object RequestAction(string action, IDictionary<string, string> query) =>
+            action == IndexerLogin.OptionsAction
+                ? IndexerLogin.Options<SubSonicIndexerSettings>(_indexerFactory.Value.All())
+                : base.RequestAction(action, query);
+
+        // Lazy: the indexer factory is resolved alongside the download clients.
+        private SubSonicProviderSettings WithIndexerLogin() =>
+            Settings.WithLogin(IndexerLogin.Find<SubSonicIndexerSettings>(_indexerFactory.Value.All(), Settings.IndexerId, "SubSonic"));
     }
 }

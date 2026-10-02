@@ -9,6 +9,7 @@ using NzbDrone.Core.Extras.Metadata;
 using NzbDrone.Core.Indexers;
 using NzbDrone.Core.Music;
 using NzbDrone.Plugin.Sleezer.Core.Download;
+using NzbDrone.Plugin.Sleezer.Core.Model;
 using NzbDrone.Plugin.Sleezer.Core.PostProcessing;
 using NzbDrone.Plugin.Sleezer.Metadata.FFmpeg;
 
@@ -21,6 +22,7 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
         private readonly DownloadPump<DownloadItem> _pump;
         private readonly Logger _logger;
         private readonly PostProcessRunner _postProcess;
+        private readonly IMetadataFactory _metadataFactory;
         private readonly IDiskProvider _diskProvider;
 
         private QobuzSettings? _settings;
@@ -41,6 +43,7 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
             _settings = settings;
             _diskProvider = diskProvider;
             _logger = logger;
+            _metadataFactory = metadataFactory;
             _postProcess = new PostProcessRunner(corruptionScanner, corruptionFailureHandler, preImportTagger, metadataFactory, diskProvider, logger);
             _pump = new DownloadPump<DownloadItem>(capacity, ConcurrentAlbums, "Qobuz", logger, RunItemAsync);
         }
@@ -78,7 +81,7 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
 
             // The item's own snapshot wins: this queue is shared by every configured
             // Qobuz client, so the queue's current settings may belong to another one.
-            await item.DoDownload(item.Settings ?? _settings!, _logger, token);
+            await item.DoDownload(item.Settings ?? _settings!, SharedDownloadOptions.Read(_metadataFactory), _logger, token);
 
             await PostProcessGate.RunHeldAsync(item, () => RunPostProcessAsync(item, token));
 

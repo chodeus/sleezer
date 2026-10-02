@@ -35,8 +35,6 @@ public sealed class YearSearchStrategy : SearchStrategyBase
     public override SearchTier Tier => SearchTier.Variation;
     public override int Priority => -10;
 
-    public override bool IsEnabled(SlskdSettings settings) => settings.AppendYear;
-
     public override bool CanExecute(SearchContext context, QueryType queryType)
     {
         if (queryType.HasFlag(QueryType.VariousArtists) ||
