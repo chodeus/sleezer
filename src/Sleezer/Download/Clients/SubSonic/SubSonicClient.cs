@@ -77,19 +77,8 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
 
         protected override void Test(List<ValidationFailure> failures)
         {
-            // Test download path
-            if (!_diskProvider.FolderExists(Settings.DownloadPath))
-            {
-                failures.Add(new ValidationFailure("DownloadPath", "Download path does not exist"));
-                return;
-            }
-
-            if (!_diskProvider.FolderWritable(Settings.DownloadPath))
-            {
-                failures.Add(new ValidationFailure("DownloadPath", "Download path is not writable"));
-            }
-
-            SubSonicProviderSettings settings;
+            // Both checks run so every problem is reported; the connection test needs both to pass.
+            SubSonicProviderSettings? settings = null;
             try
             {
                 settings = WithIndexerLogin();
@@ -97,8 +86,16 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
             catch (DownloadClientException ex)
             {
                 failures.Add(new ValidationFailure(nameof(SubSonicProviderSettings.IndexerId), ex.Message));
-                return;
             }
+
+            bool downloadPathExists = _diskProvider.FolderExists(Settings.DownloadPath);
+            if (!downloadPathExists)
+                failures.Add(new ValidationFailure("DownloadPath", "Download path does not exist"));
+            else if (!_diskProvider.FolderWritable(Settings.DownloadPath))
+                failures.Add(new ValidationFailure("DownloadPath", "Download path is not writable"));
+
+            if (settings == null || !downloadPathExists)
+                return;
 
             // Test SubSonic connection
             try
