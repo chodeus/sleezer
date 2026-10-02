@@ -23,7 +23,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.SubSonic
             string query = string.Join(' ', new[] { searchCriteria.AlbumQuery, searchCriteria.ArtistQuery }
                 .Where(s => !string.IsNullOrWhiteSpace(s)));
 
-            bool isSingle = searchCriteria.Albums?.FirstOrDefault()?.AlbumReleases?.Value?.Min(r => r.TrackCount) == 1;
+            // An album whose releases aren't loaded yet has none, and Min throws on an empty list.
+            bool isSingle = searchCriteria.Albums?.FirstOrDefault()?.AlbumReleases?.Value?.Select(r => r.TrackCount).DefaultIfEmpty().Min() == 1;
             return Generate(query, isSingle);
         }
 
