@@ -310,7 +310,7 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
                 {
                     JObject page = await instance.Client.API.GetAlbumItemsCredits(_tidalUrl!.Id, offset, CreditsPageSize, cancellation);
                     TidalCredits.AddComposers(page, composers);
-                    if (offset + CreditsPageSize >= (page["totalNumberOfItems"]?.Value<int>() ?? 0))
+                    if (offset + CreditsPageSize >= (page["totalNumberOfItems"]?.Value<int>() ?? 0) || page["items"]?.HasValues != true)
                         return composers;
                 }
             }
