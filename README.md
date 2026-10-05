@@ -95,6 +95,7 @@ Tidal's device-code OAuth flow doesn't redirect back to Lidarr after you authori
 
   Tidal can answer a lossless request with AAC and no error at all: for a track not licensed lossless in your storefront, or for every track when it caps what the client behind Sleezer's login may play. Sleezer reads the delivered codec rather than trusting the request. If every Tidal download fails this way, or with `refusing playback to Sleezer's login`, Tidal has likely changed what that client may play; check for a Sleezer update.
   </details>
+* **Playback Client ID / Secret** (indexer, Advanced): leave blank. Every Tidal login is refreshed under Tidal's Android client, which is what plays lossless. If Tidal stops letting that client play, another one can be set here without waiting for a Sleezer release.
 * Various Artists, Soundtracks, and Cast Recordings are recognised explicitly so they actually return search hits.
 * Tidal music videos and Dolby Atmos tracks are not supported in this release.
 * Tidal does not expose a public RSS / new-release feed, so RSS sync is disabled at the indexer level.

@@ -5,8 +5,8 @@ namespace TidalSharp;
 
 // Decides whether a Tidal playbackinfopostpaywall response represents a silent
 // codec downgrade (LOSSLESS request → mp4a delivery). Tidal does this without
-// any error response when per-track licensing in the user's region forbids
-// lossless playback. Accepting the downgrade silently lets AAC files land in a
+// any error response for a track not licensed lossless, and for every track when
+// it caps the token's client (#173). Accepting the downgrade silently lets AAC files land in a
 // Lossless quality bucket — the user thinks they have FLAC when they don't.
 //
 // Pure helper, mirrors ExpiredTokenDetector — keeps the rules in one place so

@@ -9,7 +9,7 @@ public class TidalClient
 {
     private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
 
-    public TidalClient(string? dataDir, IHttpClient httpClient)
+    public TidalClient(string? dataDir, IHttpClient httpClient, ClientCredentials? refreshClient = null)
     {
         _dataPath = dataDir;
         _userJsonPath = _dataPath == null ? null : Path.Combine(_dataPath, "lastUser.json");
@@ -19,7 +19,7 @@ public class TidalClient
 
         _httpClient = httpClient;
 
-        _session = new(_httpClient);
+        _session = new(_httpClient, refreshClient: refreshClient);
         API = new(_httpClient, _session);
         Downloader = new(_httpClient, API, _session);
     }

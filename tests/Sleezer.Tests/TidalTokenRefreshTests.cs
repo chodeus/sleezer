@@ -1,7 +1,6 @@
 using System.Net;
 using System.Text;
 using System.Web;
-using NzbDrone.Common.Http;
 using TidalSharp;
 using TidalSharp.Data;
 using Xunit;
@@ -10,32 +9,13 @@ namespace Sleezer.Tests;
 
 public class TidalTokenRefreshTests
 {
-    private sealed class TokenEndpoint(
-        HttpStatusCode status = HttpStatusCode.OK,
-        string body = """{"access_token":"new-access","token_type":"Bearer","expires_in":14400}""") : IHttpClient
-    {
-        public HttpRequest? Sent { get; private set; }
+    private const string Refreshed = """{"access_token":"new-access","token_type":"Bearer","expires_in":14400}""";
 
-        public Task<HttpResponse> ExecuteAsync(HttpRequest request)
-        {
-            Sent = request;
-            return Task.FromResult(new HttpResponse(request, new HttpHeader(), body, status));
-        }
+    private static TidalUser Login(bool signedInWithPkce = false) =>
+        new(new OAuthTokenData { AccessToken = "old-access", RefreshToken = "refresh" }, null, signedInWithPkce, DateTime.UtcNow);
 
-        public HttpResponse Execute(HttpRequest request) => throw new NotSupportedException();
-        public void DownloadFile(string url, string fileName) => throw new NotSupportedException();
-        public HttpResponse Get(HttpRequest request) => throw new NotSupportedException();
-        public HttpResponse<T> Get<T>(HttpRequest request) where T : new() => throw new NotSupportedException();
-        public HttpResponse Head(HttpRequest request) => throw new NotSupportedException();
-        public HttpResponse Post(HttpRequest request) => throw new NotSupportedException();
-        public HttpResponse<T> Post<T>(HttpRequest request) where T : new() => throw new NotSupportedException();
-        public Task DownloadFileAsync(string url, string fileName) => throw new NotSupportedException();
-        public Task<HttpResponse> GetAsync(HttpRequest request) => throw new NotSupportedException();
-        public Task<HttpResponse<T>> GetAsync<T>(HttpRequest request) where T : new() => throw new NotSupportedException();
-        public Task<HttpResponse> HeadAsync(HttpRequest request) => throw new NotSupportedException();
-        public Task<HttpResponse> PostAsync(HttpRequest request) => throw new NotSupportedException();
-        public Task<HttpResponse<T>> PostAsync<T>(HttpRequest request) where T : new() => throw new NotSupportedException();
-    }
+    private static System.Collections.Specialized.NameValueCollection SentForm(FakeHttpClient endpoint) =>
+        HttpUtility.ParseQueryString(Encoding.UTF8.GetString(endpoint.Requests.Single().ContentData));
 
     [Theory]
     [InlineData(false)]
@@ -43,12 +23,12 @@ public class TidalTokenRefreshTests
     public async Task Every_login_refreshes_under_the_android_client(bool signedInWithPkce)
     {
         // A device login refreshed under any other client loses playback (#173).
-        var endpoint = new TokenEndpoint();
-        var user = new TidalUser(new OAuthTokenData { AccessToken = "old-access", RefreshToken = "refresh" }, null, signedInWithPkce, DateTime.UtcNow);
+        var endpoint = new FakeHttpClient(r => FakeHttpClient.Respond(r, HttpStatusCode.OK, Refreshed));
+        var user = Login(signedInWithPkce);
 
         Assert.True(await new Session(endpoint).AttemptTokenRefresh(user));
 
-        var form = HttpUtility.ParseQueryString(Encoding.UTF8.GetString(endpoint.Sent!.ContentData));
+        var form = SentForm(endpoint);
         Assert.Equal("refresh", form["refresh_token"]);
         Assert.Equal(Globals.CLIENT_ID_PKCE, form["client_id"]);
         Assert.Equal(Globals.CLIENT_SECRET_PKCE, form["client_secret"]);
@@ -56,10 +36,22 @@ public class TidalTokenRefreshTests
     }
 
     [Fact]
+    public async Task A_configured_playback_client_is_used_for_the_refresh()
+    {
+        var endpoint = new FakeHttpClient(r => FakeHttpClient.Respond(r, HttpStatusCode.OK, Refreshed));
+
+        Assert.True(await new Session(endpoint, refreshClient: new ClientCredentials("custom-id", "custom-secret")).AttemptTokenRefresh(Login()));
+
+        var form = SentForm(endpoint);
+        Assert.Equal("custom-id", form["client_id"]);
+        Assert.Equal("custom-secret", form["client_secret"]);
+    }
+
+    [Fact]
     public async Task A_rejected_refresh_keeps_the_saved_token()
     {
-        var endpoint = new TokenEndpoint(HttpStatusCode.BadRequest, """{"status":400,"error":"invalid_grant","sub_status":11101}""");
-        var user = new TidalUser(new OAuthTokenData { AccessToken = "old-access", RefreshToken = "refresh" }, null, false, DateTime.UtcNow);
+        var endpoint = new FakeHttpClient(r => FakeHttpClient.Respond(r, HttpStatusCode.BadRequest, """{"status":400,"error":"invalid_grant","sub_status":11101}"""));
+        var user = Login();
 
         Assert.False(await new Session(endpoint).AttemptTokenRefresh(user));
         Assert.Equal("old-access", user.AccessToken);

@@ -15,10 +15,11 @@ internal class Session
     private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
 
 #pragma warning disable CS8618 // Non-nullable field must contain a non-null value; RegenerateCodes sets them, no idea why it's complaining
-    internal Session(IHttpClient client, int itemLimit = 1000, bool alac = true)
+    internal Session(IHttpClient client, int itemLimit = 1000, bool alac = true, ClientCredentials? refreshClient = null)
 #pragma warning restore CS8618
     {
         _httpClient = client;
+        _refreshClient = refreshClient ?? ClientCredentials.Playback;
         Alac = alac;
 
         ItemLimit = itemLimit > 10000 ? 10000 : itemLimit;
@@ -30,6 +31,7 @@ internal class Session
     public bool Alac { get; init; }
 
     private IHttpClient _httpClient;
+    private readonly ClientCredentials _refreshClient;
 
     private string _clientUniqueKey;
     private string _codeVerifier;
@@ -61,14 +63,14 @@ internal class Session
 
     public async Task<bool> AttemptTokenRefresh(TidalUser user, CancellationToken token = default)
     {
-        // Every login refreshes under the Android client, however it signed in: Tidal refuses
-        // playback to the old generic client and caps CLIENT_ID_DEVICE at HIGH (#173).
+        // Every login refreshes under the playback client (the Android one unless overridden), however it
+        // signed in: Tidal refuses playback to the old generic client and caps CLIENT_ID_DEVICE at HIGH (#173).
         var request = _httpClient.BuildRequest(Globals.API_OAUTH2_TOKEN)
                         .Post()
                         .AddFormParameter("grant_type", "refresh_token")
                         .AddFormParameter("refresh_token", user.RefreshToken)
-                        .AddFormParameter("client_id", Globals.CLIENT_ID_PKCE)
-                        .AddFormParameter("client_secret", Globals.CLIENT_SECRET_PKCE);
+                        .AddFormParameter("client_id", _refreshClient.Id)
+                        .AddFormParameter("client_secret", _refreshClient.Secret);
 
         var response = await _httpClient.ProcessRequestAsync(request);
 

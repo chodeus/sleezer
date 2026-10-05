@@ -25,20 +25,16 @@ internal class DashInfo
 
     private string[] GetUrls(MPD mpd)
     {
-        var firstAdaptationSet = mpd.Periods?[0].AdaptationSets?[0];
-        var firstRepresentation = firstAdaptationSet?.Representations?[0];
-        var firstSegmentTemplate = firstRepresentation?.SegmentTemplates?[0];
+        var firstSegmentTemplate = mpd.Periods?[0].AdaptationSets?[0].Representations?[0].SegmentTemplates?[0];
 
-        // min segments count; i.e. .initialization + the very first of .media;
-        // see https://developers.broadpeak.io/docs/foundations-dash
-        var segmentsCount = 1 + 1;
+        // Each <S> covers 1 + r segments; counting r alone drops the tail of a multi-run timeline.
+        var mediaCount = firstSegmentTemplate?.SegmentTimelines?[0].Ss!.Sum(s => 1 + Math.Max(s.R ?? 0, 0)) ?? 0;
+        var startNumber = firstSegmentTemplate?.StartNumber ?? 1;
 
-        foreach (var s in firstSegmentTemplate?.SegmentTimelines?[0].Ss!)
-            segmentsCount += s.R == null ? 1 : s.R.Value;
-
-        var urls = new string[segmentsCount];
-        for (var i = 0; i < segmentsCount; i++)
-            urls[i] = MediaUrl.Replace("$Number$", i.ToString());
+        var urls = new string[mediaCount + 1];
+        urls[0] = FirstUrl ?? MediaUrl.Replace("$Number$", "0");
+        for (var i = 0; i < mediaCount; i++)
+            urls[i + 1] = MediaUrl.Replace("$Number$", (startNumber + i).ToString());
 
         return urls;
     }

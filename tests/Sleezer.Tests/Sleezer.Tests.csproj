@@ -239,6 +239,33 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\TidalSharp\Exceptions\ResourceNotFoundException.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\TidalSharp\Data\ClientCredentials.cs"
+             LinkBase="SourceUnderTest" />
+    <!-- Download path: retries, DASH segments and the .part file, against a faked IHttpClient. -->
+    <Compile Include="..\..\src\Sleezer\TidalSharp\TransientHttp.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\TidalSharp\StereoGuard.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\TidalSharp\Downloader.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\TidalSharp\Downloading\StreamManifest.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\TidalSharp\Downloading\MPD.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\TidalSharp\Downloading\DashInfo.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\TidalSharp\Downloading\XmlNodeExtensions.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\TidalSharp\Data\TrackStreamData.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\TidalSharp\Data\ManifestMimeType.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\TidalSharp\Exceptions\UnavailableMediaException.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\TidalSharp\Exceptions\UnsupportedManifestException.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Core\Tidal\TidalCredits.cs"
+             LinkBase="SourceUnderTest" />
     <!-- Slskd search/matching units (2026-07 audit fixes) and their deps. -->
     <Compile Include="..\..\src\Sleezer\Indexers\DownloadProtocols.cs"
              LinkBase="SourceUnderTest" />

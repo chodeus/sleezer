@@ -9,6 +9,7 @@ using NLog;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Plugin.Sleezer.Core.Download;
 using NzbDrone.Plugin.Sleezer.Core.Model;
+using NzbDrone.Plugin.Sleezer.Core.Tidal;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Tidal;
 using TagLib;
@@ -117,6 +118,7 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
             }
 
             var api = _api;
+            var composers = await TryGetComposers(api, logger, cancellation);
             List<Task> tasks = new();
             using SemaphoreSlim semaphore = new(3, 3);
 
@@ -127,7 +129,7 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
                     await semaphore.WaitAsync(cancellation);
                     try
                     {
-                        await DoTrackDownload(api, trackId, settings, logger, cancellation);
+                        await DoTrackDownload(api, trackId, composers.GetValueOrDefault(trackId), settings, logger, cancellation);
                         if (settings.DownloadDelay)
                         {
                             float delay = (float)Random.Shared.NextDouble()
@@ -201,7 +203,7 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
 
         private int _failedTracks;
 
-        private async Task DoTrackDownload(TidalAPI instance, string track, TidalSettings settings, Logger logger, CancellationToken cancellation = default)
+        private async Task DoTrackDownload(TidalAPI instance, string track, string[]? composers, TidalSettings settings, Logger logger, CancellationToken cancellation = default)
         {
             var page = await instance.Client.API.GetTrack(track, cancellation);
             string songTitle = API.CompleteTitleFromPage(page);
@@ -266,7 +268,7 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
                 }
             }
 
-            await ApplyMetadataWithRetry(instance, track, outPath, plainLyrics, logger, cancellation);
+            await ApplyMetadataWithRetry(instance, track, outPath, plainLyrics, composers, logger, cancellation);
 
             SourceTagWriter.TryWrite(outPath, _tidalUrl?.Url, logger);
 
@@ -282,17 +284,40 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
         // with explicit flush+dispose in WriteRawTrackToFile, NFS/Unraid
         // mover targets can return a stale view for a few hundred ms.
         // Retry once with a short delay before treating it as corrupt.
-        private static async Task ApplyMetadataWithRetry(TidalAPI instance, string track, string outPath, string lyrics, Logger logger, CancellationToken cancellation)
+        private static async Task ApplyMetadataWithRetry(TidalAPI instance, string track, string outPath, string lyrics, string[]? composers, Logger logger, CancellationToken cancellation)
         {
             try
             {
-                await instance.Client.Downloader.ApplyMetadataToFile(track, outPath, MediaResolution.s640, lyrics, token: cancellation);
+                await instance.Client.Downloader.ApplyMetadataToFile(track, outPath, MediaResolution.s640, lyrics, composers, cancellation);
             }
             catch (CorruptFileException ex)
             {
                 logger.Debug(ex, "TagLib reported corrupt M4A for {Path}; waiting {DelayMs}ms then retrying", outPath, TagLibRetryDelay.TotalMilliseconds);
                 await Task.Delay(TagLibRetryDelay, cancellation);
-                await instance.Client.Downloader.ApplyMetadataToFile(track, outPath, MediaResolution.s640, lyrics, token: cancellation);
+                await instance.Client.Downloader.ApplyMetadataToFile(track, outPath, MediaResolution.s640, lyrics, composers, cancellation);
+            }
+        }
+
+        private const int CreditsPageSize = 100;
+
+        // Composer credits are an extra: a failure leaves the tag empty rather than failing the album.
+        private async Task<Dictionary<string, string[]>> TryGetComposers(TidalAPI instance, Logger logger, CancellationToken cancellation)
+        {
+            Dictionary<string, string[]> composers = [];
+            try
+            {
+                for (int offset = 0; ; offset += CreditsPageSize)
+                {
+                    JObject page = await instance.Client.API.GetAlbumItemsCredits(_tidalUrl!.Id, offset, CreditsPageSize, cancellation);
+                    TidalCredits.AddComposers(page, composers);
+                    if (offset + CreditsPageSize >= (page["totalNumberOfItems"]?.Value<int>() ?? 0))
+                        return composers;
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.Debug(ex, "Tidal composer credits unavailable for album {AlbumId}; tagging without them", _tidalUrl?.Id);
+                return composers;
             }
         }
 
