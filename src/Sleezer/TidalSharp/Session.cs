@@ -73,7 +73,10 @@ internal class Session
         var response = await _httpClient.ProcessRequestAsync(request);
 
         if (response.HasHttpError)
+        {
+            _logger.Warn("Tidal rejected the token refresh ({Status}): {Body}", (int)response.StatusCode, Redact(response.Content));
             return false;
+        }
 
         try
         {

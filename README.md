@@ -87,13 +87,13 @@ Tidal's device-code OAuth flow doesn't redirect back to Lidarr after you authori
 
 * The post-processing pipeline (corrupt-file scan + pre-import tagging) runs on Tidal downloads, just like Deezer and Slskd.
 * If searches start returning errors that mention `countryCode parameter missing`, that's Tidal's confusing way of saying your session expired. Sleezer detects this and forces a refresh; if that fails, re-authenticate via the indexer settings.
-* **Your storefront is the usual explanation.** After authenticating, the indexer shows an **Account Storefront** field (under Advanced) — the two-letter country Tidal licenses your account against. Testing the indexer logs it too. Download failures now name it directly: `isn't licensed lossless in AU`, or `isn't licensed in AU or was removed`.
+* **Your storefront is the usual explanation.** After authenticating, the indexer shows an **Account Storefront** field (under Advanced) — the two-letter country Tidal licenses your account against. Testing the indexer logs it too. Download failures now name it directly: `may not be licensed lossless in AU`, or `may not be licensed in AU, or may have been removed`.
   Tidal licenses music per country, and the country belongs to your account. What's available is what Tidal offers in that country.
 * A Tidal download failing with `Tidal returned codec 'MP4A' ... despite a LOSSLESS request` is expected — the grab is failed deliberately so Lidarr re-picks another source instead of importing AAC into a Lossless bucket.
   <details>
   <summary>Why this happens</summary>
 
-  Tidal can answer a lossless request with AAC and no error at all: for a track not licensed lossless in your storefront, or for every track when it caps what the client behind Sleezer's login may play. Sleezer reads the delivered codec rather than trusting the request. If every Tidal download fails this way, or with `refuses playback to Sleezer's login`, Tidal has changed what that client may play; update Sleezer.
+  Tidal can answer a lossless request with AAC and no error at all: for a track not licensed lossless in your storefront, or for every track when it caps what the client behind Sleezer's login may play. Sleezer reads the delivered codec rather than trusting the request. If every Tidal download fails this way, or with `refusing playback to Sleezer's login`, Tidal has likely changed what that client may play; check for a Sleezer update.
   </details>
 * Various Artists, Soundtracks, and Cast Recordings are recognised explicitly so they actually return search hits.
 * Tidal music videos and Dolby Atmos tracks are not supported in this release.

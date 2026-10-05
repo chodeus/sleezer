@@ -141,7 +141,7 @@ public class TidalClient
         // Refreshed on every load, expired or not: a saved token may belong to a client Tidal
         // won't let play (#173). OnTokensRefreshed persists the replacement.
         if (!await _session.AttemptTokenRefresh(user, token))
-            _logger.Warn("Tidal token refresh failed while loading the saved login; keeping the saved token until the next refresh");
+            _logger.Warn("Tidal token refresh failed while loading the saved login; continuing with the saved token. Re-authenticate the Tidal indexer if this repeats");
 
         await user.GetSession(API, token);
     }

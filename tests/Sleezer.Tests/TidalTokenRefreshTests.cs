@@ -10,15 +10,16 @@ namespace Sleezer.Tests;
 
 public class TidalTokenRefreshTests
 {
-    private sealed class TokenEndpoint : IHttpClient
+    private sealed class TokenEndpoint(
+        HttpStatusCode status = HttpStatusCode.OK,
+        string body = """{"access_token":"new-access","token_type":"Bearer","expires_in":14400}""") : IHttpClient
     {
         public HttpRequest? Sent { get; private set; }
 
         public Task<HttpResponse> ExecuteAsync(HttpRequest request)
         {
             Sent = request;
-            const string body = """{"access_token":"new-access","token_type":"Bearer","expires_in":14400}""";
-            return Task.FromResult(new HttpResponse(request, new HttpHeader(), body, HttpStatusCode.OK));
+            return Task.FromResult(new HttpResponse(request, new HttpHeader(), body, status));
         }
 
         public HttpResponse Execute(HttpRequest request) => throw new NotSupportedException();
@@ -52,5 +53,15 @@ public class TidalTokenRefreshTests
         Assert.Equal(Globals.CLIENT_ID_PKCE, form["client_id"]);
         Assert.Equal(Globals.CLIENT_SECRET_PKCE, form["client_secret"]);
         Assert.Equal("new-access", user.AccessToken);
+    }
+
+    [Fact]
+    public async Task A_rejected_refresh_keeps_the_saved_token()
+    {
+        var endpoint = new TokenEndpoint(HttpStatusCode.BadRequest, """{"status":400,"error":"invalid_grant","sub_status":11101}""");
+        var user = new TidalUser(new OAuthTokenData { AccessToken = "old-access", RefreshToken = "refresh" }, null, false, DateTime.UtcNow);
+
+        Assert.False(await new Session(endpoint).AttemptTokenRefresh(user));
+        Assert.Equal("old-access", user.AccessToken);
     }
 }

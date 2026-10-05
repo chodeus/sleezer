@@ -291,8 +291,8 @@ public class Downloader
                     {
                         throw new APIException(
                             $"Tidal returned codec '{deliveredCodec}' for track {trackId} despite a {attemptQuality} request. " +
-                            $"Either it isn't licensed lossless in {_api.CountryCode}, or, if every Tidal download fails this way, " +
-                            "Tidal has capped what Sleezer's login may play. Failing the download so Lidarr can try another source.");
+                            $"It may not be licensed lossless in {_api.CountryCode}; if every Tidal download fails this way, " +
+                            "Tidal is likely capping what Sleezer's login may play. Failing the download so Lidarr can try another source.");
                     }
                 }
 
@@ -319,7 +319,7 @@ public class Downloader
 
         throw new APIException(
             $"Tidal couldn't deliver track {trackId} in any quality of the same tier (tried: {string.Join(", ", attempted)}). " +
-            $"Either it isn't licensed in {_api.CountryCode} or was removed, or, if every Tidal download fails this way, Tidal refuses playback to Sleezer's login.",
+            $"It may not be licensed in {_api.CountryCode}, or may have been removed; if every Tidal download fails this way, Tidal is likely refusing playback to Sleezer's login.",
             lastUnavailable!);
     }
 
