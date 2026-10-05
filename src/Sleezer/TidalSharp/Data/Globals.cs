@@ -14,13 +14,12 @@ internal static class Globals
     // Credentials extracted from Tidal's own clients (Android, Android TV).
     // Same provenance as TrevTV/Lidarr.Plugin.Tidal and oskvr37/tiddl. Treat as
     // semi-public; Tidal can rotate these and break the plugin at any time.
-    public const string CLIENT_ID = "zU4XHVVkc2tDPo4t";
-    public const string CLIENT_SECRET = "VJKhDFqJPqvsPVNBV6ukXTJmwlvbttP7wlMlrc72se4=";
 
+    // Token refreshes use this pair unless the indexer overrides it; its tokens play LOSSLESS and HI_RES_LOSSLESS (#173).
     public const string CLIENT_ID_PKCE = "6BDSRdpK9hqEBTgU";
     public const string CLIENT_SECRET_PKCE = "xeuPmY7nbpZ9IIbLAcQ93shka1VNheUAqN6IcszjTG8=";
 
-    // Device-authorization client (TV-class). Used by Session.StartDeviceAuthorization.
+    // Device-authorization client (TV-class): sign-in only, as Tidal caps its tokens at HIGH.
     public const string CLIENT_ID_DEVICE = "fX2JxdmntZWK0ixT";
     public const string CLIENT_SECRET_DEVICE = "1Nn9AfDAjxrgJFJbKNWLeAyKGVGmINuXPPLHVXAvxAg=";
 

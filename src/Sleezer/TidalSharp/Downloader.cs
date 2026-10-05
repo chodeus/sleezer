@@ -5,7 +5,6 @@ using System.Globalization;
 using TidalSharp.Data;
 using TidalSharp.Downloading;
 using TidalSharp.Exceptions;
-using TidalSharp.Metadata;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
 namespace TidalSharp;
@@ -25,25 +24,14 @@ public class Downloader
     private readonly API _api;
     private readonly Session _session;
 
-    public async Task<DownloadData<Stream>> GetRawTrackStream(string trackId, AudioQuality quality, Action<int>? onChunkDownloaded = null, CancellationToken token = default)
-    {
-        var (stream, manifest) = await GetTrackStream(trackId, quality, onChunkDownloaded, token);
-        return new(stream, manifest.FileExtension);
-    }
-
-    public async Task<DownloadData<byte[]>> GetRawTrackBytes(string trackId, AudioQuality quality, Action<int>? onChunkDownloaded = null, CancellationToken token = default)
-    {
-        var (stream, manifest) = await GetTrackStream(trackId, quality, onChunkDownloaded, token);
-        var data = new DownloadData<byte[]>(stream.ToArray(), manifest.FileExtension);
-
-        await stream.DisposeAsync();
-
-        return data;
-    }
-
     public async Task WriteRawTrackToFile(string trackId, AudioQuality quality, string trackPath, Action<int>? onChunkDownloaded = null, CancellationToken token = default)
     {
-        var (stream, manifest) = await GetTrackStream(trackId, quality, onChunkDownloaded, token);
+        var trackStreamData = await GetTrackStreamData(trackId, quality, token);
+        var manifest = new StreamManifest(trackStreamData);
+
+        // Encrypted delivery is unsupported — refuse on the manifest's type, not just a present key.
+        if (!string.Equals(manifest.EncryptionType, "NONE", StringComparison.OrdinalIgnoreCase) || !string.IsNullOrEmpty(manifest.EncryptionKey))
+            throw new UnavailableMediaException($"Tidal returned an encrypted stream ({manifest.EncryptionType}) for track {trackId}; encrypted delivery is not supported.");
 
         // Surface what Tidal actually delivered. Issue #29 reports HI_RES_LOSSLESS
         // requests returning 24-bit/48kHz instead of 24/96 — this Debug line
@@ -52,18 +40,43 @@ public class Downloader
         _logger.Debug("Tidal track {TrackId} requested at {Requested}; manifest delivered codec={Codec} sampleRate={SampleRate}",
             trackId, quality, manifest.Codecs, manifest.SampleRate);
 
-        // Explicit flush + async dispose so callers that immediately open the
-        // file with TagLib don't read garbage box headers (issue #20).
-        FileStream fileStream = File.Open(trackPath, FileMode.Create);
+        // Segments stream into a .part file that moves into place only when whole, so a failure never leaves a track to import.
+        string partPath = trackPath + ".part";
         try
         {
-            await stream.CopyToAsync(fileStream, token);
-            await fileStream.FlushAsync(token);
+            await using (var file = new FileStream(partPath, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                for (int i = 0; i < manifest.Urls.Length; i++)
+                {
+                    var response = await TransientHttp.SendAsync(_client, _client.BuildRequest(manifest.Urls[i]), token);
+                    if (response.HasHttpError)
+                        throw new APIException($"Tidal's CDN answered segment {i + 1} of {manifest.Urls.Length} for track {trackId} with HTTP {(int)response.StatusCode}.");
+
+                    await file.WriteAsync(response.ResponseData, token);
+                    onChunkDownloaded?.Invoke(i + 1);
+                }
+
+                await file.FlushAsync(token);
+            }
+
+            File.Move(partPath, trackPath, overwrite: true);
         }
-        finally
+        catch
         {
-            await fileStream.DisposeAsync();
-            await stream.DisposeAsync();
+            TryDelete(partPath);
+            throw;
+        }
+    }
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (Exception ex)
+        {
+            _logger.Debug(ex, "Could not remove partial Tidal download {Path}", path);
         }
     }
 
@@ -96,35 +109,10 @@ public class Downloader
         return response.ResponseData;
     }
 
-    public async Task ApplyMetadataToTrackStream(string trackId, DownloadData<Stream> trackData, MediaResolution coverResolution = MediaResolution.s640, string lyrics = "", CancellationToken token = default)
-    {
-        byte[] magicBuffer = new byte[4];
-        await trackData.Data.ReadAsync(magicBuffer.AsMemory(0, 4), token);
-
-        trackData.Data.Seek(0, SeekOrigin.Begin);
-
-        StreamAbstraction abstraction = new("track" + trackData.FileExtension, trackData.Data);
-        using TagLib.File file = TagLib.File.Create(abstraction);
-        await ApplyMetadataToTagLibFile(file, trackId, coverResolution, lyrics, token);
-
-        trackData.Data.Seek(0, SeekOrigin.Begin);
-    }
-
-    public async Task ApplyMetadataToTrackBytes(string trackId, DownloadData<byte[]> trackData, MediaResolution coverResolution = MediaResolution.s640, string lyrics = "", CancellationToken token = default)
-    {
-        FileBytesAbstraction abstraction = new("track" + trackData.FileExtension, trackData.Data);
-        using TagLib.File file = TagLib.File.Create(abstraction);
-        await ApplyMetadataToTagLibFile(file, trackId, coverResolution, lyrics, token);
-
-        byte[] finalData = abstraction.MemoryStream.ToArray();
-        await abstraction.MemoryStream.DisposeAsync();
-        trackData.Data = finalData;
-    }
-
-    public async Task ApplyMetadataToFile(string trackId, string trackPath, MediaResolution coverResolution = MediaResolution.s640, string lyrics = "", CancellationToken token = default)
+    public async Task ApplyMetadataToFile(string trackId, string trackPath, MediaResolution coverResolution = MediaResolution.s640, string lyrics = "", string[]? composers = null, CancellationToken token = default)
     {
         using TagLib.File file = TagLib.File.Create(trackPath);
-        await ApplyMetadataToTagLibFile(file, trackId, coverResolution, lyrics, token);
+        await ApplyMetadataToTagLibFile(file, trackId, coverResolution, lyrics, composers, token);
     }
 
     public async Task<(string? plainLyrics, string? syncLyrics)?> FetchLyricsFromTidal(string trackId, CancellationToken token = default)
@@ -156,7 +144,7 @@ public class Downloader
 
     // TODO: video downloading, this is less important as this is mainly for lidarr
 
-    private async Task ApplyMetadataToTagLibFile(TagLib.File track, string trackId, MediaResolution coverResolution = MediaResolution.s640, string lyrics = "", CancellationToken token = default)
+    private async Task ApplyMetadataToTagLibFile(TagLib.File track, string trackId, MediaResolution coverResolution, string lyrics, string[]? composers, CancellationToken token)
     {
         JToken trackData = await _api.GetTrack(trackId, token);
         string albumId = trackData["album"]!["id"]!.ToString();
@@ -186,39 +174,14 @@ public class Downloader
         if (albumArt != null)
             track.Tag.Pictures = [new TagLib.Picture(new TagLib.ByteVector(albumArt))];
         track.Tag.Lyrics = lyrics;
+        track.Tag.ISRC = trackData["isrc"]?.ToString();
+        track.Tag.Copyright = trackData["copyright"]?.ToString() ?? albumPage["copyright"]?.ToString();
+        if (trackData["bpm"]?.Type == JTokenType.Integer && trackData["bpm"]!.Value<int>() > 0)
+            track.Tag.BeatsPerMinute = trackData["bpm"]!.Value<uint>();
+        if (composers is { Length: > 0 })
+            track.Tag.Composers = composers;
 
         track.Save();
-    }
-
-    // TODO: implement method to extract flacs from the m4a containers
-    // tidal-dl-ng uses ffmpeg but thats not ideal in this case
-    private async Task<(MemoryStream stream, StreamManifest manifest)> GetTrackStream(string trackId, AudioQuality quality, Action<int>? onChunkDownloaded = null, CancellationToken token = default)
-    {
-        var trackStreamData = await GetTrackStreamData(trackId, quality, token);
-        var streamManifest = new StreamManifest(trackStreamData);
-
-        // Encrypted delivery is unsupported — refuse on the manifest's type, not just a present key.
-        if (!string.Equals(streamManifest.EncryptionType, "NONE", StringComparison.OrdinalIgnoreCase) || !string.IsNullOrEmpty(streamManifest.EncryptionKey))
-            throw new UnavailableMediaException($"Tidal returned an encrypted stream ({streamManifest.EncryptionType}) for track {trackId}; encrypted delivery is not supported.");
-
-        var urls = streamManifest.Urls;
-
-        var outStream = new MemoryStream();
-
-        for (int i = 0; i < urls.Length; i++)
-        {
-            var url = urls[i];
-
-            var request = _client
-                .BuildRequest(url);
-            var response = await _client.ProcessRequestAsync(request);
-
-            outStream.Write(response.ResponseData);
-            onChunkDownloaded?.Invoke(i+1);
-        }
-
-        outStream.Seek(0, SeekOrigin.Begin);
-        return (outStream, streamManifest);
     }
 
     // Tidal returns this userMessage from playbackinfopostpaywall when a track
@@ -282,24 +245,24 @@ public class Downloader
                         "— the account's subscription does not cover it. Failing the download so Lidarr can try another source.");
                 }
 
-                // Detect Tidal's silent codec downgrade. Per-track licensing in
-                // some regions causes playbackinfopostpaywall to return an mp4a
-                // (AAC) manifest for a LOSSLESS request without raising an
-                // "Asset is not ready" error — the manifest just comes back
-                // lossy. If we accept it, Lidarr imports AAC into a Lossless
-                // quality bucket and the user thinks they have FLAC when they
-                // don't. Failing here aborts the whole album (parallel
-                // DoTrackDownload tasks all hit the same throw) so Lidarr's
-                // DownloadDecisionMaker re-picks — typically a slskd FLAC peer.
+                if (StereoGuard.IsNotStereo(streamData.AudioMode))
+                {
+                    throw new APIException(
+                        $"Tidal served {streamData.AudioMode} audio for track {trackId} instead of stereo, which Sleezer doesn't download. " +
+                        "Failing the download so Lidarr can try another source.");
+                }
+
+                // Tidal can answer a lossless request with AAC and no error: a track not licensed lossless, or every
+                // track when it caps the token's client (#173). Failing aborts the whole album so Lidarr re-picks.
                 if (LosslessGuard.IsLosslessTier(attemptQuality))
                 {
                     string? deliveredCodec = TryReadManifestCodec(streamData);
                     if (deliveredCodec != null && !LosslessGuard.CodecIsLossless(deliveredCodec))
                     {
                         throw new APIException(
-                            $"Tidal returned codec '{deliveredCodec}' for track {trackId} despite a {attemptQuality} request " +
-                            $"— this album/track is not licensed lossless in {_api.CountryCode}. Failing the download " +
-                            $"so Lidarr can try another source (e.g. slskd FLAC).");
+                            $"Tidal returned codec '{deliveredCodec}' for track {trackId} despite a {attemptQuality} request. " +
+                            $"It may not be licensed lossless in {_api.CountryCode}; if every Tidal download fails this way, " +
+                            "Tidal is likely capping what Sleezer's login may play. Failing the download so Lidarr can try another source.");
                     }
                 }
 
@@ -325,7 +288,8 @@ public class Downloader
         }
 
         throw new APIException(
-            $"Tidal couldn't deliver track {trackId} in any quality of the same tier (tried: {string.Join(", ", attempted)}). It is either not licensed in {_api.CountryCode} or removed from Tidal.",
+            $"Tidal couldn't deliver track {trackId} in any quality of the same tier (tried: {string.Join(", ", attempted)}). " +
+            $"It may not be licensed in {_api.CountryCode}, or may have been removed; if every Tidal download fails this way, Tidal is likely refusing playback to Sleezer's login.",
             lastUnavailable!);
     }
 
@@ -334,7 +298,7 @@ public class Downloader
     // Best-effort codec read from a manifest. Returns null if the manifest
     // can't be parsed — caller treats that as "don't trigger the silent-
     // downgrade rejection" so a parse failure surfaces through the normal
-    // GetTrackStream path with a more specific exception.
+    // WriteRawTrackToFile path with a more specific exception.
     private static string? TryReadManifestCodec(TrackStreamData data)
     {
         try
@@ -345,19 +309,5 @@ public class Downloader
         {
             return null;
         }
-    }
-}
-
-public class DownloadData<T>(T data, string fileExtension) : IDisposable
-{
-    public T Data { get; set; } = data;
-    public string FileExtension { get; set; } = fileExtension;
-
-    public void Dispose()
-    {
-        if (Data is Stream stream)
-            stream.Dispose();
-
-        GC.SuppressFinalize(this);
     }
 }

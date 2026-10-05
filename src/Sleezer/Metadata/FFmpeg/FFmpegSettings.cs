@@ -144,7 +144,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
         [FieldDefinition(10, Label = "Run Corrupt Scan On", Type = FieldType.TagSelect, SelectOptions = typeof(PostProcessClient), Section = MetadataSectionType.Metadata, Placeholder = "Type to add a client", HelpText = "After download, scan audio files for corruption on the selected Sleezer downloaders: size, TagLib parse and, when ffmpeg can be found, a decode. One corrupt file fails the whole download: its folder is deleted and the release is re-searched. Empty = scan disabled. Runs whether or not this entry is enabled; not on torrent or Usenet downloads.")]
         public IEnumerable<int> CorruptionScanClients { get; set; } = Array.Empty<int>();
 
-        [FieldDefinition(13, Label = "Tidal: Extract FLAC From M4A", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Pull the FLAC stream out of the M4A files Tidal serves, without re-encoding.")]
+        [FieldDefinition(13, Label = "Tidal: Extract FLAC From M4A", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Tidal serves lossless as FLAC inside M4A, which Lidarr reads as AAC. This unwraps it into .flac without re-encoding.")]
         public bool TidalExtractFlac { get; set; }
 
         [FieldDefinition(14, Label = "Tidal: Re-encode AAC Into MP3", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Re-encode the AAC stream in Tidal's M4A files into MP3.")]
