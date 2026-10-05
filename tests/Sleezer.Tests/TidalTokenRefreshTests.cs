@@ -64,6 +64,29 @@ public class TidalTokenRefreshTests
     }
 
     [Fact]
+    public async Task A_refresh_that_cannot_reach_tidal_keeps_the_saved_login()
+    {
+        var http = new FakeHttpClient(r => r.Url.ToString().Contains("oauth2/token", StringComparison.Ordinal)
+            ? throw new WebException("connection reset")
+            : FakeHttpClient.Respond(r, HttpStatusCode.OK, """{"sessionId":"session","userId":1,"countryCode":"CA"}"""));
+        var client = new TidalClient(null, http);
+
+        await client.LoadFromTokens("old-access", "refresh", "Bearer", 1, DateTime.UtcNow.AddHours(1));
+
+        Assert.Equal("old-access", client.ActiveUser!.AccessToken);
+        Assert.Equal("session", client.ActiveUser.SessionID);
+    }
+
+    [Fact]
+    public void A_rejection_is_logged_by_its_error_code_only()
+    {
+        string logged = Session.RefreshError("""{"status":400,"error":"invalid_grant","sub_status":11101,"error_description":"refresh_token=SECRET-REFRESH rejected"}""");
+
+        Assert.Equal("invalid_grant 11101", logged);
+        Assert.DoesNotContain("SECRET", Session.RefreshError("<html>refresh_token=SECRET-REFRESH</html>"));
+    }
+
+    [Fact]
     public async Task A_rejected_refresh_keeps_the_saved_token()
     {
         var endpoint = new FakeHttpClient(r => FakeHttpClient.Respond(r, HttpStatusCode.BadRequest, """{"status":400,"error":"invalid_grant","sub_status":11101}"""));

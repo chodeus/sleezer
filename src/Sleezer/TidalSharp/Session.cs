@@ -1,6 +1,8 @@
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using NLog;
 using NzbDrone.Common.Http;
+using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -72,25 +74,43 @@ internal class Session
                         .AddFormParameter("client_id", _refreshClient.Id)
                         .AddFormParameter("client_secret", _refreshClient.Secret);
 
-        var response = await _httpClient.ProcessRequestAsync(request);
-
-        if (response.HasHttpError)
-        {
-            _logger.Warn("Tidal rejected the token refresh ({Status}): {Body}", (int)response.StatusCode, Redact(response.Content));
-            return false;
-        }
-
         try
         {
-            var responseStr = response.Content;
-            var tokenData = JObject.Parse(responseStr).ToObject<OAuthTokenData>()!;
+            var response = await _httpClient.ProcessRequestAsync(request);
+            if (response.HasHttpError)
+            {
+                _logger.Warn("Tidal rejected the token refresh ({Status}): {Error}", (int)response.StatusCode, RefreshError(response.Content));
+                return false;
+            }
+
+            var tokenData = JObject.Parse(response.Content).ToObject<OAuthTokenData>()!;
             await user.RefreshOAuthTokenData(tokenData, token);
             return true;
+        }
+        catch (Exception ex) when (ex is WebException or HttpRequestException or IOException)
+        {
+            // Keeps the saved token: a dropped connection mustn't sign out a login GetSession can still use.
+            _logger.Warn(ex, "Tidal token refresh couldn't reach Tidal");
+            return false;
         }
         catch (Exception ex)
         {
             _logger.Debug(ex, "Tidal token refresh failed");
             return false;
+        }
+    }
+
+    // Only Tidal's error code and sub-status: a free-form field can echo the request's credentials.
+    internal static string RefreshError(string body)
+    {
+        try
+        {
+            var json = JObject.Parse(body);
+            return $"{json["error"]} {json["sub_status"] ?? json["subStatus"]}".Trim();
+        }
+        catch (JsonException)
+        {
+            return "body is not JSON";
         }
     }
 
