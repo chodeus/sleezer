@@ -72,11 +72,25 @@ public class TidalDownloaderTests
     }
 
     [Fact]
-    public async Task An_atmos_stream_is_refused()
+    public async Task An_atmos_stream_is_refused_without_writing_anything()
     {
-        var ex = await Assert.ThrowsAsync<APIException>(() => DownloaderFor(Tidal(audioMode: "DOLBY_ATMOS")).WriteRawTrackToFile("1", AudioQuality.LOSSLESS, TempTrack()));
+        string path = TempTrack();
+
+        var ex = await Assert.ThrowsAsync<APIException>(() => DownloaderFor(Tidal(audioMode: "DOLBY_ATMOS")).WriteRawTrackToFile("1", AudioQuality.LOSSLESS, path));
 
         Assert.Contains("DOLBY_ATMOS", ex.Message);
+        Assert.False(File.Exists(path));
+        Assert.False(File.Exists(path + ".part"));
+    }
+
+    [Fact]
+    public void A_template_without_an_initialization_segment_requests_media_only()
+    {
+        string mpd = Mpd("""<S d="176128" r="1"/>""").Replace("""initialization="https://cdn.invalid/0.mp4" """, string.Empty);
+
+        string[] urls = new DashInfo(MPD.Parse(mpd)).ChunkUrls;
+
+        Assert.Equal(["1", "2"], urls.Select(SegmentNumber));
     }
 
     [Fact]

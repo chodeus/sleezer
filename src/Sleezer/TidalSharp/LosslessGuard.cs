@@ -3,15 +3,8 @@ using TidalSharp.Data;
 
 namespace TidalSharp;
 
-// Decides whether a Tidal playbackinfopostpaywall response represents a silent
-// codec downgrade (LOSSLESS request → mp4a delivery). Tidal does this without
-// any error response for a track not licensed lossless, and for every track when
-// it caps the token's client (#173). Accepting the downgrade silently lets AAC files land in a
-// Lossless quality bucket — the user thinks they have FLAC when they don't.
-//
-// Pure helper, mirrors ExpiredTokenDetector — keeps the rules in one place so
-// the Downloader and any future caller (e.g. an integration test harness) can
-// share the same definition of "this download should fail".
+// Tidal answers a lossless request with mp4a and no error for a track not licensed lossless, or for every track
+// when it caps the token's client (#173); accepting that would put AAC in a Lossless quality bucket.
 public static class LosslessGuard
 {
     public static bool IsLosslessTier(AudioQuality q) =>

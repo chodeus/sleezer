@@ -15,7 +15,7 @@ internal static class Globals
     // Same provenance as TrevTV/Lidarr.Plugin.Tidal and oskvr37/tiddl. Treat as
     // semi-public; Tidal can rotate these and break the plugin at any time.
 
-    // Every token refresh uses this pair; its tokens play LOSSLESS and HI_RES_LOSSLESS (#173).
+    // Token refreshes use this pair unless the indexer overrides it; its tokens play LOSSLESS and HI_RES_LOSSLESS (#173).
     public const string CLIENT_ID_PKCE = "6BDSRdpK9hqEBTgU";
     public const string CLIENT_SECRET_PKCE = "xeuPmY7nbpZ9IIbLAcQ93shka1VNheUAqN6IcszjTG8=";
 

@@ -48,6 +48,22 @@ public class TidalTokenRefreshTests
     }
 
     [Fact]
+    public async Task A_saved_login_is_refreshed_on_load_before_it_expires()
+    {
+        // A login saved under a refused client must move over on the first start, not when it expires.
+        TidalUser? persisted = null;
+        var http = new FakeHttpClient(r => r.Url.ToString().Contains("oauth2/token", StringComparison.Ordinal)
+            ? FakeHttpClient.Respond(r, HttpStatusCode.OK, Refreshed)
+            : FakeHttpClient.Respond(r, HttpStatusCode.OK, """{"sessionId":"session","userId":1,"countryCode":"CA"}"""));
+        var client = new TidalClient(null, http);
+
+        await client.LoadFromTokens("old-access", "refresh", "Bearer", 1, DateTime.UtcNow.AddHours(1), onTokensRefreshed: user => persisted = user);
+
+        Assert.Equal("new-access", persisted?.AccessToken);
+        Assert.Equal("new-access", client.ActiveUser!.AccessToken);
+    }
+
+    [Fact]
     public async Task A_rejected_refresh_keeps_the_saved_token()
     {
         var endpoint = new FakeHttpClient(r => FakeHttpClient.Respond(r, HttpStatusCode.BadRequest, """{"status":400,"error":"invalid_grant","sub_status":11101}"""));

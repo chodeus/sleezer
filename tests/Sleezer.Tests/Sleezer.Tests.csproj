@@ -248,6 +248,8 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\TidalSharp\Downloader.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\TidalSharp\Core.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\TidalSharp\Downloading\StreamManifest.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\TidalSharp\Downloading\MPD.cs"

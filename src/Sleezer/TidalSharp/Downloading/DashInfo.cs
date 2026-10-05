@@ -31,10 +31,13 @@ internal class DashInfo
         var mediaCount = firstSegmentTemplate?.SegmentTimelines?[0].Ss!.Sum(s => 1 + Math.Max(s.R ?? 0, 0)) ?? 0;
         var startNumber = firstSegmentTemplate?.StartNumber ?? 1;
 
-        var urls = new string[mediaCount + 1];
-        urls[0] = FirstUrl ?? MediaUrl.Replace("$Number$", "0");
+        // No initialization attribute means no init segment, so none is requested.
+        var initCount = FirstUrl is null ? 0 : 1;
+        var urls = new string[mediaCount + initCount];
+        if (FirstUrl is not null)
+            urls[0] = FirstUrl;
         for (var i = 0; i < mediaCount; i++)
-            urls[i + 1] = MediaUrl.Replace("$Number$", (startNumber + i).ToString());
+            urls[i + initCount] = MediaUrl.Replace("$Number$", (startNumber + i).ToString());
 
         return urls;
     }
