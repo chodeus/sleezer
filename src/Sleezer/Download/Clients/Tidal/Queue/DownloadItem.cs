@@ -323,7 +323,7 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
 
         private string HandleAudioConversion(string filePath, TidalSettings settings, Logger logger)
         {
-            if (!_options.TidalExtractFlac && !_options.TidalReEncodeAAC)
+            if (!settings.ExtractFlac && !settings.ReEncodeAAC)
                 return filePath;
 
             string[] codecs;
@@ -341,7 +341,7 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
                 logger.Warn(ex, "Tidal: skipping audio conversion for {Path} — ffprobe unavailable", filePath);
                 return filePath;
             }
-            if (codecs.Contains("flac") && _options.TidalExtractFlac)
+            if (codecs.Contains("flac") && settings.ExtractFlac)
             {
                 string newFilePath = Path.ChangeExtension(filePath, "flac");
                 try
@@ -360,7 +360,7 @@ namespace NzbDrone.Core.Download.Clients.Tidal.Queue
                 }
             }
 
-            if (codecs.Contains("aac") && _options.TidalReEncodeAAC)
+            if (codecs.Contains("aac") && settings.ReEncodeAAC)
             {
                 string newFilePath = Path.ChangeExtension(filePath, "mp3");
                 try

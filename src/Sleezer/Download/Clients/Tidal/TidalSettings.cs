@@ -21,11 +21,10 @@ namespace NzbDrone.Core.Download.Clients.Tidal
         [FieldDefinition(0, Label = "Download Path", Type = FieldType.Textbox)]
         public string DownloadPath { get; set; } = "";
 
-        // Moved to the FFmpeg metadata entry; hidden so the one-time copy can read them.
-        [FieldDefinition(1, Label = "Extract FLAC From M4A", Type = FieldType.Checkbox, Hidden = HiddenType.Hidden)]
+        [FieldDefinition(1, Label = "Extract FLAC From M4A", Type = FieldType.Checkbox, HelpText = "Tidal serves lossless as FLAC inside M4A, which Lidarr reads as AAC. This unwraps it into .flac without re-encoding. Needs ffmpeg: set the FFmpeg Path in Settings → Metadata → FFmpeg & Post-Processing.")]
         public bool ExtractFlac { get; set; } = false;
 
-        [FieldDefinition(2, Label = "Re-encode AAC into MP3", Type = FieldType.Checkbox, Hidden = HiddenType.Hidden)]
+        [FieldDefinition(2, Label = "Re-encode AAC Into MP3", Type = FieldType.Checkbox, HelpText = "Re-encode the AAC stream in Tidal's M4A files into MP3. Needs ffmpeg, like the option above.")]
         public bool ReEncodeAAC { get; set; } = false;
 
         // Moved to the Lyrics metadata entry; hidden so the one-time copy can read them.

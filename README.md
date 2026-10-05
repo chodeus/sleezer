@@ -80,7 +80,7 @@ Tidal's device-code OAuth flow doesn't redirect back to Lidarr after you authori
 1. `Settings -> Download Clients`, click `+` to add.
 2. Select `Tidal` from the list.
 3. Set the **Download Path** Lidarr should monitor.
-4. In `Settings -> Metadata` → **FFmpeg & Post-Processing**, enable **Tidal: Extract FLAC From M4A**. Tidal serves lossless as FLAC inside an M4A container, which Lidarr reads as AAC; this unwraps it into a `.flac`. **Tidal: Re-encode AAC Into MP3** is optional. Both use that entry's ffmpeg and apply from the next download, with no restart.
+4. On the same page, tick **Extract FLAC From M4A**. Tidal serves lossless as FLAC inside an M4A container, which Lidarr reads as AAC; this unwraps it into a `.flac`. **Re-encode AAC Into MP3** is optional. Both need ffmpeg: set the **FFmpeg Path** in `Settings -> Metadata` → **FFmpeg & Post-Processing**. They apply from the next download, with no restart. If you set them in **FFmpeg & Post-Processing** before 1.28, the first start after updating moves your choice here.
 5. **Profiles → Delay Profiles**: tick **Tidal** on the default profile so Lidarr will grab from it.
 
 #### Notes & Troubleshooting
@@ -219,11 +219,11 @@ Its results are checked against MusicBrainz under **Strict Matching**, one of th
 
 ### FFmpeg 🎛️
 
-The **FFmpeg & Post-Processing** entry (the component formerly known as "Codec Tinker" in Tubifarry) does two jobs. It converts imported audio files between formats: you can set default rules (e.g. "convert all WAV to FLAC", "convert AAC ≥ 256k to MP3 320k") or per-artist overrides. It also holds everything else that runs ffmpeg: the corrupt-file scan described in the next section and Tidal's M4A handling.
+The **FFmpeg & Post-Processing** entry (the component formerly known as "Codec Tinker" in Tubifarry) does two jobs. It converts imported audio files between formats: you can set default rules (e.g. "convert all WAV to FLAC", "convert AAC ≥ 256k to MP3 320k") or per-artist overrides. Its **FFmpeg Path** also serves everything else that runs ffmpeg: the corrupt-file scan described in the next section and the Tidal download client's M4A options.
 
 **FFmpeg Path** is required either way. It is the only place Sleezer installs ffmpeg: saving the entry installs it there if it is missing. Conversion and the corrupt scan's decode check use the newest ffmpeg Sleezer can find in that path, `$FFMPEG` or the host `PATH`, so a newer system ffmpeg is used over the downloaded copy.
 
-> ⚠️ **Scope note — FFmpeg conversion applies to every track Lidarr imports, not just Sleezer's downloads.** FFmpeg is registered as a Lidarr *Metadata Consumer*, which Lidarr invokes for every imported track regardless of source. Enable it and your torrent, Usenet, and manual imports will also be converted according to the rules you configure. If you only want Sleezer's Deezer/Tidal/Qobuz/Slskd downloads affected, leave the provider disabled — the corrupt scan and the Tidal options do **not** require it to be enabled.
+> ⚠️ **Scope note — FFmpeg conversion applies to every track Lidarr imports, not just Sleezer's downloads.** FFmpeg is registered as a Lidarr *Metadata Consumer*, which Lidarr invokes for every imported track regardless of source. Enable it and your torrent, Usenet, and manual imports will also be converted according to the rules you configure. If you only want Sleezer's Deezer/Tidal/Qobuz/Slskd downloads affected, leave the provider disabled — the corrupt scan and Tidal's M4A options do **not** require it to be enabled.
 
 #### How to Enable Conversion
 
