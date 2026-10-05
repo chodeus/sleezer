@@ -57,7 +57,7 @@ public class TidalTokenRefreshTests
             : FakeHttpClient.Respond(r, HttpStatusCode.OK, """{"sessionId":"session","userId":1,"countryCode":"CA"}"""));
         var client = new TidalClient(null, http);
 
-        await client.LoadFromTokens("old-access", "refresh", "Bearer", 1, DateTime.UtcNow.AddHours(1), onTokensRefreshed: user => persisted = user);
+        Assert.True(await client.LoadFromTokens("old-access", "refresh", "Bearer", 1, DateTime.UtcNow.AddHours(1), onTokensRefreshed: user => persisted = user));
 
         Assert.Equal("new-access", persisted?.AccessToken);
         Assert.Equal("new-access", client.ActiveUser!.AccessToken);
@@ -71,7 +71,7 @@ public class TidalTokenRefreshTests
             : FakeHttpClient.Respond(r, HttpStatusCode.OK, """{"sessionId":"session","userId":1,"countryCode":"CA"}"""));
         var client = new TidalClient(null, http);
 
-        await client.LoadFromTokens("old-access", "refresh", "Bearer", 1, DateTime.UtcNow.AddHours(1));
+        Assert.False(await client.LoadFromTokens("old-access", "refresh", "Bearer", 1, DateTime.UtcNow.AddHours(1)));
 
         Assert.Equal("old-access", client.ActiveUser!.AccessToken);
         Assert.Equal("session", client.ActiveUser.SessionID);
@@ -84,6 +84,7 @@ public class TidalTokenRefreshTests
 
         Assert.Equal("invalid_grant 11101", logged);
         Assert.DoesNotContain("SECRET", Session.RefreshError("<html>refresh_token=SECRET-REFRESH</html>"));
+        Assert.Equal("unrecognised error", Session.RefreshError("""{"error":"refresh_token=SECRET-REFRESH","sub_status":"SECRET 1"}"""));
     }
 
     [Fact]

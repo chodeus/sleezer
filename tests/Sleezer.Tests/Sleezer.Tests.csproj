@@ -268,6 +268,8 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Tidal\TidalCredits.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Core\Tidal\TidalLoadedLogin.cs"
+             LinkBase="SourceUnderTest" />
     <!-- Slskd search/matching units (2026-07 audit fixes) and their deps. -->
     <Compile Include="..\..\src\Sleezer\Indexers\DownloadProtocols.cs"
              LinkBase="SourceUnderTest" />

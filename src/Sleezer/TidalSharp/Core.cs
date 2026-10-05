@@ -115,7 +115,8 @@ public class TidalClient
     // path when Lidarr loads our plugin and hands us tokens out of its own
     // settings store. Skips file IO entirely; pairs with IPluginSettings-backed
     // token storage instead of the legacy lastUser.json flow.
-    public async Task LoadFromTokens(string accessToken, string refreshToken, string tokenType, long userId, DateTime expirationDate, string countryCode = "", Action<TidalUser>? onTokensRefreshed = null, CancellationToken token = default)
+    // True when the load-time refresh landed; false means the saved token is still in use.
+    public async Task<bool> LoadFromTokens(string accessToken, string refreshToken, string tokenType, long userId, DateTime expirationDate, string countryCode = "", Action<TidalUser>? onTokensRefreshed = null, CancellationToken token = default)
     {
         long secondsRemaining = (long)Math.Max(0, (expirationDate - DateTime.UtcNow).TotalSeconds);
         var data = new OAuthTokenData
@@ -140,10 +141,12 @@ public class TidalClient
 
         // Refreshed on every load, expired or not: a saved token may belong to a client Tidal
         // won't let play (#173). OnTokensRefreshed persists the replacement.
-        if (!await _session.AttemptTokenRefresh(user, token))
+        bool refreshed = await _session.AttemptTokenRefresh(user, token);
+        if (!refreshed)
             _logger.Warn("Tidal token refresh failed while loading the saved login; continuing with the saved token. Re-authenticate the Tidal indexer if this repeats");
 
         await user.GetSession(API, token);
+        return refreshed;
     }
 
     private async Task<bool> CheckForStoredUser(CancellationToken token = default)

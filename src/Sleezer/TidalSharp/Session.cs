@@ -100,19 +100,24 @@ internal class Session
         }
     }
 
-    // Only Tidal's error code and sub-status: a free-form field can echo the request's credentials.
+    // Only an OAuth-shaped error code and a numeric sub-status pass: any other value could echo the request's credentials.
     internal static string RefreshError(string body)
     {
         try
         {
             var json = JObject.Parse(body);
-            return $"{json["error"]} {json["sub_status"] ?? json["subStatus"]}".Trim();
+            string error = json["error"]?.ToString() ?? string.Empty;
+            string subStatus = (json["sub_status"] ?? json["subStatus"])?.ToString() ?? string.Empty;
+            return $"{(_errorCode.IsMatch(error) ? error : "unrecognised error")} {(_subStatus.IsMatch(subStatus) ? subStatus : string.Empty)}".Trim();
         }
         catch (JsonException)
         {
             return "body is not JSON";
         }
     }
+
+    private static readonly Regex _errorCode = new("^[a-z_]{1,64}$", RegexOptions.Compiled);
+    private static readonly Regex _subStatus = new("^[0-9]{1,8}$", RegexOptions.Compiled);
 
     public async Task<OAuthTokenData?> GetOAuthDataFromRedirect(string? uri, CancellationToken token = default)
     {
