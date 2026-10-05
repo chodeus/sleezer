@@ -210,6 +210,35 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\TidalSharp\Data\Quality.cs"
              LinkBase="SourceUnderTest" />
+    <!-- Token refresh (#173): Session and the TidalSharp types it reaches. The test fakes IHttpClient. -->
+    <Compile Include="..\..\src\Sleezer\TidalSharp\Session.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\TidalSharp\TidalUser.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\TidalSharp\API.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\TidalSharp\LidarrExtensions.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\TidalSharp\Data\Globals.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\TidalSharp\Data\MediaResolution.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\TidalSharp\Data\OAuthTokenData.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\TidalSharp\Data\DeviceAuthorizationResponse.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\TidalSharp\Data\SessionInfo.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\TidalSharp\Data\TidalLyrics.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\TidalSharp\Data\FilterOptions.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\TidalSharp\Exceptions\APIException.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\TidalSharp\Exceptions\InvalidURLException.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\TidalSharp\Exceptions\ResourceNotFoundException.cs"
+             LinkBase="SourceUnderTest" />
     <!-- Slskd search/matching units (2026-07 audit fixes) and their deps. -->
     <Compile Include="..\..\src\Sleezer\Indexers\DownloadProtocols.cs"
              LinkBase="SourceUnderTest" />

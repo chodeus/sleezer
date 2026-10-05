@@ -138,11 +138,10 @@ public class TidalClient
         ActiveUser = user;
         API.UpdateUser(user);
 
-        // Refresh first if expired; otherwise just pull SessionID/CountryCode.
-        // The OnTokensRefreshed hook fires from inside AttemptTokenRefresh on
-        // success, so even this initial load-time refresh gets persisted.
-        if (expirationDate <= DateTime.UtcNow)
-            await _session.AttemptTokenRefresh(user, token);
+        // Refreshed on every load, expired or not: a saved token may belong to a client Tidal
+        // won't let play (#173). OnTokensRefreshed persists the replacement.
+        if (!await _session.AttemptTokenRefresh(user, token))
+            _logger.Warn("Tidal token refresh failed while loading the saved login; keeping the saved token until the next refresh");
 
         await user.GetSession(API, token);
     }

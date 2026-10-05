@@ -61,12 +61,14 @@ internal class Session
 
     public async Task<bool> AttemptTokenRefresh(TidalUser user, CancellationToken token = default)
     {
+        // Every login refreshes under the Android client, however it signed in: Tidal refuses
+        // playback to the old generic client and caps CLIENT_ID_DEVICE at HIGH (#173).
         var request = _httpClient.BuildRequest(Globals.API_OAUTH2_TOKEN)
                         .Post()
                         .AddFormParameter("grant_type", "refresh_token")
                         .AddFormParameter("refresh_token", user.RefreshToken)
-                        .AddFormParameter("client_id", user.IsPkce ? Globals.CLIENT_ID_PKCE : Globals.CLIENT_ID)
-                        .AddFormParameter("client_secret", user.IsPkce ? Globals.CLIENT_SECRET_PKCE : Globals.CLIENT_SECRET);
+                        .AddFormParameter("client_id", Globals.CLIENT_ID_PKCE)
+                        .AddFormParameter("client_secret", Globals.CLIENT_SECRET_PKCE);
 
         var response = await _httpClient.ProcessRequestAsync(request);
 

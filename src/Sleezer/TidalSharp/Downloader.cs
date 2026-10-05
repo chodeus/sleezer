@@ -282,24 +282,17 @@ public class Downloader
                         "— the account's subscription does not cover it. Failing the download so Lidarr can try another source.");
                 }
 
-                // Detect Tidal's silent codec downgrade. Per-track licensing in
-                // some regions causes playbackinfopostpaywall to return an mp4a
-                // (AAC) manifest for a LOSSLESS request without raising an
-                // "Asset is not ready" error — the manifest just comes back
-                // lossy. If we accept it, Lidarr imports AAC into a Lossless
-                // quality bucket and the user thinks they have FLAC when they
-                // don't. Failing here aborts the whole album (parallel
-                // DoTrackDownload tasks all hit the same throw) so Lidarr's
-                // DownloadDecisionMaker re-picks — typically a slskd FLAC peer.
+                // Tidal can answer a lossless request with AAC and no error: a track not licensed lossless, or every
+                // track when it caps the token's client (#173). Failing aborts the whole album so Lidarr re-picks.
                 if (LosslessGuard.IsLosslessTier(attemptQuality))
                 {
                     string? deliveredCodec = TryReadManifestCodec(streamData);
                     if (deliveredCodec != null && !LosslessGuard.CodecIsLossless(deliveredCodec))
                     {
                         throw new APIException(
-                            $"Tidal returned codec '{deliveredCodec}' for track {trackId} despite a {attemptQuality} request " +
-                            $"— this album/track is not licensed lossless in {_api.CountryCode}. Failing the download " +
-                            $"so Lidarr can try another source (e.g. slskd FLAC).");
+                            $"Tidal returned codec '{deliveredCodec}' for track {trackId} despite a {attemptQuality} request. " +
+                            $"Either it isn't licensed lossless in {_api.CountryCode}, or, if every Tidal download fails this way, " +
+                            "Tidal has capped what Sleezer's login may play. Failing the download so Lidarr can try another source.");
                     }
                 }
 
@@ -325,7 +318,8 @@ public class Downloader
         }
 
         throw new APIException(
-            $"Tidal couldn't deliver track {trackId} in any quality of the same tier (tried: {string.Join(", ", attempted)}). It is either not licensed in {_api.CountryCode} or removed from Tidal.",
+            $"Tidal couldn't deliver track {trackId} in any quality of the same tier (tried: {string.Join(", ", attempted)}). " +
+            $"Either it isn't licensed in {_api.CountryCode} or was removed, or, if every Tidal download fails this way, Tidal refuses playback to Sleezer's login.",
             lastUnavailable!);
     }
 
