@@ -1,3 +1,4 @@
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using NLog;
 using NzbDrone.Common.Http;
@@ -39,6 +40,14 @@ public class API
 
     public async Task<JObject> GetAlbum(string id, CancellationToken token = default) => await Call(HttpMethod.Get, $"albums/{id}", token: token);
     public async Task<JObject> GetAlbumTracks(string id, CancellationToken token = default) => await Call(HttpMethod.Get, $"albums/{id}/tracks", token: token);
+    public async Task<JObject> GetAlbumItemsCredits(string id, int offset, int limit, CancellationToken token = default) => await Call(HttpMethod.Get, $"albums/{id}/items/credits",
+        urlParameters: new()
+        {
+            { "offset", offset.ToString() },
+            { "limit", limit.ToString() }
+        },
+        token: token
+    );
 
     public async Task<JObject> GetArtist(string id, CancellationToken token = default) => await Call(HttpMethod.Get, $"artists/{id}", token: token);
     public async Task<JObject> GetArtistAlbums(string id, FilterOptions filter = FilterOptions.ALL, CancellationToken token = default) => await Call(HttpMethod.Get, $"artists/{id}/albums",
@@ -104,7 +113,7 @@ public class API
         urlParameters ??= [];
         urlParameters["sessionId"] = _activeUser?.SessionID ?? "";
         urlParameters["countryCode"] = _activeUser?.CountryCode ?? "";
-        urlParameters["limit"] = _session.ItemLimit.ToString();
+        urlParameters.TryAdd("limit", _session.ItemLimit.ToString());
 
         if (_activeUser != null)
             headers["Authorization"] = $"{_activeUser.TokenType} {_activeUser.AccessToken}";
@@ -122,17 +131,18 @@ public class API
         foreach (var header in headers)
             request = request.SetHeader(header.Key, header.Value);
 
-        var response = await _httpClient.ProcessRequestAsync(request);
-
-        // this is a side-precaution, in my testing it wouldn't happen assuming lidarr is properly rate limiting
-        if (response.StatusCode == HttpStatusCode.TooManyRequests)
-        {
-            await Task.Delay(Random.Shared.Next(100, 1000));
-            return await Call(method, path, formParameters, urlParameters, headers, baseUrl, token);
-        }
+        var response = await TransientHttp.SendAsync(_httpClient, request, token);
 
         string resp = response.Content;
-        JObject json = JObject.Parse(resp);
+        JObject json;
+        try
+        {
+            json = JObject.Parse(resp);
+        }
+        catch (JsonReaderException)
+        {
+            throw new APIException($"Tidal answered {path} with HTTP {(int)response.StatusCode} and a body that isn't JSON.");
+        }
 
         if (response.HasHttpError && !string.IsNullOrEmpty(_activeUser?.RefreshToken)
             && ExpiredTokenDetector.LooksExpired(resp, requestHadCountryCode: !string.IsNullOrEmpty(_activeUser?.CountryCode)))

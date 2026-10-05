@@ -1,6 +1,8 @@
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using NLog;
 using NzbDrone.Common.Http;
+using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -15,10 +17,11 @@ internal class Session
     private static readonly Logger _logger = LogManager.GetCurrentClassLogger();
 
 #pragma warning disable CS8618 // Non-nullable field must contain a non-null value; RegenerateCodes sets them, no idea why it's complaining
-    internal Session(IHttpClient client, int itemLimit = 1000, bool alac = true)
+    internal Session(IHttpClient client, int itemLimit = 1000, bool alac = true, ClientCredentials? refreshClient = null)
 #pragma warning restore CS8618
     {
         _httpClient = client;
+        _refreshClient = refreshClient ?? ClientCredentials.Playback;
         Alac = alac;
 
         ItemLimit = itemLimit > 10000 ? 10000 : itemLimit;
@@ -30,6 +33,7 @@ internal class Session
     public bool Alac { get; init; }
 
     private IHttpClient _httpClient;
+    private readonly ClientCredentials _refreshClient;
 
     private string _clientUniqueKey;
     private string _codeVerifier;
@@ -61,24 +65,33 @@ internal class Session
 
     public async Task<bool> AttemptTokenRefresh(TidalUser user, CancellationToken token = default)
     {
+        // Every login refreshes under the playback client (the Android one unless overridden), however it
+        // signed in: Tidal refuses playback to the old generic client and caps CLIENT_ID_DEVICE at HIGH (#173).
         var request = _httpClient.BuildRequest(Globals.API_OAUTH2_TOKEN)
                         .Post()
                         .AddFormParameter("grant_type", "refresh_token")
                         .AddFormParameter("refresh_token", user.RefreshToken)
-                        .AddFormParameter("client_id", user.IsPkce ? Globals.CLIENT_ID_PKCE : Globals.CLIENT_ID)
-                        .AddFormParameter("client_secret", user.IsPkce ? Globals.CLIENT_SECRET_PKCE : Globals.CLIENT_SECRET);
-
-        var response = await _httpClient.ProcessRequestAsync(request);
-
-        if (response.HasHttpError)
-            return false;
+                        .AddFormParameter("client_id", _refreshClient.Id)
+                        .AddFormParameter("client_secret", _refreshClient.Secret);
 
         try
         {
-            var responseStr = response.Content;
-            var tokenData = JObject.Parse(responseStr).ToObject<OAuthTokenData>()!;
+            var response = await _httpClient.ProcessRequestAsync(request);
+            if (response.HasHttpError)
+            {
+                _logger.Warn("Tidal rejected the token refresh ({Status}): {Error}", (int)response.StatusCode, RefreshError(response.Content));
+                return false;
+            }
+
+            var tokenData = JObject.Parse(response.Content).ToObject<OAuthTokenData>()!;
             await user.RefreshOAuthTokenData(tokenData, token);
             return true;
+        }
+        catch (Exception ex) when (ex is WebException or HttpRequestException or IOException)
+        {
+            // Keeps the saved token: a dropped connection mustn't sign out a login GetSession can still use.
+            _logger.Warn(ex, "Tidal token refresh couldn't reach Tidal");
+            return false;
         }
         catch (Exception ex)
         {
@@ -86,6 +99,25 @@ internal class Session
             return false;
         }
     }
+
+    // Only an OAuth-shaped error code and a numeric sub-status pass: any other value could echo the request's credentials.
+    internal static string RefreshError(string body)
+    {
+        try
+        {
+            var json = JObject.Parse(body);
+            string error = json["error"]?.ToString() ?? string.Empty;
+            string subStatus = (json["sub_status"] ?? json["subStatus"])?.ToString() ?? string.Empty;
+            return $"{(_errorCode.IsMatch(error) ? error : "unrecognised error")} {(_subStatus.IsMatch(subStatus) ? subStatus : string.Empty)}".Trim();
+        }
+        catch (JsonException)
+        {
+            return "body is not JSON";
+        }
+    }
+
+    private static readonly Regex _errorCode = new("^[a-z_]{1,64}$", RegexOptions.Compiled);
+    private static readonly Regex _subStatus = new("^[0-9]{1,8}$", RegexOptions.Compiled);
 
     public async Task<OAuthTokenData?> GetOAuthDataFromRedirect(string? uri, CancellationToken token = default)
     {

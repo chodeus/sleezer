@@ -12,6 +12,17 @@ namespace NzbDrone.Core.Indexers.Tidal
         {
             RuleFor(c => c.AccessToken).NotEmpty().WithMessage("Authenticate with Tidal to populate this field.");
             RuleFor(c => c.RefreshToken).NotEmpty().WithMessage("Authenticate with Tidal to populate this field.");
+
+            // Both or neither, as for Qobuz's App ID: half an override would refresh with one real value and one empty.
+            RuleFor(c => c.PlaybackClientSecret)
+                .NotEmpty()
+                .When(c => !string.IsNullOrWhiteSpace(c.PlaybackClientId))
+                .WithMessage("Playback Client Secret is required when Playback Client ID is set.");
+
+            RuleFor(c => c.PlaybackClientId)
+                .NotEmpty()
+                .When(c => !string.IsNullOrWhiteSpace(c.PlaybackClientSecret))
+                .WithMessage("Playback Client ID is required when Playback Client Secret is set.");
         }
     }
 
@@ -46,6 +57,14 @@ namespace NzbDrone.Core.Indexers.Tidal
 
         [FieldDefinition(5, Label = "User Id", Type = FieldType.Number, Hidden = HiddenType.Hidden)]
         public long UserId { get; set; }
+
+        [FieldDefinition(6, Label = "Playback Client ID", Type = FieldType.Textbox, Advanced = true, Placeholder = "Built-in",
+            HelpText = "Leave blank to refresh logins under Tidal's Android client, which is what plays lossless. Set another client only if Tidal stops letting that one play.")]
+        public string PlaybackClientId { get; set; } = "";
+
+        [FieldDefinition(7, Label = "Playback Client Secret", Type = FieldType.Password, Advanced = true, Privacy = PrivacyLevel.ApiKey, Placeholder = "Built-in",
+            HelpText = "Leave blank. Set only alongside a Playback Client ID.")]
+        public string PlaybackClientSecret { get; set; } = "";
 
         // Moved to Sleezer Download Rules; hidden so the one-time copy can read them.
         [FieldDefinition(10, Label = "Hide Albums This Account Can't Stream", Type = FieldType.Checkbox, Hidden = HiddenType.Hidden)]

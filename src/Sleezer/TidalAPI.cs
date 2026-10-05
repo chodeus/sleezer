@@ -5,6 +5,7 @@ using System.Text;
 using NLog;
 using NzbDrone.Common.Http;
 using TidalSharp;
+using TidalSharp.Data;
 
 namespace NzbDrone.Plugin.Sleezer.Tidal
 {
@@ -20,17 +21,17 @@ namespace NzbDrone.Plugin.Sleezer.Tidal
         }
 
         // Not live until Publish; holders of the old instance finish on the account they started with.
-        public static TidalAPI Create(string? configDir, IHttpClient httpClient, Logger logger) =>
-            new(configDir, httpClient, logger);
+        public static TidalAPI Create(string? configDir, IHttpClient httpClient, Logger logger, ClientCredentials? refreshClient = null) =>
+            new(configDir, httpClient, logger, refreshClient);
 
         public static void Publish(TidalAPI api) => Instance = api;
 
-        private TidalAPI(string? configDir, IHttpClient httpClient, Logger logger)
+        private TidalAPI(string? configDir, IHttpClient httpClient, Logger logger, ClientCredentials? refreshClient = null)
         {
             _logger = logger;
             // Pass null (not "") so TidalClient skips legacy lastUser.json
             // creation; tokens come from IPluginSettings instead.
-            _client = new(string.IsNullOrEmpty(configDir) ? null : configDir, httpClient);
+            _client = new(string.IsNullOrEmpty(configDir) ? null : configDir, httpClient, refreshClient);
         }
 
         public TidalClient Client => _client;

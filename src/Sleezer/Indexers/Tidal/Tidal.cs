@@ -12,6 +12,7 @@ using NzbDrone.Core.Music;
 using NzbDrone.Core.Parser;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Plugin.Sleezer.Core.Replacements;
+using NzbDrone.Plugin.Sleezer.Core.Tidal;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Tidal;
 using TidalSharp;
@@ -41,8 +42,8 @@ namespace NzbDrone.Core.Indexers.Tidal
         // the same device code without restarting the flow.
         private static readonly TimeSpan SingleCycleAuthBudget = TimeSpan.FromSeconds(75);
 
-        // Token loaded into TidalAPI.Instance; empty = none. Swaps take _persistGate, loads _sessionGate.
-        private static string _loadedAccessToken = string.Empty;
+        // What TidalAPI.Instance was loaded from; None = nothing. Swaps take _persistGate, loads _sessionGate.
+        private static TidalLoadedLogin _loaded = TidalLoadedLogin.None;
         private static readonly object _sessionGate = new();
         // Never held across network calls; the refresh hook must not take _sessionGate.
         private static readonly object _persistGate = new();
@@ -286,10 +287,10 @@ namespace NzbDrone.Core.Indexers.Tidal
             // serving requests after the user wipes their tokens.
             if (string.IsNullOrEmpty(Settings.AccessToken))
             {
-                if (_loadedAccessToken.Length > 0)
+                if (_loaded.AccessToken.Length > 0)
                 {
                     _logger.Debug("Tidal settings cleared; dropping in-memory session.");
-                    PublishSession(TidalAPI.Create(null, _httpClient, _logger), string.Empty);
+                    PublishSession(TidalAPI.Create(null, _httpClient, _logger), TidalLoadedLogin.None);
                 }
                 return;
             }
@@ -297,7 +298,7 @@ namespace NzbDrone.Core.Indexers.Tidal
             // Already loaded the same token — short-circuit. If the user
             // re-authenticates with a different account, AccessToken changes
             // and we reload.
-            if (string.Equals(_loadedAccessToken, Settings.AccessToken, StringComparison.Ordinal))
+            if (_loaded.IsCurrentFor(Settings.AccessToken, PlaybackClientKey(Settings), DateTime.UtcNow))
                 return;
 
             _logger.Debug("Loading Tidal session from saved tokens — access={Access} refresh={Refresh} expires={Expires:o} country={Country}",
@@ -307,13 +308,13 @@ namespace NzbDrone.Core.Indexers.Tidal
                 Settings.CountryCode);
 
             // Loaded off to the side and published once ready: loading into the live client would switch in-flight work.
-            var pending = TidalAPI.Create(null, _httpClient, _logger);
+            var pending = TidalAPI.Create(null, _httpClient, _logger, PlaybackClient(Settings));
             lock (_persistGate)
                 _pendingSession = pending;
 
             try
             {
-                pending.Client.LoadFromTokens(
+                bool refreshed = pending.Client.LoadFromTokens(
                     Settings.AccessToken,
                     Settings.RefreshToken,
                     Settings.TokenType,
@@ -324,7 +325,7 @@ namespace NzbDrone.Core.Indexers.Tidal
                     // source. It is written back below purely for display.
                     string.Empty,
                     onTokensRefreshed: PersistRefreshedTokens).GetAwaiter().GetResult();
-                PublishSession(pending, Settings.AccessToken);
+                PublishSession(pending, TidalLoadedLogin.Loaded(Settings.AccessToken, PlaybackClientKey(Settings), refreshed, DateTime.UtcNow));
                 var loaded = pending.Client.ActiveUser;
                 if (loaded != null)
                     _logger.Debug("Tidal session loaded — user={UserId} country={Country} type={Type}",
@@ -334,7 +335,7 @@ namespace NzbDrone.Core.Indexers.Tidal
             {
                 _logger.Error(ex, "Failed to restore Tidal session from saved tokens; user must re-authenticate");
                 // Fail closed: these settings must not keep searching or downloading as the previous account.
-                PublishSession(TidalAPI.Create(null, _httpClient, _logger), string.Empty);
+                PublishSession(TidalAPI.Create(null, _httpClient, _logger), TidalLoadedLogin.None);
             }
             finally
             {
@@ -346,14 +347,22 @@ namespace NzbDrone.Core.Indexers.Tidal
             }
         }
 
-        private static void PublishSession(TidalAPI api, string loadedToken)
+        private static void PublishSession(TidalAPI api, TidalLoadedLogin loaded)
         {
             lock (_persistGate)
             {
                 TidalAPI.Publish(api);
-                _loadedAccessToken = loadedToken;
+                _loaded = loaded;
             }
         }
+
+        private static ClientCredentials? PlaybackClient(TidalIndexerSettings settings) =>
+            string.IsNullOrWhiteSpace(settings.PlaybackClientId)
+                ? null
+                : new ClientCredentials(settings.PlaybackClientId.Trim(), (settings.PlaybackClientSecret ?? string.Empty).Trim());
+
+        private static string PlaybackClientKey(TidalIndexerSettings settings) =>
+            $"{settings.PlaybackClientId?.Trim()}\n{settings.PlaybackClientSecret?.Trim()}";
 
         // Fired by TidalSharp from inside any successful AttemptTokenRefresh
         // (whether triggered by the search FetchPage override below or by the
@@ -392,7 +401,7 @@ namespace NzbDrone.Core.Indexers.Tidal
                 if (!string.IsNullOrEmpty(user.CountryCode))
                     Settings.CountryCode = user.CountryCode;
 
-                _loadedAccessToken = user.AccessToken;
+                _loaded = _loaded with { AccessToken = user.AccessToken, RetryRefreshAt = DateTime.MaxValue };
 
                 // Definition.Id == 0 during the indexer Test flow before the
                 // record is saved; SetFields would no-op or throw. Skip it
