@@ -1,4 +1,5 @@
 using System;
+using System.Net;
 using NzbDrone.Plugin.Sleezer.Core.Qobuz;
 using QobuzApiSharp.Exceptions;
 using QobuzApiSharp.Models;
@@ -10,6 +11,26 @@ namespace Sleezer.Tests;
 public class QobuzTrackAttemptTests
 {
     private const int MaxAttempts = 3;
+
+    public static TheoryData<Exception> Transient => new()
+    {
+        new HttpRequestException("Connection refused (streaming.invalid:443)"),
+        new HttpRequestException("Response status code does not indicate success: 503", null, HttpStatusCode.ServiceUnavailable),
+        new HttpRequestException("Response status code does not indicate success: 429", null, HttpStatusCode.TooManyRequests),
+        ApiError("500"),
+        new ApiResponseParseErrorException("Failed to parse API response for type QobuzApiStatusResponse."),
+        new IOException("Incomplete download for Qobuz track 1: server reported 100 bytes but 10 were written."),
+        new TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout of 100 seconds elapsing."),
+    };
+
+    public static TheoryData<Exception> Lasting => new()
+    {
+        ApiError("401"),
+        ApiError("400"),
+        new HttpRequestException("Response status code does not indicate success: 403", null, HttpStatusCode.Forbidden),
+        new UnauthorizedAccessException("Access to the path '/downloads/qobuz/1.flac.part' is denied."),
+        new InvalidOperationException("Qobuz track 1 has no media source at FLAC_LOSSLESS."),
+    };
 
     [Fact]
     public void A_sample_is_skipped_on_the_first_attempt_without_retrying()
@@ -31,17 +52,25 @@ public class QobuzTrackAttemptTests
     [Fact]
     public void Classify_moves_to_the_next_quality_on_a_404()
     {
-        var notFound = new ApiErrorResponseException("not found", string.Empty, new QobuzApiStatusResponse { Code = "404" });
-
-        Assert.Equal(QobuzAttemptOutcome.TryNextQuality, QobuzTrackAttempt.Classify(notFound, attempt: 1, MaxAttempts));
+        Assert.Equal(QobuzAttemptOutcome.TryNextQuality, QobuzTrackAttempt.Classify(ApiError("404"), attempt: 1, MaxAttempts));
     }
 
     [Theory]
-    [InlineData(1, QobuzAttemptOutcome.Retry)]
-    [InlineData(2, QobuzAttemptOutcome.Retry)]
-    [InlineData(3, QobuzAttemptOutcome.Fail)]
-    public void Classify_retries_any_other_error_until_the_last_attempt(int attempt, QobuzAttemptOutcome expected)
+    [MemberData(nameof(Transient))]
+    public void Classify_retries_a_transient_failure_until_the_last_attempt(Exception ex)
     {
-        Assert.Equal(expected, QobuzTrackAttempt.Classify(new InvalidOperationException("stalled"), attempt, MaxAttempts));
+        Assert.Equal(QobuzAttemptOutcome.Retry, QobuzTrackAttempt.Classify(ex, attempt: 1, MaxAttempts));
+        Assert.Equal(QobuzAttemptOutcome.Retry, QobuzTrackAttempt.Classify(ex, attempt: 2, MaxAttempts));
+        Assert.Equal(QobuzAttemptOutcome.Fail, QobuzTrackAttempt.Classify(ex, attempt: 3, MaxAttempts));
     }
+
+    [Theory]
+    [MemberData(nameof(Lasting))]
+    public void Classify_fails_at_once_when_another_try_cannot_change_the_answer(Exception ex)
+    {
+        Assert.Equal(QobuzAttemptOutcome.Fail, QobuzTrackAttempt.Classify(ex, attempt: 1, MaxAttempts));
+    }
+
+    private static ApiErrorResponseException ApiError(string code) =>
+        new("API request failed for endpoint track/getFileUrl.", string.Empty, new QobuzApiStatusResponse { Code = code });
 }

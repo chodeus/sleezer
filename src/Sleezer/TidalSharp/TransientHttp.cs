@@ -1,5 +1,6 @@
 using System.Net;
 using NzbDrone.Common.Http;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
 namespace TidalSharp;
 
@@ -24,15 +25,12 @@ internal static class TransientHttp
                 continue;
             }
 
-            if (attempt >= MaxAttempts || !IsTransient(response.StatusCode))
+            if (attempt >= MaxAttempts || !TransientStatus.IsTransient(response.StatusCode))
                 return response;
 
             await Task.Delay(Delay(attempt, response), token);
         }
     }
-
-    public static bool IsTransient(HttpStatusCode status) =>
-        status == HttpStatusCode.TooManyRequests || (int)status >= 500;
 
     // A Retry-After header wins, clamped to [0, 60s]; otherwise 1s, 2s, 4s.
     public static TimeSpan Delay(int attempt, HttpResponse response)

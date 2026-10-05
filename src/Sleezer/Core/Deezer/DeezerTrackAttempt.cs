@@ -1,10 +1,10 @@
 using System;
 using System.IO;
 using System.Linq;
-using System.Net;
 using System.Net.Http;
 using NLog;
 using NzbDrone.Core.Download.Clients.Deezer.Queue;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
 namespace NzbDrone.Plugin.Sleezer.Core.Deezer
 {
@@ -21,7 +21,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Deezer
         private static bool IsTransient(Exception ex) => ex switch
         {
             HttpRequestException { StatusCode: null } => true,
-            HttpRequestException { StatusCode: { } status } => status == HttpStatusCode.TooManyRequests || (int)status >= 500,
+            HttpRequestException { StatusCode: { } status } => TransientStatus.IsTransient(status),
             IOException or TimeoutException or TrackIncompleteException => true,
             _ => false,
         };

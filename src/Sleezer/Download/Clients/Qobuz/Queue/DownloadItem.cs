@@ -271,12 +271,12 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
                 }
                 catch (Exception ex)
                 {
-                    logger.Error(ex, "Qobuz track {TrackId} ({TrackTitle}) failed at {Quality} after {Max} attempts",
-                        track.Id, track.Title, quality, MaxAttemptsPerQuality);
+                    logger.Error(ex, "Qobuz track {TrackId} ({TrackTitle}) failed at {Quality} (attempt {Attempt}/{Max})",
+                        track.Id, track.Title, quality, attempt, MaxAttemptsPerQuality);
                     Interlocked.Increment(ref _failedTracks);
 
-                    // A transport failure says nothing about the other quality tiers, so
-                    // stop here rather than re-running the whole chain against it.
+                    // A failure at one quality says nothing about the others, so stop here
+                    // rather than re-running the whole chain against it.
                     return true;
                 }
             }
@@ -308,7 +308,7 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
             if (fileSize < MinPlausibleTrackBytes)
             {
                 File.Delete(outPath);
-                throw new InvalidOperationException($"Qobuz track {trackId} downloaded only {fileSize} bytes; treating as a failed transfer.");
+                throw new IOException($"Qobuz track {trackId} downloaded only {fileSize} bytes; treating as a failed transfer.");
             }
 
             (string? plainLyrics, string? syncLyrics) = await FetchLyrics(page, _options.Lyrics, logger, cancellation);
