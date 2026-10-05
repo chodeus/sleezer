@@ -16,4 +16,9 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
     {
         public TrackUnavailableException(string message, Exception? inner = null) : base(message, inner) { }
     }
+
+    public class TrackIncompleteException : Exception
+    {
+        public TrackIncompleteException(string message, Exception? inner = null) : base(message, inner) { }
+    }
 }

@@ -215,15 +215,6 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
             }
         }
 
-        // Threshold for the partial-write guard. The expected size we get from
-        // Deezer's GW API is the catalogued size for the requested bitrate; the
-        // FLAC fallback path can legitimately produce a smaller MP3-320 file
-        // when a track lacks FLAC, so the threshold must be loose. 0.9 catches
-        // catastrophic truncation (network drop, OOM kill, NFS hiccup) without
-        // false-positiving on the FLAC→MP3 fallback (the API switches the
-        // expected size in that case anyway via the FILESIZE_MP3_320 lookup).
-        private const double PartialWriteThreshold = 0.9;
-
         private async Task DoTrackDownload(long track, Bitrate trackBitrate, long expectedSize, DeezerSettings settings, Logger logger, CancellationToken cancellation = default)
         {
             var page = await _api.Client.GWApi.GetTrackPage(track, cancellation);
@@ -353,7 +344,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                 try
                 {
                     await DownloadWithTokenRetryAsync(streamId, streamPage, outPath, trackBitrate, logger, cancellation);
-                    EnsureCompleteFile(outPath, streamId, trackBitrate, expectedSize, logger);
+                    DeezerTrackAttempt.EnsureCompleteFile(outPath, $"track {streamId} at {trackBitrate}", expectedSize, logger);
                     return;
                 }
                 catch (Exception ex) when (!cancellation.IsCancellationRequested && DeezerTrackAttempt.ShouldRetry(ex, attempt, MaxTrackAttempts))
@@ -361,40 +352,6 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                     logger.Warn(ex, "Deezer track {TrackId} failed at {Bitrate} (attempt {Attempt}/{Max}); retrying", streamId, trackBitrate, attempt, MaxTrackAttempts);
                     await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)), cancellation);
                 }
-            }
-        }
-
-        private static void EnsureCompleteFile(string outPath, long streamId, Bitrate trackBitrate, long expectedSize, Logger logger)
-        {
-            if (File.Exists(outPath) && new FileInfo(outPath).Length == 0)
-            {
-                File.Delete(outPath);
-                throw new InvalidOperationException($"Deezer returned an empty file for track {streamId} at {trackBitrate}.");
-            }
-
-            // Partial-write guard: a network drop can leave a truncated non-empty file
-            // the empty-file check misses — refuse anything materially under the GW size.
-            if (expectedSize <= 0 || !File.Exists(outPath))
-                return;
-
-            long actualSize = new FileInfo(outPath).Length;
-            if (actualSize < expectedSize * PartialWriteThreshold)
-            {
-                File.Delete(outPath);
-                throw new InvalidOperationException(
-                    $"Deezer track {streamId} at {trackBitrate} truncated: got {actualSize:N0} of expected {expectedSize:N0} bytes ({(double)actualSize / expectedSize:P0}).");
-            }
-
-            if (actualSize < expectedSize)
-            {
-                // Above the threshold but still smaller than expected —
-                // log so we can spot a slow drift over time without
-                // breaking downloads. Above the threshold it's almost
-                // always tag-stripping or bitrate-fallback, not real
-                // corruption (the corruption scanner catches that
-                // separately during post-process).
-                logger.Trace("Deezer track {TrackId} at {Bitrate}: got {Actual:N0} of expected {Expected:N0} bytes ({Pct:P0}); within tolerance.",
-                    streamId, trackBitrate, actualSize, expectedSize, (double)actualSize / expectedSize);
             }
         }
 

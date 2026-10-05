@@ -127,7 +127,7 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Utilities\StoreCreditTags.cs"
              LinkBase="SourceUnderTest" />
-    <!-- Which Deezer track failures are worth another try; the exception types only. -->
+    <!-- Deezer attempt judging (short files, which failures get another try); the exception types only. -->
     <Compile Include="..\..\src\Sleezer\Core\Deezer\DeezerTrackAttempt.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Download\Clients\Deezer\Queue\DeezerDownloadExceptions.cs"
