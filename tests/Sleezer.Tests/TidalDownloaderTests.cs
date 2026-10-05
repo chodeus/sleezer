@@ -123,19 +123,40 @@ public class TidalDownloaderTests
         await Assert.ThrowsAsync<APIException>(() => new API(http, session).GetTrack("1"));
     }
 
+    [Fact]
+    public async Task A_blank_track_copyright_falls_back_to_the_albums()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"sleezer-{Guid.NewGuid():N}.flac");
+        File.Copy(Path.Combine(AppContext.BaseDirectory, "Fixtures", "silence.flac"), path);
+        try
+        {
+            await DownloaderFor(Catalogue(trackCopyright: "", albumCopyright: "℗ 2026 Album Label")).ApplyMetadataToFile("1", path);
+
+            using var tagged = TagLib.File.Create(path);
+            Assert.Equal("℗ 2026 Album Label", tagged.Tag.Copyright);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
     // Track 1 on album 9; artwork answers 401, which tags without a cover.
-    private static FakeHttpClient Catalogue() => new(r =>
+    private static FakeHttpClient Catalogue(string trackCopyright = "℗ 2026 Example Records", string? albumCopyright = null) => new(r =>
     {
         string path = new Uri(r.Url.ToString()).AbsolutePath;
         return path switch
         {
-            "/v1/tracks/1" => FakeHttpClient.Respond(r, HttpStatusCode.OK, """
-                {"id":1,"title":"Song","artists":[{"name":"Artist"}],"album":{"id":9,"cover":"ab-cd"},
-                 "trackNumber":1,"volumeNumber":1,"isrc":"USABC2600001","copyright":"℗ 2026 Example Records","bpm":128}
-                """),
-            "/v1/albums/9" => FakeHttpClient.Respond(r, HttpStatusCode.OK, """
-                {"id":9,"title":"Album","artists":[{"name":"Artist"}],"releaseDate":"2026-01-02","numberOfTracks":1,"numberOfVolumes":1}
-                """),
+            "/v1/tracks/1" => FakeHttpClient.Respond(r, HttpStatusCode.OK, JsonConvert.SerializeObject(new
+            {
+                id = 1, title = "Song", artists = new[] { new { name = "Artist" } }, album = new { id = 9, cover = "ab-cd" },
+                trackNumber = 1, volumeNumber = 1, isrc = "USABC2600001", copyright = trackCopyright, bpm = 128
+            })),
+            "/v1/albums/9" => FakeHttpClient.Respond(r, HttpStatusCode.OK, JsonConvert.SerializeObject(new
+            {
+                id = 9, title = "Album", artists = new[] { new { name = "Artist" } }, releaseDate = "2026-01-02",
+                numberOfTracks = 1, numberOfVolumes = 1, copyright = albumCopyright
+            })),
             _ => FakeHttpClient.Respond(r, HttpStatusCode.Unauthorized)
         };
     });
