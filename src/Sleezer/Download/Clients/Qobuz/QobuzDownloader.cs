@@ -218,6 +218,7 @@ namespace NzbDrone.Core.Download.Clients.Qobuz
                 track.Tag.Pictures = [new TagLib.Picture(new TagLib.ByteVector(albumArt))];
 
             track.Tag.Lyrics = lyrics;
+            StoreCreditTags.Apply(track.Tag, page.Isrc, [page.Copyright, albumPage?.Copyright], [page.Composer?.Name]);
             track.Save();
         }
     }

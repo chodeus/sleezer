@@ -15,6 +15,7 @@ using NLog;
 using NzbDrone.Common.Instrumentation;
 using NzbDrone.Common.Instrumentation.Extensions;
 using NzbDrone.Core.Parser.Model;
+using NzbDrone.Plugin.Sleezer.Core.Deezer;
 using NzbDrone.Plugin.Sleezer.Core.Download;
 using NzbDrone.Plugin.Sleezer.Core.Model;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
@@ -22,21 +23,6 @@ using NzbDrone.Plugin.Sleezer.Deezer;
 
 namespace NzbDrone.Core.Download.Clients.Deezer.Queue
 {
-    public class InsufficientLicenseRightsException : Exception
-    {
-        public InsufficientLicenseRightsException(string message, Exception? inner = null) : base(message, inner) { }
-    }
-
-    public class GeoRestrictionException : Exception
-    {
-        public GeoRestrictionException(string message, Exception? inner = null) : base(message, inner) { }
-    }
-
-    public class TrackUnavailableException : Exception
-    {
-        public TrackUnavailableException(string message, Exception? inner = null) : base(message, inner) { }
-    }
-
     public class DownloadItem : IQueuedDownload
     {
         // Rebuilds the minimal display state for a download that completed in a
@@ -290,46 +276,15 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
 
             try
             {
-                await DownloadWithTokenRetryAsync(streamId, streamPage, outPath, trackBitrate, logger, cancellation);
-
-                if (File.Exists(outPath) && new FileInfo(outPath).Length == 0)
-                {
-                    File.Delete(outPath);
-                    throw new InvalidOperationException($"Deezer returned an empty file for track {streamId} at {trackBitrate}.");
-                }
-
-                // Partial-write guard: a network drop can leave a truncated non-empty file
-                // the empty-file check misses — refuse anything materially under the GW size.
-                if (expectedSize > 0 && File.Exists(outPath))
-                {
-                    long actualSize = new FileInfo(outPath).Length;
-                    if (actualSize < expectedSize * PartialWriteThreshold)
-                    {
-                        File.Delete(outPath);
-                        throw new InvalidOperationException(
-                            $"Deezer track {streamId} at {trackBitrate} truncated: got {actualSize:N0} of expected {expectedSize:N0} bytes ({(double)actualSize / expectedSize:P0}).");
-                    }
-
-                    if (actualSize < expectedSize)
-                    {
-                        // Above the threshold but still smaller than expected —
-                        // log so we can spot a slow drift over time without
-                        // breaking downloads. Above the threshold it's almost
-                        // always tag-stripping or bitrate-fallback, not real
-                        // corruption (the corruption scanner catches that
-                        // separately during post-process).
-                        logger.Trace("Deezer track {TrackId} at {Bitrate}: got {Actual:N0} of expected {Expected:N0} bytes ({Pct:P0}); within tolerance.",
-                            streamId, trackBitrate, actualSize, expectedSize, (double)actualSize / expectedSize);
-                    }
-                }
+                await DownloadCompleteFileAsync(streamId, streamPage, outPath, trackBitrate, expectedSize, logger, cancellation);
             }
-            catch (Exception ex) when (IsLicenseRightsError(ex))
+            catch (Exception ex) when (DeezerTrackAttempt.IsLicenseRightsError(ex))
             {
                 TryDeleteEmptyFile(outPath);
                 throw new InsufficientLicenseRightsException(
                     $"License check failed for track {streamId} at {trackBitrate}: {ex.Message}", ex);
             }
-            catch (Exception ex) when (IsGeoRestrictionError(ex))
+            catch (Exception ex) when (DeezerTrackAttempt.IsGeoRestrictionError(ex))
             {
                 TryDeleteEmptyFile(outPath);
                 throw new GeoRestrictionException(
@@ -386,6 +341,61 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
                 }
             }
             catch (UnavailableArtException) { } */
+        }
+
+        private const int MaxTrackAttempts = 3;
+
+        // A dropped connection, a 5xx or a truncated body gets another try; a rights or region answer never changes.
+        private async Task DownloadCompleteFileAsync(long streamId, JToken streamPage, string outPath, Bitrate trackBitrate, long expectedSize, Logger logger, CancellationToken cancellation)
+        {
+            for (int attempt = 1; ; attempt++)
+            {
+                try
+                {
+                    await DownloadWithTokenRetryAsync(streamId, streamPage, outPath, trackBitrate, logger, cancellation);
+                    EnsureCompleteFile(outPath, streamId, trackBitrate, expectedSize, logger);
+                    return;
+                }
+                catch (Exception ex) when (!cancellation.IsCancellationRequested && DeezerTrackAttempt.ShouldRetry(ex, attempt, MaxTrackAttempts))
+                {
+                    logger.Warn(ex, "Deezer track {TrackId} failed at {Bitrate} (attempt {Attempt}/{Max}); retrying", streamId, trackBitrate, attempt, MaxTrackAttempts);
+                    await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)), cancellation);
+                }
+            }
+        }
+
+        private static void EnsureCompleteFile(string outPath, long streamId, Bitrate trackBitrate, long expectedSize, Logger logger)
+        {
+            if (File.Exists(outPath) && new FileInfo(outPath).Length == 0)
+            {
+                File.Delete(outPath);
+                throw new InvalidOperationException($"Deezer returned an empty file for track {streamId} at {trackBitrate}.");
+            }
+
+            // Partial-write guard: a network drop can leave a truncated non-empty file
+            // the empty-file check misses — refuse anything materially under the GW size.
+            if (expectedSize <= 0 || !File.Exists(outPath))
+                return;
+
+            long actualSize = new FileInfo(outPath).Length;
+            if (actualSize < expectedSize * PartialWriteThreshold)
+            {
+                File.Delete(outPath);
+                throw new InvalidOperationException(
+                    $"Deezer track {streamId} at {trackBitrate} truncated: got {actualSize:N0} of expected {expectedSize:N0} bytes ({(double)actualSize / expectedSize:P0}).");
+            }
+
+            if (actualSize < expectedSize)
+            {
+                // Above the threshold but still smaller than expected —
+                // log so we can spot a slow drift over time without
+                // breaking downloads. Above the threshold it's almost
+                // always tag-stripping or bitrate-fallback, not real
+                // corruption (the corruption scanner catches that
+                // separately during post-process).
+                logger.Trace("Deezer track {TrackId} at {Bitrate}: got {Actual:N0} of expected {Expected:N0} bytes ({Pct:P0}); within tolerance.",
+                    streamId, trackBitrate, actualSize, expectedSize, (double)actualSize / expectedSize);
+            }
         }
 
         private async Task DownloadWithTokenRetryAsync(long streamId, JToken streamPage, string outPath, Bitrate trackBitrate, Logger logger, CancellationToken cancellation)
@@ -468,34 +478,6 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
             Artist = album.ArtistName;
             Explicit = album.Explicit;
             TotalSize = _tracks.Sum(t => t.size);
-        }
-
-        private static bool IsLicenseRightsError(Exception ex)
-        {
-            for (var cur = ex; cur != null; cur = cur.InnerException)
-            {
-                var msg = cur.Message ?? string.Empty;
-                if (msg.Contains("License token has no sufficient rights", StringComparison.OrdinalIgnoreCase))
-                    return true;
-                if (cur is AggregateException agg && agg.InnerExceptions.Any(IsLicenseRightsError))
-                    return true;
-            }
-            return false;
-        }
-
-        private static bool IsGeoRestrictionError(Exception ex)
-        {
-            for (var cur = ex; cur != null; cur = cur.InnerException)
-            {
-                var msg = cur.Message ?? string.Empty;
-                if (msg.Contains("not available in your country", StringComparison.OrdinalIgnoreCase)
-                    || msg.Contains("wrong geolocation", StringComparison.OrdinalIgnoreCase)
-                    || msg.Contains("geo-restricted", StringComparison.OrdinalIgnoreCase))
-                    return true;
-                if (cur is AggregateException agg && agg.InnerExceptions.Any(IsGeoRestrictionError))
-                    return true;
-            }
-            return false;
         }
 
         private static void TryDeleteEmptyFile(string path)

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Threading;
@@ -69,8 +70,15 @@ namespace NzbDrone.Core.Download.Clients.Deezer
             }
 
             tag.Lyrics = lyrics;
+            StoreCreditTags.Apply(tag, data["ISRC"]?.ToString(), [data["COPYRIGHT"]?.ToString(), albumData?["COPYRIGHT"]?.ToString()], Composers(data["SNG_CONTRIBUTORS"]));
             file.Save();
         }
+
+        // SNG_CONTRIBUTORS maps each role to its names; any other shape leaves composers unset.
+        private static IEnumerable<string?>? Composers(JToken? contributors) =>
+            (contributors as JObject)?["composer"] is JArray names
+                ? names.Select(n => n.Type == JTokenType.String ? n.ToString() : null)
+                : null;
 
         private static string? TitleWithVersion(string? title, string? version) =>
             string.IsNullOrWhiteSpace(title) ? title : StoreVersionFilter.TitleWithVersion(title, version);

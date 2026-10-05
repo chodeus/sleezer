@@ -64,6 +64,36 @@ public class DeezerTaggerTests
     }
 
     [Fact]
+    public void Writes_isrc_copyright_and_composers_from_gw_pages()
+    {
+        var trackPage = JObject.Parse("""
+        {
+          "DATA": {
+            "SNG_ID": "1", "SNG_TITLE": "Angel", "ART_NAME": "Dimension", "ALB_TITLE": "Organ",
+            "ISRC": "GBABC0300001",
+            "SNG_CONTRIBUTORS": { "main_artist": [ "Dimension" ], "composer": [ "Ann Writer", "Bo Writer" ], "author": [ "Cy Lyricist" ] }
+          }
+        }
+        """);
+        var albumPage = JObject.Parse("""{ "DATA": { "ALB_TITLE": "Organ", "COPYRIGHT": "(P) 2003 Example Records" }, "SONGS": { "total": 1, "data": [] } }""");
+
+        var path = CopyFixture();
+        try
+        {
+            DeezerTagger.Apply(path, trackPage, albumPage, albumArt: null, lyrics: string.Empty);
+
+            using var file = TagLib.File.Create(path);
+            Assert.Equal("GBABC0300001", file.Tag.ISRC);
+            Assert.Equal("(P) 2003 Example Records", file.Tag.Copyright);
+            Assert.Equal(new[] { "Ann Writer", "Bo Writer" }, file.Tag.Composers);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void A_title_that_already_ends_in_its_boilerplate_version_loses_it()
     {
         var trackPage = JObject.Parse("""{ "DATA": { "SNG_ID": "1", "SNG_TITLE": "Angel (Album Version)", "VERSION": "(Album Version)", "ART_NAME": "Dimension", "ALB_TITLE": "Organ" } }""");
