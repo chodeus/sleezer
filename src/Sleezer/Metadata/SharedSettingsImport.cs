@@ -1,5 +1,6 @@
 using NLog;
 using NzbDrone.Core.Download;
+using NzbDrone.Core.Download.Clients.Tidal;
 using NzbDrone.Core.Extras.Metadata;
 using NzbDrone.Core.Indexers;
 using NzbDrone.Core.Lifecycle;
@@ -13,7 +14,7 @@ using NzbDrone.Plugin.Sleezer.Metadata.Lyrics;
 
 namespace NzbDrone.Plugin.Sleezer.Metadata
 {
-    /// <summary>Copies the old per-provider settings into the shared Metadata entries, once.</summary>
+    /// <summary>Copies the old per-provider settings into the shared Metadata entries, then Tidal's M4A options back to its download client; each once.</summary>
     // Async so it runs after Lidarr has seeded the new Metadata entries on startup.
     public class SharedSettingsImport(
         IMetadataFactory metadataFactory,
@@ -31,6 +32,44 @@ namespace NzbDrone.Plugin.Sleezer.Metadata
             {
                 logger.Error(ex, "Could not copy the old Sleezer settings into Sleezer Download Rules and Lyrics; it is retried on the next start");
             }
+
+            try
+            {
+                MoveTidalOptions();
+            }
+            catch (Exception ex)
+            {
+                logger.Error(ex, "Could not move Tidal's M4A options to the Tidal download client; it is retried on the next start");
+            }
+        }
+
+        // Waits for Import: until it has run, the FFmpeg entry doesn't hold the Tidal clients' old values.
+        private void MoveTidalOptions()
+        {
+            List<MetadataDefinition> entries = metadataFactory.All();
+            if (entries.FirstOrDefault(d => d.Settings is DownloadRulesSettings)?.Settings is not DownloadRulesSettings { ValuesImported: true })
+                return;
+
+            MetadataDefinition? ffmpegEntry = entries.FirstOrDefault(d => d.Settings is FFmpegSettings);
+            if (ffmpegEntry?.Settings is not FFmpegSettings { TidalOptionsMoved: false } ffmpeg)
+                return;
+
+            foreach (DownloadClientDefinition client in downloadClientFactory.All())
+            {
+                if (client.Settings is not TidalSettings tidal)
+                    continue;
+
+                tidal.ExtractFlac = ffmpeg.TidalExtractFlac;
+                tidal.ReEncodeAAC = ffmpeg.TidalReEncodeAAC;
+                downloadClientFactory.Update(client);
+            }
+
+            // Last, so a failure above leaves the flag unset and the move runs again.
+            ffmpeg.TidalOptionsMoved = true;
+            metadataFactory.Update(ffmpegEntry);
+
+            logger.Info("Moved Tidal's M4A options to the Tidal download client (Extract FLAC From M4A {Extract}, Re-encode AAC Into MP3 {ReEncode})",
+                ffmpeg.TidalExtractFlac, ffmpeg.TidalReEncodeAAC);
         }
 
         private void Import()

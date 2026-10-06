@@ -125,6 +125,16 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Download\Clients\Deezer\DeezerTagger.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Core\Utilities\StoreCreditTags.cs"
+             LinkBase="SourceUnderTest" />
+    <!-- The 429-or-5xx rule every store retry shares; BCL only. -->
+    <Compile Include="..\..\src\Sleezer\Core\Utilities\TransientStatus.cs"
+             LinkBase="SourceUnderTest" />
+    <!-- Deezer attempt judging (short files, which failures get another try); the exception types only. -->
+    <Compile Include="..\..\src\Sleezer\Core\Deezer\DeezerTrackAttempt.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Download\Clients\Deezer\Queue\DeezerDownloadExceptions.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Tidal\TidalPathSanitizer.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Tidal\TidalAlbumAvailability.cs"
@@ -152,6 +162,15 @@
     <Compile Include="..\..\src\Sleezer\QobuzApiSharp\Models\QobuzApiStatusResponse.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\QobuzApiSharp\Exceptions\ApiErrorResponseException.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\QobuzApiSharp\Exceptions\ApiResponseParseErrorException.cs"
+             LinkBase="SourceUnderTest" />
+    <!-- Where an unreadable failure page gets its HTTP status; BCL + Newtonsoft only. -->
+    <Compile Include="..\..\src\Sleezer\QobuzApiSharp\Service\QobuzApiHelper.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\QobuzApiSharp\QobuzApiConstants.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\QobuzApiSharp\Utilities\MD5Utilities.cs"
              LinkBase="SourceUnderTest" />
     <!-- Slskd retry-exhaustion state machine and its transitive deps. Lidarr.Core
          supplies DownloadItemStatus via the project reference below. -->

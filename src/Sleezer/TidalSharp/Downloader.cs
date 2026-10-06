@@ -174,12 +174,9 @@ public class Downloader
         if (albumArt != null)
             track.Tag.Pictures = [new TagLib.Picture(new TagLib.ByteVector(albumArt))];
         track.Tag.Lyrics = lyrics;
-        track.Tag.ISRC = trackData["isrc"]?.ToString();
-        track.Tag.Copyright = trackData["copyright"]?.ToString() ?? albumPage["copyright"]?.ToString();
+        StoreCreditTags.Apply(track.Tag, trackData["isrc"]?.ToString(), [trackData["copyright"]?.ToString(), albumPage["copyright"]?.ToString()], composers);
         if (trackData["bpm"]?.Type == JTokenType.Integer && trackData["bpm"]!.Value<int>() > 0)
             track.Tag.BeatsPerMinute = trackData["bpm"]!.Value<uint>();
-        if (composers is { Length: > 0 })
-            track.Tag.Composers = composers;
 
         track.Save();
     }
