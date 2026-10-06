@@ -165,6 +165,13 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\QobuzApiSharp\Exceptions\ApiResponseParseErrorException.cs"
              LinkBase="SourceUnderTest" />
+    <!-- Where an unreadable failure page gets its HTTP status; BCL + Newtonsoft only. -->
+    <Compile Include="..\..\src\Sleezer\QobuzApiSharp\Service\QobuzApiHelper.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\QobuzApiSharp\QobuzApiConstants.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\QobuzApiSharp\Utilities\MD5Utilities.cs"
+             LinkBase="SourceUnderTest" />
     <!-- Slskd retry-exhaustion state machine and its transitive deps. Lidarr.Core
          supplies DownloadItemStatus via the project reference below. -->
     <Compile Include="..\..\src\Sleezer\Download\Clients\Soulseek\Models\SlskdFileState.cs"

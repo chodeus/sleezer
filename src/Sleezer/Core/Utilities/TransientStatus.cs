@@ -7,6 +7,6 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
     {
         public static bool IsTransient(HttpStatusCode status) => IsTransient((int)status);
 
-        public static bool IsTransient(int status) => status == 429 || status >= 500;
+        public static bool IsTransient(int status) => status is 429 or (>= 500 and <= 599);
     }
 }

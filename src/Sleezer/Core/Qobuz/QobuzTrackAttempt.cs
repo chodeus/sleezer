@@ -25,14 +25,15 @@ namespace NzbDrone.Plugin.Sleezer.Core.Qobuz
             _ => QobuzAttemptOutcome.Fail,
         };
 
-        // Only a dropped connection, a timeout, a 429 or 5xx, an unreadable error page or a short file can change on
-        // another try. The caller rethrows the user's own cancellation first, so a cancellation here is a timeout.
+        // Only a dropped connection, a timeout, a 429 or 5xx (an unreadable error page included) or a short file can
+        // change on another try. The caller rethrows the user's own cancellation first, so a cancellation here is a timeout.
         private static bool IsTransient(Exception ex) => ex switch
         {
             HttpRequestException { StatusCode: null } => true,
             HttpRequestException { StatusCode: { } status } => TransientStatus.IsTransient(status),
             ApiErrorResponseException { ResponseStatusCode: var code } => int.TryParse(code, out int status) && TransientStatus.IsTransient(status),
-            ApiResponseParseErrorException or IOException or TimeoutException or OperationCanceledException => true,
+            ApiResponseParseErrorException { StatusCode: { } status } => TransientStatus.IsTransient(status),
+            IOException or TimeoutException or OperationCanceledException => true,
             _ => false,
         };
     }

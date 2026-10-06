@@ -4,6 +4,7 @@ using NzbDrone.Plugin.Sleezer.Core.Qobuz;
 using QobuzApiSharp.Exceptions;
 using QobuzApiSharp.Models;
 using QobuzApiSharp.Models.Content;
+using QobuzApiSharp.Service;
 using Xunit;
 
 namespace Sleezer.Tests;
@@ -18,7 +19,7 @@ public class QobuzTrackAttemptTests
         new HttpRequestException("Response status code does not indicate success: 503", null, HttpStatusCode.ServiceUnavailable),
         new HttpRequestException("Response status code does not indicate success: 429", null, HttpStatusCode.TooManyRequests),
         ApiError("500"),
-        new ApiResponseParseErrorException("Failed to parse API response for type QobuzApiStatusResponse."),
+        UnreadablePage(HttpStatusCode.BadGateway),
         new IOException("Incomplete download for Qobuz track 1: server reported 100 bytes but 10 were written."),
         new TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout of 100 seconds elapsing."),
     };
@@ -27,6 +28,8 @@ public class QobuzTrackAttemptTests
     {
         ApiError("401"),
         ApiError("400"),
+        UnreadablePage(HttpStatusCode.Unauthorized),
+        UnreadablePage(HttpStatusCode.OK),
         new HttpRequestException("Response status code does not indicate success: 403", null, HttpStatusCode.Forbidden),
         new UnauthorizedAccessException("Access to the path '/downloads/qobuz/1.flac.part' is denied."),
         new InvalidOperationException("Qobuz track 1 has no media source at FLAC_LOSSLESS."),
@@ -69,6 +72,24 @@ public class QobuzTrackAttemptTests
     public void Classify_fails_at_once_when_another_try_cannot_change_the_answer(Exception ex)
     {
         Assert.Equal(QobuzAttemptOutcome.Fail, QobuzTrackAttempt.Classify(ex, attempt: 1, MaxAttempts));
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized, HttpStatusCode.Unauthorized)]
+    [InlineData(HttpStatusCode.BadGateway, HttpStatusCode.BadGateway)]
+    [InlineData(HttpStatusCode.OK, null)]
+    public void An_unreadable_body_keeps_the_status_only_of_a_failed_response(HttpStatusCode sent, HttpStatusCode? kept)
+    {
+        Assert.Equal(kept, UnreadablePage(sent).StatusCode);
+    }
+
+    // Through the real parser, so the status is the one DeserializeResponse attaches.
+    private static ApiResponseParseErrorException UnreadablePage(HttpStatusCode status)
+    {
+        using var response = new HttpResponseMessage(status) { Content = new StringContent("<html><body>Bad Gateway</body></html>") };
+
+        return Assert.IsType<ApiResponseParseErrorException>(
+            Record.Exception(() => QobuzApiHelper.DeserializeResponse<QobuzApiStatusResponse>(response)));
     }
 
     private static ApiErrorResponseException ApiError(string code) =>

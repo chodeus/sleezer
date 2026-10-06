@@ -5,6 +5,7 @@
 // Vendored: overrides Exception.GetObjectData, obsolete since net8 but harmless here.
 #pragma warning disable CS0672, SYSLIB0051
 using System;
+using System.Net;
 using System.Runtime.Serialization;
 
 namespace QobuzApiSharp.Exceptions
@@ -13,6 +14,9 @@ namespace QobuzApiSharp.Exceptions
     public class ApiResponseParseErrorException : Exception
     {
         public string ResponseContent { get; }
+
+        // Set when the unreadable body came with a failure status, so a caller can still tell a 401 from a 502.
+        public HttpStatusCode? StatusCode { get; init; }
 
         public ApiResponseParseErrorException()
         {
@@ -42,12 +46,14 @@ namespace QobuzApiSharp.Exceptions
             : base(info, context)
         {
             ResponseContent = info.GetString("ResponseContent");
+            StatusCode = (HttpStatusCode?)(int?)info.GetValue("StatusCode", typeof(int?));
         }
 
         public override void GetObjectData(SerializationInfo info, StreamingContext context)
         {
             base.GetObjectData(info, context);
             info.AddValue("ResponseContent", ResponseContent);
+            info.AddValue("StatusCode", (int?)StatusCode, typeof(int?));
         }
     }
 }

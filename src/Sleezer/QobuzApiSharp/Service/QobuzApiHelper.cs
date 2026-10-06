@@ -132,7 +132,10 @@ namespace QobuzApiSharp.Service
             }
             catch (Exception ex)
             {
-                throw new ApiResponseParseErrorException($"Failed to parse API response for type {typeof(T).Name}.", jsonResultString, ex);
+                throw new ApiResponseParseErrorException($"Failed to parse API response for type {typeof(T).Name}.", jsonResultString, ex)
+                {
+                    StatusCode = response.IsSuccessStatusCode ? null : response.StatusCode,
+                };
             }
         }
 
