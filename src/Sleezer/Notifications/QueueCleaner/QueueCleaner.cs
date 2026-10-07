@@ -282,13 +282,7 @@ namespace NzbDrone.Plugin.Sleezer.Notifications.QueueCleaner
             if (trackedDownload.State != TrackedDownloadState.ImportFailed)
                 return ImportFailureReason.DidNotFail;
 
-            bool hasMissingTracks = trackedDownload.StatusMessages
-                .Any(sm => sm.Messages.Any(m => m.Contains("Has missing tracks", StringComparison.OrdinalIgnoreCase)));
-
-            bool hasInsufficientInformation = trackedDownload.StatusMessages
-                .Any(sm => sm.Messages.Any(m => m.Contains("Album match is not close enough", StringComparison.OrdinalIgnoreCase)));
-
-            return (hasMissingTracks, hasInsufficientInformation) switch
+            return ImportRejections.Classify(trackedDownload.StatusMessages.SelectMany(sm => sm.Messages)) switch
             {
                 (true, true) => ImportFailureReason.Both,
                 (true, _) => ImportFailureReason.FailedBecauseOfMissingTracks,
