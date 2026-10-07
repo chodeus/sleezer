@@ -46,7 +46,7 @@ public class SlskdRetryHandler(ISlskdApiClient apiClient, Logger logger)
             long size = matchingEl.TryGetProperty("Size", out JsonElement sz) ? sz.GetInt64() : 0L;
             string username = item.Username ?? ExtractUsernameFromPath(item.ReleaseInfo.DownloadUrl);
 
-            await _apiClient.EnqueueDownloadAsync(settings, username, [(fileState.File.Filename, size)], externalId: item.ID);
+            await _apiClient.EnqueueDownloadAsync(settings, username, [(fileState.File.Filename, size)], externalId: item.ID, destination: item.EnqueueDestination);
             _logger.Trace("Retry enqueued: {Filename}", Path.GetFileName(fileState.File.Filename));
         }
         catch (Exception ex)

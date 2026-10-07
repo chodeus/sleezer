@@ -51,7 +51,12 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             "kendrick lamar",
             "frank ocean",
             "minaj",
-            "linkin park"
+            "linkin park",
+            "jay-z",
+            "purple rain",
+            "in the navy",
+            "paper kingdom",
+            "from zero"
         };
 
         private static readonly string[][] BlockedTermWords = [.. BlockedSearchTerms
