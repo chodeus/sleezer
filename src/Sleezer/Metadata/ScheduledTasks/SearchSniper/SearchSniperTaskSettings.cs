@@ -36,6 +36,10 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
                 .GreaterThanOrEqualTo(0)
                 .WithMessage("Stop queue threshold must be 0 or greater.");
 
+            RuleFor(c => c.RecentReleaseDays)
+                .GreaterThanOrEqualTo(0)
+                .WithMessage("Recent Releases First must be 0 or more days.");
+
             // Validatw search options
             RuleFor(c => c)
                 .Must(settings => settings.SearchMissing || settings.SearchQualityCutoffNotMet || settings.SearchMissingTracks)
@@ -76,6 +80,9 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
 
         [FieldDefinition(10, Label = "Cutoff Not Met", Type = FieldType.Checkbox, HelpText = "Automatically search for albums whose quality or custom format score is below the profile's cutoff.")]
         public bool SearchQualityCutoffNotMet { get; set; }
+
+        [FieldDefinition(11, Label = "Recent Releases First", Type = FieldType.Number, Unit = "days", Placeholder = "0", HelpText = "Pick Missing and Missing Tracks albums released within this many days first, newest first; the rest of the picks stay random. 0 turns it off.")]
+        public int RecentReleaseDays { get; set; }
 
         public string BaseUrl { get; set; } = string.Empty;
 

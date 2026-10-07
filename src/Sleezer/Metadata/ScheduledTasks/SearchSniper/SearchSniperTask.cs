@@ -137,16 +137,19 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
             HashSet<int> queuedAlbumIds = GetQueuedAlbumIds();
             int candidateTarget = Math.Min(targetCount * 10, 500);
 
-            List<Album> eligibleAlbums = CollectEligibleAlbums(settings, queuedAlbumIds, candidateTarget);
+            List<Album> selectedAlbums = PickRecentAlbums(settings, queuedAlbumIds, targetCount, candidateTarget);
+            if (selectedAlbums.Count < targetCount)
+            {
+                HashSet<int> skipIds = [.. queuedAlbumIds, .. selectedAlbums.Select(a => a.Id)];
+                selectedAlbums.AddRange(SelectRandomAlbums(CollectEligibleAlbums(settings, skipIds, candidateTarget), targetCount - selectedAlbums.Count));
+            }
 
-            if (eligibleAlbums.Count == 0)
+            if (selectedAlbums.Count == 0)
             {
                 message.SetCompletionMessage("Search Sniper completed. No eligible albums found.");
                 _logger.Info("No eligible albums found after filtering queued and cached albums");
                 return;
             }
-
-            List<Album> selectedAlbums = SelectRandomAlbums(eligibleAlbums, targetCount);
 
             foreach (Album album in selectedAlbums)
                 _logger.Trace("Selected: '{0}' by {1}", album.Title, album.Artist?.Value?.Name ?? "Unknown Artist");
@@ -445,6 +448,22 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
                 string cacheKey = GenerateCacheKey(album);
                 await _cacheService.SetAsync(cacheKey, true);
             }
+        }
+
+        // Newest first; the request cache still spaces out repeat searches of one album.
+        private List<Album> PickRecentAlbums(SearchSniperTaskSettings settings, HashSet<int> queuedAlbumIds, int count, int candidateLimit)
+        {
+            if (settings.RecentReleaseDays <= 0 || !(settings.SearchMissing || settings.SearchMissingTracks))
+                return [];
+
+            DateTime now = DateTime.UtcNow;
+            List<Album> picked = [.. _repositoryHelper
+                .GetRecentAlbums(now.AddDays(-settings.RecentReleaseDays), now, partialOnly: !settings.SearchMissing, candidateLimit)
+                .Where(a => !queuedAlbumIds.Contains(a.Id) && !IsAlbumCached(a))
+                .Take(count)];
+
+            _logger.Debug("Picked {Count} release(s) from the last {Days} days first", picked.Count, settings.RecentReleaseDays);
+            return picked;
         }
 
         private static List<Album> SelectRandomAlbums(List<Album> albums, int count)

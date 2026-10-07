@@ -26,6 +26,23 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
 
         public (int minId, int maxId) GetPartialAlbumsIdRange() => IdRange(BuildMissingTracksQuery);
 
+        /// <summary>
+        /// Albums released in [since, until] still missing tracks, newest first: any missing track
+        /// (Lidarr's Wanted/Missing), or with <paramref name="partialOnly"/> only albums that have some files.
+        /// </summary>
+        public List<Album> GetRecentAlbums(DateTime since, DateTime until, bool partialOnly, int limit)
+        {
+            SqlBuilder query = MonitoredReleaseTracks()
+                .Where<Album>(a => a.ReleaseDate >= since)
+                .Where<Album>(a => a.ReleaseDate <= until)
+                .Having($"{TracksWithFiles} < {AllTracks}");
+
+            if (partialOnly)
+                query = query.Having($"{TracksWithFiles} > 0");
+
+            return PopulateArtists(Query(query.OrderBy($@"""Albums"".""ReleaseDate"" DESC LIMIT {limit}")));
+        }
+
         public (int minId, int maxId) GetCutoffUnmetAlbumsIdRange(Dictionary<int, List<int>> profileCutoffs) =>
             profileCutoffs.Count == 0 ? (0, 0) : IdRange(() => BuildCutoffUnmetQuery(profileCutoffs));
 
@@ -112,9 +129,17 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
                 .Where<Artist>(ar => ar.Monitored == true)
                 .Where<AlbumRelease>(r => r.Monitored == true);
 
-        private SqlBuilder BuildMissingTracksQuery()
-        {
-            return Builder()
+        private const string AllTracks = "COUNT(DISTINCT \"Tracks\".\"Id\")";
+        private const string TracksWithFiles = "SUM(CASE WHEN \"Tracks\".\"TrackFileId\" > 0 THEN 1 ELSE 0 END)";
+
+        private SqlBuilder BuildMissingTracksQuery() =>
+            MonitoredReleaseTracks()
+                .Having($"{TracksWithFiles} > 0")
+                .Having($"{TracksWithFiles} < {AllTracks}");
+
+        // Grouped per album over its monitored release's tracks; callers add the file-count HAVING.
+        private SqlBuilder MonitoredReleaseTracks() =>
+            Builder()
                 .Join<Album, Artist>((a, ar) => a.ArtistMetadataId == ar.ArtistMetadataId)
                 .Join<Album, AlbumRelease>((a, r) => a.Id == r.AlbumId)
                 .Join<AlbumRelease, Track>((r, t) => r.Id == t.AlbumReleaseId)
@@ -124,10 +149,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
                 .Where<AlbumRelease>(r => r.Monitored == true)
                 .GroupBy<Album>(a => a.Id)
                 .GroupBy<Artist>(ar => ar.SortName)
-                .Having("COUNT(DISTINCT \"Tracks\".\"Id\") > 0")
-                .Having("SUM(CASE WHEN \"Tracks\".\"TrackFileId\" > 0 THEN 1 ELSE 0 END) > 0")
-                .Having("SUM(CASE WHEN \"Tracks\".\"TrackFileId\" > 0 THEN 1 ELSE 0 END) < COUNT(DISTINCT \"Tracks\".\"Id\")");
-        }
+                .Having($"{AllTracks} > 0");
 
         public static Dictionary<int, List<int>> BuildProfileCutoffs(IEnumerable<QualityProfile> qualityProfiles)
         {
