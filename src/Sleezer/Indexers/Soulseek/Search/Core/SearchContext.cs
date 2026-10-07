@@ -24,6 +24,9 @@ public sealed record SearchContext
     public int TrackCount { get; init; }
     public IReadOnlyList<string> Aliases { get; init; }
     public IReadOnlyList<string> Tracks { get; init; }
+
+    // Milliseconds, one per track of the release the titles came from.
+    public IReadOnlyList<int> TrackDurations { get; init; } = [];
     public SlskdSettings Settings { get; init; }
     public HashSet<string> ProcessedSearches { get; init; }
     public SearchCriteriaBase? SearchCriteria { get; init; }
@@ -79,6 +82,7 @@ public sealed record SearchQuery
     public bool ExpandDirectory { get; init; }
     public int TrackCount { get; init; }
     public IReadOnlyList<string> Tracks { get; init; } = [];
+    public IReadOnlyList<int> TrackDurations { get; init; } = [];
     public IReadOnlyList<string> TargetVariantTypes { get; init; } = [];
     public string? AlbumType { get; init; }
     public string? SearchText { get; init; }
@@ -91,6 +95,7 @@ public sealed record SearchQuery
         ExpandDirectory = false,
         TrackCount = context.TrackCount,
         Tracks = context.Tracks,
+        TrackDurations = context.TrackDurations,
         TargetVariantTypes = context.TargetVariantTypes,
         AlbumType = context.AlbumType,
         SearchText = null
