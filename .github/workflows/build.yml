@@ -331,6 +331,8 @@ jobs:
           fi
 
           cp ./Properties/release_notes.txt "$PLUGIN_OUTPUT_DIR/release_notes.txt"
+          # The MIT notices in NOTICE must travel with the binary, as must the GPL-3.0 text.
+          cp ./LICENSE ./NOTICE "$PLUGIN_OUTPUT_DIR/"
 
           # Filename format preserved: ${PLUGIN_NAME}-v${VERSION}.${FRAMEWORK}.zip
           PACKAGE_NAME="${PLUGIN_NAME}-v${VERSION}.${FRAMEWORK}.zip"
@@ -340,6 +342,7 @@ jobs:
             cd "$PLUGIN_OUTPUT_DIR"
             find . \( -name "*.${PLUGIN_NAME}.*" -o -name "*.Plugin.${PLUGIN_NAME}.*" \) -exec zip -r "$PACKAGE_PATH" {} +
             [ -f "release_notes.txt" ] && zip -r "$PACKAGE_PATH" release_notes.txt
+            zip "$PACKAGE_PATH" LICENSE NOTICE
           )
 
           if [ ! -s "$PACKAGE_PATH" ]; then
