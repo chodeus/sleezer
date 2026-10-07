@@ -38,8 +38,8 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     private readonly ConcurrentDictionary<int, DateTime> _lastTransferPollTimes = new();
     // Event poll times per definition ID (separate from transfer poll)
     private readonly ConcurrentDictionary<int, DateTime> _lastEventPollTimes = new();
-    // Last-seen event offset per definition ID for incremental polling
-    private readonly ConcurrentDictionary<int, int> _lastEventOffsets = new();
+    // Handled-event cursor per definition ID for incremental polling
+    private readonly ConcurrentDictionary<int, SlskdEventCursor> _eventCursors = new();
     // Empty-directory sweep bookkeeping per definition ID.
     private readonly ConcurrentDictionary<int, DateTime> _lastEmptyDirSweepTimes = new();
     private readonly ConcurrentDictionary<int, int> _lastActiveDownloadCounts = new();
@@ -173,6 +173,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             {
                 // slskd honors the destination itself — no post-download merge.
                 item.DerivedSubdirectory = destination;
+                item.EnqueueDestination = destination;
                 item.DiscFoldersMerged = true;
             }
 
@@ -607,8 +608,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         DateTime lastEvent = _lastEventPollTimes.GetOrAdd(definitionId, DateTime.MinValue);
         if (now - lastEvent >= TimeSpan.FromSeconds(5))
         {
-            int offset = _lastEventOffsets.GetOrAdd(definitionId, 0);
-            await PollEventsAsync(definitionId, settings, offset);
+            await PollEventsAsync(definitionId, settings);
             _lastEventPollTimes[definitionId] = DateTime.UtcNow;
         }
 
@@ -1051,13 +1051,22 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }
     }
 
-    private async Task PollEventsAsync(int definitionId, SlskdProviderSettings settings, int offset)
-    {
-        (List<SlskdEventRecord> events, _) = await _apiClient.GetEventsAsync(settings, offset, 50);
-        if (events.Count == 0)
-            return;
+    private const int EventPageSize = 50;
+    private const int MaxEventPages = 4;
 
-        foreach (SlskdEventRecord record in events)
+    private async Task PollEventsAsync(int definitionId, SlskdProviderSettings settings)
+    {
+        SlskdEventCursor cursor = _eventCursors.GetOrAdd(definitionId, _ => new SlskdEventCursor());
+        List<SlskdEventRecord> events = [];
+        for (int page = 0; page < MaxEventPages; page++)
+        {
+            (List<SlskdEventRecord> batch, _) = await _apiClient.GetEventsAsync(settings, page * EventPageSize, EventPageSize);
+            events.AddRange(batch);
+            if (!cursor.NeedsNextPage(batch, EventPageSize))
+                break;
+        }
+
+        foreach (SlskdEventRecord record in cursor.TakeUnseen(events))
         {
             try
             {
@@ -1068,8 +1077,6 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 _logger.Warn(ex, "[def={DefinitionId}] Failed to process event {EventType} ({EventId})", definitionId, record.Type, record.Id);
             }
         }
-
-        _lastEventOffsets[definitionId] = offset + events.Count;
     }
 
     private async Task HandleEventAsync(int definitionId, SlskdProviderSettings settings, SlskdEventRecord record)

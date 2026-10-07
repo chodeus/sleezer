@@ -84,6 +84,9 @@ public class SlskdDownloadItem
     /// </summary>
     public string? DerivedSubdirectory { get; set; }
 
+    /// <summary>Destination slskd accepted at enqueue; a retried file must land there too.</summary>
+    public string? EnqueueDestination { get; set; }
+
     public IReadOnlyDictionary<string, SlskdFileState> FileStates => _previousFileStates;
 
     // Post-tag identities (local basename → size): tag writes change size and
