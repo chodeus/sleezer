@@ -11,8 +11,26 @@ public sealed class SlskdEventCursor
     private DateTime _newest = DateTime.MinValue;
     private HashSet<Guid> _idsAtNewest = [];
 
-    /// <summary>A full page of unseen events means older unseen ones may sit on the next page.</summary>
-    public bool NeedsNextPage(IReadOnlyCollection<SlskdEventRecord> page, int pageSize)
+    /// <summary>
+    /// Pages until one reaches an event already handled (only events newer than the
+    /// last handled one are unseen, so this ends), then returns the unseen ones oldest first.
+    /// </summary>
+    public async Task<List<SlskdEventRecord>> ReadUnseenAsync(Func<int, int, Task<List<SlskdEventRecord>>> fetchPage, int pageSize)
+    {
+        List<SlskdEventRecord> events = [];
+        for (int offset = 0; ; offset += pageSize)
+        {
+            List<SlskdEventRecord> page = await fetchPage(offset, pageSize);
+            events.AddRange(page);
+            if (!NeedsNextPage(page, pageSize))
+                break;
+        }
+
+        return TakeUnseen(events);
+    }
+
+    // The first poll reads one page, as before the cursor existed.
+    private bool NeedsNextPage(IReadOnlyCollection<SlskdEventRecord> page, int pageSize)
     {
         lock (_lock)
             return _seeded && page.Count >= pageSize && page.All(IsUnseen);

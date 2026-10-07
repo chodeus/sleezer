@@ -5,6 +5,7 @@ using NLog;
 using NzbDrone.Common.Disk;
 using NzbDrone.Common.Extensions;
 using NzbDrone.Common.Instrumentation;
+using NzbDrone.Core.Datastore;
 using NzbDrone.Core.Download;
 using NzbDrone.Core.Download.Clients;
 using NzbDrone.Core.Download.History;
@@ -831,7 +832,8 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 // retry grab carries an -rN suffix and a multi-disc
                 // grab hashes ALL discs — Lidarr tracks both under
                 // the id it was handed at grab time.
-                ID = history.DownloadId
+                ID = history.DownloadId,
+                ResolvedAlbum = GrabbedAlbum(history.DownloadId)
             };
         }
         else if (settings.Inclusive)
@@ -872,8 +874,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         if (item.BatchId == null &&
             dir.Files?.Select(f => f.BatchId).FirstOrDefault(id => !string.IsNullOrEmpty(id)) is { } recoveredBatchId)
         {
-            item.BatchId = recoveredBatchId;
-            item.DiscFoldersMerged = true;
+            item.RecoverBatch(recoveredBatchId);
         }
 
         // With a non-default subdirectory pattern, slskd places transfers
@@ -897,6 +898,26 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         // _postProcessed.TryAdd dedupes against the event-path trigger.
         if (item.AllAcceptedFilesCompleted())
             EnqueuePostProcess(item, settings);
+    }
+
+    // The album the grab resolved, so a rebuilt item derives the same destination.
+    private Album? GrabbedAlbum(string downloadId)
+    {
+        try
+        {
+            EntityHistory? grabbed = _historyService.Find(downloadId, EntityHistoryEventType.Grabbed)
+                .FirstOrDefault(h => h.Album != null && h.Artist != null);
+            if (grabbed == null)
+                return null;
+
+            grabbed.Album.Artist = new LazyLoaded<Artist>(grabbed.Artist);
+            return grabbed.Album;
+        }
+        catch (Exception ex)
+        {
+            _logger.Debug(ex, "Could not load the grabbed album for {DownloadId}", downloadId);
+            return null;
+        }
     }
 
     // Restart re-attach: -rN retry and multi-disc grab ids never equal the
@@ -1052,21 +1073,15 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     }
 
     private const int EventPageSize = 50;
-    private const int MaxEventPages = 4;
 
     private async Task PollEventsAsync(int definitionId, SlskdProviderSettings settings)
     {
         SlskdEventCursor cursor = _eventCursors.GetOrAdd(definitionId, _ => new SlskdEventCursor());
-        List<SlskdEventRecord> events = [];
-        for (int page = 0; page < MaxEventPages; page++)
-        {
-            (List<SlskdEventRecord> batch, _) = await _apiClient.GetEventsAsync(settings, page * EventPageSize, EventPageSize);
-            events.AddRange(batch);
-            if (!cursor.NeedsNextPage(batch, EventPageSize))
-                break;
-        }
+        List<SlskdEventRecord> unseen = await cursor.ReadUnseenAsync(
+            async (offset, limit) => (await _apiClient.GetEventsAsync(settings, offset, limit)).Events,
+            EventPageSize);
 
-        foreach (SlskdEventRecord record in cursor.TakeUnseen(events))
+        foreach (SlskdEventRecord record in unseen)
         {
             try
             {

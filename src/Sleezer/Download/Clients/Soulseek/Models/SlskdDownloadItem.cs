@@ -87,6 +87,17 @@ public class SlskdDownloadItem
     /// <summary>Destination slskd accepted at enqueue; a retried file must land there too.</summary>
     public string? EnqueueDestination { get; set; }
 
+    /// <summary>
+    /// Restores batch state after a restart. A batch always carried the destination
+    /// <see cref="PreferredDestinationFolderName"/> names, so derive it again.
+    /// </summary>
+    public void RecoverBatch(string batchId)
+    {
+        BatchId = batchId;
+        DiscFoldersMerged = true;
+        EnqueueDestination ??= PreferredDestinationFolderName();
+    }
+
     public IReadOnlyDictionary<string, SlskdFileState> FileStates => _previousFileStates;
 
     // Post-tag identities (local basename → size): tag writes change size and

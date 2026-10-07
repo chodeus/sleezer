@@ -1,5 +1,7 @@
 using FluentValidation.Results;
 using NLog;
+using NzbDrone.Core.Datastore;
+using NzbDrone.Core.Music;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
 using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek.Models;
@@ -80,6 +82,28 @@ public class SlskdRetryDestinationTests
 
         Assert.Equal(["Artist - Album"], api.Destinations);
     }
+
+    [Fact]
+    public void a_batch_recovered_after_a_restart_retries_into_the_grab_destination()
+    {
+        EnqueueRecorder api = new();
+        SlskdDownloadItem item = new(new ReleaseInfo
+        {
+            Source = $"[{{\"Filename\":{System.Text.Json.JsonSerializer.Serialize(Track)},\"Size\":1000}}]",
+            Title = "t",
+            DownloadUrl = "u"
+        })
+        {
+            Username = "peer",
+            ResolvedAlbum = new Album { Title = "Album", Artist = new LazyLoaded<Artist>(new Artist { Name = "Artist" }) }
+        };
+
+        item.RecoverBatch("batch-id");
+        new SlskdRetryHandler(api, LogManager.CreateNullLogger())
+            .OnFileStateChanged(item, new SlskdFileState(ErroredFile()), new SlskdProviderSettings { RetryAttempts = 2 });
+
+        Assert.Equal(["Artist - Album"], api.Destinations);
+    }
 }
 
 public class SlskdEventCursorTests
@@ -116,16 +140,43 @@ public class SlskdEventCursorTests
         Assert.Empty(cursor.TakeUnseen(Page(twin, first)));
     }
 
+    // A server holding the given events newest first; counts the pages read.
+    private sealed class EventServer(IEnumerable<SlskdEventRecord> newestFirst)
+    {
+        private readonly List<SlskdEventRecord> _events = [.. newestFirst];
+        public int PagesRead { get; private set; }
+
+        public Task<List<SlskdEventRecord>> Page(int offset, int limit)
+        {
+            PagesRead++;
+            return Task.FromResult(_events.Skip(offset).Take(limit).ToList());
+        }
+    }
+
     [Fact]
-    public void a_full_page_of_unseen_events_asks_for_the_next_page_only_after_the_first_poll()
+    public async Task the_first_poll_reads_one_page()
+    {
+        EventServer server = new(Enumerable.Range(1, 120).Reverse().Select(s => Event(s)));
+
+        List<SlskdEventRecord> unseen = await new SlskdEventCursor().ReadUnseenAsync(server.Page, pageSize: 50);
+
+        Assert.Equal(1, server.PagesRead);
+        Assert.Equal(50, unseen.Count);
+    }
+
+    [Fact]
+    public async Task a_burst_of_new_events_is_drained_across_every_page()
     {
         SlskdEventCursor cursor = new();
-        List<SlskdEventRecord> full = Page(Event(2), Event(1));
-        Assert.False(cursor.NeedsNextPage(full, pageSize: 2));
+        SlskdEventRecord handled = Event(0);
+        cursor.TakeUnseen([handled]);
 
-        cursor.TakeUnseen(full);
-        Assert.True(cursor.NeedsNextPage(Page(Event(4), Event(3)), pageSize: 2));
-        Assert.False(cursor.NeedsNextPage(Page(Event(4), full[0]), pageSize: 2));
-        Assert.False(cursor.NeedsNextPage(Page(Event(5)), pageSize: 2));
+        List<SlskdEventRecord> burst = [.. Enumerable.Range(1, 260).Select(s => Event(s))];
+        EventServer server = new([.. Enumerable.Reverse(burst), handled]);
+
+        List<SlskdEventRecord> unseen = await cursor.ReadUnseenAsync(server.Page, pageSize: 50);
+
+        Assert.Equal(burst, unseen);
+        Assert.Equal(6, server.PagesRead);
     }
 }
