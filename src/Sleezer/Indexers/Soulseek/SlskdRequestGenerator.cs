@@ -54,8 +54,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             AlbumRelease? monitoredRelease = albumReleases?.FirstOrDefault(r => r.Monitored);
             int trackCount = monitoredRelease?.TrackCount
                 ?? (albumReleases?.Any() == true ? albumReleases.Min(x => x.TrackCount) : 0);
-            List<string> tracks = (monitoredRelease ?? albumReleases?.FirstOrDefault(x => x.Tracks?.Value is { Count: > 0 }))
-                ?.Tracks?.Value?.Where(x => !string.IsNullOrEmpty(x.Title)).Select(x => x.Title).ToList() ?? [];
+            List<Track> releaseTracks = ReleaseTracks(albumReleases, monitoredRelease);
+            List<string> tracks = [.. releaseTracks.Where(x => !string.IsNullOrEmpty(x.Title)).Select(x => x.Title)];
 
             _processedSearches.Clear();
 
@@ -77,6 +77,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 ProcessedSearches: _processedSearches,
                 SearchCriteria: searchCriteria)
             {
+                TrackDurations = [.. releaseTracks.Select(t => t.Duration)],
                 TargetVariantTypes = [.. VariantQualifiers.ForgivenVariants(album)],
                 AlbumType = album?.AlbumType
             };
@@ -93,8 +94,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             AlbumRelease? monitoredRelease = albumReleases?.FirstOrDefault(r => r.Monitored);
             int trackCount = monitoredRelease?.TrackCount
                 ?? (albumReleases?.Any() == true ? albumReleases.Min(x => x.TrackCount) : 0);
-            List<string> tracks = (monitoredRelease ?? albumReleases?.FirstOrDefault(x => x.Tracks?.Value is { Count: > 0 }))
-                ?.Tracks?.Value?.Where(x => !string.IsNullOrEmpty(x.Title)).Select(x => x.Title).ToList() ?? [];
+            List<Track> releaseTracks = ReleaseTracks(albumReleases, monitoredRelease);
+            List<string> tracks = [.. releaseTracks.Where(x => !string.IsNullOrEmpty(x.Title)).Select(x => x.Title)];
 
             _processedSearches.Clear();
 
@@ -112,12 +113,17 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 ProcessedSearches: _processedSearches,
                 SearchCriteria: searchCriteria)
             {
+                TrackDurations = [.. releaseTracks.Select(t => t.Duration)],
                 TargetVariantTypes = [.. VariantQualifiers.ForgivenVariants(album)],
                 AlbumType = album?.AlbumType
             };
 
             return _searchPipeline.BuildChain(context, ExecuteSearch);
         }
+
+        // The monitored release's tracks, else those of the first release that lists any.
+        private static List<Track> ReleaseTracks(List<AlbumRelease>? releases, AlbumRelease? monitored) =>
+            (monitored ?? releases?.FirstOrDefault(x => x.Tracks?.Value is { Count: > 0 }))?.Tracks?.Value ?? [];
 
         private IEnumerable<IndexerRequest> ExecuteSearch(SearchQuery query)
         {
@@ -394,7 +400,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 TrackCount: query.TrackCount,
                 Tracks: query.Tracks.Take(50).ToList(),
                 TargetVariantTypes: query.TargetVariantTypes.Count > 0 ? query.TargetVariantTypes.ToList() : null,
-                AlbumType: query.AlbumType));
+                AlbumType: query.AlbumType,
+                TrackDurations: query.TrackDurations.Count > 0 ? query.TrackDurations.Take(200).ToList() : null));
 
             return request;
         }
