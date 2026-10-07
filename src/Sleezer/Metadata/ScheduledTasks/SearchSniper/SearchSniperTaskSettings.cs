@@ -36,9 +36,10 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
                 .GreaterThanOrEqualTo(0)
                 .WithMessage("Stop queue threshold must be 0 or greater.");
 
+            // The upper bound keeps the window's start inside DateTime's range.
             RuleFor(c => c.RecentReleaseDays)
-                .GreaterThanOrEqualTo(0)
-                .WithMessage("Recent Releases First must be 0 or more days.");
+                .InclusiveBetween(0, 36500)
+                .WithMessage("Recent Releases First must be between 0 and 36500 days.");
 
             // Validatw search options
             RuleFor(c => c)
