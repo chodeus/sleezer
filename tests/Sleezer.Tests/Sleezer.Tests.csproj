@@ -386,6 +386,10 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Indexers\SubSonic\SubSonicLoginInterceptor.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Notifications\QueueCleaner\ImportRejections.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Notifications\QueueCleaner\QueueCleanerSettings.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Model\PlaylistItem.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Notifications\PlaylistExport\PlaylistSnapshots.cs"
