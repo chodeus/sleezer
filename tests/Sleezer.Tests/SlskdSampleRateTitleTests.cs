@@ -25,6 +25,8 @@ public class SlskdSampleRateTitleTests
     [Theory]
     [InlineData(24, 96000, "[FLAC 24bit 96kHz]")]
     [InlineData(16, 44100, "[FLAC 16bit 44.1kHz]")]
+    [InlineData(16, 22050, "[FLAC 16bit 22.05kHz]")]
+    [InlineData(16, 11025, "[FLAC 16bit 11.025kHz]")]
     [InlineData(24, 0, "[FLAC 24bit]")]
     public void lossless_titles_carry_the_sample_rate_when_known(int bitDepth, int sampleRate, string expected)
     {

@@ -138,7 +138,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
                 title += $" [{Codec} {calculatedBitrate}kbps]";
             else if (!AudioFormatHelper.IsLossyFormat(Codec) && BitDepth != 0)
                 title += SampleRate > 0
-                    ? $" [{Codec} {BitDepth}bit {(SampleRate / 1000.0).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)}kHz]"
+                    ? $" [{Codec} {BitDepth}bit {(SampleRate / 1000.0).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)}kHz]"
                     : $" [{Codec} {BitDepth}bit]";
             else
                 title += $" [{Codec}]";
