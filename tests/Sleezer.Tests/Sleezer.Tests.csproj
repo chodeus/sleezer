@@ -155,6 +155,8 @@
     <!-- Store account checks; the vendored Qobuz user models are Newtonsoft only. -->
     <Compile Include="..\..\src\Sleezer\Core\Qobuz\QobuzAccountCheck.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\HealthChecks\StoreAccountResult.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\QobuzApiSharp\Models\User\*.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\QobuzApiSharp\Models\Content\Track\FileUrl.cs"
