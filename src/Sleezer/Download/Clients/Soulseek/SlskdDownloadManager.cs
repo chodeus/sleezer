@@ -5,6 +5,7 @@ using NLog;
 using NzbDrone.Common.Disk;
 using NzbDrone.Common.Extensions;
 using NzbDrone.Common.Instrumentation;
+using NzbDrone.Core.Datastore;
 using NzbDrone.Core.Download;
 using NzbDrone.Core.Download.Clients;
 using NzbDrone.Core.Download.History;
@@ -38,8 +39,8 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     private readonly ConcurrentDictionary<int, DateTime> _lastTransferPollTimes = new();
     // Event poll times per definition ID (separate from transfer poll)
     private readonly ConcurrentDictionary<int, DateTime> _lastEventPollTimes = new();
-    // Last-seen event offset per definition ID for incremental polling
-    private readonly ConcurrentDictionary<int, int> _lastEventOffsets = new();
+    // Handled-event cursor per definition ID for incremental polling
+    private readonly ConcurrentDictionary<int, SlskdEventCursor> _eventCursors = new();
     // Empty-directory sweep bookkeeping per definition ID.
     private readonly ConcurrentDictionary<int, DateTime> _lastEmptyDirSweepTimes = new();
     private readonly ConcurrentDictionary<int, int> _lastActiveDownloadCounts = new();
@@ -173,6 +174,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             {
                 // slskd honors the destination itself — no post-download merge.
                 item.DerivedSubdirectory = destination;
+                item.EnqueueDestination = destination;
                 item.DiscFoldersMerged = true;
             }
 
@@ -607,8 +609,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         DateTime lastEvent = _lastEventPollTimes.GetOrAdd(definitionId, DateTime.MinValue);
         if (now - lastEvent >= TimeSpan.FromSeconds(5))
         {
-            int offset = _lastEventOffsets.GetOrAdd(definitionId, 0);
-            await PollEventsAsync(definitionId, settings, offset);
+            await PollEventsAsync(definitionId, settings);
             _lastEventPollTimes[definitionId] = DateTime.UtcNow;
         }
 
@@ -831,7 +832,8 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 // retry grab carries an -rN suffix and a multi-disc
                 // grab hashes ALL discs — Lidarr tracks both under
                 // the id it was handed at grab time.
-                ID = history.DownloadId
+                ID = history.DownloadId,
+                ResolvedAlbum = GrabbedAlbum(history.DownloadId)
             };
         }
         else if (settings.Inclusive)
@@ -863,19 +865,6 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         item.Username ??= username;
         item.SlskdDownloadDirectory = dir;
 
-        // slskd echoes the batch id on every transfer — the only copy that
-        // survives a restart. A batch always carried a destination, so slskd
-        // placed the discs pre-merged: restoring both stops a needless merge
-        // from moving a same-named root folder belonging to another download,
-        // and lets the ConfirmedSubdirectory gate in HandleEventAsync trust a
-        // multi-disc completion.
-        if (item.BatchId == null &&
-            dir.Files?.Select(f => f.BatchId).FirstOrDefault(id => !string.IsNullOrEmpty(id)) is { } recoveredBatchId)
-        {
-            item.BatchId = recoveredBatchId;
-            item.DiscFoldersMerged = true;
-        }
-
         // With a non-default subdirectory pattern, slskd places transfers
         // somewhere the leaf-name guess can't predict — derive it.
         if (item.DerivedSubdirectory == null && item.ConfirmedSubdirectory == null &&
@@ -897,6 +886,26 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         // _postProcessed.TryAdd dedupes against the event-path trigger.
         if (item.AllAcceptedFilesCompleted())
             EnqueuePostProcess(item, settings);
+    }
+
+    // The album the grab resolved, so a rebuilt item derives the same destination.
+    private Album? GrabbedAlbum(string downloadId)
+    {
+        try
+        {
+            EntityHistory? grabbed = _historyService.Find(downloadId, EntityHistoryEventType.Grabbed)
+                .FirstOrDefault(h => h.Album != null && h.Artist != null);
+            if (grabbed == null)
+                return null;
+
+            grabbed.Album.Artist = new LazyLoaded<Artist>(grabbed.Artist);
+            return grabbed.Album;
+        }
+        catch (Exception ex)
+        {
+            _logger.Debug(ex, "Could not load the grabbed album for {DownloadId}", downloadId);
+            return null;
+        }
     }
 
     // Restart re-attach: -rN retry and multi-disc grab ids never equal the
@@ -1051,25 +1060,17 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }
     }
 
-    private async Task PollEventsAsync(int definitionId, SlskdProviderSettings settings, int offset)
+    private const int EventPageSize = 50;
+
+    private async Task PollEventsAsync(int definitionId, SlskdProviderSettings settings)
     {
-        (List<SlskdEventRecord> events, _) = await _apiClient.GetEventsAsync(settings, offset, 50);
-        if (events.Count == 0)
-            return;
-
-        foreach (SlskdEventRecord record in events)
-        {
-            try
-            {
-                await HandleEventAsync(definitionId, settings, record);
-            }
-            catch (Exception ex)
-            {
-                _logger.Warn(ex, "[def={DefinitionId}] Failed to process event {EventType} ({EventId})", definitionId, record.Type, record.Id);
-            }
-        }
-
-        _lastEventOffsets[definitionId] = offset + events.Count;
+        SlskdEventCursor cursor = _eventCursors.GetOrAdd(definitionId, _ => new SlskdEventCursor());
+        await cursor.PollAsync(
+            async (offset, limit) => (await _apiClient.GetEventsAsync(settings, offset, limit)).Events,
+            EventPageSize,
+            record => HandleEventAsync(definitionId, settings, record),
+            (record, ex, willRetry) => _logger.Warn(ex, "[def={DefinitionId}] Failed to process event {EventType} ({EventId}); {Next}",
+                definitionId, record.Type, record.Id, willRetry ? "retrying on the next poll" : "giving up"));
     }
 
     private async Task HandleEventAsync(int definitionId, SlskdProviderSettings settings, SlskdEventRecord record)
