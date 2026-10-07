@@ -30,7 +30,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
         /// Albums released in [since, until] still missing tracks, newest first: any missing track
         /// (Lidarr's Wanted/Missing), or with <paramref name="partialOnly"/> only albums that have some files.
         /// </summary>
-        public List<Album> GetRecentAlbums(DateTime since, DateTime until, bool partialOnly, int limit)
+        public List<Album> GetRecentAlbums(DateTime since, DateTime until, bool partialOnly, int offset, int limit)
         {
             SqlBuilder query = MonitoredReleaseTracks()
                 .Where<Album>(a => a.ReleaseDate >= since)
@@ -40,7 +40,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
             if (partialOnly)
                 query = query.Having($"{TracksWithFiles} > 0");
 
-            return PopulateArtists(Query(query.OrderBy($@"""Albums"".""ReleaseDate"" DESC LIMIT {limit}")));
+            return PopulateArtists(Query(query.OrderBy($@"""Albums"".""ReleaseDate"" DESC, ""Albums"".""Id"" DESC LIMIT {limit} OFFSET {offset}")));
         }
 
         public (int minId, int maxId) GetCutoffUnmetAlbumsIdRange(Dictionary<int, List<int>> profileCutoffs) =>

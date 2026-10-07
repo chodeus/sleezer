@@ -137,7 +137,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
             HashSet<int> queuedAlbumIds = GetQueuedAlbumIds();
             int candidateTarget = Math.Min(targetCount * 10, 500);
 
-            List<Album> selectedAlbums = PickRecentAlbums(settings, queuedAlbumIds, targetCount, candidateTarget);
+            List<Album> selectedAlbums = PickRecentAlbums(settings, queuedAlbumIds, targetCount);
             if (selectedAlbums.Count < targetCount)
             {
                 HashSet<int> skipIds = [.. queuedAlbumIds, .. selectedAlbums.Select(a => a.Id)];
@@ -451,16 +451,23 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
         }
 
         // Newest first; the request cache still spaces out repeat searches of one album.
-        private List<Album> PickRecentAlbums(SearchSniperTaskSettings settings, HashSet<int> queuedAlbumIds, int count, int candidateLimit)
+        private List<Album> PickRecentAlbums(SearchSniperTaskSettings settings, HashSet<int> queuedAlbumIds, int count)
         {
             if (settings.RecentReleaseDays <= 0 || !(settings.SearchMissing || settings.SearchMissingTracks))
                 return [];
 
             DateTime now = DateTime.UtcNow;
-            List<Album> picked = [.. _repositoryHelper
-                .GetRecentAlbums(now.AddDays(-settings.RecentReleaseDays), now, partialOnly: !settings.SearchMissing, candidateLimit)
-                .Where(a => !queuedAlbumIds.Contains(a.Id) && !IsAlbumCached(a))
-                .Take(count)];
+            DateTime since = now.AddDays(-settings.RecentReleaseDays);
+            List<Album> picked = [];
+
+            // Pages past queued and cached albums, so they can't starve the window while eligible ones remain.
+            for (int offset = 0; picked.Count < count; offset += BatchSize)
+            {
+                List<Album> batch = _repositoryHelper.GetRecentAlbums(since, now, partialOnly: !settings.SearchMissing, offset, BatchSize);
+                picked.AddRange(batch.Where(a => !queuedAlbumIds.Contains(a.Id) && !IsAlbumCached(a)).Take(count - picked.Count));
+                if (batch.Count < BatchSize)
+                    break;
+            }
 
             _logger.Debug("Picked {Count} release(s) from the last {Days} days first", picked.Count, settings.RecentReleaseDays);
             return picked;
