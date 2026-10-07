@@ -18,10 +18,10 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         public bool GetBoolState(string key) =>
             GetAllBoolStates().GetValueOrDefault(key);
 
-        public void SetBoolState(string key, bool value)
+        public void SetBoolState(string key, object? value)
         {
             Dictionary<string, bool> states = GetAllBoolStates();
-            states[key] = value;
+            states[key] = FieldValue.ToBool(value);
             StateJson = JsonSerializer.Serialize(states);
         }
 
@@ -67,7 +67,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
                         },
                         PropertyType = typeof(bool),
                         GetterFunc = m => ((TSettings)m).GetBoolState(key),
-                        SetterFunc = (m, v) => ((TSettings)m).SetBoolState(key, Convert.ToBoolean(v)),
+                        SetterFunc = (m, v) => ((TSettings)m).SetBoolState(key, v),
                     }
                     : new FieldMapping
                     {
@@ -82,7 +82,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
                         },
                         PropertyType = typeof(string),
                         GetterFunc = m => ((TSettings)m).GetAllBoolStates().TryGetValue(key, out bool v) ? v : string.Empty,
-                        SetterFunc = (m, v) => ((TSettings)m).SetBoolState(key, Convert.ToBoolean(v)),
+                        SetterFunc = (m, v) => ((TSettings)m).SetBoolState(key, v),
                     });
             }
 
