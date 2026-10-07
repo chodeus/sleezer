@@ -12,6 +12,12 @@ public class BlockedTermTests
     [InlineData("Adele 25", true)]
     [InlineData("Kendrick Lamar DAMN", true)]
     [InlineData("Radiohead OK Computer", false)]
+    [InlineData("Jay-Z Reasonable Doubt", true)]
+    [InlineData("Prince Purple Rain", true)]
+    [InlineData("In the Navy 1979", true)]
+    [InlineData("From Zero Deluxe", true)]
+    [InlineData("Paper Kingdom EP", true)]
+    [InlineData("Prince 1999", false)]
     public void ContainsBlockedTerms_detects_server_filtered_terms(string query, bool expected)
     {
         Assert.Equal(expected, SlskdTextProcessor.ContainsBlockedTerms(query));

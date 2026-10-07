@@ -591,11 +591,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.CustomLidarr
 
         private static MediaCover MapImage(ImageResource arg)
         {
-            return new MediaCover
-            {
-                Url = arg.Url,
-                CoverType = MapCoverType(arg.CoverType)
-            };
+            return new MediaCover(MapCoverType(arg.CoverType), arg.Url);
         }
 
         private static Links MapLink(LinkResource arg) => new()
