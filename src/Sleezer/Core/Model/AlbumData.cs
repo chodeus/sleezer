@@ -34,6 +34,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
         public int Bitrate { get; set; }
 
         public int BitDepth { get; set; }
+        public int SampleRate { get; set; }
         public long Duration { get; set; }
 
         // Soulseek
@@ -136,7 +137,9 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
             if (AudioFormatHelper.IsLossyFormat(Codec) && calculatedBitrate != 0)
                 title += $" [{Codec} {calculatedBitrate}kbps]";
             else if (!AudioFormatHelper.IsLossyFormat(Codec) && BitDepth != 0)
-                title += $" [{Codec} {BitDepth}bit]";
+                title += SampleRate > 0
+                    ? $" [{Codec} {BitDepth}bit {(SampleRate / 1000.0).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)}kHz]"
+                    : $" [{Codec} {BitDepth}bit]";
             else
                 title += $" [{Codec}]";
 
