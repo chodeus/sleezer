@@ -1,8 +1,10 @@
 using System;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using NzbDrone.Core.HealthCheck;
 using NzbDrone.Plugin.Sleezer.Core.Deezer;
 using NzbDrone.Plugin.Sleezer.Core.Qobuz;
+using NzbDrone.Plugin.Sleezer.HealthChecks;
 using QobuzApiSharp.Models.User;
 using Xunit;
 
@@ -81,4 +83,18 @@ public class StoreAccountCheckTests
         Assert.Null(DeezerArlCheck.StreamingProblem(DeezerUser(0, """{ "web_hq": false }""")));
         Assert.Null(DeezerArlCheck.StreamingProblem(null));
     }
+
+    [Fact]
+    public void Store_account_problems_become_one_error_with_a_wiki_link()
+    {
+        HealthCheck result = StoreAccountResult.From(typeof(StoreAccountCheckTests), ["Qobuz lapsed.", null, "Deezer free."]);
+
+        Assert.Equal(HealthCheckResult.Error, result.Type);
+        Assert.Equal("Qobuz lapsed. Deezer free.", result.Message);
+        Assert.Equal("https://github.com/chodeus/sleezer#troubleshooting-%EF%B8%8F", result.WikiUrl?.FullUri);
+    }
+
+    [Fact]
+    public void No_store_account_problem_is_ok() =>
+        Assert.Equal(HealthCheckResult.Ok, StoreAccountResult.From(typeof(StoreAccountCheckTests), [null, null]).Type);
 }

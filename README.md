@@ -403,6 +403,7 @@ Best results come with artists that are linked across multiple metadata systems,
 ## Troubleshooting 🛠️
 
 * **Deezer downloads fail / 403s** — rotate the ARL. Single-ARL bans are the most common cause.
+* **Health warning: a Qobuz or Deezer account can no longer stream** — the account on an enabled indexer has no paid plan any more. Qobuz then serves 30-second samples, and Deezer downloads fail at 320 kbps and FLAC. Renew the plan, or turn the indexer off.
 * **Slskd download path permissions** — Lidarr needs read/write on the Slskd download folder. For Docker, check volume mounts and PUID/PGID.
 * **FFmpeg issues** — make sure FFmpeg is on PATH, or set its location explicitly in FFmpeg settings. If it's still failing, enable Lidarr's Trace logging and look for the full ffmpeg command line in the log.
 * **Metadata not being added** — confirm your files are in a supported format. If you're using FFmpeg conversion, check the output format is one Lidarr accepts (AAC in MP4, FLAC, MP3, Opus, ALAC).
