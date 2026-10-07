@@ -319,7 +319,7 @@ public class SlskdDownloadItem
             return;
 
         // Before CompareFileStates: it can raise FileStateChanged, and a retry needs the destination.
-        if (BatchId == null && directory.Files?.Select(f => f.BatchId).FirstOrDefault(id => !string.IsNullOrEmpty(id)) is { } batchId)
+        if (BatchId == null && directory.Files?.Where(f => OwnsAcceptedFile(f.Filename)).Select(f => f.BatchId).FirstOrDefault(id => !string.IsNullOrEmpty(id)) is { } batchId)
             RecoverBatch(batchId);
 
         CompareFileStates(directory);

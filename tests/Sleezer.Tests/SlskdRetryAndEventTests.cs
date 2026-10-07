@@ -108,6 +108,23 @@ public class SlskdRetryDestinationTests
 
         Assert.Equal(["Artist - Album"], api.Destinations);
     }
+
+    [Fact]
+    public void a_batch_id_on_another_item_s_file_is_not_adopted()
+    {
+        SlskdDownloadItem item = new(new ReleaseInfo
+        {
+            Source = $"[{{\"Filename\":{System.Text.Json.JsonSerializer.Serialize(Track)},\"Size\":1000}}]",
+            Title = "t",
+            DownloadUrl = "u"
+        });
+        SlskdDownloadFile foreign = ErroredFile(batchId: "other-batch") with { Filename = @"@@peer\Artist\Album\99.flac" };
+
+        item.SlskdDownloadDirectory = new SlskdDownloadDirectory(@"@@peer\Artist\Album", 2, [ErroredFile(), foreign]);
+
+        Assert.Null(item.BatchId);
+        Assert.Null(item.EnqueueDestination);
+    }
 }
 
 public class SlskdEventCursorTests
