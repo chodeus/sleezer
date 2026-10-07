@@ -58,10 +58,10 @@ namespace NzbDrone.Plugin.Sleezer.Notifications.Queue
         [FieldOption(Label = "Disabled", Hint = "No cleaning or organization will be performed during import.")]
         Disabled,
 
-        [FieldOption(Label = "When Missing Tracks", Hint = "Clean the album if it has missing tracks.")]
+        [FieldOption(Label = "When Missing Tracks", Hint = "Clean the album if tracks are missing, or it has fewer than the release already in the library.")]
         WhenMissingTracks,
 
-        [FieldOption(Label = "When Album Info Incomplete", Hint = "Clean the album if the metadata is incomplete or insufficient.")]
+        [FieldOption(Label = "When Album Info Incomplete", Hint = "Clean the album if Lidarr can't match it closely enough to a release.")]
         WhenAlbumInfoIncomplete,
 
         [FieldOption(Label = "Always", Hint = "Clean the album, regardless of metadata or track completeness.")]

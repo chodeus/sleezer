@@ -8,7 +8,6 @@ using NzbDrone.Core.Music;
 using NzbDrone.Core.Notifications;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Core.ThingiProvider.Events;
-using System.Text;
 using System.Text.RegularExpressions;
 using NzbDrone.Plugin.Sleezer.Core.Model;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
@@ -18,7 +17,6 @@ namespace NzbDrone.Plugin.Sleezer.Notifications.PlaylistExport;
 public interface IPlaylistExportService
 {
     void RefreshSchema();
-    void FetchAndStore(int listId);
     void GeneratePlaylists(PlaylistExportSettings settings);
     string? DetectCommonMusicPath();
 }
@@ -118,7 +116,7 @@ public sealed partial class PlaylistExportService : IPlaylistExportService,
                 },
                 PropertyType = typeof(bool),
                 GetterFunc = m => ((PlaylistExportSettings)m).GetBoolState(key),
-                SetterFunc = (m, v) => ((PlaylistExportSettings)m).SetBoolState(key, Convert.ToBoolean(v)),
+                SetterFunc = (m, v) => ((PlaylistExportSettings)m).SetBoolState(key, v),
             });
         }
 
@@ -139,28 +137,36 @@ public sealed partial class PlaylistExportService : IPlaylistExportService,
         return FindCommonRoot(paths);
     }
 
-    public void FetchAndStore(int listId)
+    private PlaylistSnapshot? CurrentSnapshot(IImportList list, Dictionary<int, PlaylistSnapshot> snapshots)
     {
-        IImportList? list = _importListFactory.GetAvailableProviders()
-            .FirstOrDefault(l => l.Definition.Id == listId);
+        int listId = list.Definition.Id;
+        PlaylistSnapshot? stored = snapshots.GetValueOrDefault(listId);
+        PlaylistSnapshot? current = PlaylistSnapshots.Resolve(stored, list.MinRefreshInterval, DateTime.UtcNow, list.Definition.Name, () => Fetch(list));
 
-        if (list == null)
+        if (current != null && !ReferenceEquals(current, stored))
         {
-            _logger.Warn($"Import list ID {listId} not found");
-            return;
+            snapshots[listId] = current;
+            SaveSnapshots(snapshots);
+            _logger.Info("Stored {Count} item(s) for '{List}'", current.Items.Count, list.Definition.Name);
         }
 
-        _logger.Debug($"Fetching items from '{list.Definition.Name}'");
+        return current;
+    }
 
-        List<PlaylistItem> items = list is IPlaylistTrackSource trackSource
-            ? trackSource.FetchTrackLevelItems()
-            : FetchAlbumLevelItems(list);
-
-        Dictionary<int, PlaylistSnapshot> snapshots = GetSnapshots();
-        snapshots[listId] = new PlaylistSnapshot(list.Definition.Name, items, DateTime.UtcNow);
-        SaveSnapshots(snapshots);
-
-        _logger.Info($"Stored {items.Count} item(s) for '{list.Definition.Name}'");
+    private List<PlaylistItem>? Fetch(IImportList list)
+    {
+        _logger.Debug("Fetching items from '{List}'", list.Definition.Name);
+        try
+        {
+            return list is IPlaylistTrackSource trackSource
+                ? trackSource.FetchTrackLevelItems()
+                : FetchAlbumLevelItems(list);
+        }
+        catch (Exception ex)
+        {
+            _logger.Warn(ex, "Fetching '{List}' failed; keeping its previous items", list.Definition.Name);
+            return null;
+        }
     }
 
     public void GeneratePlaylists(PlaylistExportSettings settings)
@@ -207,9 +213,11 @@ public sealed partial class PlaylistExportService : IPlaylistExportService,
                 continue;
             }
 
-            if (!snapshots.TryGetValue(listId, out PlaylistSnapshot? snapshot))
+            IImportList? list = allLists.FirstOrDefault(l => l.Definition.Id == listId);
+            PlaylistSnapshot? snapshot = list == null ? null : CurrentSnapshot(list, snapshots);
+            if (snapshot == null)
             {
-                _logger.Warn($"No snapshot for list {listId}: fetch has not run yet for this list.");
+                _logger.Debug("No items for import list {ListId} yet, skipping", listId);
                 continue;
             }
 
@@ -306,23 +314,13 @@ public sealed partial class PlaylistExportService : IPlaylistExportService,
 
     private void WriteM3u8(string outputPath, string listName, List<TrackFile> files, bool useRelative)
     {
-        string filename = SanitizeFilename(listName) + ".m3u8";
-        string fullPath = Path.Combine(outputPath, filename);
+        string fullPath = Path.Combine(outputPath, SanitizeFilename(listName) + ".m3u8");
+        int written = PlaylistFile.Write(fullPath, listName, files.Select(f => f.Path), outputPath, useRelative);
 
-        List<string> lines = ["#EXTM3U", $"#PLAYLIST:{listName}"];
-
-        foreach (TrackFile tf in files.Where(f => File.Exists(f.Path)))
-        {
-            string displayName = Path.GetFileNameWithoutExtension(tf.Path);
-            string trackPath = useRelative
-                ? Path.GetRelativePath(outputPath, tf.Path)
-                : tf.Path;
-            lines.Add($"#EXTINF:-1,{displayName}");
-            lines.Add(trackPath);
-        }
-
-        File.WriteAllLines(fullPath, lines, Encoding.UTF8);
-        _logger.Info($"Written {files.Count} track(s) to '{fullPath}'");
+        if (written == 0)
+            _logger.Debug("Skipping '{List}': none of its {Count} track(s) are on disk", listName, files.Count);
+        else
+            _logger.Info("Written {Count} track(s) to '{Path}'", written, fullPath);
     }
 
     private static string? FindCommonRoot(List<string> paths)
