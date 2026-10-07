@@ -276,7 +276,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Lastfm
         {
             return images?
                 .Where(i => !string.IsNullOrEmpty(i.Url))
-                .Select(i => new MediaCover(MapCoverType(i.Size + $"{FlexibleHttpDispatcher.UA_PARAM}={userAgent}", isArtist), i.Url))
+                .Select(i => new MediaCover(MapCoverType(i.Size, isArtist), FlexibleHttpDispatcher.WithUserAgent(i.Url, userAgent)))
                 .ToList() ?? [];
         }
 
