@@ -94,32 +94,12 @@ namespace NzbDrone.Plugin.Sleezer.Notifications.QueueCleaner
                 }
             }
 
-            switch (CheckImport(trackedDownload))
-            {
-                case ImportFailureReason.FailedBecauseOfMissingTracks:
-                    HandleFailure(trackedDownload, Settings.ImportCleaningOption, ImportCleaningOptions.WhenMissingTracks);
-                    break;
-
-                case ImportFailureReason.FailedBecauseOfInsufficientInformation:
-                    HandleFailure(trackedDownload, Settings.ImportCleaningOption, ImportCleaningOptions.WhenAlbumInfoIncomplete);
-                    break;
-
-                case ImportFailureReason.Both:
-                    if (Settings.ImportCleaningOption == (int)ImportCleaningOptions.Disabled)
-                        break;
-                    HandleFailure(trackedDownload, Settings.ImportCleaningOption, ImportCleaningOptions.Always);
-                    break;
-
-                case ImportFailureReason.DidNotFail:
-                    break;
-            }
+            if (ImportRejections.ShouldClean((ImportCleaningOptions)Settings.ImportCleaningOption, trackedDownload.StatusMessages.SelectMany(sm => sm.Messages)))
+                HandleFailure(trackedDownload);
         }
 
-        private void HandleFailure(TrackedDownload trackedDownload, int importCleaningOption, ImportCleaningOptions requiredOption)
+        private void HandleFailure(TrackedDownload trackedDownload)
         {
-            if (importCleaningOption != (int)requiredOption && importCleaningOption != (int)ImportCleaningOptions.Always)
-                return;
-
             if (Settings.RenameOption != (int)RenameOptions.DoNotRename && Rename(trackedDownload))
             {
                 Retry(trackedDownload);
@@ -277,20 +257,6 @@ namespace NzbDrone.Plugin.Sleezer.Notifications.QueueCleaner
             _completedDownloadService.Import(item);
         }
 
-        private static ImportFailureReason CheckImport(TrackedDownload trackedDownload)
-        {
-            if (trackedDownload.State != TrackedDownloadState.ImportFailed)
-                return ImportFailureReason.DidNotFail;
-
-            return ImportRejections.Classify(trackedDownload.StatusMessages.SelectMany(sm => sm.Messages)) switch
-            {
-                (true, true) => ImportFailureReason.Both,
-                (true, _) => ImportFailureReason.FailedBecauseOfMissingTracks,
-                (_, true) => ImportFailureReason.FailedBecauseOfInsufficientInformation,
-                _ => ImportFailureReason.DidNotFail
-            };
-        }
-
         public override void OnImportFailure(AlbumDownloadMessage message) => base.OnImportFailure(message);
 
         public override ValidationResult Test()
@@ -312,14 +278,6 @@ namespace NzbDrone.Plugin.Sleezer.Notifications.QueueCleaner
             }
 
             return result;
-        }
-
-        public enum ImportFailureReason
-        {
-            DidNotFail,
-            Both,
-            FailedBecauseOfMissingTracks,
-            FailedBecauseOfInsufficientInformation
         }
     }
 }

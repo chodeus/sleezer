@@ -1,3 +1,5 @@
+using NzbDrone.Plugin.Sleezer.Notifications.Queue;
+
 namespace NzbDrone.Plugin.Sleezer.Notifications.QueueCleaner
 {
     /// <summary>Sorts Lidarr's import rejection messages into the two failures Queue Cleaner acts on.</summary>
@@ -22,6 +24,18 @@ namespace NzbDrone.Plugin.Sleezer.Notifications.QueueCleaner
         {
             List<string> all = [.. messages];
             return (all.Any(m => ContainsAny(m, MissingTracks)), all.Any(m => ContainsAny(m, PoorMatch)));
+        }
+
+        public static bool ShouldClean(ImportCleaningOptions option, IEnumerable<string> messages)
+        {
+            (bool missingTracks, bool poorMatch) = Classify(messages);
+            return option switch
+            {
+                ImportCleaningOptions.WhenMissingTracks => missingTracks,
+                ImportCleaningOptions.WhenAlbumInfoIncomplete => poorMatch,
+                ImportCleaningOptions.Always => missingTracks || poorMatch,
+                _ => false
+            };
         }
 
         private static bool ContainsAny(string message, string[] phrases) =>
