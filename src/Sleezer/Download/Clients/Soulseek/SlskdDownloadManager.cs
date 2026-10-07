@@ -865,18 +865,6 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         item.Username ??= username;
         item.SlskdDownloadDirectory = dir;
 
-        // slskd echoes the batch id on every transfer — the only copy that
-        // survives a restart. A batch always carried a destination, so slskd
-        // placed the discs pre-merged: restoring both stops a needless merge
-        // from moving a same-named root folder belonging to another download,
-        // and lets the ConfirmedSubdirectory gate in HandleEventAsync trust a
-        // multi-disc completion.
-        if (item.BatchId == null &&
-            dir.Files?.Select(f => f.BatchId).FirstOrDefault(id => !string.IsNullOrEmpty(id)) is { } recoveredBatchId)
-        {
-            item.RecoverBatch(recoveredBatchId);
-        }
-
         // With a non-default subdirectory pattern, slskd places transfers
         // somewhere the leaf-name guess can't predict — derive it.
         if (item.DerivedSubdirectory == null && item.ConfirmedSubdirectory == null &&
@@ -1077,21 +1065,12 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     private async Task PollEventsAsync(int definitionId, SlskdProviderSettings settings)
     {
         SlskdEventCursor cursor = _eventCursors.GetOrAdd(definitionId, _ => new SlskdEventCursor());
-        List<SlskdEventRecord> unseen = await cursor.ReadUnseenAsync(
+        await cursor.PollAsync(
             async (offset, limit) => (await _apiClient.GetEventsAsync(settings, offset, limit)).Events,
-            EventPageSize);
-
-        foreach (SlskdEventRecord record in unseen)
-        {
-            try
-            {
-                await HandleEventAsync(definitionId, settings, record);
-            }
-            catch (Exception ex)
-            {
-                _logger.Warn(ex, "[def={DefinitionId}] Failed to process event {EventType} ({EventId})", definitionId, record.Type, record.Id);
-            }
-        }
+            EventPageSize,
+            record => HandleEventAsync(definitionId, settings, record),
+            (record, ex, willRetry) => _logger.Warn(ex, "[def={DefinitionId}] Failed to process event {EventType} ({EventId}); {Next}",
+                definitionId, record.Type, record.Id, willRetry ? "retrying on the next poll" : "giving up"));
     }
 
     private async Task HandleEventAsync(int definitionId, SlskdProviderSettings settings, SlskdEventRecord record)

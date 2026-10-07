@@ -87,11 +87,9 @@ public class SlskdDownloadItem
     /// <summary>Destination slskd accepted at enqueue; a retried file must land there too.</summary>
     public string? EnqueueDestination { get; set; }
 
-    /// <summary>
-    /// Restores batch state after a restart. A batch always carried the destination
-    /// <see cref="PreferredDestinationFolderName"/> names, so derive it again.
-    /// </summary>
-    public void RecoverBatch(string batchId)
+    // slskd echoes the batch id on every transfer, the only copy that survives a restart. A batch always
+    // carried a destination, so its discs are already merged; re-merging could move another download's folder.
+    private void RecoverBatch(string batchId)
     {
         BatchId = batchId;
         DiscFoldersMerged = true;
@@ -319,6 +317,10 @@ public class SlskdDownloadItem
 
         if (_remoteDirectories.TryGetValue(directory.Directory, out SlskdDownloadDirectory? existing) && existing == directory)
             return;
+
+        // Before CompareFileStates: it can raise FileStateChanged, and a retry needs the destination.
+        if (BatchId == null && directory.Files?.Select(f => f.BatchId).FirstOrDefault(id => !string.IsNullOrEmpty(id)) is { } batchId)
+            RecoverBatch(batchId);
 
         CompareFileStates(directory);
         _remoteDirectories[directory.Directory] = directory;

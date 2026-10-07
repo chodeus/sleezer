@@ -43,7 +43,7 @@ public class SlskdRetryDestinationTests
 
     private const string Track = @"@@peer\Artist\Album\01.flac";
 
-    private static SlskdDownloadFile ErroredFile() => new(
+    private static SlskdDownloadFile ErroredFile(string? batchId = null) => new(
         Id: "id",
         Username: "peer",
         Direction: "Download",
@@ -60,7 +60,8 @@ public class SlskdRetryDestinationTests
         ElapsedTime: TimeSpan.Zero,
         PercentComplete: 0,
         RemainingTime: TimeSpan.Zero,
-        EndedAt: null);
+        EndedAt: null,
+        BatchId: batchId);
 
     [Fact]
     public void retry_lands_in_the_destination_the_album_was_enqueued_to()
@@ -83,10 +84,14 @@ public class SlskdRetryDestinationTests
         Assert.Equal(["Artist - Album"], api.Destinations);
     }
 
+    // A file that is already failed raises FileStateChanged as the directory is attached, so the
+    // batch must be recovered first.
     [Fact]
     public void a_batch_recovered_after_a_restart_retries_into_the_grab_destination()
     {
         EnqueueRecorder api = new();
+        SlskdProviderSettings settings = new() { RetryAttempts = 2 };
+        SlskdRetryHandler handler = new(api, LogManager.CreateNullLogger());
         SlskdDownloadItem item = new(new ReleaseInfo
         {
             Source = $"[{{\"Filename\":{System.Text.Json.JsonSerializer.Serialize(Track)},\"Size\":1000}}]",
@@ -97,10 +102,9 @@ public class SlskdRetryDestinationTests
             Username = "peer",
             ResolvedAlbum = new Album { Title = "Album", Artist = new LazyLoaded<Artist>(new Artist { Name = "Artist" }) }
         };
+        item.FileStateChanged += (_, fileState) => handler.OnFileStateChanged(item, fileState, settings);
 
-        item.RecoverBatch("batch-id");
-        new SlskdRetryHandler(api, LogManager.CreateNullLogger())
-            .OnFileStateChanged(item, new SlskdFileState(ErroredFile()), new SlskdProviderSettings { RetryAttempts = 2 });
+        item.SlskdDownloadDirectory = new SlskdDownloadDirectory(@"@@peer\Artist\Album", 1, [ErroredFile(batchId: "batch-id")]);
 
         Assert.Equal(["Artist - Album"], api.Destinations);
     }
@@ -178,5 +182,53 @@ public class SlskdEventCursorTests
 
         Assert.Equal(burst, unseen);
         Assert.Equal(6, server.PagesRead);
+    }
+
+    [Fact]
+    public async Task an_event_sharing_the_newest_timestamp_on_the_next_page_is_still_read()
+    {
+        SlskdEventCursor cursor = new();
+        SlskdEventRecord handled = Event(5);
+        cursor.TakeUnseen([handled]);
+
+        SlskdEventRecord fresh = Event(6), twin = Event(5);
+        EventServer server = new([fresh, handled, twin, Event(4)]);
+
+        Assert.Equal([twin, fresh], await cursor.ReadUnseenAsync(server.Page, pageSize: 2));
+    }
+
+    [Fact]
+    public async Task a_failed_event_is_retried_on_later_polls_then_dropped()
+    {
+        SlskdEventCursor cursor = new();
+        SlskdEventRecord failing = Event(1);
+        EventServer server = new([failing]);
+        List<bool> willRetry = [];
+        int attempts = 0;
+
+        for (int poll = 0; poll < SlskdEventCursor.MaxAttempts + 1; poll++)
+        {
+            await cursor.PollAsync(server.Page, 50,
+                _ => { attempts++; throw new InvalidOperationException("slskd unavailable"); },
+                (_, _, retry) => willRetry.Add(retry));
+        }
+
+        Assert.Equal(SlskdEventCursor.MaxAttempts, attempts);
+        Assert.Equal([true, true, false], willRetry);
+    }
+
+    [Fact]
+    public async Task a_poll_started_while_another_runs_is_skipped()
+    {
+        SlskdEventCursor cursor = new();
+        EventServer server = new([Event(1)]);
+        TaskCompletionSource release = new();
+
+        Task first = cursor.PollAsync(server.Page, 50, _ => release.Task, (_, _, _) => { });
+        await cursor.PollAsync(server.Page, 50, _ => Task.CompletedTask, (_, _, _) => { });
+        release.SetResult();
+        await first;
+
+        Assert.Equal(1, server.PagesRead);
     }
 }
