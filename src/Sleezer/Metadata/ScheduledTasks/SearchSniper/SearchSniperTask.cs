@@ -58,7 +58,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
         public override Type CommandType => typeof(SearchSniperCommand);
 
         public override ProviderMessage Message => new(
-            "Automated search trigger that randomly selects albums for periodic scanning based on your search criteria. " +
+            "Automated search trigger that selects albums for periodic scanning based on your search criteria: recent releases first when Recent Releases First is set, the rest at random. " +
             "Enable this metadata provider to start automatic searches.",
             ProviderMessageType.Info);
 
