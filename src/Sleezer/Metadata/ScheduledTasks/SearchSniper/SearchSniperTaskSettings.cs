@@ -36,6 +36,11 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
                 .GreaterThanOrEqualTo(0)
                 .WithMessage("Stop queue threshold must be 0 or greater.");
 
+            // The upper bound keeps the window's start inside DateTime's range.
+            RuleFor(c => c.RecentReleaseDays)
+                .InclusiveBetween(0, 36500)
+                .WithMessage("Recent Releases First must be between 0 and 36500 days.");
+
             // Validatw search options
             RuleFor(c => c)
                 .Must(settings => settings.SearchMissing || settings.SearchQualityCutoffNotMet || settings.SearchMissingTracks)
@@ -47,7 +52,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
     {
         protected static readonly AbstractValidator<SearchSniperTaskSettings> Validator = new SearchSniperSettingsValidator();
 
-        [FieldDefinition(1, Label = "Min Refresh Interval", Type = FieldType.Textbox, Unit = "minutes", Placeholder = "60", HelpText = "The minimum time between searches for random albums.")]
+        [FieldDefinition(1, Label = "Min Refresh Interval", Type = FieldType.Textbox, Unit = "minutes", Placeholder = "60", HelpText = "The minimum time between searches.")]
         public int RefreshInterval { get; set; } = 60;
 
         [FieldDefinition(2, Label = "Cache Directory", Type = FieldType.Path, Placeholder = "/config/cache", HelpText = "The directory where cached data will be stored. Leave empty for Memory cache.")]
@@ -56,7 +61,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
         [FieldDefinition(3, Label = "Cache Retention Time", Type = FieldType.Number, Placeholder = "7", HelpText = "The number of days to retain cached data.")]
         public int CacheRetentionDays { get; set; } = 7;
 
-        [FieldDefinition(4, Label = "Picks Per Interval", Type = FieldType.Number, Placeholder = "5", HelpText = "The number of random albums to search for during each refresh interval.")]
+        [FieldDefinition(4, Label = "Picks Per Interval", Type = FieldType.Number, Placeholder = "5", HelpText = "The number of albums to search for during each refresh interval. Recent Releases First fills these first; the rest are picked at random.")]
         public int RandomPicksPerInterval { get; set; } = 5;
 
         [FieldDefinition(5, Label = "Pause When Queued", Type = FieldType.Number, Placeholder = "0", HelpText = "Pause searching when the queue reaches this number. Set to 0 to disable.")]
@@ -76,6 +81,9 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
 
         [FieldDefinition(10, Label = "Cutoff Not Met", Type = FieldType.Checkbox, HelpText = "Automatically search for albums whose quality or custom format score is below the profile's cutoff.")]
         public bool SearchQualityCutoffNotMet { get; set; }
+
+        [FieldDefinition(11, Label = "Recent Releases First", Type = FieldType.Number, Unit = "days", Placeholder = "0", HelpText = "Pick Missing and Missing Tracks albums released within this many days first, newest first; the rest of the picks stay random. 0 turns it off.")]
+        public int RecentReleaseDays { get; set; }
 
         public string BaseUrl { get; set; } = string.Empty;
 

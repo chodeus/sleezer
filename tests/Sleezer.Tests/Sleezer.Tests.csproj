@@ -403,6 +403,13 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Utilities\UserAgentValidator.cs"
              LinkBase="SourceUnderTest" />
+    <!-- Search Sniper settings rules; CacheType comes from CacheService, which needs FileCache. -->
+    <Compile Include="..\..\src\Sleezer\Metadata\ScheduledTasks\SearchSniper\SearchSniperTaskSettings.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Core\Utilities\CacheService.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Core\Model\FileCache.cs"
+             LinkBase="SourceUnderTest" />
   </ItemGroup>
 
   <ItemGroup>
