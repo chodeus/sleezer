@@ -39,7 +39,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Deezer
 
             album.Images = [];
             foreach (string? url in new[] { dAlbum.CoverMedium, dAlbum.CoverBig })
-                if (!string.IsNullOrEmpty(url)) album.Images.Add(new MediaCover(MediaCoverTypes.Cover, url + $"?{FlexibleHttpDispatcher.UA_PARAM}={dAlbum.UserAgent}"));
+                if (!string.IsNullOrEmpty(url)) album.Images.Add(new MediaCover(MediaCoverTypes.Cover, FlexibleHttpDispatcher.WithUserAgent(url, dAlbum.UserAgent)));
 
             album.Links.Add(new Links { Url = dAlbum.Link, Name = "Deezer" });
             album.Links.Add(new Links { Url = dAlbum.Share, Name = "Deezer Share" });
@@ -135,7 +135,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Deezer
         {
             List<MediaCover> images = [];
             foreach (string? url in new[] { artist.PictureMedium, artist.PictureBig })
-                if (!string.IsNullOrEmpty(url)) images.Add(new MediaCover(MediaCoverTypes.Poster, url + $"?{FlexibleHttpDispatcher.UA_PARAM}={artist.UserAgent}"));
+                if (!string.IsNullOrEmpty(url)) images.Add(new MediaCover(MediaCoverTypes.Poster, FlexibleHttpDispatcher.WithUserAgent(url, artist.UserAgent)));
             return images;
         }
 

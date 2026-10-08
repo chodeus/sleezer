@@ -398,6 +398,11 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Utilities\FieldValue.cs"
              LinkBase="SourceUnderTest" />
+    <!-- User-Agent cover URLs; Lidarr.Common's ManagedHttpDispatcher via the Lidarr.Core reference. -->
+    <Compile Include="..\..\src\Sleezer\Core\Replacements\FlexibleHttpDispatcher.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Core\Utilities\UserAgentValidator.cs"
+             LinkBase="SourceUnderTest" />
     <!-- Search Sniper settings rules; CacheType comes from CacheService, which needs FileCache. -->
     <Compile Include="..\..\src\Sleezer\Metadata\ScheduledTasks\SearchSniper\SearchSniperTaskSettings.cs"
              LinkBase="SourceUnderTest" />

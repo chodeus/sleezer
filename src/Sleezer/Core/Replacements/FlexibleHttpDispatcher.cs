@@ -11,7 +11,18 @@ namespace NzbDrone.Plugin.Sleezer.Core.Replacements
 {
     public class FlexibleHttpDispatcher : ManagedHttpDispatcher, IHttpDispatcher
     {
-        public const string UA_PARAM = "x-user-agent";
+        private const string UA_PARAM = "x-user-agent";
+        private const string EXT_PARAM = "x-ext";
+
+        // Lidarr names a cover file by Path.GetExtension of its whole URL, query included,
+        // so the URL has to end in the file's own extension.
+        public static string WithUserAgent(string? url, string userAgent)
+        {
+            char separator = url?.Contains('?') == true ? '&' : '?';
+            string withAgent = $"{url}{separator}{UA_PARAM}={Uri.EscapeDataString(userAgent)}";
+            string? extension = Path.GetExtension(url?.Split('?')[0]);
+            return string.IsNullOrEmpty(extension) ? withAgent : $"{withAgent}&{EXT_PARAM}={extension}";
+        }
 
         public FlexibleHttpDispatcher(IHttpProxySettingsProvider proxySettingsProvider,
             IUserAgentValidator userAgentValidator,
@@ -49,7 +60,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Replacements
             return await GetResponseAsync(request, cookies);
         }
 
-        private static void ExtractUserAgentFromUrl(HttpRequest request)
+        internal static void ExtractUserAgentFromUrl(HttpRequest request)
         {
             if (request.Url.Query.IsNullOrWhiteSpace()) return;
 
@@ -60,7 +71,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Replacements
             {
                 string userAgent = Uri.UnescapeDataString(uaPart.Split('=')[1]);
                 request.Headers.Set("User-Agent", userAgent);
-                request.Url = request.Url.SetQuery(string.Join("&", parts.Where(p => p != uaPart)));
+                request.Url = request.Url.SetQuery(string.Join("&", parts.Where(p => p != uaPart && !p.StartsWith($"{EXT_PARAM}="))));
             }
         }
 

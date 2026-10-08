@@ -137,7 +137,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Lastfm
                         string imageId = idMatch.Groups[1].Value;
                         if (!string.IsNullOrEmpty(imageId))
                         {
-                            string imageUrl = $"https://lastfm.freetls.fastly.net/i/u/{imageId}.jpg?{FlexibleHttpDispatcher.UA_PARAM}={_userAgent}";
+                            string imageUrl = FlexibleHttpDispatcher.WithUserAgent($"https://lastfm.freetls.fastly.net/i/u/{imageId}.jpg", _userAgent);
                             _logger.Trace($"Found image: {imageUrl}");
                             imageUrls.Add(imageUrl);
                         }
