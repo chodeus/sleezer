@@ -47,6 +47,24 @@ public class UserAgentCoverUrlTests
         Assert.Equal(url, request.Url.FullUri);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" ")]
+    public void a_missing_image_gets_no_cover(string? url)
+    {
+        Assert.Empty(FlexibleHttpDispatcher.CoversWithUserAgent(MediaCoverTypes.Cover, url, BrowserAgent));
+    }
+
+    [Fact]
+    public void an_image_gets_one_cover_of_its_type()
+    {
+        MediaCover cover = Assert.Single(FlexibleHttpDispatcher.CoversWithUserAgent(MediaCoverTypes.Poster, "https://cdn.example/i/u/def.png", "MyApp/1.0.0"));
+
+        Assert.Equal(MediaCoverTypes.Poster, cover.CoverType);
+        Assert.Equal(".png", cover.Extension);
+    }
+
     [Fact]
     public void a_url_stored_before_the_extension_marker_still_works()
     {

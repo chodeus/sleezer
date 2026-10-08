@@ -4,6 +4,7 @@ using NzbDrone.Common.Extensions;
 using NzbDrone.Common.Http;
 using NzbDrone.Common.Http.Dispatchers;
 using NzbDrone.Common.Http.Proxy;
+using NzbDrone.Core.MediaCover;
 using System.Net;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
@@ -23,6 +24,10 @@ namespace NzbDrone.Plugin.Sleezer.Core.Replacements
             string? extension = Path.GetExtension(url?.Split('?')[0]);
             return string.IsNullOrEmpty(extension) ? withAgent : $"{withAgent}&{EXT_PARAM}={extension}";
         }
+
+        // Without an image the cover URL would be the agent query alone.
+        public static List<MediaCover> CoversWithUserAgent(MediaCoverTypes type, string? url, string userAgent)
+            => string.IsNullOrWhiteSpace(url) ? [] : [new MediaCover(type, WithUserAgent(url, userAgent))];
 
         public FlexibleHttpDispatcher(IHttpProxySettingsProvider proxySettingsProvider,
             IUserAgentValidator userAgentValidator,

@@ -440,7 +440,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Discogs
                 CleanTitle = release.Title.CleanArtistName() ?? string.Empty,
                 Ratings = new Ratings(),
                 Genres = [release.Label ?? string.Empty],
-                Images = [new(MapCoverType("primary", false), FlexibleHttpDispatcher.WithUserAgent(release.Thumb, release.UserAgent))],
+                Images = FlexibleHttpDispatcher.CoversWithUserAgent(MapCoverType("primary", false), release.Thumb, release.UserAgent),
             };
 
             album.AlbumReleases = new List<AlbumRelease>()
@@ -555,7 +555,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Discogs
                 Name = searchItem.Title ?? string.Empty,
                 ForeignArtistId = "a" + searchItem.Id + _identifier,
                 Overview = "Found on Discogs",
-                Images = [new(MapCoverType("primary", true), FlexibleHttpDispatcher.WithUserAgent(searchItem.Thumb, searchItem.UserAgent))],
+                Images = FlexibleHttpDispatcher.CoversWithUserAgent(MapCoverType("primary", true), searchItem.Thumb, searchItem.UserAgent),
                 Links = [new() { Url = searchItem.ResourceUrl, Name = "Discogs" }],
                 Ratings = ComputeCommunityRating(searchItem.Community),
                 Genres = searchItem.Genre,
