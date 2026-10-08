@@ -18,8 +18,9 @@ namespace NzbDrone.Plugin.Sleezer.Core.Replacements
         // so the URL has to end in the file's own extension.
         public static string WithUserAgent(string? url, string userAgent)
         {
-            string withAgent = $"{url}?{UA_PARAM}={userAgent}";
-            string? extension = Path.GetExtension(url);
+            char separator = url?.Contains('?') == true ? '&' : '?';
+            string withAgent = $"{url}{separator}{UA_PARAM}={userAgent}";
+            string? extension = Path.GetExtension(url?.Split('?')[0]);
             return string.IsNullOrEmpty(extension) ? withAgent : $"{withAgent}&{EXT_PARAM}={extension}";
         }
 

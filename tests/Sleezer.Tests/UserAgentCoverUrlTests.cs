@@ -19,21 +19,23 @@ public class UserAgentCoverUrlTests
     }
 
     [Theory]
-    [InlineData("https://cdn.example/images/cover/abc/500x500.jpg", BrowserAgent)]
-    [InlineData("https://cdn.example/i/u/def.png", "MyApp/1.0.0")]
-    [InlineData("https://img.example/rs:fit/w:150/ghi.jpeg", "MyApp/2.1 (+https://example.org/myapp)")]
-    public void a_cover_keeps_its_file_extension(string url, string userAgent)
+    [InlineData("https://cdn.example/images/cover/abc/500x500.jpg", BrowserAgent, ".jpg")]
+    [InlineData("https://cdn.example/i/u/def.png", "MyApp/1.0.0", ".png")]
+    [InlineData("https://img.example/rs:fit/w:150/ghi.jpeg", "MyApp/2.1 (+https://example.org/myapp)", ".jpeg")]
+    [InlineData("https://cdn.example/images/jkl.jpg?size=500", "MyApp/1.0.0", ".jpg")]
+    public void a_cover_keeps_its_file_extension(string url, string userAgent, string extension)
     {
         MediaCover cover = new(MediaCoverTypes.Cover, FlexibleHttpDispatcher.WithUserAgent(url, userAgent));
 
-        Assert.Equal(Path.GetExtension(url), cover.Extension);
-        Assert.Equal(Path.GetExtension(url), new ImagesColumn().RoundTrip([cover]).Single().Extension);
+        Assert.Equal(extension, cover.Extension);
+        Assert.Equal(extension, new ImagesColumn().RoundTrip([cover]).Single().Extension);
     }
 
     [Theory]
     [InlineData("https://cdn.example/images/cover/abc/500x500.jpg", BrowserAgent)]
     [InlineData("https://cdn.example/i/u/def.png", "MyApp/1.0.0")]
     [InlineData("https://cdn.example/artist/noext", "MyApp/1.0.0")]
+    [InlineData("https://cdn.example/images/jkl.jpg?size=500", BrowserAgent)]
     public void the_request_goes_out_clean_with_the_agent_as_a_header(string url, string userAgent)
     {
         HttpRequest request = new(FlexibleHttpDispatcher.WithUserAgent(url, userAgent));
