@@ -36,6 +36,7 @@ public class UserAgentCoverUrlTests
     [InlineData("https://cdn.example/i/u/def.png", "MyApp/1.0.0")]
     [InlineData("https://cdn.example/artist/noext", "MyApp/1.0.0")]
     [InlineData("https://cdn.example/images/jkl.jpg?size=500", BrowserAgent)]
+    [InlineData("https://cdn.example/i/u/def.png", "Acme&Co/1")]
     public void the_request_goes_out_clean_with_the_agent_as_a_header(string url, string userAgent)
     {
         HttpRequest request = new(FlexibleHttpDispatcher.WithUserAgent(url, userAgent));

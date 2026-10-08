@@ -19,7 +19,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Replacements
         public static string WithUserAgent(string? url, string userAgent)
         {
             char separator = url?.Contains('?') == true ? '&' : '?';
-            string withAgent = $"{url}{separator}{UA_PARAM}={userAgent}";
+            string withAgent = $"{url}{separator}{UA_PARAM}={Uri.EscapeDataString(userAgent)}";
             string? extension = Path.GetExtension(url?.Split('?')[0]);
             return string.IsNullOrEmpty(extension) ? withAgent : $"{withAgent}&{EXT_PARAM}={extension}";
         }
