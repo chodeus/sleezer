@@ -416,7 +416,7 @@ Enable **Debug** log level in `Settings -> General` if you're filing an issue �
 ## Credits 🙌
 
 * **[TrevTV](https://github.com/TrevTV)** — [Lidarr.Plugin.Deezer](https://github.com/TrevTV/Lidarr.Plugin.Deezer) and [DeezNET](https://github.com/TrevTV/DeezNET), which power the Deezer integration, and [Lidarr.Plugin.Tidal](https://github.com/TrevTV/Lidarr.Plugin.Tidal), whose `TidalSharp` library the Tidal client is built on.
-* **[TypNull](https://github.com/TypNull)** — [Tubifarry](https://github.com/TypNull/Tubifarry): Slskd, the web clients, the FFmpeg pipeline, Queue Cleaner, Search Sniper, custom metadata sources and Similar Artists.
+* **[TypNull](https://github.com/TypNull)** — [Tubifarry](https://github.com/TypNull/Tubifarry): Slskd, the web clients, the FFmpeg pipeline, Queue Cleaner, Search Sniper, Playlist Export, the ListenBrainz and Last.fm Recommendation import lists, custom metadata sources and Similar Artists.
 * **[DaveBinM](https://github.com/DaveBinM)** — [Lidarr.Plugin.Qobuz](https://github.com/DaveBinM/Lidarr.Plugin.Qobuz) (originally TrevTV's) and [QobuzApiSharp](https://github.com/DaveBinM/QobuzApiSharp) (originally [DJDoubleD](https://github.com/DJDoubleD)'s), which the Qobuz client is ported from.
 * **[jtstothard](https://github.com/jtstothard)** — [lidarr-plugin-bandcamp](https://github.com/jtstothard/lidarr-plugin-bandcamp), which the Bandcamp client is ported from.
 

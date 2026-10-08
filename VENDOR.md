@@ -8,8 +8,8 @@ file records what came from where and what we changed.
 **Every vendored tree records the exact upstream commit it was taken from.**
 That is the whole point of this file: without a baseline, "pull upstream fixes
 by hand" is not a plan, because nobody can tell what upstream has changed since.
-`TidalSharp` predates this file and shows the cost — its baseline is lost, so
-its drift is unmeasurable.
+`TidalSharp` predates this file and shows the cost — its baseline went
+unrecorded and had to be recovered by diffing against upstream history.
 
 To see what a vendored tree has missed:
 
@@ -46,7 +46,7 @@ it is the source of truth, not the prose.
     "path": "src/Sleezer/Indexers/Bandcamp/, src/Sleezer/Download/Clients/Bandcamp/, src/Sleezer/Http/Bandcamp/",
     "upstream": "https://github.com/jtstothard/lidarr-plugin-bandcamp",
     "commit": "e146da55de4375e94a0c0fc9b73c5f0d4a0132ab",
-    "vendored": "2026-08-04",
+    "vendored": "2026-08-22",
     "adopted": "2026-08-23",
     "track": false
   },
@@ -54,9 +54,9 @@ it is the source of truth, not the prose.
     "name": "TidalSharp",
     "path": "src/Sleezer/TidalSharp/",
     "upstream": "https://github.com/TrevTV/Lidarr.Plugin.Tidal",
-    "commit": null,
-    "vendored": null,
-    "track": false
+    "commit": "d9f03156e519ee1c9f7fe5114318302d86288e11",
+    "vendored": "2026-04-25",
+    "track": true
   }
 ]
 ```
@@ -75,8 +75,17 @@ this tree stays diffable.
 
 Local changes, which GPL-3.0 §5(a) requires be stated:
 
-- A two-line `#nullable disable` banner on every file, plus `#pragma warning
-  disable CS0672, SYSLIB0051` on the three exception types.
+- A banner on every file: two comment lines and `#nullable disable`. The
+  exception types also silence the obsolete-serialization warnings:
+  `CS0672, SYSLIB0051` on `ApiErrorResponseException` and
+  `ApiResponseParseErrorException`, `SYSLIB0051` on
+  `QobuzApiInitializationException`.
+- `ApiErrorResponseException`: tolerates a null error body. `null` is valid
+  JSON, so `DeserializeResponse` can return it, and the constructors threw a
+  `NullReferenceException` that hid the API failure.
+- `ApiResponseParseErrorException` gained `StatusCode`, which
+  `DeserializeResponse` sets when the unreadable body came with a failure
+  status, so a caller can still tell a 401 from a 502.
 - `QobuzApiService.User.cs`: the login failure messages no longer quote the
   user's auth token or password hash back into the exception, which was putting
   the credential into any log that recorded it. The three login responses are
@@ -89,16 +98,18 @@ Local changes, which GPL-3.0 §5(a) requires be stated:
   `ForgetBundle` clears the process-wide `bundle.js` cache, so a rotated
   `app_secret` can be re-derived without restarting Lidarr; the two getters
   read the cache once through `GetBundle`, so a concurrent clear cannot null it
-  under them.
+  under them. `ToQueryString` drops only null parameters, so an explicit `""`
+  is sent as `key=` rather than silently omitted. Blocking waits use
+  `GetAwaiter().GetResult()` instead of `Wait()` and `.Result`.
 - `QobuzApiService.Artist.cs`, `.Favorite.cs`, `.User.cs`: eight parameter keys
   had a trailing space (`"type "`, `"user_id "`, `"order "`, …). `ToQueryString`
   escapes the key, so they were sent as `type%20=` and silently ignored — which
   meant the favourites import lists never applied their type filter.
 - `QobuzApiService.cs`: `IsAppSecretValid` treated any exception as an invalid
   secret, so a network blip forced a needless re-scrape and re-authentication.
-  Only a rejected request counts now.
-- `MostPopularContentConverter.cs`: rejects a missing or unsupported `type`
-  rather than dereferencing null or returning null.
+  Only a rejected request counts now, and a null track URL reads as an invalid
+  secret instead of throwing. `GetApiResponse` disposes its response and takes
+  a `CancellationToken` that reaches `HttpClient.SendAsync`.
 
 Re-vendoring means re-applying that list, not discarding it.
 
@@ -150,23 +161,34 @@ stopped being true: review surfaced enough real defects — an SSRF on the
 credentialed download path, a whole-archive buffer, substring purchase matching,
 process-randomised release GUIDs, swallowed collection failures, a dead JSON
 parse path, an `IHttpDispatcher` that would have competed for every HTTP call
-Lidarr makes — that roughly 450 lines across nine files have changed, three of
-them by 15-37%, with five files deleted and one added. A patch of that size is
-not a vendored copy, and calling it one only served as a reason not to fix
-things properly.
+Lidarr makes — that at import ten of the sixteen carried-over files already
+differed from upstream, by about 910 lines added or removed ignoring
+whitespace. The parser was cut to a contract-only stub, the download queue was
+largely rewritten, five upstream files were dropped and one was added. A patch
+of that size is not a vendored copy, and calling it one only served as a
+reason not to fix things properly.
 
 MIT permits this without restriction; the licence text is reproduced in NOTICE
 and jtstothard keeps authorship credit for the original work. Upstream remains
 worth reading, but nothing here is written to stay diffable against it.
 
-### TidalSharp — baseline lost
+### TidalSharp — baseline recovered, tracked
 
-**Not tracked.** Vendored before this file existed, with no record of the commit
-it came from, so upstream drift cannot be measured. It also carries substantial
-local work — device-code OAuth, token storage in Lidarr's settings DB,
-`LosslessGuard`, `ExpiredTokenDetector`, the tier-locked quality fallback — so a
-re-baseline would be a deliberate project rather than a lookup. Left honest
-rather than guessed at.
+Vendored on 2026-04-25 before this file existed, and the commit was not
+recorded. The import commit credits the standalone `TrevTV/TidalSharp`
+repository, but the tree matches the copy inside `Lidarr.Plugin.Tidal`
+instead: against that plugin's `src/TidalSharp/` at `d9f0315` (2026-01-16)
+the import differs by 274 lines, all of them the modifications its commit
+message lists, while the standalone repository's newest commit (2025-01-14)
+differs by 530. `d9f0315` is the baseline.
+
+**Read upstream for fixes, expect to port them by hand.** The tree carries
+substantial local work: device-code OAuth, typed catches with Sleezer logging,
+token storage in Lidarr's settings DB, `LosslessGuard`, `ExpiredTokenDetector`,
+and the tier-locked quality fallback. Against the baseline, 9 files are
+modified, 7 added and 2 removed (670 lines added, 272 removed, ignoring
+whitespace). The drift check watches the whole plugin repository, which is
+also where the Tidal indexer and download client came from.
 
 ## Re-vendoring
 

@@ -23,14 +23,19 @@ exist without the original authors of those projects.
   contributors, and were originally distributed as part of
   `Lidarr.Plugin.Tidal`. That repository publishes no licence; the port is
   used in good faith and will be removed from Sleezer if the author asks.
+  An earlier version of `TidalSharp` is also published on its own under
+  GPL-3.0.
     https://github.com/TrevTV/Lidarr.Plugin.Tidal
+    https://github.com/TrevTV/TidalSharp  (GPL-3.0)
 
 * Portions of the Slskd indexer and download client, the multi-source web-
-  client framework (Subsonic), the FFmpeg
-  conversion pipeline (formerly "Codec Tinker"), Queue Cleaner, Search
-  Sniper, custom metadata source framework, and Similar Artists recommender
-  are Copyright (C) TypNull and contributors, and were originally distributed
-  as part of `Tubifarry` under the MIT License.
+  client framework (Subsonic), the FFmpeg conversion pipeline (formerly
+  "Codec Tinker"), Queue Cleaner, Search Sniper, Playlist Export, the
+  ListenBrainz and Last.fm Recommendation import lists, the custom metadata
+  source framework, the Similar Artists recommender, and shared plumbing
+  such as the HTTP dispatcher and indexer base classes are Copyright (C)
+  TypNull and contributors, and were originally distributed as part of
+  `Tubifarry` under the MIT License.
     https://github.com/TypNull/Tubifarry  (MIT — relicensed under GPL-3.0 in Sleezer)
 
   MIT requires its permission notice travel with the code, so it is reproduced
@@ -131,7 +136,6 @@ contains or links to the authoritative license text from upstream.
  Shard.DownloadAssistant (DownloadAssistant, Requests) MIT  https://github.com/Shard-Software/Shard.DownloadAssistant
  Acornima                                 MIT           https://github.com/adams85/acornima
  System.Text.Json                         MIT           https://github.com/dotnet/runtime
- System.Diagnostics.DiagnosticSource      MIT           https://github.com/dotnet/runtime
  Microsoft.Extensions.Logging.Abstractions MIT          https://github.com/dotnet/runtime
  Microsoft.Bcl.AsyncInterfaces            MIT           https://github.com/dotnet/runtime
 
