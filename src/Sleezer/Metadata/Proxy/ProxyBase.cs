@@ -11,7 +11,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy
     {
         public abstract string Name { get; }
         public Type ConfigContract => typeof(TSettings);
-        public virtual ProviderMessage? Message => null;
+        public virtual ProviderMessage? Message => MetadataSourcesBuild.Present ? new ProviderMessage(MetadataSourcesBuild.StandDownMessage, ProviderMessageType.Warning) : null;
         public IEnumerable<ProviderDefinition> DefaultDefinitions => [];
         public ProviderDefinition? Definition { get; set; }
 
@@ -42,6 +42,6 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy
 
         public virtual List<ImageFileResult> TrackImages(Artist artist, TrackFile trackFile) => [];
 
-        public virtual ValidationResult Test() => new();
+        public virtual ValidationResult Test() => MetadataSourcesBuild.Present ? new([new ValidationFailure(string.Empty, MetadataSourcesBuild.StandDownMessage)]) : new();
     }
 }
