@@ -79,7 +79,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy
                 return;
 
             ((IProvider)updatedProxy).Definition = message.Definition;
-            if (message.Definition.Enable)
+            if (message.Definition.Enable && !MetadataSourcesBuild.Present)
                 EnableProxy(updatedProxy);
             else
                 DisableProxy(updatedProxy);
@@ -288,6 +288,13 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy
 
         private void ActivateEnabledProxies()
         {
+            // Defaults still load: they route to Lidarr's own metadata server if anything reaches these wrappers on that build
+            if (MetadataSourcesBuild.Present)
+            {
+                _logger.Info(MetadataSourcesBuild.StandDownMessage);
+                return;
+            }
+
             foreach (IProxy proxy in Proxies.Where(x => (x as IProvider)?.Definition?.Enable == true))
             {
                 ProxyMode mode = proxy.GetProxyMode();

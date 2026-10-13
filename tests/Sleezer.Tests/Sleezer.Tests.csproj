@@ -41,6 +41,8 @@
     <!-- Pull in just the files under test to avoid dragging the full plugin build graph. -->
     <Compile Include="..\..\src\Sleezer\Core\PostProcessing\FeaturedArtistStripper.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Metadata\Proxy\MetadataSourcesBuild.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\PostProcessing\FfmpegErrorFormatter.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\PostProcessing\TrackTitleMatcher.cs"
