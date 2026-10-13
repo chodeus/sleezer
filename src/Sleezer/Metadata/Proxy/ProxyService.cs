@@ -288,6 +288,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy
 
         private void ActivateEnabledProxies()
         {
+            // Defaults still load: they route to Lidarr's own metadata server if anything reaches these wrappers on that build
             if (MetadataSourcesBuild.Present)
             {
                 _logger.Info(MetadataSourcesBuild.StandDownMessage);
