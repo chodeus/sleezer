@@ -16,7 +16,12 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             releases.Where(r => r.Status == ReleaseStatus.Official.Name)
                 .Select(r => r.ReleaseDate)
                 .Append(album.ReleaseDate)
-                .OfType<DateTime>();
+                .OfType<DateTime>()
+                .Where(d => IsKnownYear(d.Year));
+
+        // 0 is Lidarr's unset AlbumYear; its metadata sends 0001-01-01, not null, for an album
+        // MusicBrainz has no date for.
+        public static bool IsKnownYear(int year) => year > 1;
 
         public static bool IsUndated(ReleaseInfo release, DateTime nowUtc)
         {

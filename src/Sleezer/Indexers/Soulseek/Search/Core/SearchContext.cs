@@ -1,5 +1,6 @@
 using NzbDrone.Core.Indexers;
 using NzbDrone.Core.IndexerSearch.Definitions;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
 namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek.Search.Core;
 
@@ -47,7 +48,7 @@ public sealed record SearchContext
     public bool IsVariousArtists => QueryType.HasFlag(QueryType.VariousArtists);
     public bool IsSelfTitled => QueryType.HasFlag(QueryType.SelfTitled);
     public bool IsShortName => QueryType.HasFlag(QueryType.ShortName);
-    public bool HasValidYear => !string.IsNullOrEmpty(Year) && Year != "0";
+    public bool HasValidYear => int.TryParse(Year, out int year) && AlbumDates.IsKnownYear(year);
 
     public SearchContext(
         string? Artist,

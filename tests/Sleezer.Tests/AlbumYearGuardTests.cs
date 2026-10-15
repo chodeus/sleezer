@@ -153,6 +153,43 @@ public class AlbumYearGuardTests
         Assert.Equal(2, kept.Count);
     }
 
+    private static AlbumSearchCriteria DatedYearOne(params (int Year, string Status)[] releases)
+    {
+        AlbumSearchCriteria criteria = C(1);
+        criteria.Albums = [new Album { ReleaseDate = DateTime.MinValue, AlbumReleases = new LazyLoaded<List<AlbumRelease>>(
+            [new AlbumRelease { Status = "Official", ReleaseDate = DateTime.MinValue },
+             .. releases.Select(r => new AlbumRelease { Status = r.Status, ReleaseDate = new DateTime(r.Year, 6, 1) })]) }];
+        return criteria;
+    }
+
+    // Lidarr dates an album MusicBrainz has no date for 0001-01-01; read as year 1 it flagged every result.
+    [Fact]
+    public void Skips_when_the_album_is_dated_0001()
+    {
+        IList<ReleaseInfo> kept = AlbumYearGuard.Apply([R("a", 2019), R("b", 2005)], DatedYearOne(), "Qobuz", Log);
+
+        Assert.Empty(Flagged(kept));
+    }
+
+    [Fact]
+    public void An_album_dated_0001_is_judged_by_its_dated_official_release()
+    {
+        IList<ReleaseInfo> kept = AlbumYearGuard.Apply(
+            [R("right", 2019), R("other record", 2005)], DatedYearOne((2019, "Official")), "Qobuz", Log);
+
+        Assert.Equal(["other record"], Flagged(kept));
+        Assert.Equal("released 2005; the searched album is from 2019", ((StoreReleaseInfo)kept[1]).Rejection);
+    }
+
+    [Fact]
+    public void An_album_with_no_date_is_judged_by_its_dated_official_release()
+    {
+        IList<ReleaseInfo> kept = AlbumYearGuard.Apply(
+            [R("right", 2019), R("other record", 2005)], WithReleases(0, (2019, "Official")), "Qobuz", Log);
+
+        Assert.Equal(["other record"], Flagged(kept));
+    }
+
     // Parsers stamp UtcNow when they have no usable date (most AlbumData-based releases);
     // treating that as "this year" would drop correct results wholesale.
     private static StoreReleaseInfo Undated(string title) => new() { Title = title, PublishDate = DateTime.UtcNow };
