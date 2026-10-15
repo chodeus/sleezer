@@ -86,6 +86,9 @@ public static partial class TemplateEngine
         return null;
     }
 
+    public static bool UsesPlaceholder(string template, string path) =>
+        PlaceholderRegex.Matches(template).Any(m => string.Equals(m.Groups[1].Value.Trim(), path, StringComparison.OrdinalIgnoreCase));
+
     public static string? Apply(string template, object? context)
     {
         if (string.IsNullOrWhiteSpace(template) || context == null)

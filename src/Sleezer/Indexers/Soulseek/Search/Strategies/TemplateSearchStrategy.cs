@@ -1,3 +1,4 @@
+using NzbDrone.Core.IndexerSearch.Definitions;
 using NzbDrone.Plugin.Sleezer.Indexers.Soulseek.Search.Core;
 using NzbDrone.Plugin.Sleezer.Indexers.Soulseek.Search.Templates;
 using NzbDrone.Plugin.Sleezer.Indexers.Soulseek.Search.Transformers;
@@ -27,6 +28,10 @@ public sealed class TemplateSearchStrategy : SearchStrategyBase
 
         foreach (string template in templates)
         {
+            // An unknown year leaves {{AlbumYear}} as 0 or 1; skip it like an unresolved placeholder.
+            if (!context.HasValidYear && TemplateEngine.UsesPlaceholder(template, nameof(AlbumSearchCriteria.AlbumYear)))
+                continue;
+
             string? result = TemplateEngine.Apply(template, context.SearchCriteria);
             if (!string.IsNullOrWhiteSpace(result))
             {
