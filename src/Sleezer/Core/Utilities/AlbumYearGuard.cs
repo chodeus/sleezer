@@ -18,11 +18,14 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 
         public static IList<ReleaseInfo> Apply(IList<ReleaseInfo> releases, AlbumSearchCriteria? criteria, string indexerName, Logger logger)
         {
-            if (releases.Count == 0 || criteria is not { AlbumYear: > 0 })
+            if (releases.Count == 0 || criteria == null)
                 return releases;
 
-            int targetYear = criteria.AlbumYear;
             int[] albumYears = AlbumYears(criteria);
+            if (albumYears.Length == 0)
+                return releases;
+
+            int targetYear = albumYears.Min();
             DateTime nowUtc = DateTime.UtcNow;
 
             // A catalogue whose store years are uniformly a little off MusicBrainz must be left
@@ -71,7 +74,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             Album? album = criteria.Albums?.FirstOrDefault();
             IEnumerable<int> releaseYears = album == null ? [] : AlbumDates.Of(album, album.AlbumReleases?.Value ?? []).Select(d => d.Year);
 
-            return [.. releaseYears.Append(criteria.AlbumYear).Distinct()];
+            return [.. releaseYears.Append(criteria.AlbumYear).Where(AlbumDates.IsKnownYear).Distinct()];
         }
 
         private static int YearsOff(ReleaseInfo release, int[] albumYears) =>
