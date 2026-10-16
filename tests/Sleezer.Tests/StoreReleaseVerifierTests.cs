@@ -315,6 +315,89 @@ public class StoreReleaseVerifierTests
         Assert.True(Accepted(criteria, Store("Biscits", "algorhythm", trackCount: 3)));
     }
 
+    // Live 2026-10-16: ODESZA "A Moment Apart" pinned to its 25-track deluxe; the 16-track standard
+    // edition fits the group's other releases, was grabbed, and Lidarr refused it at import.
+    [Fact]
+    public void A_pinned_release_rejects_a_product_that_fits_only_another_release()
+    {
+        var criteria = Pinned(Criteria("ODESZA", "A Moment Apart", trackCount: 16, durationSeconds: 3566), trackCount: 25, durationSeconds: 5695);
+
+        Assert.True(Rejected(criteria, Store("ODESZA", "A Moment Apart", trackCount: 16, durationSeconds: 3566)));
+        Assert.True(Accepted(criteria, Store("ODESZA", "A Moment Apart", trackCount: 25, durationSeconds: 5695, candidateTitle: "A Moment Apart (Deluxe Edition)")));
+    }
+
+    [Fact]
+    public void Any_release_ok_still_judges_a_product_against_every_release()
+    {
+        var criteria = Criteria("ODESZA", "A Moment Apart", trackCount: 16, durationSeconds: 3566);
+        criteria.Albums[0].AlbumReleases.Value.Add(new AlbumRelease { TrackCount = 25, Duration = 5695 * 1000 });
+
+        Assert.True(Accepted(criteria, Store("ODESZA", "A Moment Apart", trackCount: 16, durationSeconds: 3566)));
+    }
+
+    // Live 2026-10-16: Parra for Cuva "Wicked Games" pinned to its radio-edit release; the store's
+    // radio edit was dropped as a variant of the plain group title.
+    [Fact]
+    public void A_pinned_variant_release_calls_for_its_variant()
+    {
+        var criteria = Pinned(Criteria("Parra for Cuva", "Wicked Games", trackCount: 1, durationSeconds: 358), trackCount: 1, durationSeconds: 195, title: "Wicked Games (radio edit)");
+
+        Assert.True(Accepted(criteria, Store("Parra for Cuva", "Wicked Games", trackCount: 1, durationSeconds: 195, candidateTitle: "Wicked Games (feat. Anna Naklab) (Radio Edit)")));
+        Assert.True(Rejected(criteria, Store("Parra for Cuva", "Wicked Games", trackCount: 1, durationSeconds: 195)));
+    }
+
+    [Fact]
+    public void An_unpinned_plain_album_still_rejects_a_variant_product()
+    {
+        var criteria = Criteria("Parra for Cuva", "Wicked Games", trackCount: 1, durationSeconds: 195);
+
+        Assert.True(Rejected(criteria, Store("Parra for Cuva", "Wicked Games", trackCount: 1, durationSeconds: 195, candidateTitle: "Wicked Games (Radio Edit)")));
+    }
+
+    // Two releases left monitored is not a selection; only one is.
+    [Fact]
+    public void Two_monitored_releases_are_not_a_pin()
+    {
+        var criteria = Pinned(Criteria("ODESZA", "A Moment Apart", trackCount: 16, durationSeconds: 3566), trackCount: 25, durationSeconds: 5695);
+        criteria.Albums[0].AlbumReleases.Value[0].Monitored = true;
+
+        Assert.True(Accepted(criteria, Store("ODESZA", "A Moment Apart", trackCount: 16, durationSeconds: 3566)));
+        Assert.True(Accepted(criteria, Store("ODESZA", "A Moment Apart", trackCount: 25, durationSeconds: 5695)));
+    }
+
+    // Live 2026-10-16: Qobuz credits Oliver Heldens' "Wombass" to Tiësto first, and lists both as main artists.
+    [Fact]
+    public void A_listed_main_artist_matches_the_searched_artist()
+    {
+        var criteria = Criteria("Oliver Heldens", "Wombass");
+        var release = Store("Tiësto", "Wombass");
+        release.MainArtists = ["Tiësto", "Oliver Heldens"];
+
+        Assert.True(Accepted(criteria, release));
+    }
+
+    [Fact]
+    public void Other_main_artists_alone_do_not_match()
+    {
+        var criteria = Criteria("Oliver Heldens", "Wombass");
+        var release = Store("Tiësto", "Wombass");
+        release.MainArtists = ["Tiësto", "Hardwell"];
+
+        Assert.True(Rejected(criteria, release));
+    }
+
+    // The album's one selected release, with Any Release OK off: what Lidarr will import and nothing else.
+    private static AlbumSearchCriteria Pinned(AlbumSearchCriteria criteria, int trackCount, int durationSeconds, string? title = null)
+    {
+        var album = criteria.Albums[0];
+        foreach (var release in album.AlbumReleases.Value)
+            release.Monitored = false;
+
+        album.AlbumReleases.Value.Add(new AlbumRelease { Title = title, TrackCount = trackCount, Duration = durationSeconds * 1000, Monitored = true });
+        album.AnyReleaseOk = false;
+        return criteria;
+    }
+
     private static AlbumSearchCriteria Criteria(
         string artist,
         string album,
@@ -340,6 +423,8 @@ public class StoreReleaseVerifierTests
                 new Album
                 {
                     Title = album,
+                    // Lidarr's database default; Pinned turns it off
+                    AnyReleaseOk = true,
                     SecondaryTypes = secondaryTypes ?? [],
                     AlbumReleases = new LazyLoaded<List<AlbumRelease>>(releases),
                 }

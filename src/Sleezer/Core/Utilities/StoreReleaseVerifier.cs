@@ -81,7 +81,9 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             if (!string.IsNullOrWhiteSpace(release.Artist) && !target.IsVariousArtists && IsVariousArtists(release.Artist))
                 return (VariousArtistsCategory, $"'{release.Artist}' compilation offered for '{target.ArtistName}'");
 
-            if (!string.IsNullOrWhiteSpace(release.Artist) && !ArtistMatches(release.Artist, target))
+            // A store can lead with another main artist: Qobuz credits a collaboration to whichever it lists first
+            if (!string.IsNullOrWhiteSpace(release.Artist) && !ArtistMatches(release.Artist, target)
+                && !(release is StoreReleaseInfo store && store.MainArtists.Any(main => ArtistMatches(main, target))))
                 return ("artist", $"artist '{release.Artist}' is not '{target.ArtistName}'");
 
             return JudgeAlbum(release, (release as StoreReleaseInfo)?.CandidateTitle ?? release.Album, target.Album);
@@ -245,6 +247,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
                 var album = criteria.Albums?.FirstOrDefault();
                 var aliases = criteria.Artist.Metadata?.Value?.Aliases ?? [];
                 var artistNormalized = Normalize(criteria.Artist.Name);
+                var pinned = PinnedRelease(album);
+                var title = pinned?.Title is { } pinnedTitle && !string.IsNullOrWhiteSpace(pinnedTitle) ? pinnedTitle : album?.Title ?? criteria.AlbumTitle;
 
                 return new Target(
                     criteria.Artist.Name,
@@ -252,7 +256,17 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
                     [.. artistNormalized.Split(' ', StringSplitOptions.RemoveEmptyEntries)],
                     [.. aliases.Select(Normalize).Where(a => a.Length > 0)],
                     StoreReleaseVerifier.IsVariousArtists(criteria.Artist.Name),
-                    AlbumTarget.Of(album, album?.Title ?? criteria.AlbumTitle, album?.AlbumReleases?.Value ?? []));
+                    AlbumTarget.Of(album, title, pinned != null ? [pinned] : album?.AlbumReleases?.Value ?? []));
+            }
+
+            // With Any Release OK off, Lidarr imports only the selected release, so a product fitting another one fails at import
+            private static AlbumRelease? PinnedRelease(Album? album)
+            {
+                if (album == null || album.AnyReleaseOk)
+                    return null;
+
+                var monitored = album.AlbumReleases?.Value?.Where(r => r.Monitored).ToList();
+                return monitored is { Count: 1 } ? monitored[0] : null;
             }
         }
 

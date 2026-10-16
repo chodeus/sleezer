@@ -217,6 +217,19 @@ public class ReleaseTitleTests
         Assert.Contains("[Some Artist & Guest - In And Out Of Love (Remixes)]", release.Title);
     }
 
+    // Live 2026-10-16: Qobuz credits Oliver Heldens' "Wombass" to Tiësto first; Lidarr maps the title's artist, so it must be the searched one.
+    [Fact]
+    public void A_product_led_by_another_main_artist_is_presented_as_the_searched_artist()
+    {
+        StoreReleaseInfo release = Composed("Tiësto", "Wombass");
+        release.MainArtists = ["Tiësto", "Oliver Heldens"];
+
+        Refine(release, Criteria("Wombass", "Oliver Heldens"));
+
+        Assert.Null(release.Rejection);
+        Assert.Equal("Oliver Heldens".CleanArtistName(), ParsedArtistClean(release));
+    }
+
     // Renamed, the result skips Lidarr's artist lookup, so the verifier's lenient artist match is not enough.
     [Fact]
     public void An_artist_whose_name_only_contains_the_searched_one_keeps_its_own_credit()
