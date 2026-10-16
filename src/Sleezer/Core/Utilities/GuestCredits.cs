@@ -19,6 +19,9 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             return string.Join(" & ", featured.Concat(others));
         }
 
+        /// <summary>The title with its bracketed guest credits removed.</summary>
+        public static string WithoutCredits(string title) => FeaturedRegex().Replace(title, " ");
+
         /// <summary>True when the guest text names exactly these artists and nobody else; the searched artist may appear too.</summary>
         // Names are removed whole, never split on separators: "Tyler, The Creator" is one credited name.
         public static bool NamesExactly(string guestText, IEnumerable<string> names, string searchedArtist)

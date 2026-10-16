@@ -230,6 +230,34 @@ public class ReleaseTitleTests
         Assert.Equal("Oliver Heldens".CleanArtistName(), ParsedArtistClean(release));
     }
 
+    // A guest's name is not a volume number: "X Ambassadors" reads as numeral X, "21 Savage" as 21.
+    [Theory]
+    [InlineData("Sucker for Pain (with Logic, Ty Dolla $ign & X Ambassadors)", "Sucker for Pain")]
+    [InlineData("Song (feat. 21 Savage)", "Song")]
+    [InlineData("Song [ft. Blink-182]", "Song")]
+    public void A_number_in_a_guest_credit_does_not_block_the_retitle(string store, string searched)
+    {
+        StoreReleaseInfo release = Composed("Logic", store);
+        release.MainArtists = ["Logic", "Lil Wayne"];
+
+        Refine(release, Criteria(searched, "Lil Wayne"));
+
+        Assert.Null(release.Rejection);
+        Assert.Equal("Lil Wayne".CleanArtistName(), ParsedArtistClean(release));
+        Assert.Equal(searched.CleanArtistName(), ParsedClean(release));
+    }
+
+    [Fact]
+    public void A_number_outside_a_guest_credit_still_blocks_the_retitle()
+    {
+        StoreReleaseInfo release = Composed("Some Artist", "Symphony (Part II) (feat. Guest)");
+
+        Refine(release, "Symphony (Part I)");
+
+        Assert.Null(release.Rejection);
+        Assert.NotEqual("Symphony (Part I)".CleanArtistName(), ParsedClean(release));
+    }
+
     // Renamed, the result skips Lidarr's artist lookup, so the verifier's lenient artist match is not enough.
     [Fact]
     public void An_artist_whose_name_only_contains_the_searched_one_keeps_its_own_credit()
