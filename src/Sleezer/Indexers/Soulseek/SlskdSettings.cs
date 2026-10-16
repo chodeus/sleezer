@@ -181,6 +181,9 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         [FieldDefinition(26, Label = "Require Coherent Single Source", Type = FieldType.Checkbox, Hidden = HiddenType.Hidden)]
         public bool RequireCoherentSingleSource { get; set; }
 
+        [FieldDefinition(27, Label = "Match Release Tracks", Type = FieldType.Checkbox, HelpText = "Only grab a folder whose audio files are the selected release's tracks: one file per track, each track title in a file name, and each track length within 8 seconds of a file. Titles too short to match reliably and tracks with no known length are not checked. Automatic searches skip folders that fail; interactive searches still list them.")]
+        public bool MatchReleaseTracks { get; set; }
+
         public NzbDroneValidationResult Validate() => new(Validator.Validate(this));
 
         public static TrackCountFilterType TrackCountFilterFor(bool wholeAlbumsOnly) =>
