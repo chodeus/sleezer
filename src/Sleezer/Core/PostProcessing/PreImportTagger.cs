@@ -40,6 +40,7 @@ public class PreImportTagger : IPreImportTagger
     private readonly IFingerprintingService _fingerprintingService;
     private readonly ITrackService _trackService;
     private readonly IDiskProvider _diskProvider;
+    private readonly IMusicBrainzCredits _musicBrainzCredits;
     private readonly Logger _logger;
 
     public PreImportTagger(
@@ -48,6 +49,7 @@ public class PreImportTagger : IPreImportTagger
         IFingerprintingService fingerprintingService,
         ITrackService trackService,
         IDiskProvider diskProvider,
+        IMusicBrainzCredits musicBrainzCredits,
         Logger logger)
     {
         _identificationService = identificationService;
@@ -55,6 +57,7 @@ public class PreImportTagger : IPreImportTagger
         _fingerprintingService = fingerprintingService;
         _trackService = trackService;
         _diskProvider = diskProvider;
+        _musicBrainzCredits = musicBrainzCredits;
         _logger = logger;
     }
 
@@ -144,9 +147,10 @@ public class PreImportTagger : IPreImportTagger
         {
             // Tagging rewrites titles, so the shared bracket is judged on every file's original title.
             IReadOnlyDictionary<string, string> originalTitles = ReadTitles(completedFolderPath, ct);
-            TaggingResult result = await TagInternalAsync(album, artist, albumRelease, sourceId, completedFolderPath, confidenceThreshold, stripFeaturedArtists, verifyAllWithFingerprint, fingerprintTitleFallback, preferDigitalMedia, ct);
+            IEnumerable<string> guests = MusicBrainzGuests(album, artist);
+            TaggingResult result = await TagInternalAsync(album, artist, albumRelease, sourceId, completedFolderPath, confidenceThreshold, stripFeaturedArtists, verifyAllWithFingerprint, fingerprintTitleFallback, preferDigitalMedia, guests, ct);
             if (stripFeaturedArtists)
-                StripCreditsFromUntaggedFiles(completedFolderPath, result.TaggedFiles, artist.Name, ct);
+                StripCreditsFromUntaggedFiles(completedFolderPath, result.TaggedFiles, artist.Name, guests, ct);
             DropSharedBracketFromUntaggedFiles(originalTitles, result.TaggedFiles, album, ct);
             return result;
         }
@@ -170,6 +174,7 @@ public class PreImportTagger : IPreImportTagger
         bool verifyAllWithFingerprint,
         bool fingerprintTitleFallback,
         bool preferDigitalMedia,
+        IEnumerable<string> guests,
         CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
@@ -218,7 +223,7 @@ public class PreImportTagger : IPreImportTagger
         List<LocalTrack> localTracks = audioFiles.Select(path =>
         {
             ParsedTrackInfo info = SafeReadTags(path);
-            FeaturedArtistStripper.ForIdentification(info, artist.Name);
+            FeaturedArtistStripper.ForIdentification(info, artist.Name, guests);
 
             return new LocalTrack
             {
@@ -233,6 +238,9 @@ public class PreImportTagger : IPreImportTagger
                 FileTrackInfo = info
             };
         }).ToList();
+
+        // With Any Release OK off Lidarr imports only this release; tagging its twin gets the file refused as "not requested".
+        albumRelease ??= PinnedRelease.Of(album);
 
         IdentificationOverrides overrides = new()
         {
@@ -645,9 +653,19 @@ public class PreImportTagger : IPreImportTagger
         return file.Tag.Title ?? string.Empty;
     }
 
+    // Deferred, so only a "(with …)" credit costs the lookup. A store can tag the main artists alone, leaving the guests a "(with X)" names untagged.
+    private IEnumerable<string> MusicBrainzGuests(Album album, Artist artist)
+    {
+        if (string.IsNullOrEmpty(album.ForeignAlbumId) || string.IsNullOrEmpty(artist.ForeignArtistId))
+            yield break;
+
+        foreach (string guest in _musicBrainzCredits.GuestsOf(album.ForeignAlbumId, artist.ForeignArtistId) ?? [])
+            yield return guest;
+    }
+
     // Files left with store tags still carry "(feat. X)" in title and album, which Lidarr's
     // import scores against MusicBrainz titles that never do.
-    private void StripCreditsFromUntaggedFiles(string folderPath, IReadOnlyList<TaggedFile>? taggedFiles, string? artistName, CancellationToken ct)
+    private void StripCreditsFromUntaggedFiles(string folderPath, IReadOnlyList<TaggedFile>? taggedFiles, string? artistName, IEnumerable<string> guests, CancellationToken ct)
     {
         if (!_diskProvider.FolderExists(folderPath))
             return;
@@ -659,7 +677,7 @@ public class PreImportTagger : IPreImportTagger
             try
             {
                 using TagLib.File file = TagLib.File.Create(path);
-                string[] credited = [.. file.Tag.Performers, .. file.Tag.AlbumArtists];
+                IEnumerable<string> credited = file.Tag.Performers.Concat(file.Tag.AlbumArtists).Concat(guests);
                 string title = FeaturedArtistStripper.StripCredits(file.Tag.Title, credited);
                 string albumTitle = FeaturedArtistStripper.StripCredits(file.Tag.Album, credited);
                 string[] albumArtists = [.. file.Tag.AlbumArtists.Select(a => FeaturedArtistStripper.Strip(FeaturedArtistStripper.StripGuestCredits(a, artistName)))];

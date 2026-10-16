@@ -42,8 +42,9 @@ public static class FeaturedArtistStripper
     public static string StripCredits(string? input, IEnumerable<string?> creditedArtists)
     {
         string text = Strip(input);
-        string[] credited = [.. creditedArtists.OfType<string>().SelectMany(a => a.Split(',').Prepend(a)).Select(Fold).Where(n => n.Length > 0).Distinct().OrderByDescending(n => n.Length)];
-        return BracketedWithPattern.Replace(text, m => NamesOnlyCredited(m.Groups[1].Value, credited) ? string.Empty : m.Value).Trim();
+        // Read only once a "(with …)" turns up: the list can cost a MusicBrainz lookup.
+        Lazy<string[]> credited = new(() => [.. creditedArtists.OfType<string>().SelectMany(a => a.Split(',').Prepend(a)).Select(Fold).Where(n => n.Length > 0).Distinct().OrderByDescending(n => n.Length)]);
+        return BracketedWithPattern.Replace(text, m => NamesOnlyCredited(m.Groups[1].Value, credited.Value) ? string.Empty : m.Value).Trim();
     }
 
     // Whole credited names are removed, longest first; a credit leaves only separators behind.
@@ -83,17 +84,20 @@ public static class FeaturedArtistStripper
     }
 
     /// <summary>Drops guest credits from read tags before matching; the tags on disk are untouched.</summary>
-    public static void ForIdentification(ParsedTrackInfo info, string? primaryArtist)
+    // creditedArtists: names a "(with …)" may credit besides the file's own artist tag.
+    public static void ForIdentification(ParsedTrackInfo info, string? primaryArtist, IEnumerable<string?> creditedArtists)
     {
+        IEnumerable<string?> credited = creditedArtists.Prepend(info.ArtistTitle);
+
         // Comma-joined guest credits drag Lidarr's artist distance below the import cutoff.
         info.ArtistTitle = StripGuestCredits(info.ArtistTitle, primaryArtist) ?? info.ArtistTitle;
 
         // MusicBrainz credits a featured artist, never the title, so "Foo (feat. Bar)" must match "Foo".
-        info.Title = Strip(info.Title);
+        info.Title = StripCredits(info.Title, credited);
 
         // Lidarr's CleanTitle drops everything from "feat." on, remix name included, and any "(… Version)".
         info.CleanTitle = info.Title;
         info.ArtistTitle = Strip(info.ArtistTitle);
-        info.AlbumTitle = Strip(info.AlbumTitle);
+        info.AlbumTitle = StripCredits(info.AlbumTitle, credited);
     }
 }
