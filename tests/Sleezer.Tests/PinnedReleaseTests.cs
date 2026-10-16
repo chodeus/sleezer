@@ -34,4 +34,36 @@ public class PinnedReleaseTests
         Assert.Null(PinnedRelease.Of(new Album { AnyReleaseOk = false }));
         Assert.Null(PinnedRelease.Of(null));
     }
+
+    private static AlbumRelease Release(string title, params string[] tracks) => new()
+    {
+        Title = title,
+        Tracks = new LazyLoaded<List<Track>>([.. tracks.Select(t => new Track { Title = t })]),
+    };
+
+    [Theory]
+    [InlineData("Freaks", "Freaks (Radio Edit)")]
+    [InlineData("Freaks", "Freaks (feat. Savage) [Radio Edit]")]
+    public void A_single_whose_only_track_is_the_title_plus_a_qualifier_calls_for_the_track(string release, string track)
+    {
+        Assert.Equal(track, PinnedRelease.TitleOf(Release(release, track)));
+    }
+
+    [Theory]
+    [InlineData("Freaks", new[] { "Freaks" })]
+    [InlineData("Freaks", new[] { "Freaks (feat. Savage)" })]
+    [InlineData("Summer EP", new[] { "Another Song (Radio Edit)" })]
+    [InlineData("Freaks", new[] { "Freaks (Radio Edit)", "Freaks (Extended Mix)" })]
+    [InlineData("Freaks", new string[0])]
+    public void Any_other_release_calls_for_its_own_title(string release, string[] tracks)
+    {
+        Assert.Equal(release, PinnedRelease.TitleOf(Release(release, tracks)));
+    }
+
+    [Fact]
+    public void A_release_without_loaded_tracks_calls_for_its_own_title()
+    {
+        Assert.Equal("Freaks", PinnedRelease.TitleOf(new AlbumRelease { Title = "Freaks" }));
+        Assert.Null(PinnedRelease.TitleOf(null));
+    }
 }

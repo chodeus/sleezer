@@ -204,16 +204,22 @@ public class PreImportTagger : IPreImportTagger
             return new TaggingResult(0, 0, 0);
         }
 
+        // With Any Release OK off Lidarr imports only this release; tagging its twin gets the file refused as "not requested".
+        AlbumRelease? pinned = PinnedRelease.Of(album);
+        albumRelease ??= pinned;
+
         // A remix release is a different album, and writing the target album's
         // tags onto remix audio launders it straight past Lidarr's import
         // matching (verified live 2026-07-21: a "Marc Stout & Scott Svejda
         // remix" download was tagged as the plain single and imported over the
         // original). Fail closed: leave the raw tags for Lidarr to judge.
+        // A pinned radio-edit single calls for its edit, though the album title is plain.
+        string wantedTitle = PinnedRelease.TitleOf(pinned) is { } pinnedTitle && !string.IsNullOrWhiteSpace(pinnedTitle) ? pinnedTitle : album.Title;
         string folderLeaf = Path.GetFileName(folderPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-        if (VariantQualifiers.RemixSignaturesConflict(album.Title, folderLeaf, VariantQualifiers.ForgivenVariants(album)))
+        if (VariantQualifiers.RemixSignaturesConflict(wantedTitle, folderLeaf, VariantQualifiers.ForgivenVariants(album)))
         {
             _logger.Info("Pre-import tag: remix qualifier mismatch between album '{Album}' and folder '{Folder}' — skipping tagging for {FileCount} files in \"{SourceId}\"",
-                album.Title, folderLeaf, audioFiles.Count, sourceId);
+                wantedTitle, folderLeaf, audioFiles.Count, sourceId);
             return new TaggingResult(0, audioFiles.Count, 0);
         }
 
@@ -238,9 +244,6 @@ public class PreImportTagger : IPreImportTagger
                 FileTrackInfo = info
             };
         }).ToList();
-
-        // With Any Release OK off Lidarr imports only this release; tagging its twin gets the file refused as "not requested".
-        albumRelease ??= PinnedRelease.Of(album);
 
         IdentificationOverrides overrides = new()
         {
