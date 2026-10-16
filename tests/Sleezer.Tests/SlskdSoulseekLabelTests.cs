@@ -51,6 +51,8 @@ public class SlskdSoulseekLabelTests
     [InlineData(@"Music\Moonward\Glass Harbour (Vinyl)", " [Vinyl] [Soulseek]")]
     [InlineData(@"Music\Moonward\Glass Harbour [SACD]", " [SACD] [Soulseek]")]
     [InlineData(@"Music\Moonward\Glass Harbour [CD]", " [CD] [Soulseek]")]
+    [InlineData(@"Music\WEB\Moonward\Glass Harbour [Vinyl]", " [Vinyl] [Soulseek]")]
+    [InlineData(@"Music\Vinyl Rips\Moonward\Glass Harbour [CD]", " [CD] [Soulseek]")]
     public void on_a_rip_medium_named_in_the_folder_is_kept_before_the_label(string folder, string ending)
     {
         Assert.EndsWith(ending, TitleFor(folder, label: true));

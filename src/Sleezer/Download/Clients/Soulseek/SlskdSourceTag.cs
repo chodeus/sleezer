@@ -11,13 +11,15 @@ public static class SlskdSourceTag
     public const string Value = "soulseek";
 
     /// <summary>Tags each file the item owns by name and size; returns how many took the tag.</summary>
-    public static int Write(SlskdDownloadItem item, IEnumerable<string> audioFiles, Logger logger)
+    public static int Write(SlskdDownloadItem item, IEnumerable<string> audioFiles, Logger logger, CancellationToken ct)
     {
         Dictionary<string, long> owned = item.BuildOwnedFileSizes();
         int written = 0;
 
         foreach (string path in audioFiles)
         {
+            // Outside the try: the catch below would swallow the post-processing timeout.
+            ct.ThrowIfCancellationRequested();
             string name = Path.GetFileName(path);
             try
             {

@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
@@ -84,7 +85,7 @@ public class SlskdSourceTagTests : IDisposable
     {
         string path = Flac("01 Lantern Song.flac", peerSource: "https://open.qobuz.com/album/abc123");
 
-        int written = SlskdSourceTag.Write(Owning(path), [path], Log);
+        int written = SlskdSourceTag.Write(Owning(path), [path], Log, CancellationToken.None);
 
         Assert.Equal(1, written);
         Assert.Equal("soulseek", ReadSource(path));
@@ -97,7 +98,7 @@ public class SlskdSourceTagTests : IDisposable
         long before = new FileInfo(path).Length;
         SlskdDownloadItem item = Owning(path);
 
-        SlskdSourceTag.Write(item, [path], Log);
+        SlskdSourceTag.Write(item, [path], Log, CancellationToken.None);
 
         long after = new FileInfo(path).Length;
         Assert.NotEqual(before, after);
@@ -110,7 +111,7 @@ public class SlskdSourceTagTests : IDisposable
         string ours = Flac("01 Lantern Song.flac");
         string theirs = Flac("02 Tidewater.flac", peerSource: "https://www.deezer.com/album/9");
 
-        int written = SlskdSourceTag.Write(Owning(ours), [ours, theirs], Log);
+        int written = SlskdSourceTag.Write(Owning(ours), [ours, theirs], Log, CancellationToken.None);
 
         Assert.Equal(1, written);
         Assert.Equal("https://www.deezer.com/album/9", ReadSource(theirs));
@@ -123,7 +124,7 @@ public class SlskdSourceTagTests : IDisposable
         SlskdDownloadItem item = Owning(path);
         File.AppendAllText(path, "x");
 
-        Assert.Equal(0, SlskdSourceTag.Write(item, [path], Log));
+        Assert.Equal(0, SlskdSourceTag.Write(item, [path], Log, CancellationToken.None));
         Assert.Null(ReadSource(path));
     }
 
@@ -140,8 +141,19 @@ public class SlskdSourceTagTests : IDisposable
         SlskdDownloadItem item = Owning(mp3, gone);
         File.Delete(gone);
 
-        Assert.Equal(0, SlskdSourceTag.Write(item, [mp3, gone], Log));
+        Assert.Equal(0, SlskdSourceTag.Write(item, [mp3, gone], Log, CancellationToken.None));
         Assert.Equal(frames, File.ReadAllBytes(mp3));
+    }
+
+    [Fact]
+    public void the_post_processing_timeout_stops_the_pass_before_the_next_file()
+    {
+        string path = Flac("01 Lantern Song.flac");
+        using CancellationTokenSource cts = new();
+        cts.Cancel();
+
+        Assert.Throws<OperationCanceledException>(() => SlskdSourceTag.Write(Owning(path), [path], Log, cts.Token));
+        Assert.Null(ReadSource(path));
     }
 
     [Fact]

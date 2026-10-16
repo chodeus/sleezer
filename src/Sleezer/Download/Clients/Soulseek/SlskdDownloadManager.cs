@@ -1304,7 +1304,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 if (sourceTagEnabled)
                 {
                     string[] audioFiles = [.. _diskProvider.GetFiles(folderPath, recursive: true).Where(AudioFormatHelper.IsPostProcessAudioFile)];
-                    int written = SlskdSourceTag.Write(item, audioFiles, _logger);
+                    int written = SlskdSourceTag.Write(item, audioFiles, _logger, cts.Token);
                     _logger.Debug("[post-process] {ItemId}: SOURCE={Source} written to {Written} of {Count} audio file(s)", item.ID, SlskdSourceTag.Value, written, audioFiles.Length);
                 }
 
