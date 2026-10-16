@@ -93,6 +93,9 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek
         [FieldDefinition(13, Label = "Verify Imports With Fingerprint", Type = FieldType.Checkbox, HelpText = "Acoustically fingerprint EVERY completed download (not just album-extracted singles) and refuse to tag a file whose audio is a different MusicBrainz recording than the wanted track. Slower (~3s/file) on full albums; needs fpcalc + AcoustID. Files AcoustID can't identify are left to normal matching (fail-safe). Album-extracted singles are always fingerprint-checked regardless of this setting.", Advanced = true)]
         public bool VerifyImportsWithFingerprint { get; set; }
 
+        [FieldDefinition(14, Label = "Tag Files as Soulseek", Type = FieldType.Checkbox, HelpText = "Before import, write SOURCE=soulseek into each downloaded FLAC or Ogg file, replacing any SOURCE the shared file carried, so the files themselves record that they came from Soulseek. MP3 and M4A files are left unchanged.")]
+        public bool TagFilesAsSoulseek { get; set; }
+
         [FieldDefinition(98, Label = "Is Fetched remote", Type = FieldType.Checkbox, Hidden = HiddenType.Hidden)]
         public bool IsRemotePath { get; set; }
 

@@ -184,6 +184,9 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         [FieldDefinition(27, Label = "Match Release Tracks", Type = FieldType.Checkbox, HelpText = "Only grab a folder whose audio files are the selected release's tracks: one file per track, each track title in a file name, and each track length within 8 seconds of a file. Titles too short to match reliably and tracks with no known length are not checked. Automatic searches skip folders that fail; interactive searches still list them.")]
         public bool MatchReleaseTracks { get; set; }
 
+        [FieldDefinition(28, Label = "Label Results as Soulseek", Type = FieldType.Checkbox, HelpText = "End result titles with [Soulseek] instead of [WEB], so a custom format with a Release Title condition can score Soulseek results apart from store downloads. A CD, Vinyl or SACD named in the folder is kept; a WEB claim in the folder is dropped.")]
+        public bool LabelSoulseekResults { get; set; }
+
         public NzbDroneValidationResult Validate() => new(Validator.Validate(this));
 
         public static TrackCountFilterType TrackCountFilterFor(bool wholeAlbumsOnly) =>

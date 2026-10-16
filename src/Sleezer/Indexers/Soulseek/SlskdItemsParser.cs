@@ -235,6 +235,10 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             // deleted after parsing, so a /searches/ link is usually dead by then.
             string infoUrl = SlskdUrls.Peer(settings, folderData.Username);
             string? edition = ExtractEdition(folderData.Path)?.ToUpper();
+            string medium = DetectSourceTag(folderData.Path);
+            bool labelSoulseek = settings?.LabelSoulseekResults == true;
+            // A peer's folder is not a store download: the label drops a WEB claim, but CD/Vinyl/SACD still describe the rip.
+            string? labelledMedium = labelSoulseek && medium != "WEB" ? medium : null;
 
             int priority = folderData.CalculatePriority(expectedTrackCount);
             priority += (int)(trackEvidence * 400);
@@ -273,7 +277,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 AlbumName = finalAlbum,
                 AlbumIsSearchedTitle = albumIsSearchedTitle,
                 MatchedSearchCriteria = matchedSearchCriteria,
-                SourceTag = DetectSourceTag(folderData.Path),
+                SourceTag = labelSoulseek ? SoulseekSourceTag : medium,
                 ReleaseDate = finalYear,
                 // Folder years are year-precision only — never a publish date
                 // (see AlbumData.FillReleaseInfo). Keeps the "(YYYY)" title tag.
@@ -299,7 +303,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 // already works by DownloadUrl (which encodes the username),
                 // so we drop the decorations from the title and surface peer
                 // metadata via a Debug log line below for traceability.
-                ExtraInfo = string.IsNullOrEmpty(edition) ? null : [edition],
+                ExtraInfo = [.. new[] { edition, labelledMedium }.OfType<string>().Where(info => info.Length > 0)],
                 Duration = TotalDuration
             };
         }
@@ -810,6 +814,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
             return numbers.Count >= 3 && numbers[^1] - numbers[0] + 1 != numbers.Count;
         }
+
+        private const string SoulseekSourceTag = "Soulseek";
 
         private static string DetectSourceTag(string path)
         {
