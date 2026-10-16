@@ -247,6 +247,26 @@ public class ReleaseTitleTests
         Assert.Equal(searched.CleanArtistName(), ParsedClean(release));
     }
 
+    // Flagged as a variant, the product kept its own title and Lidarr rejected it as "Wrong album".
+    [Fact]
+    public void A_pinned_radio_edit_product_is_presented_as_the_searched_single()
+    {
+        StoreReleaseInfo release = Composed("Timmy Trumpet", "Freaks (Radio Edit)");
+        AlbumSearchCriteria criteria = Criteria("Freaks", "Timmy Trumpet");
+        criteria.Albums[0].AnyReleaseOk = false;
+        criteria.Albums[0].AlbumReleases.Value.Add(new AlbumRelease
+        {
+            Title = "Freaks",
+            Monitored = true,
+            Tracks = new LazyLoaded<List<Track>>([new Track { Title = "Freaks (Radio Edit)" }]),
+        });
+
+        Refine(release, criteria);
+
+        Assert.Null(release.Rejection);
+        Assert.Equal("Freaks".CleanArtistName(), ParsedClean(release));
+    }
+
     [Fact]
     public void A_number_outside_a_guest_credit_still_blocks_the_retitle()
     {

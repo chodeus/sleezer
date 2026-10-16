@@ -250,7 +250,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
                 var artistNormalized = Normalize(criteria.Artist.Name);
                 // A product fitting another release would fail at import
                 var pinned = PinnedRelease.Of(album);
-                var title = pinned?.Title is { } pinnedTitle && !string.IsNullOrWhiteSpace(pinnedTitle) ? pinnedTitle : album?.Title ?? criteria.AlbumTitle;
+                var title = PinnedRelease.TitleOf(pinned) is { } pinnedTitle && !string.IsNullOrWhiteSpace(pinnedTitle) ? pinnedTitle : album?.Title ?? criteria.AlbumTitle;
 
                 return new Target(
                     criteria.Artist.Name,

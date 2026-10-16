@@ -345,6 +345,18 @@ public class StoreReleaseVerifierTests
         Assert.True(Rejected(criteria, Store("Parra for Cuva", "Wicked Games", trackCount: 1, durationSeconds: 195)));
     }
 
+    // Live 2026-10-16: MusicBrainz titled the pinned radio-edit single "Freaks"; only its track said "(Radio Edit)".
+    [Fact]
+    public void A_pinned_single_whose_only_track_is_the_edit_calls_for_the_edit()
+    {
+        var criteria = Pinned(Criteria("Timmy Trumpet", "Freaks", trackCount: 4, durationSeconds: 878), trackCount: 1, durationSeconds: 169, title: "Freaks");
+        criteria.Albums[0].AlbumReleases.Value[^1].Tracks = new LazyLoaded<List<Track>>([new Track { Title = "Freaks (Radio Edit)" }]);
+
+        Assert.True(Accepted(criteria, Store("Timmy Trumpet", "Freaks", trackCount: 1, durationSeconds: 169, candidateTitle: "Freaks (Radio Edit)")));
+        Assert.True(Rejected(criteria, Store("Timmy Trumpet", "Freaks", trackCount: 1, durationSeconds: 169)));
+        Assert.True(Rejected(criteria, Store("Timmy Trumpet", "Freaks", trackCount: 1, durationSeconds: 169, candidateTitle: "Freaks (Extended Mix)")));
+    }
+
     [Fact]
     public void An_unpinned_plain_album_still_rejects_a_variant_product()
     {
