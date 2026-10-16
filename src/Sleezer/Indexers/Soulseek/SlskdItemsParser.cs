@@ -209,6 +209,13 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 }
             }
 
+            if (settings?.MatchReleaseTracks == true && matchedSearchCriteria && !string.IsNullOrEmpty(searchData.Album)
+                && SlskdReleaseTracks.Mismatch([.. filesToDownload.Where(IsAudioFile)], expectedTrackCount, coveredTrackCount, wantedTrackTitleCount, searchData.TrackDurations) is { } mismatch)
+            {
+                matchedSearchCriteria = false;
+                _logger.Debug("Match Release Tracks: '{Dir}' is not the release of '{Album}' — {Reason}", directory.Key, searchData.Album, mismatch);
+            }
+
             int actualTrackCount = filesToDownload.Count;
 
             // Determine final values for artist, album, year
@@ -768,12 +775,11 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             return (matched, covered, titles.Count);
         }
 
-        private const int TrackLengthToleranceSeconds = 8;
         private const double TrackLengthMatchedShare = 0.8;
         private const double TrackLengthMismatchedShare = 0.5;
 
         /// <summary>
-        /// Share of the smaller side (files or release tracks) paired within <see cref="TrackLengthToleranceSeconds"/>
+        /// Share of the smaller side (files or release tracks) paired within <see cref="SlskdReleaseTracks.LengthToleranceSeconds"/>
         /// of each other, each used once; null when either side has too few lengths to judge.
         /// </summary>
         internal static double? TrackLengthMatch(IReadOnlyCollection<SlskdFileData> files, IReadOnlyList<int>? releaseTrackMs)
@@ -781,32 +787,12 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             if (releaseTrackMs is not { Count: > 0 } || files.Count == 0)
                 return null;
 
-            List<int> expected = [.. releaseTrackMs.Where(ms => ms > 0).Select(ms => (int)Math.Round(ms / 1000.0)).Order()];
-            List<int> actual = [.. files.Where(f => f.Length is > 0).Select(f => f.Length!.Value).Order()];
+            List<int> expected = SlskdReleaseTracks.ReleaseSeconds(releaseTrackMs);
+            List<int> actual = SlskdReleaseTracks.FileSeconds(files);
             if (expected.Count < releaseTrackMs.Count * 0.8 || actual.Count < files.Count * 0.8)
                 return null;
 
-            int matched = 0;
-            for (int e = 0, a = 0; e < expected.Count && a < actual.Count;)
-            {
-                int diff = actual[a] - expected[e];
-                if (Math.Abs(diff) <= TrackLengthToleranceSeconds)
-                {
-                    matched++;
-                    e++;
-                    a++;
-                }
-                else if (diff < 0)
-                {
-                    a++;
-                }
-                else
-                {
-                    e++;
-                }
-            }
-
-            return matched / (double)Math.Min(expected.Count, actual.Count);
+            return SlskdReleaseTracks.Paired(expected, actual) / (double)Math.Min(expected.Count, actual.Count);
         }
 
         // Non-contiguous track numbers usually mean a partial rip or a mixed
