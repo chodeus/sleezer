@@ -83,7 +83,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 
             // A store can lead with another main artist: Qobuz credits a collaboration to whichever it lists first
             if (!string.IsNullOrWhiteSpace(release.Artist) && !ArtistMatches(release.Artist, target)
-                && !(release is StoreReleaseInfo store && store.MainArtists.Any(main => ArtistMatches(main, target))))
+                && !(release is StoreReleaseInfo store && store.MainArtists.Any(main => Normalize(main).Length > 0 && ArtistMatches(main, target))))
                 return ("artist", $"artist '{release.Artist}' is not '{target.ArtistName}'");
 
             return JudgeAlbum(release, (release as StoreReleaseInfo)?.CandidateTitle ?? release.Album, target.Album);

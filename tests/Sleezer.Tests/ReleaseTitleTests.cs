@@ -217,7 +217,7 @@ public class ReleaseTitleTests
         Assert.Contains("[Some Artist & Guest - In And Out Of Love (Remixes)]", release.Title);
     }
 
-    // Live 2026-10-16: Qobuz credits Oliver Heldens' "Wombass" to Tiësto first; Lidarr maps the title's artist, so it must be the searched one.
+    // Lidarr maps the title's artist, so a product led by another main artist is retitled to the searched one.
     [Fact]
     public void A_product_led_by_another_main_artist_is_presented_as_the_searched_artist()
     {

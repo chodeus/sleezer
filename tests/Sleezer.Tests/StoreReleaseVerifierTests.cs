@@ -315,8 +315,7 @@ public class StoreReleaseVerifierTests
         Assert.True(Accepted(criteria, Store("Biscits", "algorhythm", trackCount: 3)));
     }
 
-    // Live 2026-10-16: ODESZA "A Moment Apart" pinned to its 25-track deluxe; the 16-track standard
-    // edition fits the group's other releases, was grabbed, and Lidarr refused it at import.
+    // Pinned, a product is judged against the selected release alone; one fitting only another release fails at import.
     [Fact]
     public void A_pinned_release_rejects_a_product_that_fits_only_another_release()
     {
@@ -335,8 +334,7 @@ public class StoreReleaseVerifierTests
         Assert.True(Accepted(criteria, Store("ODESZA", "A Moment Apart", trackCount: 16, durationSeconds: 3566)));
     }
 
-    // Live 2026-10-16: Parra for Cuva "Wicked Games" pinned to its radio-edit release; the store's
-    // radio edit was dropped as a variant of the plain group title.
+    // A pinned variant release calls for its variant, though the group title is plain.
     [Fact]
     public void A_pinned_variant_release_calls_for_its_variant()
     {
@@ -365,7 +363,7 @@ public class StoreReleaseVerifierTests
         Assert.True(Accepted(criteria, Store("ODESZA", "A Moment Apart", trackCount: 25, durationSeconds: 5695)));
     }
 
-    // Live 2026-10-16: Qobuz credits Oliver Heldens' "Wombass" to Tiësto first, and lists both as main artists.
+    // A store may lead with another main artist; the searched one among its main artists is a match.
     [Fact]
     public void A_listed_main_artist_matches_the_searched_artist()
     {
@@ -374,6 +372,20 @@ public class StoreReleaseVerifierTests
         release.MainArtists = ["Tiësto", "Oliver Heldens"];
 
         Assert.True(Accepted(criteria, release));
+    }
+
+    // An empty name is unjudgeable as the store's artist, never a match as a main artist.
+    [Theory]
+    [InlineData("")]
+    [InlineData("  ")]
+    [InlineData("!?")]
+    public void An_empty_main_artist_does_not_match(string empty)
+    {
+        var criteria = Criteria("Oliver Heldens", "Wombass");
+        var release = Store("Tiësto", "Wombass");
+        release.MainArtists = ["Tiësto", empty];
+
+        Assert.True(Rejected(criteria, release));
     }
 
     [Fact]
