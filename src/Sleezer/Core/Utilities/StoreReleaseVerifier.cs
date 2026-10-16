@@ -179,7 +179,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             return names.Contains(Normalize(release.Artist)) || release.MainArtists.Any(a => names.Contains(Normalize(a)));
         }
 
-        private static string[] Numerals(string? title) => [.. Numeral.Matches(Normalize(title)).Select(m => m.Value)];
+        // A guest's name is no volume number: "X Ambassadors" would read as numeral X.
+        private static string[] Numerals(string? title) => [.. Numeral.Matches(Normalize(GuestCredits.WithoutCredits(title ?? string.Empty))).Select(m => m.Value)];
 
         private static string Comparable(string? title) => Normalize(StoreQueryCleaner.StripQualifiers(title ?? string.Empty));
 
