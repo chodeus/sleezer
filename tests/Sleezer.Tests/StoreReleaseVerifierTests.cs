@@ -332,6 +332,7 @@ public class StoreReleaseVerifierTests
         criteria.Albums[0].AlbumReleases.Value.Add(new AlbumRelease { TrackCount = 25, Duration = 5695 * 1000 });
 
         Assert.True(Accepted(criteria, Store("ODESZA", "A Moment Apart", trackCount: 16, durationSeconds: 3566)));
+        Assert.True(Accepted(criteria, Store("ODESZA", "A Moment Apart", trackCount: 25, durationSeconds: 5695)));
     }
 
     // A pinned variant release calls for its variant, though the group title is plain.
