@@ -27,7 +27,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.DownloadRules
         public IEnumerable<int> PreImportTaggingClients { get; set; } = Array.Empty<int>();
 
         [FieldDefinition(4, Label = "Remove Featured Artists From Tags", Type = FieldType.Checkbox,
-            HelpText = "Pre-import tagging always ignores '(feat. X)' when matching files for the clients selected above. This also removes it from the title and artist tags of the files it tags, renaming them to match, and removes it, and a '(with X)' naming a credited artist, from the title and album tags of the files it can't match.")]
+            HelpText = "Pre-import tagging always ignores '(feat. X)', and a '(with X)' naming artists the file or MusicBrainz credits, when matching files for the clients selected above. This also removes '(feat. X)' from the title and artist tags of the files it tags, renaming them to match, and removes both from the title and album tags of the files it can't match.")]
         public bool StripFeaturedArtists { get; set; }
 
         // Set once the values from the old per-provider settings have been copied in.

@@ -92,7 +92,7 @@ public class FeaturedArtistStripperTests
     {
         ParsedTrackInfo info = new() { AlbumTitle = "Song Title (feat. Guest Artist) [Remixer Remix]" };
 
-        FeaturedArtistStripper.ForIdentification(info, "Artist Name");
+        FeaturedArtistStripper.ForIdentification(info, "Artist Name", []);
 
         Assert.Equal("Song Title [Remixer Remix]", info.AlbumTitle);
     }
@@ -107,7 +107,7 @@ public class FeaturedArtistStripperTests
             ArtistTitle = "Artist Name, Guest Artist"
         };
 
-        FeaturedArtistStripper.ForIdentification(info, "Artist Name");
+        FeaturedArtistStripper.ForIdentification(info, "Artist Name", []);
 
         Assert.Equal("Song Title", info.Title);
         Assert.Equal("Song Title", info.CleanTitle);
@@ -122,7 +122,7 @@ public class FeaturedArtistStripperTests
     {
         ParsedTrackInfo info = new() { Title = title, CleanTitle = lidarrCleanTitle };
 
-        FeaturedArtistStripper.ForIdentification(info, "Artist Name");
+        FeaturedArtistStripper.ForIdentification(info, "Artist Name", []);
 
         Assert.Equal(expected, info.CleanTitle);
     }
@@ -132,7 +132,7 @@ public class FeaturedArtistStripperTests
     {
         ParsedTrackInfo info = new() { ArtistTitle = "Artist Name (feat. Guest Artist)" };
 
-        FeaturedArtistStripper.ForIdentification(info, "Other Artist");
+        FeaturedArtistStripper.ForIdentification(info, "Other Artist", []);
 
         Assert.Equal("Artist Name", info.ArtistTitle);
     }
@@ -142,10 +142,65 @@ public class FeaturedArtistStripperTests
     {
         ParsedTrackInfo info = new() { AlbumTitle = "Album Title (Remixer Remix)", Title = "Song Title" };
 
-        FeaturedArtistStripper.ForIdentification(info, "Artist Name");
+        FeaturedArtistStripper.ForIdentification(info, "Artist Name", []);
 
         Assert.Equal("Album Title (Remixer Remix)", info.AlbumTitle);
         Assert.Equal("Song Title", info.Title);
+    }
+
+    // Live 2026-10-16: the store tagged only the main artists, so the guests named in "(with …)" came from MusicBrainz alone.
+    [Fact]
+    public void ForIdentification_drops_a_with_credit_naming_the_given_credited_artists()
+    {
+        const string StoreTitle = "Song Title (with Guest A, Guest $ign & X Guests)";
+        ParsedTrackInfo info = new() { Title = StoreTitle, CleanTitle = StoreTitle, AlbumTitle = StoreTitle, ArtistTitle = "Artist Name" };
+
+        FeaturedArtistStripper.ForIdentification(info, "Artist Name", ["Second Main", "Guest A", "Guest $ign", "X Guests"]);
+
+        Assert.Equal("Song Title", info.Title);
+        Assert.Equal("Song Title", info.CleanTitle);
+        Assert.Equal("Song Title", info.AlbumTitle);
+    }
+
+    [Fact]
+    public void ForIdentification_drops_a_with_credit_naming_the_file_artist_tag()
+    {
+        ParsedTrackInfo info = new() { Title = "Song Title (with Guest Artist)", ArtistTitle = "Artist Name, Guest Artist" };
+
+        FeaturedArtistStripper.ForIdentification(info, "Artist Name", []);
+
+        Assert.Equal("Song Title", info.Title);
+    }
+
+    [Theory]
+    [InlineData("Song Title (With Myself)")]
+    [InlineData("Song Title (with Guest A & Someone Else)")]
+    public void ForIdentification_keeps_a_with_clause_naming_anyone_uncredited(string title)
+    {
+        ParsedTrackInfo info = new() { Title = title, AlbumTitle = title, ArtistTitle = "Artist Name" };
+
+        FeaturedArtistStripper.ForIdentification(info, "Artist Name", ["Guest A"]);
+
+        Assert.Equal(title, info.Title);
+        Assert.Equal(title, info.AlbumTitle);
+    }
+
+    // The list can cost a MusicBrainz lookup, so a title without "(with …)" must not read it.
+    [Fact]
+    public void StripCredits_reads_the_credited_artists_only_for_a_with_clause()
+    {
+        int reads = 0;
+        IEnumerable<string?> Credited()
+        {
+            reads++;
+            yield return "Guest Artist";
+        }
+
+        Assert.Equal("Track Title", FeaturedArtistStripper.StripCredits("Track Title (feat. Someone)", Credited()));
+        Assert.Equal(0, reads);
+
+        Assert.Equal("Track Title", FeaturedArtistStripper.StripCredits("Track Title (with Guest Artist)", Credited()));
+        Assert.Equal(1, reads);
     }
 
     // Live 2026-10-01: store singles reached Lidarr with "(feat. X)" / "(with X)" still in title and album.

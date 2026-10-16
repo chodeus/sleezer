@@ -248,7 +248,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
                 var album = criteria.Albums?.FirstOrDefault();
                 var aliases = criteria.Artist.Metadata?.Value?.Aliases ?? [];
                 var artistNormalized = Normalize(criteria.Artist.Name);
-                var pinned = PinnedRelease(album);
+                // A product fitting another release would fail at import
+                var pinned = PinnedRelease.Of(album);
                 var title = pinned?.Title is { } pinnedTitle && !string.IsNullOrWhiteSpace(pinnedTitle) ? pinnedTitle : album?.Title ?? criteria.AlbumTitle;
 
                 return new Target(
@@ -258,16 +259,6 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
                     [.. aliases.Select(Normalize).Where(a => a.Length > 0)],
                     StoreReleaseVerifier.IsVariousArtists(criteria.Artist.Name),
                     AlbumTarget.Of(album, title, pinned != null ? [pinned] : album?.AlbumReleases?.Value ?? []));
-            }
-
-            // With Any Release OK off, Lidarr imports only the selected release, so a product fitting another one fails at import
-            private static AlbumRelease? PinnedRelease(Album? album)
-            {
-                if (album == null || album.AnyReleaseOk)
-                    return null;
-
-                var monitored = album.AlbumReleases?.Value?.Where(r => r.Monitored).ToList();
-                return monitored is { Count: 1 } ? monitored[0] : null;
             }
         }
 
