@@ -110,13 +110,13 @@ public class SlskdDownloadItem
     }
 
     /// <summary>
-    /// Expected size per local basename of this item's files: the enqueued
-    /// identities plus any post-tagging identities recorded on top.
+    /// Expected size per local basename of this item's files: the identities
+    /// slskd accepted at enqueue plus any post-tagging identities recorded on top.
     /// </summary>
     public Dictionary<string, long> BuildOwnedFileSizes()
     {
         Dictionary<string, long> owned = FileData
-            .Where(f => !string.IsNullOrEmpty(f.Filename))
+            .Where(f => OwnsAcceptedFile(f.Filename))
             .GroupBy(f => Path.GetFileName(f.Filename!.Replace('\\', '/')), StringComparer.OrdinalIgnoreCase)
             .Where(g => !string.IsNullOrEmpty(g.Key))
             .ToDictionary(g => g.Key, g => g.First().Size, StringComparer.OrdinalIgnoreCase);

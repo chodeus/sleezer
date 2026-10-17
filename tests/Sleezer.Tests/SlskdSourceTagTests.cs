@@ -11,8 +11,7 @@ using Xunit;
 
 namespace Sleezer.Tests;
 
-// A shared FLAC can carry the store URL its ripper bought it from, which reads like a
-// store download. Tag Files as Soulseek overwrites SOURCE so the file says where it came from.
+// Tag Files as Soulseek (SlskdProviderSettings): SlskdSourceTag.Write.
 public class SlskdSourceTagTests : IDisposable
 {
     private static readonly NLog.Logger Log = NLog.LogManager.GetCurrentClassLogger();
@@ -115,6 +114,17 @@ public class SlskdSourceTagTests : IDisposable
 
         Assert.Equal(1, written);
         Assert.Equal("https://www.deezer.com/album/9", ReadSource(theirs));
+    }
+
+    [Fact]
+    public void a_file_slskd_rejected_at_enqueue_is_not_touched()
+    {
+        string path = Flac("01 Lantern Song.flac", peerSource: "https://www.deezer.com/album/9");
+        SlskdDownloadItem item = Owning(path);
+        item.MarkEnqueueFailed([@"@@u\Artist\Album\01 Lantern Song.flac"]);
+
+        Assert.Equal(0, SlskdSourceTag.Write(item, [path], Log, CancellationToken.None));
+        Assert.Equal("https://www.deezer.com/album/9", ReadSource(path));
     }
 
     [Fact]

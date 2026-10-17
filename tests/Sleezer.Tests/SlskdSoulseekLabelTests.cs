@@ -5,8 +5,7 @@ using Xunit;
 
 namespace Sleezer.Tests;
 
-// sleezer guessed [WEB] for every slskd folder that named no source, so a Soulseek result
-// took the same WEB custom-format score as a store download and could outrank it.
+// Label Results as Soulseek (SlskdSettings), through CreateAlbumData.
 public class SlskdSoulseekLabelTests
 {
     private static readonly SlskdItemsParser Parser = new(LogManager.GetLogger("tests"));

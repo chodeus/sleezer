@@ -1301,7 +1301,13 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 }
 
                 // Before the tagger, which records the identities of the files it renames.
-                if (sourceTagEnabled)
+                // It writes files, so only in the download root or a folder inside it.
+                string downloadRoot = remotePath.FullPath;
+                if (sourceTagEnabled && !folderPath.PathEquals(downloadRoot) && !IsStrictDescendantOfRoot(folderPath, downloadRoot))
+                {
+                    _logger.Warn("[post-process] {ItemId}: '{FolderPath}' is outside the download root; not writing SOURCE tags", item.ID, folderPath);
+                }
+                else if (sourceTagEnabled)
                 {
                     string[] audioFiles = [.. _diskProvider.GetFiles(folderPath, recursive: true).Where(AudioFormatHelper.IsPostProcessAudioFile)];
                     int written = SlskdSourceTag.Write(item, audioFiles, _logger, cts.Token);
