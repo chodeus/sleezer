@@ -30,6 +30,12 @@ public class SlskdTitleMatchTests
     [InlineData("Lantern Song.FLAC.1036 kbps", "Lantern Song")]
     [InlineData("Lantern Song 2021 Remaster", "Lantern Song")]
     [InlineData("With", "With")]
+    [InlineData("Moonward - With", "With")]
+    [InlineData("Moonward - With 2021 Remaster", "With")]
+    [InlineData("Salt and Pepper", "Salt & Pepper")]
+    [InlineData("Moonward - The Tide", "Tide")]
+    [InlineData("Moonward - A$AP Harbour", "A$AP Harbour")]
+    [InlineData("Moonward - Smoke With", "Smoke With")]
     [InlineData("Lantern Song\uFF08Single Version\uFF09", "Lantern Song")]
     [InlineData("Lantern Song\u3010Single Version\u3011", "Lantern Song")]
     [InlineData("Lantern Song ~Single Version~", "Lantern Song")]
@@ -75,6 +81,17 @@ public class SlskdTitleMatchTests
         AlbumData album = Build(folder, [File(folder, "01 - With", 200)], "With", ["With"], "Single", new SlskdSettings());
 
         Assert.True(album.MatchedSearchCriteria);
+    }
+
+    [Fact]
+    public void a_stop_word_single_matches_its_file_in_an_album_folder_named_with_the_artist()
+    {
+        const string folder = @"Music\Moonward\2001 - Glass Harbour";
+        AlbumData album = Build(folder, [File(folder, "02 - Moonward - Salt Road", 200), File(folder, "03 - Moonward - With", 200)],
+            "With", ["With"], "Single", new SlskdSettings());
+
+        Assert.True(album.MatchedSearchCriteria);
+        Assert.Contains("03 - Moonward - With.flac", album.CustomString);
     }
 
     [Fact]

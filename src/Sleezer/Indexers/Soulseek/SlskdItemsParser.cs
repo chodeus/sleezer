@@ -488,6 +488,21 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             if (string.IsNullOrEmpty(input))
                 return string.Empty;
 
+            string normalized = NormalizeWords(input);
+            string withoutStopWords = RemoveWordsRegex().Replace(normalized, "");
+            withoutStopWords = ReduceWhitespaceRegex().Replace(withoutStopWords, " ").Trim();
+
+            // Names made entirely of stop words ("The The") must not normalize
+            // to empty — an empty operand can never fuzzy-match anything.
+            return withoutStopWords.Length > 0 ? withoutStopWords : normalized;
+        }
+
+        /// <summary>NormalizeString's words with the stop words kept.</summary>
+        internal static string NormalizeWords(string input)
+        {
+            if (string.IsNullOrEmpty(input))
+                return string.Empty;
+
             // Separators (incl. backslash — the full slskd path is normalized
             // here, and deleting the separator used to glue adjacent path
             // components into unmatchable tokens) and punctuation become spaces,
@@ -495,14 +510,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             // fuzzy comparison.
             string normalized = NormalizeCharactersRegex().Replace(input, " ");
             normalized = RemoveNonAlphanumericRegex().Replace(normalized, " ");
-            normalized = ReduceWhitespaceRegex().Replace(normalized.ToLowerInvariant(), " ").Trim();
-
-            string withoutStopWords = RemoveWordsRegex().Replace(normalized, "");
-            withoutStopWords = ReduceWhitespaceRegex().Replace(withoutStopWords, " ").Trim();
-
-            // Names made entirely of stop words ("The The") must not normalize
-            // to empty — an empty operand can never fuzzy-match anything.
-            return withoutStopWords.Length > 0 ? withoutStopWords : normalized;
+            return ReduceWhitespaceRegex().Replace(normalized.ToLowerInvariant(), " ").Trim();
         }
 
         /// <summary>True for a word NormalizeString drops as a stop word.</summary>

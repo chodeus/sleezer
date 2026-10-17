@@ -15,11 +15,10 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             string text = fileTitle.Normalize(NormalizationForm.FormC);
             // Underscores stand for spaces only in a name that has none; otherwise they separate fields.
             text = text.Contains(' ') ? text.Replace('_', '-') : text.Replace('_', ' ');
-            bool keepStopWords = OnlyStopWords(text);
             List<string> tokens = [Separator];
             foreach (string piece in SeparatorRegex().Split(text))
             {
-                string[] words = Words(piece, keepStopWords);
+                string[] words = Words(piece, keepStopWords: true);
                 if (words.Length == 0)
                     continue;
 
@@ -49,6 +48,10 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         {
             if (title.Head.Length == 0)
                 return -1;
+
+            // A title made only of stop words ("With") is matched against them; every other title never sees them.
+            if (!title.Head.All(SlskdItemsParser.IsStopWord))
+                tokens = [.. tokens.Where(t => !SlskdItemsParser.IsStopWord(t))];
 
             int fewest = -1;
             for (int i = 1; i < tokens.Count && fewest != 0; i++)
@@ -101,12 +104,12 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             return w == words.Length ? k : -1;
         }
 
+        // Word by word on both sides: "A$AP" is one word, not the stop word "a" and "$ap".
         private static string[] Words(string text, bool keepStopWords) =>
-            [.. SlskdItemsParser.NormalizeString(text).Split(' ', StringSplitOptions.RemoveEmptyEntries).Where(w => keepStopWords || !SlskdItemsParser.IsStopWord(w))];
+            [.. SlskdItemsParser.NormalizeWords(text).Split(' ', StringSplitOptions.RemoveEmptyEntries).Where(w => keepStopWords || !SlskdItemsParser.IsStopWord(w))];
 
-        // As NormalizeString: a whole name made only of stop words ("With") keeps them.
-        private static bool OnlyStopWords(string text) =>
-            SlskdItemsParser.NormalizeString(text).Split(' ', StringSplitOptions.RemoveEmptyEntries).All(SlskdItemsParser.IsStopWord);
+        // As NormalizeString: a title made only of stop words ("With") keeps them.
+        private static bool OnlyStopWords(string text) => Words(text, keepStopWords: true).All(SlskdItemsParser.IsStopWord);
 
         [GeneratedRegex(@"\s+[-–—]\s+|[-–—()\[\]{},.;:!?/\\~〜·・（）［］｛｝～【】「」『』〈〉《》]|\b(?:feat|ft|featuring)\b", RegexOptions.IgnoreCase)]
         private static partial Regex SeparatorRegex();
