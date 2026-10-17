@@ -10,8 +10,8 @@ public static class SlskdSourceTag
 {
     public const string Value = "soulseek";
 
-    /// <summary>Tags each file the item owns by name and size; returns how many took the tag.</summary>
-    public static int Write(SlskdDownloadItem item, IEnumerable<string> audioFiles, Logger logger, CancellationToken ct)
+    /// <summary>Tags each file under the download root the item owns by name and size; returns how many took the tag.</summary>
+    public static int Write(SlskdDownloadItem item, string downloadRoot, IEnumerable<string> audioFiles, Logger logger, CancellationToken ct)
     {
         Dictionary<string, long> owned = item.BuildOwnedFileSizes();
         int written = 0;
@@ -23,6 +23,10 @@ public static class SlskdSourceTag
             string name = Path.GetFileName(path);
             try
             {
+                // A link could aim the write outside the root, which the caller's path check can't see.
+                if (IsLinkedOrOutside(path, downloadRoot))
+                    continue;
+
                 // A shared download folder can hold another download's files; leave those alone.
                 if (!owned.TryGetValue(name, out long size) || new FileInfo(path).Length != size)
                     continue;
@@ -42,5 +46,20 @@ public static class SlskdSourceTag
         }
 
         return written;
+    }
+
+    /// <summary>True when the file, or a folder between it and the root, is a link, or the root is never reached.</summary>
+    private static bool IsLinkedOrOutside(string path, string root)
+    {
+        string fullRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+        FileSystemInfo? entry = new FileInfo(path);
+        while (entry != null && !Path.TrimEndingDirectorySeparator(entry.FullName).Equals(fullRoot, StringComparison.Ordinal))
+        {
+            if (entry.LinkTarget != null || entry.Attributes.HasFlag(FileAttributes.ReparsePoint))
+                return true;
+            entry = entry is FileInfo file ? file.Directory : ((DirectoryInfo)entry).Parent;
+        }
+
+        return entry == null;
     }
 }
