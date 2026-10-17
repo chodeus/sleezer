@@ -49,34 +49,40 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             if (title.Head.Length == 0)
                 return -1;
 
-            // A title made only of stop words ("With") is matched against them; every other title never sees them.
-            if (!title.Head.All(SlskdItemsParser.IsStopWord))
-                tokens = [.. tokens.Where(t => !SlskdItemsParser.IsStopWord(t))];
-
+            IReadOnlyList<string> seen = SeenBy(tokens, title.Head);
             int fewest = -1;
-            for (int i = 1; i < tokens.Count && fewest != 0; i++)
+            for (int i = 1; i < seen.Count && fewest != 0; i++)
             {
-                if (tokens[i] == Separator || !IsEdge(tokens[i - 1]))
+                if (seen[i] == Separator || !IsEdge(seen[i - 1]))
                     continue;
 
-                int end = MatchRun(tokens, i, title.Head);
+                int end = TitleEnd(seen, i, title);
                 if (end < 0)
                     continue;
 
-                if (title.Qualifier.Length > 0)
-                    end = MatchRun(tokens, end, title.Qualifier);
-                else if (end < tokens.Count && !IsEdge(tokens[end]))
-                    end = -1;
-
-                if (end < 0)
-                    continue;
-
-                int after = tokens.Skip(end).Count(t => t != Separator);
+                int after = seen.Skip(end).Count(t => t != Separator);
                 if (fewest < 0 || after < fewest)
                     fewest = after;
             }
 
             return fewest;
+        }
+
+        // A title made only of stop words ("With") is matched against them; every other title never sees them.
+        private static IReadOnlyList<string> SeenBy(IReadOnlyList<string> tokens, string[] head) =>
+            head.All(SlskdItemsParser.IsStopWord) ? tokens : [.. tokens.Where(t => !SlskdItemsParser.IsStopWord(t))];
+
+        // Index just past the title read from `start`: its head, then its qualifier or, for a title without one, an edge or the end; -1 otherwise.
+        private static int TitleEnd(IReadOnlyList<string> tokens, int start, (string[] Head, string[] Qualifier) title)
+        {
+            int end = MatchRun(tokens, start, title.Head);
+            if (end < 0)
+                return -1;
+
+            if (title.Qualifier.Length > 0)
+                return MatchRun(tokens, end, title.Qualifier);
+
+            return end == tokens.Count || IsEdge(tokens[end]) ? end : -1;
         }
 
         // Any number, such as a track number or a year ("Title 2021 Remaster"), bounds a title like a separator does.
