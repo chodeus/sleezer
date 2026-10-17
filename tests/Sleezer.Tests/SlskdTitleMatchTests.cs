@@ -36,6 +36,8 @@ public class SlskdTitleMatchTests
     [InlineData("Moonward - The Tide", "Tide")]
     [InlineData("Moonward - A$AP Harbour", "A$AP Harbour")]
     [InlineData("Moonward - Smoke With", "Smoke With")]
+    [InlineData("Moonward - Featuring", "Featuring")]
+    [InlineData("Lantern Song Featuring Ivy Rhodes", "Lantern Song")]
     [InlineData("Lantern Song\uFF08Single Version\uFF09", "Lantern Song")]
     [InlineData("Lantern Song\u3010Single Version\u3011", "Lantern Song")]
     [InlineData("Lantern Song ~Single Version~", "Lantern Song")]

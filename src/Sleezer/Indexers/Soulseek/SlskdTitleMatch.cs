@@ -117,7 +117,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         // As NormalizeString: a title made only of stop words ("With") keeps them.
         private static bool OnlyStopWords(string text) => Words(text, keepStopWords: true).All(SlskdItemsParser.IsStopWord);
 
-        [GeneratedRegex(@"\s+[-–—]\s+|[-–—()\[\]{},.;:!?/\\~〜·・（）［］｛｝～【】「」『』〈〉《》]|\b(?:feat|ft|featuring)\b", RegexOptions.IgnoreCase)]
+        // The captured "feat" stays as a piece of its own: a stop word between separators, so a title "Featuring" can match it.
+        [GeneratedRegex(@"\s+[-–—]\s+|[-–—()\[\]{},.;:!?/\\~〜·・（）［］｛｝～【】「」『』〈〉《》]|\b(feat|ft|featuring)\b", RegexOptions.IgnoreCase)]
         private static partial Regex SeparatorRegex();
     }
 }
