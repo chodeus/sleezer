@@ -21,10 +21,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             // into their parent), so every file in the group belongs to this release.
             FolderJudgement judgement = new(directory.ToList());
 
-            // Track-title evidence: when enough of the wanted track titles appear
-            // in the folder's filenames, the folder IS the album regardless of
-            // how it is named. Essential for server-blocked artists whose name
-            // never appears in the query or the path.
+            // Wanted titles in the file names can prove the album when no path names the artist (server-blocked artists).
             (List<SlskdFileData> matchedTrackFiles, int coveredTrackCount, int wantedTrackTitleCount) = MatchWantedTrackFiles(directory, searchData.Tracks, searchData.TargetVariantTypes);
             TrackTitleEvidence evidence = new(matchedTrackFiles, coveredTrackCount, wantedTrackTitleCount);
 
@@ -48,10 +45,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
             _logger.Trace("Creating album data - Dir: '{Dir}', Search artist: '{Artist}', Search album: '{Album}'", dirNameNorm, searchArtistNorm, searchAlbumNorm);
 
-            // Volume-series matching only applies when the album has an explicit
-            // volume KEYWORD ("Vol. 3", "Part II"). A bare trailing number is not
-            // enough — titles that ARE numbers ("1989", "25", "IV") used to be
-            // force-routed here and could never match their own directories.
+            // The volume route needs a keyword ("Vol. 3", "Part II"); a title that is a number ("1989", "IV") takes the normal route.
             bool isVolumeSearch = !string.IsNullOrEmpty(searchData.Album) && VolumeKeywordRegex().Match(searchData.Album).Success;
 
             judgement.AlbumMatch = isVolumeSearch
@@ -115,11 +109,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             judgement.Reasons.Add(judgement.AlbumMatch ? "artist and album named together" : "artist and album not named together");
         }
 
-        // Runs after every album-match route including track evidence: a
-        // remix single's filenames CONTAIN the base title, so evidence
-        // would otherwise force the false match right back. Leaf AND parent
-        // are judged as one candidate — "Album (Live)\FLAC" carries the
-        // qualifier one level up.
+        // After track evidence, which a remix's file names would otherwise satisfy; leaf and parent are one candidate
+        // because "Album (Live)\FLAC" carries the qualifier a level up.
         private void ApplyRemixGuard(FolderJudgement judgement, string directoryKey, SlskdSearchData searchData)
         {
             if (!judgement.AlbumMatch || string.IsNullOrEmpty(searchData.Album))
@@ -136,12 +127,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             judgement.Reject("remix or version qualifier differs");
         }
 
-        // Single/EP handling: pluck the wanted track(s) from a bigger album
-        // instead of hauling it whole, reject a source with none of them, and
-        // rank coherent sources over partial ones. Coverage is measured against
-        // evidence.Wanted (titles that survived the three-letter floor), NOT
-        // the raw expectedTrackCount — else a two-letter title ("Up")
-        // makes a complete source look partial.
+        // Single/EP: pluck, reject or rank by coverage of evidence.Wanted, not expectedTrackCount, so a two-letter
+        // title ("Up") that the floor drops doesn't make a complete source look partial.
         private void JudgeSmallTarget(FolderJudgement judgement, IGrouping<string, SlskdFileData> directory, SlskdSearchData searchData, SlskdSettings? settings, int expectedTrackCount, TrackTitleEvidence evidence)
         {
             if (!judgement.Matched || evidence.Wanted == 0 || !IsSingleOrEpTarget(searchData.AlbumType, expectedTrackCount))
@@ -164,9 +151,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 judgement.CoherencePriorityDelta -= AlbumExtractionPenalty;
         }
 
-        // Pluck only from a genuinely larger source, and only when every
-        // target track is matchable AND matched — else an unmatchable
-        // (short/stop-word) title would be dropped and imported incomplete.
+        // Only from a larger source, and only when every target track is matchable and matched, or a short title is lost.
         private void PluckFromBiggerSource(FolderJudgement judgement, string directoryKey, SlskdSearchData searchData, int expectedTrackCount, TrackTitleEvidence evidence, int audioFileCount)
         {
             if (audioFileCount <= expectedTrackCount || evidence.Wanted != expectedTrackCount || !evidence.CoversEveryTitle || evidence.Files.Count >= audioFileCount)
