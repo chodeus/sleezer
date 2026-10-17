@@ -1,22 +1,11 @@
-using System.Globalization;
-using System.Text;
 using System.Text.RegularExpressions;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Indexers.Soulseek.Search.Core;
 
 namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek.Search.Transformers;
 
 public static partial class QueryNormalizer
 {
-    // FormD decomposition handles combining accents (é → e) but not these
-    // standalone codepoints, which appear verbatim in MusicBrainz names.
-    private static readonly Dictionary<char, string> _ligatureMap = new()
-    {
-        { 'æ', "ae" }, { 'Æ', "Ae" }, { 'œ', "oe" }, { 'Œ', "Oe" },
-        { 'ø', "o" }, { 'Ø', "O" }, { 'ð', "d" }, { 'Ð', "D" },
-        { 'þ', "th" }, { 'Þ', "Th" }, { 'ß', "ss" }, { 'đ', "d" },
-        { 'Đ', "D" }, { 'ł', "l" }, { 'Ł', "L" }, { 'ı', "i" },
-    };
-
     public static SearchContext Normalize(SearchContext context)
     {
         if (!context.QueryType.HasFlag(QueryType.NeedsNormalization))
@@ -48,30 +37,7 @@ public static partial class QueryNormalizer
         // '-'); peers share plain-ASCII paths. Deleting these instead of mapping
         // used to fuse adjacent words into tokens no peer path contains
         // ("G‐Eazy" → "GEazy" → zero results, verified against live slskd logs).
-        string mapped = MapUnicodePunctuation(input);
-
-        // Decompose accented characters (é → e + ´)
-        string decomposed = mapped.Normalize(NormalizationForm.FormD);
-        StringBuilder sb = new(decomposed.Length);
-
-        foreach (char c in decomposed)
-        {
-            if (_ligatureMap.TryGetValue(c, out string? replacement))
-            {
-                sb.Append(replacement);
-                continue;
-            }
-
-            UnicodeCategory category = CharUnicodeInfo.GetUnicodeCategory(c);
-            if (category != UnicodeCategory.NonSpacingMark &&
-                category != UnicodeCategory.SpacingCombiningMark &&
-                category != UnicodeCategory.EnclosingMark)
-            {
-                sb.Append(c);
-            }
-        }
-
-        string result = sb.ToString().Normalize(NormalizationForm.FormC);
+        string result = ComparableText.FoldAccents(ComparableText.MapPunctuation(input));
 
         // Apostrophes are intra-word elision: delete ("Don't" → "Dont").
         // Every other stripped character is a separator: replace with a space
@@ -82,24 +48,6 @@ public static partial class QueryNormalizer
         result = WhitespaceRegex().Replace(result, " ").Trim();
 
         return result;
-    }
-
-    private static string MapUnicodePunctuation(string input)
-    {
-        StringBuilder sb = new(input.Length);
-        foreach (char c in input)
-        {
-            sb.Append(c switch
-            {
-                '‐' or '‑' or '‒' or '–' or '—' or '―' or '−' => "-",
-                '‘' or '’' or '‚' or 'ʼ' or '`' or '´' => "'",
-                '“' or '”' or '„' => "\"",
-                '…' => " ",
-                _ => c.ToString(),
-            });
-        }
-
-        return sb.ToString();
     }
 
     [GeneratedRegex(@"[^\w\s\-&']", RegexOptions.Compiled)]

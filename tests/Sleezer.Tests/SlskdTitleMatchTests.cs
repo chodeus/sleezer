@@ -45,6 +45,8 @@ public class SlskdTitleMatchTests
     [InlineData("Cafe\u0301 Tide", "Caf\u00E9 Tide")]
     [InlineData("Caf\u00E9 Tide", "Cafe\u0301 Tide")]
     [InlineData("Lantern\u00B4s Song", "Lantern's Song")]
+    [InlineData("Moonward - Can_t Stop Now", "Can’t Stop Now")]
+    [InlineData("02-16 - S_T_A_R_", "S.T.A.R.")]
     public void a_title_between_separators_matches(string fileTitle, string wantedTitle)
     {
         Assert.True(StandsAlone(fileTitle, wantedTitle));

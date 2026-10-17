@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.RegularExpressions;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
 namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 {
@@ -11,9 +12,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         /// <summary>The file title's words, with a separator token wherever a separator stood and at both ends.</summary>
         internal static List<string> Tokens(string fileTitle)
         {
-            // A macOS peer's decomposed accents compose to match the title (FormKC would turn "´" and "…" into separators).
-            string text = fileTitle.Normalize(NormalizationForm.FormC);
             // Underscores stand for spaces only in a name that has none; otherwise they separate fields.
+            string text = ComparableText.JoinWords(fileTitle);
             text = text.Contains(' ') ? text.Replace('_', '-') : text.Replace('_', ' ');
             List<string> tokens = [Separator];
             foreach (string piece in SeparatorRegex().Split(text))
@@ -32,11 +32,10 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         /// <summary>A wanted title's words, split at its first bracket into the head and the qualifier.</summary>
         internal static (string[] Head, string[] Qualifier) TitleWords(string wantedTitle)
         {
-            string title = wantedTitle.Normalize(NormalizationForm.FormC);
-            bool keepStopWords = OnlyStopWords(title);
-            int bracket = title.IndexOfAny(['(', '[']);
-            string[] head = Words(bracket > 0 ? title[..bracket] : title, keepStopWords);
-            string[] qualifier = bracket > 0 ? Words(title[bracket..], keepStopWords) : [];
+            bool keepStopWords = OnlyStopWords(wantedTitle);
+            int bracket = wantedTitle.IndexOfAny(['(', '[']);
+            string[] head = Words(bracket > 0 ? wantedTitle[..bracket] : wantedTitle, keepStopWords);
+            string[] qualifier = bracket > 0 ? Words(wantedTitle[bracket..], keepStopWords) : [];
             return head.Length == 0 ? (qualifier, []) : (head, qualifier);
         }
 
@@ -88,26 +87,26 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         // Any number, such as a track number or a year ("Title 2021 Remaster"), bounds a title like a separator does.
         private static bool IsEdge(string token) => token == Separator || token.All(char.IsDigit);
 
-        // Index just past `words` read in order from `start`, stepping over separators; -1 when they don't follow.
+        // Index just past the tokens from `start` whose letters spell `words`, stepping over separators; -1 when they
+        // don't. Word breaks inside the run don't matter ("Can_t" spells "cant"), so it must end on a token boundary.
         private static int MatchRun(IReadOnlyList<string> tokens, int start, string[] words)
         {
+            string target = string.Concat(words);
+            StringBuilder read = new(target.Length);
             int k = start;
-            int w = 0;
-            while (k < tokens.Count && w < words.Length)
+            while (k < tokens.Count && read.Length < target.Length)
             {
-                if (tokens[k] == Separator)
+                if (tokens[k] != Separator)
                 {
-                    k++;
-                    continue;
+                    read.Append(tokens[k]);
+                    if (!target.StartsWith(read.ToString(), StringComparison.Ordinal))
+                        return -1;
                 }
 
-                if (tokens[k] != words[w])
-                    return -1;
                 k++;
-                w++;
             }
 
-            return w == words.Length ? k : -1;
+            return read.Length == target.Length ? k : -1;
         }
 
         // Word by word on both sides: "A$AP" is one word, not the stop word "a" and "$ap".

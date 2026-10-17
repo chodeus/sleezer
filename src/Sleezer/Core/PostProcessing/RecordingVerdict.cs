@@ -1,4 +1,4 @@
-using NzbDrone.Plugin.Sleezer.Indexers.Soulseek;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
 namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing;
 
@@ -64,5 +64,5 @@ public static class RecordingVerdict
     }
 
     public static string NormalizeTitle(string? title) =>
-        SlskdTextProcessor.StripPunctuation(FeaturedArtistStripper.Strip(title ?? string.Empty)).ToLowerInvariant();
+        ComparableText.Of(FeaturedArtistStripper.Strip(title ?? string.Empty));
 }

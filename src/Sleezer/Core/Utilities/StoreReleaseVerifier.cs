@@ -9,7 +9,6 @@ using NzbDrone.Core.IndexerSearch.Definitions;
 using NzbDrone.Core.Music;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Plugin.Sleezer.Core.Model;
-using NzbDrone.Plugin.Sleezer.Indexers.Soulseek;
 
 namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 {
@@ -210,8 +209,9 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 
         public static bool IsVariousArtists(string? artist)
         {
-            var normalized = Normalize(artist);
-            return normalized is "various artists" or "va";
+            // Spaces dropped: "V/A" normalizes to "v a".
+            var joined = Normalize(artist).Replace(" ", string.Empty);
+            return joined is "variousartists" or "va";
         }
 
         internal static string Normalize(string? value)
@@ -219,9 +219,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             if (string.IsNullOrWhiteSpace(value))
                 return string.Empty;
 
-            var text = value.Replace("&", " and ").RemoveAccent().ToLowerInvariant();
-            text = SlskdTextProcessor.StripPunctuation(text);
-            text = LeadingArticle.Replace(text, string.Empty);
+            var text = LeadingArticle.Replace(ComparableText.Of(value), string.Empty);
             return Spaces.Replace(text, " ").Trim();
         }
 

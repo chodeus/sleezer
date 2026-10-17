@@ -104,7 +104,7 @@ public class StoreQueryCleanerTests
         Assert.Equal("cafe creme", StoreQueryCleaner.MatchKey("Café Crème"));
     }
 
-    // Only Latin accents fold: elsewhere the combining mark is part of the word.
+    // Optional marks fold; on kana, Thai and Indic text the combining mark is part of the word.
     [Theory]
     [InlineData("び", "ひ")]
     [InlineData("ดี", "ด")]
