@@ -1,6 +1,4 @@
-﻿using System.Globalization;
-using System.Text;
-using System.Text.RegularExpressions;
+﻿using System.Text.RegularExpressions;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
 namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
@@ -105,33 +103,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             return StripPunctuationRegex().Replace(stripped, " ").Trim();
         }
 
-        public static string NormalizeSpecialCharacters(string? input)
-        {
-            if (string.IsNullOrEmpty(input)) return string.Empty;
-
-            bool isAscii = true;
-            foreach (char c in input)
-            {
-                if (c > 127)
-                {
-                    isAscii = false;
-                    break;
-                }
-            }
-            if (isAscii) return input;
-
-            string decomposed = input.Normalize(NormalizationForm.FormD);
-            StringBuilder sb = new(decomposed.Length);
-
-            foreach (char c in decomposed)
-            {
-                UnicodeCategory cat = CharUnicodeInfo.GetUnicodeCategory(c);
-                if (cat != UnicodeCategory.NonSpacingMark && cat != UnicodeCategory.SpacingCombiningMark && cat != UnicodeCategory.EnclosingMark)
-                    sb.Append(c);
-            }
-
-            return sb.ToString().Normalize(NormalizationForm.FormC);
-        }
+        public static string NormalizeSpecialCharacters(string? input) =>
+            string.IsNullOrEmpty(input) ? string.Empty : ComparableText.FoldAccents(input);
 
         public static IEnumerable<string> GenerateVolumeVariations(string album)
         {

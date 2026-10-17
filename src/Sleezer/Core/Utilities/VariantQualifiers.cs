@@ -1,7 +1,6 @@
 using System.Text.RegularExpressions;
 using FuzzySharp;
 using NzbDrone.Core.Music;
-using NzbDrone.Plugin.Sleezer.Indexers.Soulseek;
 
 namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 {
@@ -146,7 +145,48 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             if (searchSignature.Length == 0 || candidateSignature.Length == 0)
                 return false;
 
-            return Fuzz.TokenSetRatio(searchSignature, candidateSignature) < 60;
+            return Fuzz.TokenSetRatio(searchSignature, candidateSignature) < 60
+                && !NameStartsWithin(searchSignature, candidateSignature)
+                && !NameStartsWithin(candidateSignature, searchSignature);
+        }
+
+        // Joined forms forgive a stylised or longer name ("k?d" vs "kd", "Avicii" in "Avicii's Dirty Mouth"): it must
+        // begin a word of the other and end one, a possessive "s" allowed; "Corvin" is not "Corvina Brothers".
+        private static bool NameStartsWithin(string name, string other)
+        {
+            string joined = name.Replace(" ", string.Empty);
+            string otherJoined = other.Replace(" ", string.Empty);
+            int start = 0;
+            foreach (string word in other.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (otherJoined.AsSpan(start).StartsWith(joined, StringComparison.Ordinal))
+                {
+                    int end = start + joined.Length;
+                    bool possessive = end < otherJoined.Length && otherJoined[end] == 's' && EndsWord(other, end + 1);
+                    if (EndsWord(other, end) || possessive)
+                        return true;
+                }
+
+                start += word.Length;
+            }
+
+            return false;
+        }
+
+        // Whether `joinedIndex`, counted in `spaced` without its spaces, falls at the end of a word.
+        private static bool EndsWord(string spaced, int joinedIndex)
+        {
+            int letters = 0;
+            foreach (string word in spaced.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            {
+                letters += word.Length;
+                if (letters == joinedIndex)
+                    return true;
+                if (letters > joinedIndex)
+                    return false;
+            }
+
+            return false;
         }
 
         /// <summary>True when a title carries any variant qualifier; cheap pre-filter before the conflict check.</summary>
@@ -294,8 +334,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         private static bool TrailingWord(string word, string loweredTitle) =>
             loweredTitle.EndsWith(" " + word, StringComparison.Ordinal) || loweredTitle.EndsWith("-" + word, StringComparison.Ordinal);
 
-        private static string NormalizeRemixerText(string text) =>
-            SlskdTextProcessor.StripPunctuation(text).Trim().ToLowerInvariant();
+        private static string NormalizeRemixerText(string text) => ComparableText.Of(text);
 
         [GeneratedRegex(@"[\(\[\{].*?[\)\]\}]", RegexOptions.Compiled)]
         private static partial Regex BracketedContentRegex();

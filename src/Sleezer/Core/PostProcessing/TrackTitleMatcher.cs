@@ -1,6 +1,5 @@
 using System.Text.RegularExpressions;
 using FuzzySharp;
-using NzbDrone.Plugin.Sleezer.Indexers.Soulseek;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
 namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing;
@@ -41,7 +40,7 @@ public static partial class TrackTitleMatcher
             {
                 if (wanted[j].Length == 0 || VariantQualifiers.RemixSignaturesConflict(wantedTitles[j], localTitles[i]))
                     continue;
-                if (DigitTokensDiffer(locals[i], wanted[j]) || LeftoverTokenCount(locals[i], wanted[j]) >= 2)
+                if (DigitTokensDiffer(locals[i], wanted[j]) || NamesAnotherPart(locals[i], wanted[j]) || LeftoverTokenCount(locals[i], wanted[j]) >= 2)
                     continue;
 
                 int gate = Fuzz.TokenSetRatio(locals[i], wanted[j]);
@@ -84,12 +83,55 @@ public static partial class TrackTitleMatcher
     private static int LeftoverTokenCount(string local, string wanted)
     {
         HashSet<string> wantedTokens = wanted.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.Ordinal);
-        return local.Split(' ', StringSplitOptions.RemoveEmptyEntries).Count(t => !wantedTokens.Contains(t));
+        // Numbers are track, disc or year fields, not qualifiers; DigitTokensDiffer and NamesAnotherPart judge them.
+        return local.Split(' ', StringSplitOptions.RemoveEmptyEntries).Count(t => !wantedTokens.Contains(t) && !t.All(char.IsDigit));
     }
+
+    // "Take 2", "Part II": a numbered take or part is another track, unless the wanted title numbers that part too.
+    private static bool NamesAnotherPart(string local, string wanted)
+    {
+        HashSet<string> parts = PartNumbers(local, withLastWord: false);
+        return parts.Count > 0 && !parts.IsSubsetOf(PartNumbers(wanted, withLastWord: true));
+    }
+
+    // Numbers after a numbering word ("part 2", "take two"); withLastWord also a number ending the title ("Freestyle 1").
+    private static HashSet<string> PartNumbers(string title, bool withLastWord)
+    {
+        string[] tokens = title.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        HashSet<string> numbers = [];
+        for (int i = 1; i < tokens.Length; i++)
+        {
+            if (NumberingWords.Contains(tokens[i - 1]) && NumberValue(tokens[i]) is { } number)
+                numbers.Add(number);
+        }
+
+        if (withLastWord && tokens.Length > 0 && NumberValue(tokens[^1]) is { } last)
+            numbers.Add(last);
+        return numbers;
+    }
+
+    private static readonly HashSet<string> NumberingWords = ["part", "parts", "pt", "take", "set", "vol", "volume", "chapter", "act", "no", "number", "book", "movement", "mvt"];
+
+    private static readonly Dictionary<string, string> NumberWords = new(StringComparer.Ordinal)
+    {
+        ["one"] = "1", ["two"] = "2", ["three"] = "3", ["four"] = "4", ["five"] = "5",
+        ["six"] = "6", ["seven"] = "7", ["eight"] = "8", ["nine"] = "9", ["ten"] = "10",
+        ["eleven"] = "11", ["twelve"] = "12", ["thirteen"] = "13", ["fourteen"] = "14", ["fifteen"] = "15",
+        ["sixteen"] = "16", ["seventeen"] = "17", ["eighteen"] = "18", ["nineteen"] = "19", ["twenty"] = "20",
+        ["i"] = "1", ["ii"] = "2", ["iii"] = "3", ["iv"] = "4", ["v"] = "5",
+        ["vi"] = "6", ["vii"] = "7", ["viii"] = "8", ["ix"] = "9", ["x"] = "10",
+        ["xi"] = "11", ["xii"] = "12", ["xiii"] = "13", ["xiv"] = "14", ["xv"] = "15",
+        ["xvi"] = "16", ["xvii"] = "17", ["xviii"] = "18", ["xix"] = "19", ["xx"] = "20",
+    };
+
+    // "2", "02", "two" and "ii" all read "2"; null for a word that is no number.
+    private static string? NumberValue(string token) =>
+        token.Length > 0 && token.All(char.IsDigit) ? token.TrimStart('0') : NumberWords.GetValueOrDefault(token);
 
     /// <summary>
     /// Derives a comparable title from an extension-less filename: strips the
-    /// leading track numbering and any "Artist - " prefix segments.
+    /// leading track numbering, any "Artist - " prefix segments, an "Album [01-06] "
+    /// prefix and "Artist_Album_02_" fields.
     /// </summary>
     public static string TitleFromFilename(string? filenameWithoutExtension)
     {
@@ -108,12 +150,32 @@ public static partial class TrackTitleMatcher
         if (dash >= 0 && dash + 3 < title.Length)
             title = title[(dash + 3)..];
 
-        return title.Trim();
+        title = BracketedIndexPrefixRegex().Replace(title, "");
+        return WithoutUnderscoreField(title).Trim();
     }
 
-    private static string Normalize(string? title) =>
-        SlskdTextProcessor.StripPunctuation(FeaturedArtistStripper.Strip(title ?? string.Empty)).ToLowerInvariant();
+    // Where spaces separate words, "_02_" separates fields; an underscore inside a title often stands in for / ? * or ".
+    private static string WithoutUnderscoreField(string title)
+    {
+        if (!title.Contains(' '))
+            return title;
+
+        string rest = UnderscoreTrackFieldPrefixRegex().Replace(title, "");
+        return ClosesUnopenedBracket(rest) ? title : rest;
+    }
+
+    // "(Live 12_04_99)": a date inside brackets is not a field.
+    private static bool ClosesUnopenedBracket(string text) => text.Count(c => c is ')' or ']') > text.Count(c => c is '(' or '[');
+
+    private static string Normalize(string? title) => RecordingVerdict.NormalizeTitle(title);
 
     [GeneratedRegex(@"^\s*\d{1,4}\s*[-._)\]]*\s*")]
     private static partial Regex LeadingTrackNumberRegex();
+
+    // "[02]" or "[01-06]" with a title after it; a one-digit "[2]" can be part of the title.
+    [GeneratedRegex(@"^.*\[(?:\d{2,3}|\d{1,3}-\d{1,3})\]\s*(?=\S)")]
+    private static partial Regex BracketedIndexPrefixRegex();
+
+    [GeneratedRegex(@"^.*_\d{1,3}(?:-\d{1,3})?_(?=.)")]
+    private static partial Regex UnderscoreTrackFieldPrefixRegex();
 }

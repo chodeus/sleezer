@@ -159,8 +159,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             // Single/EP handling: pluck the wanted track(s) from a bigger album
             // instead of hauling it whole, reject a source with none of them, and
             // rank coherent sources over partial ones. Coverage is measured against
-            // wantedTrackTitleCount (titles that survived the >=4-char floor), NOT
-            // the raw expectedTrackCount — else a stop-word title ("The End"->"end")
+            // wantedTrackTitleCount (titles that survived the three-letter floor), NOT
+            // the raw expectedTrackCount — else a two-letter title ("Up")
             // makes a complete source look partial. Ranking uses `directory`
             // (folderData.Files is empty here — see CalculatePriority).
             int audioFileCount = directory.Count(IsAudioFile);
@@ -498,20 +498,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         }
 
         /// <summary>NormalizeString's words with the stop words kept.</summary>
-        internal static string NormalizeWords(string input)
-        {
-            if (string.IsNullOrEmpty(input))
-                return string.Empty;
-
-            // Separators (incl. backslash — the full slskd path is normalized
-            // here, and deleting the separator used to glue adjacent path
-            // components into unmatchable tokens) and punctuation become spaces,
-            // never plain deletions, so word tokens survive on both sides of the
-            // fuzzy comparison.
-            string normalized = NormalizeCharactersRegex().Replace(input, " ");
-            normalized = RemoveNonAlphanumericRegex().Replace(normalized, " ");
-            return ReduceWhitespaceRegex().Replace(normalized.ToLowerInvariant(), " ").Trim();
-        }
+        // Path separators split words like any other mark (ComparableText), so path components stay apart.
+        internal static string NormalizeWords(string input) => ComparableText.Of(input);
 
         /// <summary>True for a word NormalizeString drops as a stop word.</summary>
         internal static bool IsStopWord(string word) => RemoveWordsRegex().Replace(word, string.Empty).Length == 0;
@@ -564,16 +552,18 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         // short names require an exact word-token hit instead of a fuzzy score.
         private const int ShortNameTokenLength = 4;
 
-        private static bool ContainsWordToken(string dirNameNorm, string queryNorm) =>
-            dirNameNorm.Split(' ', StringSplitOptions.RemoveEmptyEntries)
-                .Contains(queryNorm, StringComparer.Ordinal);
+        // Whole words in order; fuzzy PartialRatio can score an exact substring as low as 50, so this runs first.
+        private static bool ContainsWords(string dirNameNorm, string queryNorm) =>
+            $" {dirNameNorm} ".Contains($" {queryNorm} ", StringComparison.Ordinal);
 
         private static bool IsFuzzyArtistMatch(string dirNameNorm, string searchArtistNorm, int strictnessOffset = 0)
         {
             if (string.IsNullOrEmpty(searchArtistNorm))
                 return false;
+            if (ContainsWords(dirNameNorm, searchArtistNorm))
+                return true;
             if (searchArtistNorm.Length <= ShortNameTokenLength)
-                return ContainsWordToken(dirNameNorm, searchArtistNorm);
+                return false;
             (int partial, int tokenSort) = GetCachedFuzzyScores(dirNameNorm, searchArtistNorm);
             return partial > FuzzyArtistPartialThreshold + strictnessOffset || tokenSort > FuzzyArtistTokenSortThreshold + strictnessOffset;
         }
@@ -582,8 +572,10 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         {
             if (string.IsNullOrEmpty(searchAlbumNorm))
                 return false;
+            if (ContainsWords(dirNameNorm, searchAlbumNorm))
+                return true;
             if (searchAlbumNorm.Length <= ShortNameTokenLength)
-                return ContainsWordToken(dirNameNorm, searchAlbumNorm);
+                return false;
             (int partial, int tokenSort) = GetCachedFuzzyScores(dirNameNorm, searchAlbumNorm);
             return partial > FuzzyAlbumPartialThreshold + strictnessOffset || tokenSort > FuzzyAlbumTokenSortThreshold + strictnessOffset;
         }
@@ -741,7 +733,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             // brackets a variant qualifier lives in ("(Radio Edit)").
             List<(string Raw, string Norm, bool Qualified, (string[] Head, string[] Qualifier) Words)> titles = expectedTracks
                 .Select(t => (Raw: t, Norm: NormalizeString(t), Qualified: VariantQualifiers.HasVariantQualifier(t), Words: SlskdTitleMatch.TitleWords(t)))
-                .Where(t => t.Norm.Length >= 4)
+                // Three letters: "U.F.O." joins to "ufo".
+                .Where(t => t.Norm.Length >= 3)
                 .ToList();
             if (titles.Count == 0)
                 return (matched, 0, 0);
@@ -1042,10 +1035,6 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         [GeneratedRegex(@"\s+", RegexOptions.Compiled)]
         private static partial Regex ReduceWhitespaceRegex();
 
-        [GeneratedRegex(@"[^\w\s$]", RegexOptions.Compiled)]
-        private static partial Regex RemoveNonAlphanumericRegex();
 
-        [GeneratedRegex(@"[-._/\\]+", RegexOptions.Compiled)]
-        private static partial Regex NormalizeCharactersRegex();
     }
 }

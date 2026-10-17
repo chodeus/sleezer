@@ -112,6 +112,8 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Utilities\PinnedRelease.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Core\Utilities\ComparableText.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Utilities\StoreReleaseVerifier.cs"
              LinkBase="SourceUnderTest" />
     <!-- Two library artists with one CleanName fail a whole search (#124). Lidarr.Core's parser + Artist. -->
