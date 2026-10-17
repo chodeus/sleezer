@@ -122,6 +122,7 @@ public class ComparableTextTests
     [InlineData("Зорїн", "Зорін")]
     [InlineData("Краўн", "Краун")]
     [InlineData("ދިވެހި", "ދވހ")]
+    [InlineData("ހި", "ހ")]
     public void marks_outside_latin_letters_keep_two_words_apart(string a, string b)
     {
         Assert.NotEqual(ComparableText.Of(a), ComparableText.Of(b));

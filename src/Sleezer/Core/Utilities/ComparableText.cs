@@ -97,12 +97,16 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
                 sb.Append(c);
         }
 
-        // Thaana, Indic, Thai, Lao, Tibetan, Myanmar, Khmer, Tai Tham, Balinese, Sundanese, Javanese and kana: there the
-        // mark changes the word ("ガラス" is not "カラス"). Cyrillic й, ї and ў are letters of their own; only ё folds.
+        // Thaana; Indic to Myanmar; Khmer; Tai Tham to Sundanese; kana; Javanese: there the mark changes the word ("ガラス" is not "カラス").
+        private static readonly (char From, char To)[] SpellingScripts =
+            [('\u0780', '\u07BF'), ('\u0900', '\u109F'), ('\u1780', '\u17FF'), ('\u1A20', '\u1BBF'), ('\u3040', '\u30FF'), ('\uA980', '\uA9DF')];
+
         private static bool MarkSpellsWord(char letter, char mark) =>
-            letter is (>= '\u0780' and <= '\u07BF') or (>= '\u0900' and <= '\u109F') or (>= '\u1780' and <= '\u17FF')
-                or (>= '\u1A20' and <= '\u1BBF') or (>= '\u3040' and <= '\u30FF') or (>= '\uA980' and <= '\uA9DF')
-            || (letter is >= '\u0400' and <= '\u04FF' && (mark == '\u0306' || (mark == '\u0308' && letter is not ('е' or 'Е'))));
+            SpellingScripts.Any(r => letter >= r.From && letter <= r.To) || CyrillicLetterMark(letter, mark);
+
+        // Cyrillic й, ї and ў are letters of their own; only ё folds.
+        private static bool CyrillicLetterMark(char letter, char mark) =>
+            letter is >= '\u0400' and <= '\u04FF' && (mark == '\u0306' || (mark == '\u0308' && letter is not ('е' or 'Е')));
 
         // An apostrophe anywhere, or a dot or underscore between two single letters ("S_W_A_T"; "Song.FLAC" still splits).
         [GeneratedRegex(@"'|(?<=(?:^|[^\p{L}])\p{L})[._](?=\p{L}(?:[^\p{L}]|$))")]

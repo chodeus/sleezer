@@ -1034,7 +1034,5 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
         [GeneratedRegex(@"\s+", RegexOptions.Compiled)]
         private static partial Regex ReduceWhitespaceRegex();
-
-
     }
 }
