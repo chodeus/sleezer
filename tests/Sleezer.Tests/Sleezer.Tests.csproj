@@ -348,6 +348,8 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Indexers\Soulseek\SlskdReleaseTracks.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Indexers\Soulseek\SlskdTitleMatch.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Indexers\Soulseek\ISlskdItemsParser.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Indexers\Soulseek\SlskdSettings.cs"

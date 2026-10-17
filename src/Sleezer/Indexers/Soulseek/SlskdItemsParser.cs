@@ -488,15 +488,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             if (string.IsNullOrEmpty(input))
                 return string.Empty;
 
-            // Separators (incl. backslash — the full slskd path is normalized
-            // here, and deleting the separator used to glue adjacent path
-            // components into unmatchable tokens) and punctuation become spaces,
-            // never plain deletions, so word tokens survive on both sides of the
-            // fuzzy comparison.
-            string normalized = NormalizeCharactersRegex().Replace(input, " ");
-            normalized = RemoveNonAlphanumericRegex().Replace(normalized, " ");
-            normalized = ReduceWhitespaceRegex().Replace(normalized.ToLowerInvariant(), " ").Trim();
-
+            string normalized = NormalizeWords(input);
             string withoutStopWords = RemoveWordsRegex().Replace(normalized, "");
             withoutStopWords = ReduceWhitespaceRegex().Replace(withoutStopWords, " ").Trim();
 
@@ -504,6 +496,25 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             // to empty — an empty operand can never fuzzy-match anything.
             return withoutStopWords.Length > 0 ? withoutStopWords : normalized;
         }
+
+        /// <summary>NormalizeString's words with the stop words kept.</summary>
+        internal static string NormalizeWords(string input)
+        {
+            if (string.IsNullOrEmpty(input))
+                return string.Empty;
+
+            // Separators (incl. backslash — the full slskd path is normalized
+            // here, and deleting the separator used to glue adjacent path
+            // components into unmatchable tokens) and punctuation become spaces,
+            // never plain deletions, so word tokens survive on both sides of the
+            // fuzzy comparison.
+            string normalized = NormalizeCharactersRegex().Replace(input, " ");
+            normalized = RemoveNonAlphanumericRegex().Replace(normalized, " ");
+            return ReduceWhitespaceRegex().Replace(normalized.ToLowerInvariant(), " ").Trim();
+        }
+
+        /// <summary>True for a word NormalizeString drops as a stop word.</summary>
+        internal static bool IsStopWord(string word) => RemoveWordsRegex().Replace(word, string.Empty).Length == 0;
 
         private static string CleanComponent(string component)
         {
@@ -715,7 +726,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
         /// <summary>
         /// Maps wanted track titles onto the folder's files. Returns the files
-        /// whose (track-number-stripped) filename contains a wanted title, the
+        /// in whose (track-number-stripped) filename a wanted title stands alone, the
         /// number of DISTINCT wanted tracks covered, and the number of wanted
         /// titles long enough to match on (the track-evidence denominator).
         /// </summary>
@@ -728,8 +739,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
             // Raw title kept alongside the normalized one: normalization strips the
             // brackets a variant qualifier lives in ("(Radio Edit)").
-            List<(string Raw, string Norm, bool Qualified)> titles = expectedTracks
-                .Select(t => (Raw: t, Norm: NormalizeString(t), Qualified: VariantQualifiers.HasVariantQualifier(t)))
+            List<(string Raw, string Norm, bool Qualified, (string[] Head, string[] Qualifier) Words)> titles = expectedTracks
+                .Select(t => (Raw: t, Norm: NormalizeString(t), Qualified: VariantQualifiers.HasVariantQualifier(t), Words: SlskdTitleMatch.TitleWords(t)))
                 .Where(t => t.Norm.Length >= 4)
                 .ToList();
             if (titles.Count == 0)
@@ -737,14 +748,14 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
             // Audio files only (a same-named .cue/.nfo must not outrank the track);
             // basename after normalizing backslashes (Path.* won't split them on Linux).
-            List<(SlskdFileData File, string Name, string Raw, bool Qualified)> named = files
+            List<(SlskdFileData File, List<string> Tokens, string Raw, bool Qualified)> named = files
                 .Where(IsAudioFile)
                 .Select(f =>
                 {
                     string raw = TrackNumberPrefixRegex().Replace(Path.GetFileNameWithoutExtension((f.Filename ?? string.Empty).Replace('\\', '/')), string.Empty);
-                    return (File: f, Name: NormalizeString(raw), Raw: raw, Qualified: VariantQualifiers.HasVariantQualifier(raw));
+                    return (File: f, Tokens: SlskdTitleMatch.Tokens(raw), Raw: raw, Qualified: VariantQualifiers.HasVariantQualifier(raw));
                 })
-                .Where(x => x.Name.Length > 0)
+                .Where(x => x.Tokens.Count > 1)
                 .ToList();
             if (named.Count == 0)
                 return (matched, 0, titles.Count);
@@ -754,28 +765,49 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             // "Falling Slowly") and make an incomplete source look complete.
             HashSet<int> claimed = [];
             int covered = 0;
-            foreach ((string Raw, string Norm, bool Qualified) title in titles.OrderByDescending(t => t.Norm.Length))
+            foreach ((string Raw, string Norm, bool Qualified, (string[] Head, string[] Qualifier) Words) title in titles.OrderByDescending(t => t.Norm.Length))
             {
-                for (int i = 0; i < named.Count; i++)
-                {
-                    if (claimed.Contains(i) || !named[i].Name.Contains(title.Norm))
-                        continue;
+                int best = PickTitleFile(named, claimed, title.Raw, title.Qualified, title.Words, targetVariantTypes);
+                if (best < 0)
+                    continue;
 
-                    // A wanted title is contained in its own variant ("Proposition"
-                    // in "Proposition (Radio Edit)"); target types forgive valid ones.
-                    if ((title.Qualified || named[i].Qualified) &&
-                        VariantQualifiers.RemixSignaturesConflict(title.Raw, named[i].Raw, targetVariantTypes))
-                        continue;
-
-                    claimed.Add(i);
-                    covered++;
-                    if (named[i].File.Filename != null)
-                        matched.Add(named[i].File);
-                    break;
-                }
+                claimed.Add(best);
+                covered++;
+                if (named[best].File.Filename != null)
+                    matched.Add(named[best].File);
             }
 
             return (matched, covered, titles.Count);
+        }
+
+        /// <summary>The unclaimed file a wanted title stands alone in, preferring one whose name ends with it; -1 when none.</summary>
+        private static int PickTitleFile(
+            List<(SlskdFileData File, List<string> Tokens, string Raw, bool Qualified)> named, HashSet<int> claimed,
+            string titleRaw, bool titleQualified, (string[] Head, string[] Qualifier) titleWords, IReadOnlyCollection<string>? targetVariantTypes)
+        {
+            int best = -1;
+            for (int i = 0; i < named.Count; i++)
+            {
+                // Stands alone, not merely contained: "Tide" must not claim "Low Tide Rising".
+                int wordsAfter = claimed.Contains(i) ? -1 : SlskdTitleMatch.WordsAfter(named[i].Tokens, titleWords);
+                if (wordsAfter < 0)
+                    continue;
+
+                // A wanted title is contained in its own variant ("Proposition"
+                // in "Proposition (Radio Edit)"); target types forgive valid ones.
+                if ((titleQualified || named[i].Qualified) &&
+                    VariantQualifiers.RemixSignaturesConflict(titleRaw, named[i].Raw, targetVariantTypes))
+                    continue;
+
+                if (best < 0)
+                    best = i;
+
+                // A file the title ends beats an earlier one with words after it: "Tide" over "Tide (Reprise)".
+                if (wordsAfter == 0)
+                    return i;
+            }
+
+            return best;
         }
 
         private const double TrackLengthMatchedShare = 0.8;
