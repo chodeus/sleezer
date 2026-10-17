@@ -188,6 +188,18 @@ public class SlskdOwnershipOverlayTests
     }
 
     [Fact]
+    public void A_file_slskd_rejected_at_enqueue_is_not_owned()
+    {
+        SlskdDownloadItem item = NewItem((@"@@x\d\01 track.flac", 100), (@"@@x\d\02 track.flac", 200));
+
+        item.MarkEnqueueFailed([@"@@x\d\02 track.flac"]);
+        Dictionary<string, long> owned = item.BuildOwnedFileSizes();
+
+        Assert.Equal(100, owned["01 track.flac"]);
+        Assert.False(owned.ContainsKey("02 track.flac"));
+    }
+
+    [Fact]
     public void Blank_basenames_are_ignored()
     {
         SlskdDownloadItem item = NewItem((@"@@x\d\track.flac", 100));

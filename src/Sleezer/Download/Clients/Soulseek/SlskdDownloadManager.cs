@@ -1234,9 +1234,10 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
         bool scanEnabled = sharedSettings.CorruptionScanClients?.Contains((int)PostProcessClient.Slskd) ?? false;
         bool tagEnabled = rules.PreImportTaggingClients?.Contains((int)PostProcessClient.Slskd) ?? false;
+        bool sourceTagEnabled = settings.TagFilesAsSoulseek;
         bool mergeNeeded = item.IsMultiDirectory && !item.DiscFoldersMerged;
 
-        if (!scanEnabled && !tagEnabled && !mergeNeeded)
+        if (!scanEnabled && !tagEnabled && !sourceTagEnabled && !mergeNeeded)
             return;
 
         Task task = Task.Run(async () =>
@@ -1279,7 +1280,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                     return;
                 }
 
-                if (!scanEnabled && !tagEnabled)
+                if (!scanEnabled && !tagEnabled && !sourceTagEnabled)
                     return;
 
                 if (scanEnabled)
@@ -1297,6 +1298,20 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
                     // The files are readable, so they can now answer for themselves.
                     VerifyAdvertisedQuality(item, folderPath);
+                }
+
+                // Before the tagger, which records the identities of the files it renames.
+                // It writes files, so only in the download root or a folder inside it.
+                string downloadRoot = remotePath.FullPath;
+                if (sourceTagEnabled && !folderPath.PathEquals(downloadRoot) && !IsStrictDescendantOfRoot(folderPath, downloadRoot))
+                {
+                    _logger.Warn("[post-process] {ItemId}: '{FolderPath}' is outside the download root; not writing SOURCE tags", item.ID, folderPath);
+                }
+                else if (sourceTagEnabled)
+                {
+                    string[] audioFiles = [.. _diskProvider.GetFiles(folderPath, recursive: true).Where(AudioFormatHelper.IsPostProcessAudioFile)];
+                    int written = SlskdSourceTag.Write(item, downloadRoot, audioFiles, _logger, cts.Token);
+                    _logger.Debug("[post-process] {ItemId}: SOURCE={Source} written to {Written} of {Count} audio file(s)", item.ID, SlskdSourceTag.Value, written, audioFiles.Length);
                 }
 
                 if (tagEnabled)

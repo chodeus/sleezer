@@ -235,6 +235,9 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             // deleted after parsing, so a /searches/ link is usually dead by then.
             string infoUrl = SlskdUrls.Peer(settings, folderData.Username);
             string? edition = ExtractEdition(folderData.Path)?.ToUpper();
+            bool labelSoulseek = settings?.LabelSoulseekResults == true;
+            // A peer's folder is not a store download: the label drops a WEB claim, but CD/Vinyl/SACD still describe the rip.
+            string? labelledMedium = labelSoulseek ? NamedRipMedium(folderData.Path) : null;
 
             int priority = folderData.CalculatePriority(expectedTrackCount);
             priority += (int)(trackEvidence * 400);
@@ -273,7 +276,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 AlbumName = finalAlbum,
                 AlbumIsSearchedTitle = albumIsSearchedTitle,
                 MatchedSearchCriteria = matchedSearchCriteria,
-                SourceTag = DetectSourceTag(folderData.Path),
+                SourceTag = labelSoulseek ? SoulseekSourceTag : DetectSourceTag(folderData.Path),
                 ReleaseDate = finalYear,
                 // Folder years are year-precision only — never a publish date
                 // (see AlbumData.FillReleaseInfo). Keeps the "(YYYY)" title tag.
@@ -299,7 +302,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 // already works by DownloadUrl (which encodes the username),
                 // so we drop the decorations from the title and surface peer
                 // metadata via a Debug log line below for traceability.
-                ExtraInfo = string.IsNullOrEmpty(edition) ? null : [edition],
+                ExtraInfo = [.. new[] { edition, labelledMedium }.OfType<string>().Where(info => info.Length > 0)],
                 Duration = TotalDuration
             };
         }
@@ -811,13 +814,21 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             return numbers.Count >= 3 && numbers[^1] - numbers[0] + 1 != numbers.Count;
         }
 
+        private const string SoulseekSourceTag = "Soulseek";
+
         private static string DetectSourceTag(string path)
         {
             Match match = SourceTagRegex().Match(path);
-            if (!match.Success)
-                return "WEB";
+            return match.Success ? SourceTagFor(match.Value) : "WEB";
+        }
 
-            string value = match.Value.ToUpperInvariant();
+        /// <summary>The CD/Vinyl/SACD named nearest the album folder, skipping WEB; null when the path names none.</summary>
+        private static string? NamedRipMedium(string path) =>
+            SourceTagRegex().Matches(path).Select(m => SourceTagFor(m.Value)).LastOrDefault(tag => tag != "WEB");
+
+        private static string SourceTagFor(string word)
+        {
+            string value = word.ToUpperInvariant();
             return value switch
             {
                 "VINYL" => "Vinyl",

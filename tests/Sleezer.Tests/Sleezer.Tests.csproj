@@ -394,6 +394,8 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Download\Clients\Soulseek\SlskdProviderSettings.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Download\Clients\Soulseek\SlskdSourceTag.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Indexers\SubSonic\SubSonicUrlRedactor.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Indexers\SubSonic\SubSonicLoginInterceptor.cs"
