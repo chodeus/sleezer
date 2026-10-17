@@ -59,24 +59,34 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 : IsFuzzyAlbumNameMatch(dirNameNorm, searchAlbumNorm, strictnessOffset) || PathTailNamesAlbum(directoryKey, searchAlbumNorm, strictnessOffset);
             judgement.ArtistMatch = IsFuzzyArtistMatch(dirNameNorm, searchArtistNorm, strictnessOffset);
 
+            AddNameReasons(judgement, searchAlbumNorm, isVolumeSearch);
+            bool titlesCarryIt = ApplyTitleEvidence(judgement, evidence);
+            judgement.Matched = NamesMeetSearch(judgement, searchArtistNorm, searchAlbumNorm, titlesCarryIt);
+            JudgeCombinedName(judgement, dirNameNorm, searchData, strictnessOffset);
+        }
+
+        private static void AddNameReasons(FolderJudgement judgement, string searchAlbumNorm, bool isVolumeSearch)
+        {
             judgement.Reasons.Add(judgement.ArtistMatch ? "artist named" : "artist not named");
             if (!string.IsNullOrEmpty(searchAlbumNorm))
                 judgement.Reasons.Add(AlbumReason(judgement.AlbumMatch, isVolumeSearch));
+        }
 
-            bool titlesCarryIt = evidence.Share >= TrackEvidenceThreshold;
-            if (titlesCarryIt)
-            {
-                judgement.AlbumMatch = true;
-                judgement.Reasons.Add($"track titles {(int)Math.Round(evidence.Share * 100, MidpointRounding.AwayFromZero)}%");
-            }
+        // Enough wanted titles in the file names make the folder the album, however it is named.
+        private static bool ApplyTitleEvidence(FolderJudgement judgement, TrackTitleEvidence evidence)
+        {
+            if (evidence.Share < TrackEvidenceThreshold)
+                return false;
 
-            judgement.Matched = string.IsNullOrEmpty(searchAlbumNorm)
+            judgement.AlbumMatch = true;
+            judgement.Reasons.Add($"track titles {(int)Math.Round(evidence.Share * 100, MidpointRounding.AwayFromZero)}%");
+            return true;
+        }
+
+        private static bool NamesMeetSearch(FolderJudgement judgement, string searchArtistNorm, string searchAlbumNorm, bool titlesCarryIt) =>
+            string.IsNullOrEmpty(searchAlbumNorm)
                 ? judgement.ArtistMatch
                 : judgement.AlbumMatch && (judgement.ArtistMatch || string.IsNullOrEmpty(searchArtistNorm) || titlesCarryIt);
-
-            if (!judgement.ArtistMatch && !judgement.AlbumMatch && !string.IsNullOrEmpty(searchData.Artist) && !string.IsNullOrEmpty(searchData.Album))
-                JudgeCombinedName(judgement, dirNameNorm, searchData, strictnessOffset);
-        }
 
         private static string AlbumReason(bool albumMatch, bool isVolumeSearch) => isVolumeSearch
             ? albumMatch ? "volume series matches" : "volume series differs"
@@ -95,6 +105,9 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         // Neither named alone: the artist and album read as one phrase.
         private static void JudgeCombinedName(FolderJudgement judgement, string dirNameNorm, SlskdSearchData searchData, int strictnessOffset)
         {
+            if (judgement.ArtistMatch || judgement.AlbumMatch || string.IsNullOrEmpty(searchData.Artist) || string.IsNullOrEmpty(searchData.Album))
+                return;
+
             string combinedSearch = NormalizeString($"{searchData.Artist} {searchData.Album}");
             (int combinedPartial, _) = GetCachedFuzzyScores(dirNameNorm, combinedSearch);
             judgement.AlbumMatch = combinedPartial > FuzzyCombinedThreshold + strictnessOffset;

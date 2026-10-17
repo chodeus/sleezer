@@ -108,22 +108,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             // A peer's folder is not a store download: the label drops a WEB claim, but CD/Vinyl/SACD still describe the rip.
             string? labelledMedium = labelSoulseek ? NamedRipMedium(folderData.Path) : null;
 
-            int priority = folderData.CalculatePriority(expectedTrackCount);
-            priority += (int)(verdict.TrackEvidence * 400);
-            if (TrackLengthMatch(audioForQuality, searchData.TrackDurations) is double lengthMatch)
-            {
-                if (lengthMatch >= TrackLengthMatchedShare)
-                    priority += (int)(lengthMatch * 400);
-                else if (lengthMatch < TrackLengthMismatchedShare)
-                    priority = (int)(priority * (0.5 + lengthMatch));
-            }
-            priority += verdict.CoherencePriorityDelta;
-            // Gap check runs on the FULL directory, not the narrowed filesToDownload
-            // — plucked album tracks keep their original (non-contiguous) numbers,
-            // which would otherwise trigger a spurious grab-bag penalty.
-            if (HasTrackNumberGaps(directory))
-                priority /= 2;
-            priority = Math.Clamp(priority, 0, 10000);
+            int priority = RankFolder(directory, searchData, folderData, verdict, audioForQuality, expectedTrackCount);
 
             // Surface the peer info (was previously bracketed onto the title
             // with emoji decorations). Lidarr indexes blocklisting by
@@ -150,15 +135,11 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 // Folder years are year-precision only — never a publish date
                 // (see AlbumData.FillReleaseInfo). Keeps the "(YYYY)" title tag.
                 ReleaseDatePrecision = "year",
-                ReleaseDateTime = string.IsNullOrEmpty(finalYear) || !int.TryParse(finalYear, out int yearInt)
-                    ? DateTime.MinValue
-                    : new DateTime(yearInt, 1, 1),
+                ReleaseDateTime = YearStart(finalYear),
                 Codec = Codec,
                 BitDepth = BitDepth ?? 0,
                 SampleRate = SampleRate ?? 0,
-                Bitrate = (Codec == AudioFormat.MP3
-                          ? AudioFormatHelper.RoundToStandardBitrate(BitRate ?? 0)
-                          : BitRate) ?? 0,
+                Bitrate = ReportedBitrate(Codec, BitRate),
                 Size = filesToDownload.Sum(f => f.Size),
                 InfoUrl = infoUrl,
                 ExplicitContent = ExtractExplicitTag(folderData.Path),
@@ -175,6 +156,33 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 Duration = TotalDuration
             };
         }
+
+        private static int RankFolder(IGrouping<string, SlskdFileData> directory, SlskdSearchData searchData, SlskdFolderData folderData, SlskdFolderVerdict verdict, List<SlskdFileData> audioForQuality, int expectedTrackCount)
+        {
+            int priority = folderData.CalculatePriority(expectedTrackCount);
+            priority += (int)(verdict.TrackEvidence * 400);
+            if (TrackLengthMatch(audioForQuality, searchData.TrackDurations) is double lengthMatch)
+            {
+                if (lengthMatch >= TrackLengthMatchedShare)
+                    priority += (int)(lengthMatch * 400);
+                else if (lengthMatch < TrackLengthMismatchedShare)
+                    priority = (int)(priority * (0.5 + lengthMatch));
+            }
+
+            priority += verdict.CoherencePriorityDelta;
+            // Gap check runs on the FULL directory, not the narrowed filesToDownload
+            // — plucked album tracks keep their original (non-contiguous) numbers,
+            // which would otherwise trigger a spurious grab-bag penalty.
+            if (HasTrackNumberGaps(directory))
+                priority /= 2;
+            return Math.Clamp(priority, 0, 10000);
+        }
+
+        private static DateTime YearStart(string? year) =>
+            string.IsNullOrEmpty(year) || !int.TryParse(year, out int yearInt) ? DateTime.MinValue : new DateTime(yearInt, 1, 1);
+
+        private static int ReportedBitrate(AudioFormat codec, int? bitRate) =>
+            (codec == AudioFormat.MP3 ? AudioFormatHelper.RoundToStandardBitrate(bitRate ?? 0) : bitRate) ?? 0;
 
         private static string[] SplitPathIntoComponents(string path) => path.Split(['\\', '/'], StringSplitOptions.RemoveEmptyEntries);
 
