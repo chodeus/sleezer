@@ -759,31 +759,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             int covered = 0;
             foreach ((string Raw, string Norm, bool Qualified, (string[] Head, string[] Qualifier) Words) title in titles.OrderByDescending(t => t.Norm.Length))
             {
-                int best = -1;
-                for (int i = 0; i < named.Count; i++)
-                {
-                    // Stands alone, not merely contained: "Tide" must not claim "Low Tide Rising".
-                    int wordsAfter = claimed.Contains(i) ? -1 : SlskdTitleMatch.WordsAfter(named[i].Tokens, title.Words);
-                    if (wordsAfter < 0)
-                        continue;
-
-                    // A wanted title is contained in its own variant ("Proposition"
-                    // in "Proposition (Radio Edit)"); target types forgive valid ones.
-                    if ((title.Qualified || named[i].Qualified) &&
-                        VariantQualifiers.RemixSignaturesConflict(title.Raw, named[i].Raw, targetVariantTypes))
-                        continue;
-
-                    if (best < 0)
-                        best = i;
-
-                    // A file the title ends beats an earlier one with words after it: "Tide" over "Tide (Reprise)".
-                    if (wordsAfter == 0)
-                    {
-                        best = i;
-                        break;
-                    }
-                }
-
+                int best = PickTitleFile(named, claimed, title.Raw, title.Qualified, title.Words, targetVariantTypes);
                 if (best < 0)
                     continue;
 
@@ -794,6 +770,36 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             }
 
             return (matched, covered, titles.Count);
+        }
+
+        /// <summary>The unclaimed file a wanted title stands alone in, preferring one whose name ends with it; -1 when none.</summary>
+        private static int PickTitleFile(
+            List<(SlskdFileData File, List<string> Tokens, string Raw, bool Qualified)> named, HashSet<int> claimed,
+            string titleRaw, bool titleQualified, (string[] Head, string[] Qualifier) titleWords, IReadOnlyCollection<string>? targetVariantTypes)
+        {
+            int best = -1;
+            for (int i = 0; i < named.Count; i++)
+            {
+                // Stands alone, not merely contained: "Tide" must not claim "Low Tide Rising".
+                int wordsAfter = claimed.Contains(i) ? -1 : SlskdTitleMatch.WordsAfter(named[i].Tokens, titleWords);
+                if (wordsAfter < 0)
+                    continue;
+
+                // A wanted title is contained in its own variant ("Proposition"
+                // in "Proposition (Radio Edit)"); target types forgive valid ones.
+                if ((titleQualified || named[i].Qualified) &&
+                    VariantQualifiers.RemixSignaturesConflict(titleRaw, named[i].Raw, targetVariantTypes))
+                    continue;
+
+                if (best < 0)
+                    best = i;
+
+                // A file the title ends beats an earlier one with words after it: "Tide" over "Tide (Reprise)".
+                if (wordsAfter == 0)
+                    return i;
+            }
+
+            return best;
         }
 
         private const double TrackLengthMatchedShare = 0.8;
