@@ -3,6 +3,7 @@ using NLog;
 using NzbDrone.Core.Download.History;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Plugin.Sleezer.Core.Model;
+using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
 using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek.Models;
 using NzbDrone.Plugin.Sleezer.Indexers.Soulseek;
 using Xunit;
@@ -252,12 +253,50 @@ public class SlskdOwnershipOverlayTests
     [Fact]
     public void A_file_tagged_twice_is_owned_at_its_latest_size_only()
     {
-        SlskdDownloadItem item = NewItem((@"@@x\d	rack.flac", 100));
+        SlskdDownloadItem item = NewItem((@"@@x\d\track.flac", 100));
 
         item.RecordTaggedFile("/downloads/d/track.flac", 120);
         item.RecordTaggedFile("/downloads/d/track.flac", 130);
 
         Assert.Equal([130], item.BuildOwnedFiles().SizesOf("track.flac"));
+        Assert.False(item.BuildOwnedFiles().Owns("track.flac", 100));
+    }
+
+    // Per-disc artwork must not raise the folder-recovery bar: the majority rule counts audio files.
+    [Fact]
+    public void The_folder_majority_counts_audio_files_only()
+    {
+        SlskdDownloadItem item = NewItem(
+            (@"@@x\Album\CD1\01.flac", 100), (@"@@x\Album\CD1\cover.jpg", 5), (@"@@x\Album\CD1\back.jpg", 6),
+            (@"@@x\Album\CD2\01.flac", 200), (@"@@x\Album\CD2\cover.jpg", 5), (@"@@x\Album\CD2\back.jpg", 6));
+
+        SlskdOwnedFiles owned = item.BuildOwnedFiles();
+
+        Assert.Equal(6, owned.FileCount);
+        Assert.Equal(2, owned.AudioFileCount);
+        Assert.Equal("/dl/Album", SlskdPathResolver.SelectOwningFolder([("/dl/Album", 2)], owned.AudioFileCount));
+    }
+
+    [Fact]
+    public void Only_tagged_files_that_were_the_downloads_own_are_recorded()
+    {
+        (string, string)[] tagged = [("/dl/A/01.flac", "/dl/A/01 - Lantern Song.flac"), ("/dl/A/theirs.flac", "/dl/A/02 - Salt Road.flac")];
+
+        Assert.Equal(["/dl/A/01 - Lantern Song.flac"], SlskdOwnedFiles.OwnTaggedFiles(tagged, new HashSet<string> { "/dl/A/01.flac" }));
+    }
+
+    // On Linux "CD1" and "cd1" are two folders: each file keeps its own tagged size.
+    [Fact]
+    public void Disc_folders_differing_only_by_case_keep_both_tagged_sizes()
+    {
+        SlskdDownloadItem item = NewItem((@"@@x\Album\CD1\01.flac", 100), (@"@@x\Album\cd1\01.flac", 200));
+
+        item.RecordTaggedFile("/dl/Album/CD1/01.flac", 130);
+        item.RecordTaggedFile("/dl/Album/cd1/01.flac", 230);
+        SlskdOwnedFiles owned = item.BuildOwnedFiles();
+
+        Assert.True(owned.Owns("01.flac", 130));
+        Assert.True(owned.Owns("01.flac", 230));
     }
 }
 

@@ -450,6 +450,13 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     /// </summary>
     private void DeleteFolderGuardedByOwnership(string folder, SlskdOwnedFiles ownedFiles, string context)
     {
+        // An item that accepted no files claims nothing, not even a folder of extras.
+        if (ownedFiles.FileCount == 0)
+        {
+            _logger.Debug("[{Context}] Owns no files; leaving '{Folder}'", context, folder);
+            return;
+        }
+
         List<string> files = _diskProvider.GetFiles(folder, recursive: true).ToList();
         List<string> ownedOnDisk = new();
         int foreignAudio = 0;
@@ -511,7 +518,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     private string? FindFolderOwningItemFiles(SlskdDownloadItem item, string root)
     {
         SlskdOwnedFiles ownedFiles = item.BuildOwnedFiles();
-        if (ownedFiles.FileCount == 0 || !_diskProvider.FolderExists(root))
+        if (ownedFiles.AudioFileCount == 0 || !_diskProvider.FolderExists(root))
             return null;
 
         List<(string Folder, int Matches)> candidates = new();
@@ -529,7 +536,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             }
         }
 
-        return SlskdPathResolver.SelectOwningFolder(candidates, ownedFiles.FileCount);
+        return SlskdPathResolver.SelectOwningFolder(candidates, ownedFiles.AudioFileCount);
     }
 
     /// <summary>
@@ -1324,6 +1331,9 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                         return;
                     }
 
+                    // Before tagging: the tagger also matches other downloads' files in a shared folder.
+                    IReadOnlySet<string> ownedPathsBeforeTagging = OwnedPathsIn(folderPath, item.BuildOwnedFiles());
+
                     // 2b. Clean path: run Lidarr-backed pre-import tagging.
                     // Pass null for albumRelease so PreImportTagger lets
                     // Lidarr's CandidateService rank releases by track-count
@@ -1345,7 +1355,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
                     // Refresh ownership identities after tagging — see
                     // SlskdDownloadItem._taggedFileSizes.
-                    RecordTaggedFileIdentities(item, tagResult.TaggedFiles);
+                    RecordTaggedFileIdentities(item, tagResult.TaggedFiles, ownedPathsBeforeTagging);
                 }
             }
             catch (OperationCanceledException)
@@ -1365,21 +1375,35 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         item.PostProcessTasks.Add(task);
     }
 
-    private void RecordTaggedFileIdentities(SlskdDownloadItem item, IReadOnlyList<PreImportTagger.TaggedFile>? taggedFiles)
+    // Unlistable folder = no file provably owned = every tagged file kept.
+    private IReadOnlySet<string> OwnedPathsIn(string folder, SlskdOwnedFiles ownedFiles)
+    {
+        try
+        {
+            return _diskProvider.GetFiles(folder, recursive: true).Where(f => IsConclusivelyOwned(f, ownedFiles)).ToHashSet();
+        }
+        catch (Exception ex)
+        {
+            _logger.Debug(ex, "[post-process] Could not list '{Folder}' before tagging", folder);
+            return new HashSet<string>();
+        }
+    }
+
+    private void RecordTaggedFileIdentities(SlskdDownloadItem item, IReadOnlyList<PreImportTagger.TaggedFile>? taggedFiles, IReadOnlySet<string> ownedPathsBeforeTagging)
     {
         if (taggedFiles == null)
             return;
 
-        foreach (PreImportTagger.TaggedFile tagged in taggedFiles)
+        foreach (string finalPath in SlskdOwnedFiles.OwnTaggedFiles(taggedFiles.Select(t => (t.OriginalPath, t.FinalPath)), ownedPathsBeforeTagging))
         {
             try
             {
-                item.RecordTaggedFile(tagged.FinalPath, _diskProvider.GetFileSize(tagged.FinalPath));
+                item.RecordTaggedFile(finalPath, _diskProvider.GetFileSize(finalPath));
             }
             catch (Exception ex)
             {
                 // Unrecorded = the old fail-closed behavior (file retained).
-                _logger.Debug(ex, "[post-process] Could not record tagged identity for {Path}", tagged.FinalPath);
+                _logger.Debug(ex, "[post-process] Could not record tagged identity for {Path}", finalPath);
             }
         }
     }

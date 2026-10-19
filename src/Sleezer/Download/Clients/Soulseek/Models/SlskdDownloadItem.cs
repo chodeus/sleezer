@@ -100,7 +100,8 @@ public class SlskdDownloadItem
 
     // Post-tag identities (local path → size): tag writes change size and
     // feat-strip renames, so the enqueued identity alone can't claim the file.
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, long> _taggedFileSizes = new(StringComparer.OrdinalIgnoreCase);
+    // Ordinal: on Linux "CD1/01.flac" and "cd1/01.flac" are two files.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, long> _taggedFileSizes = new(StringComparer.Ordinal);
 
     /// <summary>Records a file's post-tagging identity so ownership checks can still claim it.</summary>
     public void RecordTaggedFile(string path, long size)
@@ -110,8 +111,8 @@ public class SlskdDownloadItem
     }
 
     /// <summary>
-    /// This item's files by local basename: every size slskd accepted for the name at enqueue,
-    /// with a tagged file's latest size in place of its enqueued one.
+    /// This item's files by local basename: every size slskd accepted for the name at enqueue, with a
+    /// tagged file's latest size in place of its enqueued one, or beside it where two files share the name.
     /// </summary>
     public SlskdOwnedFiles BuildOwnedFiles()
     {
@@ -127,7 +128,7 @@ public class SlskdDownloadItem
         foreach (IGrouping<string, KeyValuePair<string, long>> tagged in _taggedFileSizes.GroupBy(t => Path.GetFileName(t.Key), StringComparer.OrdinalIgnoreCase))
             ApplyTaggedSizes(sizes, accepted, tagged.Key, tagged.Select(t => t.Value));
 
-        return new SlskdOwnedFiles(sizes, accepted.Count);
+        return new SlskdOwnedFiles(sizes, [.. accepted.Select(f => f.Name)]);
     }
 
     // A name the item holds once takes its tagged size in place of the enqueued one; a name shared
