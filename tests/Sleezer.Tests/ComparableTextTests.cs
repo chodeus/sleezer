@@ -217,10 +217,27 @@ public class ComparableTextTests
 
     [Theory]
     [InlineData("V/A")]
+    [InlineData("V.A.")]
+    [InlineData("VA")]
     [InlineData("Various Artists")]
+    [InlineData("VARIOUS ARTISTS")]
+    [InlineData("Various-Artists")]
+    [InlineData(" Various Artists ")]
     public void various_artists_is_known_however_it_is_written(string artist)
     {
         Assert.True(StoreReleaseVerifier.IsVariousArtists(artist));
+    }
+
+    // One check for the store verifier, the Qobuz result filter and the pre-import tagger's artist-tag guard.
+    [Theory]
+    [InlineData("Various")]
+    [InlineData("Vanessa")]
+    [InlineData("Soundtrack")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void other_names_are_not_various_artists(string? artist)
+    {
+        Assert.False(StoreReleaseVerifier.IsVariousArtists(artist));
     }
 
     private static bool FolderMatches(string folder, string artist, string album)
