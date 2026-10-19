@@ -149,6 +149,11 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 
         internal static bool TitleMatches(string candidate, string target)
         {
+            // A target made only of marks ("÷", "+") is compared by its marks, not passed through.
+            string marks = ComparableText.MarksOnly(StoreQueryCleaner.StripQualifiers(target ?? string.Empty));
+            if (marks.Length > 0)
+                return ComparableText.MarksOnly(StoreQueryCleaner.StripQualifiers(candidate ?? string.Empty)) == marks;
+
             var c = Comparable(candidate);
             var t = Comparable(target);
             if (c.Length == 0 || t.Length == 0 || c == t)

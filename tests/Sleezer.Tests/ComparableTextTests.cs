@@ -231,6 +231,31 @@ public class ComparableTextTests
         Assert.True(StoreReleaseVerifier.IsVariousArtists(artist));
     }
 
+    [Theory]
+    [InlineData("÷", "÷")]
+    [InlineData(" ÷ ", "÷")]
+    [InlineData("✞ ✦", "✞✦")]
+    [InlineData("Divide", "")]
+    [InlineData("x", "")]
+    [InlineData("", "")]
+    public void marks_only_is_the_marks_of_a_name_without_letters(string text, string expected)
+    {
+        Assert.Equal(expected, ComparableText.MarksOnly(text));
+    }
+
+    // A wanted title made only of marks used to pass every store title.
+    [Theory]
+    [InlineData("÷", "÷", true)]
+    [InlineData("÷ (Deluxe)", "÷", true)]
+    [InlineData("x", "÷", false)]
+    [InlineData("...", "÷", false)]
+    [InlineData("Divide", "÷", false)]
+    [InlineData("...", "Glass Harbour", true)]
+    public void a_store_title_matches_a_marks_only_title_by_its_marks(string candidate, string target, bool matches)
+    {
+        Assert.Equal(matches, StoreReleaseVerifier.TitleMatches(candidate, target));
+    }
+
     // One check for the store verifier, the Qobuz result filter and the pre-import tagger's artist-tag guard.
     [Theory]
     [InlineData("Various")]

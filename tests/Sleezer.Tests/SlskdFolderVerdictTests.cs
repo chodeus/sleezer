@@ -33,6 +33,18 @@ public class SlskdFolderVerdictTests
         Assert.Equal(["artist not named", "album not named", "artist and album not named together"], v.Reasons);
     }
 
+    // A marks-only album ("÷") normalizes to nothing and used to turn into an artist-only search.
+    [Theory]
+    [InlineData(@"Music\Moonward\Moonward - ÷ (2017)", true)]
+    [InlineData(@"Music\Moonward\Moonward - x (2014)", false)]
+    public void a_marks_only_album_needs_its_marks_in_the_folder(string folder, bool matched)
+    {
+        SlskdFolderVerdict v = Judge(folder, ["01 Lantern Song.flac"], new SlskdSearchData("Moonward", "÷", false, false, 1, null));
+
+        Assert.Equal(matched, v.Matched);
+        Assert.Contains(matched ? "album named" : "album not named", v.Reasons);
+    }
+
     [Fact]
     public void a_different_volume_says_the_volume_differs()
     {
