@@ -433,11 +433,36 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         private static bool ContainsWords(string dirNameNorm, string queryNorm) =>
             $" {dirNameNorm} ".Contains($" {queryNorm} ", StringComparison.Ordinal);
 
+        // "AC/DC" in an "ACDC" folder, "Nu:Tone" in "NuTone": the name without its word breaks, as whole folder words.
+        private static bool ContainsJoined(string dirNameNorm, string queryNorm)
+        {
+            string joined = queryNorm.Replace(" ", string.Empty);
+            if (joined.Length < 3)
+                return false;
+
+            string[] words = dirNameNorm.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            return Enumerable.Range(0, words.Length).Any(start => WordsSpell(words, start, joined));
+        }
+
+        // Whether the folder words from `start` spell `joined` exactly, ending on a word boundary.
+        private static bool WordsSpell(string[] words, int start, string joined)
+        {
+            int length = 0;
+            for (int j = start; j < words.Length && length < joined.Length; j++)
+            {
+                if (!joined.AsSpan(length).StartsWith(words[j], StringComparison.Ordinal))
+                    return false;
+                length += words[j].Length;
+            }
+
+            return length == joined.Length;
+        }
+
         private static bool IsFuzzyArtistMatch(string dirNameNorm, string searchArtistNorm, int strictnessOffset = 0)
         {
             if (string.IsNullOrEmpty(searchArtistNorm))
                 return false;
-            if (ContainsWords(dirNameNorm, searchArtistNorm))
+            if (ContainsWords(dirNameNorm, searchArtistNorm) || ContainsJoined(dirNameNorm, searchArtistNorm))
                 return true;
             if (searchArtistNorm.Length <= ShortNameTokenLength)
                 return false;
