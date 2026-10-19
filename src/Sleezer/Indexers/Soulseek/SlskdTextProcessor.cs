@@ -80,9 +80,6 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                    (strippedAlbum != null && !string.Equals(strippedAlbum, album, StringComparison.OrdinalIgnoreCase));
         }
 
-        public static bool IsVariousArtists(string artist)
-            => artist.Equals("Various Artists", StringComparison.OrdinalIgnoreCase) || artist.Equals("VA", StringComparison.OrdinalIgnoreCase);
-
         public static bool ContainsVolumeReference(string album)
             => album.Contains("Volume", StringComparison.OrdinalIgnoreCase) || album.Contains("Vol", StringComparison.OrdinalIgnoreCase);
 

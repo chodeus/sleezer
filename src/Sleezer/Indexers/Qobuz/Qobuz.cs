@@ -96,19 +96,14 @@ namespace NzbDrone.Core.Indexers.Qobuz
 
         private IList<ReleaseInfo> SkipVariousArtists(IList<ReleaseInfo> releases, string? searchedArtist)
         {
-            if (releases.Count == 0 || IsVariousArtists(searchedArtist))
+            if (releases.Count == 0 || StoreReleaseVerifier.IsVariousArtists(searchedArtist))
                 return releases;
 
-            List<ReleaseInfo> kept = [.. releases.Where(r => !IsVariousArtists(r.Artist))];
+            List<ReleaseInfo> kept = [.. releases.Where(r => !StoreReleaseVerifier.IsVariousArtists(r.Artist))];
             if (kept.Count != releases.Count)
                 _logger.Info("Qobuz: skipped {Count} 'Various Artists' result(s) for search '{Search}'", releases.Count - kept.Count, searchedArtist);
 
             return kept;
         }
-
-        private static bool IsVariousArtists(string? artist)
-            => !string.IsNullOrWhiteSpace(artist)
-               && (artist.Trim().Equals("Various Artists", StringComparison.OrdinalIgnoreCase)
-                   || artist.Trim().Equals("VA", StringComparison.OrdinalIgnoreCase));
     }
 }

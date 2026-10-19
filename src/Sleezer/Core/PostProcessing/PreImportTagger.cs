@@ -11,7 +11,6 @@ using NzbDrone.Core.Parser;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Core.Qualities;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
-using NzbDrone.Plugin.Sleezer.Indexers.Soulseek;
 
 namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing;
 
@@ -489,7 +488,7 @@ public class PreImportTagger : IPreImportTagger
             // VA never counts as foreign.
             string? artistTag = lt.FileTrackInfo?.ArtistTitle;
             if (!string.IsNullOrWhiteSpace(artistTag) && !string.IsNullOrWhiteSpace(artistName) &&
-                !SlskdTextProcessor.IsVariousArtists(artistTag) &&
+                !StoreReleaseVerifier.IsVariousArtists(artistTag) &&
                 Fuzz.TokenSetRatio(artistTag.ToLowerInvariant(), artistName.ToLowerInvariant()) < 60)
             {
                 _logger.Debug("Pre-import tag: excluding {File} from title matching — artist tag '{Tag}' does not match '{Artist}'",
