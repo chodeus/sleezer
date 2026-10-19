@@ -97,7 +97,7 @@ public static partial class TrackTitleMatcher
     // Numbers after a numbering word ("part 2", "take two"); withLastWord also a number ending the title ("Freestyle 1").
     private static HashSet<string> PartNumbers(string title, bool withLastWord)
     {
-        string[] tokens = title.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        string[] tokens = [.. title.Split(' ', StringSplitOptions.RemoveEmptyEntries).SelectMany(SplitGluedPart)];
         HashSet<string> numbers = [];
         for (int i = 1; i < tokens.Length; i++)
         {
@@ -108,6 +108,13 @@ public static partial class TrackTitleMatcher
         if (withLastWord && tokens.Length > 0 && NumberValue(tokens[^1]) is { } last)
             numbers.Add(last);
         return numbers;
+    }
+
+    // "part2", "pt2", "take2": a numbering word glued to its number reads as both.
+    private static IEnumerable<string> SplitGluedPart(string token)
+    {
+        int digits = token.Length - token.Reverse().TakeWhile(char.IsDigit).Count();
+        return digits > 0 && digits < token.Length && NumberingWords.Contains(token[..digits]) ? [token[..digits], token[digits..]] : [token];
     }
 
     private static readonly HashSet<string> NumberingWords = ["part", "parts", "pt", "take", "set", "vol", "volume", "chapter", "act", "no", "number", "book", "movement", "mvt"];

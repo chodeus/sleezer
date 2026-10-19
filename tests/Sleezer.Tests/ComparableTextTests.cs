@@ -112,6 +112,9 @@ public class ComparableTextTests
     [InlineData("Lantern Song (Set 2)", "Lantern Song, Set II", true)]
     [InlineData("Lantern Song (Set 2)", "Lantern Song, Set I", false)]
     [InlineData("Lantern Song pt. 1", "Lantern Song 1", true)]
+    [InlineData("Lantern Song Part2", "Lantern Song", false)]
+    [InlineData("Lantern Song Pt2", "Lantern Song, Part 2", true)]
+    [InlineData("Lantern Song MK2", "Lantern Song", true)]
     public void a_numbered_take_or_part_is_another_track_unless_the_wanted_title_is_numbered(string local, string wanted, bool pairs)
     {
         Assert.Equal(pairs, TrackTitleMatcher.Match([local], [wanted]).Count == 1);
