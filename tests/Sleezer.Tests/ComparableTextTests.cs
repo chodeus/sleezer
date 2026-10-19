@@ -46,6 +46,18 @@ public class ComparableTextTests
         Assert.True(FolderMatches(@"library\Tiesta\Tiesta - Tide of Something (Moonward Remix)", "Tiesta", "Tide of Something (Moonward remix)"));
     }
 
+    [Theory]
+    [InlineData(@"Music\ACDC\Powerage", "AC/DC", "Powerage", true)]
+    [InlineData(@"Music\NuTone\Little Spaces", "Nu:Tone", "Little Spaces", true)]
+    [InlineData(@"Music\Moon Ward\Glass Harbour", "Moonward", "Glass Harbour", true)]
+    [InlineData(@"Music\Xyz\Lantern Song", "X Yz", "Lantern Song", true)]
+    [InlineData(@"Music\Xyzw\Lantern Song", "X Yz", "Lantern Song", false)]
+    [InlineData(@"Music\XY Tide\Lantern Song", "X/Y", "Lantern Song", false)]
+    public void an_artist_spelled_without_its_word_breaks_is_named(string folder, string artist, string album, bool matches)
+    {
+        Assert.Equal(matches, FolderMatches(folder, artist, album));
+    }
+
     [Fact]
     public void a_short_name_of_several_words_matches_when_the_folder_holds_them_in_order()
     {
