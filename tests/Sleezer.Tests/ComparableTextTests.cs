@@ -201,6 +201,9 @@ public class ComparableTextTests
     [InlineData("Lantern Song (Dan remix)", "Lantern Song (Jordan Harbour remix)", true)]
     [InlineData("Lantern Song (Dan remix)", "Lantern Song (Danny Harbour remix)", true)]
     [InlineData("Lantern Song (Harbour remix)", "Lantern Song (Moonharbour Late Night remix)", true)]
+    [InlineData("Lantern Song (Moonward remix)", "Glass Harbour (The Remixes) - 03 - Lantern Song (Moonward Remix)", false)]
+    [InlineData("Lantern Song (Moonward remix)", "Glass Harbour (Remixes, Vol. 2) - 03 - Lantern Song (Harbour Remix)", true)]
+    [InlineData("Glass Harbour (Remixes)", "Glass Harbour (Moonward Remix)", false)]
     public void a_stylised_remixer_name_split_differently_is_the_same_remixer(string wanted, string candidate, bool conflict)
     {
         Assert.Equal(conflict, VariantQualifiers.RemixSignaturesConflict(wanted, candidate));

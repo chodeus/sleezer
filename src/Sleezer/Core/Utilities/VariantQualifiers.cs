@@ -17,11 +17,12 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             if (string.IsNullOrWhiteSpace(title) || !RemixKeywordRegex().IsMatch(title))
                 return null;
 
-            foreach (Match bracket in BracketedContentRegex().Matches(title))
+            string[] remixBrackets = [.. BracketedContentRegex().Matches(title).Select(b => b.Value[1..^1]).Where(inner => RemixKeywordRegex().IsMatch(inner))];
+            if (remixBrackets.Length > 0)
             {
-                string inner = bracket.Value[1..^1];
-                if (RemixKeywordRegex().IsMatch(inner))
-                    return NormalizeRemixerText(RemixKeywordRegex().Replace(inner, " "));
+                // An album's "(The Remixes)" before the track's own "(Grandtheft Remix)" names no remixer.
+                string inner = remixBrackets.FirstOrDefault(b => !PluralRemixesRegex().IsMatch(b)) ?? remixBrackets[0];
+                return NormalizeRemixerText(RemixKeywordRegex().Replace(inner, " "));
             }
 
             int dash = title.LastIndexOf(" - ", StringComparison.Ordinal);
@@ -335,6 +336,9 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             loweredTitle.EndsWith(" " + word, StringComparison.Ordinal) || loweredTitle.EndsWith("-" + word, StringComparison.Ordinal);
 
         private static string NormalizeRemixerText(string text) => ComparableText.Of(text);
+
+        [GeneratedRegex(@"\bremixes\b", RegexOptions.IgnoreCase)]
+        private static partial Regex PluralRemixesRegex();
 
         [GeneratedRegex(@"[\(\[\{].*?[\)\]\}]", RegexOptions.Compiled)]
         private static partial Regex BracketedContentRegex();
