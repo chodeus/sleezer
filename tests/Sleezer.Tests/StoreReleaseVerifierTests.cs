@@ -66,6 +66,17 @@ public class StoreReleaseVerifierTests
         Assert.True(Accepted(criteria, Store("Ministry of Sound", "Ministry of Sound Annual")));
     }
 
+    // MusicBrainz names the edition only in the disambiguation; the plain album is the other edition.
+    [Fact]
+    public void A_plain_copy_is_a_variant_an_instrumentals_edition_does_not_call_for()
+    {
+        var criteria = CriteriaWithTracklist("Moonward", "Glass Harbour", ["Salt Road (instrumental)", "Lantern Song (instrumental)"]);
+        criteria.Albums[0].Disambiguation = "Instrumentals";
+
+        Assert.True(Rejected(criteria, Store("Moonward", "Glass Harbour", trackCount: 2)));
+        Assert.True(Accepted(criteria, Store("Moonward", "Glass Harbour", trackCount: 2, candidateTitle: "Glass Harbour (Instrumentals)")));
+    }
+
     // A store artist made only of marks can't be judged, so the artist check lets it through.
     [Fact]
     public void A_store_artist_made_only_of_marks_is_not_judged()

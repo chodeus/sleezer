@@ -96,7 +96,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
                 if (!TitleMatches(candidateTitle, album.Title))
                     return ("title", $"'{candidateTitle}' is not '{album.Title}'");
 
-                if (VariantQualifiers.RemixSignaturesConflict(album.Title, candidateTitle, album.SecondaryTypes))
+                if (VariantQualifiers.RemixSignaturesConflict(album.VariantTitle, candidateTitle, album.SecondaryTypes))
                     return ("variant", $"'{candidateTitle}' is a variant the album does not call for");
             }
 
@@ -242,12 +242,13 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             }
         }
 
-        private sealed record AlbumTarget(string Title, IReadOnlyCollection<string> SecondaryTypes, IReadOnlyList<TargetRelease> Releases)
+        // VariantTitle: the title plus a disambiguation naming a variant, for the variant check only.
+        private sealed record AlbumTarget(string Title, string VariantTitle, IReadOnlyCollection<string> SecondaryTypes, IReadOnlyList<TargetRelease> Releases)
         {
             public string TrackCountSummary => string.Join("/", Releases.Select(r => r.TrackCount).Distinct().OrderBy(c => c));
 
             public static AlbumTarget Of(Album? album, string title, IEnumerable<AlbumRelease> releases) =>
-                new(title, VariantQualifiers.ForgivenVariants(album), [.. releases.Select(r => new TargetRelease(r.TrackCount, DurationSeconds(r), r))]);
+                new(title, VariantQualifiers.VariantTitleOf(album, title) ?? title, VariantQualifiers.ForgivenVariants(album), [.. releases.Select(r => new TargetRelease(r.TrackCount, DurationSeconds(r), r))]);
 
             private static int DurationSeconds(AlbumRelease release)
             {

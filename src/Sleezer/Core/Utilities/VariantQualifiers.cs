@@ -227,6 +227,36 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             return forgiven;
         }
 
+        /// <summary>The title with the album's disambiguation added when that names a variant at least half the album's own tracks carry; otherwise null.</summary>
+        // MusicBrainz keeps "(Instrumentals)" or "(Huglife remix)" in the disambiguation while the title stays plain;
+        // "blue cover" names the artwork, and no track says so.
+        public static string? VariantTitleOf(Album? album, string title)
+        {
+            if (string.IsNullOrWhiteSpace(album?.Disambiguation))
+                return null;
+
+            string variantTitle = $"{title} ({album.Disambiguation})";
+            List<VariantProfile> tracks = [.. TracklistOf(album).Select(ExtractVariantProfile)];
+            return TracksCarryAddedVariants(ExtractVariantProfile(title), ExtractVariantProfile(variantTitle), tracks) ? variantTitle : null;
+        }
+
+        private static bool TracksCarryAddedVariants(VariantProfile plain, VariantProfile named, IReadOnlyList<VariantProfile> tracks)
+        {
+            HashSet<string> addedArrangements = [.. named.Arrangements.Except(plain.Arrangements)];
+            (bool Added, Func<VariantProfile, bool> Carried)[] dimensions =
+            [
+                (plain.RemixSignature != named.RemixSignature, t => t.RemixSignature != null),
+                (plain.Live != named.Live, t => t.Live),
+                (plain.Demo != named.Demo, t => t.Demo),
+                (plain.Extended != named.Extended, t => t.Extended),
+                (addedArrangements.Count > 0, t => addedArrangements.IsSubsetOf(t.Arrangements)),
+                (plain.MonoStereo != named.MonoStereo, t => t.MonoStereo == named.MonoStereo),
+            ];
+
+            List<Func<VariantProfile, bool>> added = [.. dimensions.Where(d => d.Added).Select(d => d.Carried)];
+            return added.Count > 0 && tracks.Count > 0 && added.All(carried => tracks.Count(carried) * 2 >= tracks.Count);
+        }
+
         /// <summary>Variant types a majority of the tracklist carries; empty when the tracklist is unknown.</summary>
         public static IReadOnlyCollection<string> VouchedVariants(IReadOnlyList<string?> trackTitles)
         {

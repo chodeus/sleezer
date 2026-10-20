@@ -33,6 +33,9 @@ public sealed record SearchContext
     public SearchCriteriaBase? SearchCriteria { get; init; }
     public IReadOnlyList<string> TargetVariantTypes { get; init; } = [];
 
+    // The title plus a disambiguation naming a variant (VariantQualifiers.VariantTitleOf), for the variant check only.
+    public string? VariantAlbum { get; init; }
+
     // MusicBrainz primary type ("Single"/"EP"/"Album"). Lets the parser gate
     // single/EP handling on the real type instead of guessing from TrackCount.
     public string? AlbumType { get; init; }
@@ -85,6 +88,7 @@ public sealed record SearchQuery
     public IReadOnlyList<string> Tracks { get; init; } = [];
     public IReadOnlyList<int> TrackDurations { get; init; } = [];
     public IReadOnlyList<string> TargetVariantTypes { get; init; } = [];
+    public string? VariantAlbum { get; init; }
     public string? AlbumType { get; init; }
     public string? SearchText { get; init; }
 
@@ -98,6 +102,7 @@ public sealed record SearchQuery
         Tracks = context.Tracks,
         TrackDurations = context.TrackDurations,
         TargetVariantTypes = context.TargetVariantTypes,
+        VariantAlbum = context.VariantAlbum,
         AlbumType = context.AlbumType,
         SearchText = null
     };

@@ -140,10 +140,11 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             string[] pathComponents = SplitPathIntoComponents(directoryKey);
             string candidateLeaf = pathComponents.Length > 0 ? pathComponents[^1] : directoryKey;
             string? candidateParent = pathComponents.Length >= 2 ? pathComponents[^2] : null;
-            if (!VariantQualifiers.RemixSignaturesConflict(searchData.Album, [candidateLeaf, candidateParent], searchData.TargetVariantTypes))
+            string searchAlbum = searchData.VariantAlbum ?? searchData.Album;
+            if (!VariantQualifiers.RemixSignaturesConflict(searchAlbum, [candidateLeaf, candidateParent], searchData.TargetVariantTypes))
                 return;
 
-            _logger.Trace("Remix qualifier mismatch: search '{Album}' vs folder '{Folder}'", searchData.Album, candidateLeaf);
+            _logger.Trace("Remix qualifier mismatch: search '{Album}' vs folder '{Folder}'", searchAlbum, candidateLeaf);
             judgement.AlbumMatch = false;
             judgement.Reject("remix or version qualifier differs");
         }
