@@ -91,9 +91,25 @@ public class SlskdDownloadItem
     // carried a destination, so its discs are already merged; re-merging could move another download's folder.
     private void RecoverBatch(string batchId)
     {
+        // The artist's name loads from Lidarr's database on first read: a failed read leaves recovery to the next poll.
+        string destination;
+        try
+        {
+            destination = EnqueueDestination ?? PreferredDestinationFolderName();
+        }
+        catch (Exception ex)
+        {
+            _logger.Debug(ex, "Could not name the destination of batch {BatchId}; retrying on the next poll", batchId);
+            return;
+        }
+
         BatchId = batchId;
         DiscFoldersMerged = true;
-        EnqueueDestination ??= PreferredDestinationFolderName();
+        EnqueueDestination = destination;
+
+        // As DownloadAsync does: slskd wrote the grab's batch there. Without the grab's album the name is only a guess.
+        if (ResolvedAlbum != null)
+            DerivedSubdirectory ??= destination;
     }
 
     public IReadOnlyDictionary<string, SlskdFileState> FileStates => _previousFileStates;

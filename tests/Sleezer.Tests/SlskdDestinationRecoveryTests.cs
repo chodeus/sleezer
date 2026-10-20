@@ -77,6 +77,92 @@ public class SlskdDestinationRecoveryTests
             item.GetFullFolderPath(new NzbDrone.Common.Disk.OsPath("/downloads")).FullPath);
     }
 
+    private static SlskdDownloadFile CompletedFile(string filename, string? batchId) => new(
+        Id: "id", Username: "peer", Direction: "Download", Filename: filename, Size: 1000, StartOffset: 0,
+        State: "Completed, Succeeded", RequestedAt: DateTime.UtcNow, EnqueuedAt: DateTime.UtcNow, StartedAt: DateTime.UtcNow,
+        BytesTransferred: 1000, AverageSpeed: 0, BytesRemaining: 0, ElapsedTime: TimeSpan.Zero, PercentComplete: 100,
+        RemainingTime: TimeSpan.Zero, EndedAt: null, BatchId: batchId);
+
+    private const string PeerTrack = @"@@x\media\Moonward\2016 - Glass Harbour [FLAC]\01 - Lantern Song.flac";
+
+    // Live 2026-10-20: after a restart a single-folder batch resolved to the peer's "2016 - … [FLAC]" folder.
+    // The tagger had retagged most files, so relocation by name and size found too few to move it.
+    [Fact]
+    public void A_batch_recovered_after_a_restart_resolves_to_its_destination()
+    {
+        SlskdDownloadItem item = NewItem(PeerTrack);
+        item.ResolvedAlbum = new NzbDrone.Core.Music.Album { Title = "Glass Harbour", Artist = new NzbDrone.Core.Datastore.LazyLoaded<NzbDrone.Core.Music.Artist>(new NzbDrone.Core.Music.Artist { Name = "Moonward" }) };
+
+        item.SlskdDownloadDirectory = new SlskdDownloadDirectory(@"@@x\media\Moonward\2016 - Glass Harbour [FLAC]", 1, [CompletedFile(PeerTrack, "batch-id")]);
+
+        Assert.Equal(
+            Path.Combine("/downloads", "Moonward - Glass Harbour"),
+            item.GetFullFolderPath(new NzbDrone.Common.Disk.OsPath("/downloads")).FullPath);
+    }
+
+    // Stands in for Lidarr's database-backed artist metadata, loaded on first read.
+    private sealed class FlakyMetadata(int failures) : NzbDrone.Core.Datastore.LazyLoaded<NzbDrone.Core.Music.ArtistMetadata>
+    {
+        private int _failures = failures;
+
+        public override void LazyLoad()
+        {
+            if (IsLoaded)
+                return;
+            if (_failures-- > 0)
+                throw new InvalidOperationException("database is locked");
+            _value = new NzbDrone.Core.Music.ArtistMetadata { Name = "Moonward" };
+            IsLoaded = true;
+        }
+    }
+
+    [Fact]
+    public void A_failed_artist_read_during_recovery_is_retried_on_the_next_poll()
+    {
+        SlskdDownloadItem item = NewItem(PeerTrack);
+        NzbDrone.Core.Music.Artist artist = new() { Metadata = new FlakyMetadata(1) };
+        item.ResolvedAlbum = new NzbDrone.Core.Music.Album { Title = "Glass Harbour", Artist = new NzbDrone.Core.Datastore.LazyLoaded<NzbDrone.Core.Music.Artist>(artist) };
+
+        item.SlskdDownloadDirectory = new SlskdDownloadDirectory(@"@@x\media\Moonward\2016 - Glass Harbour [FLAC]", 1, [CompletedFile(PeerTrack, "batch-id")]);
+        Assert.Null(item.BatchId);
+
+        item.SlskdDownloadDirectory = new SlskdDownloadDirectory(@"@@x\media\Moonward\2016 - Glass Harbour [FLAC]", 1, [CompletedFile(PeerTrack, "batch-id")]);
+
+        Assert.Equal("batch-id", item.BatchId);
+        Assert.Equal("Moonward - Glass Harbour", item.EnqueueDestination);
+        Assert.Equal(
+            Path.Combine("/downloads", "Moonward - Glass Harbour"),
+            item.GetFullFolderPath(new NzbDrone.Common.Disk.OsPath("/downloads")).FullPath);
+    }
+
+    // Inclusive mode: a batch sleezer didn't grab may have run without a destination, so slskd used the source folder.
+    [Fact]
+    public void A_batch_without_the_grabs_album_keeps_the_peer_directory()
+    {
+        const string disc = @"@@x\share\Quiet Hours\CD 1";
+        const string file = disc + @"\01 - Opening.flac";
+        SlskdDownloadItem item = NewItem(file);
+
+        item.SlskdDownloadDirectory = new SlskdDownloadDirectory(disc, 1, [CompletedFile(file, "batch-id")]);
+
+        Assert.Equal(
+            Path.Combine("/downloads", "CD 1"),
+            item.GetFullFolderPath(new NzbDrone.Common.Disk.OsPath("/downloads")).FullPath);
+    }
+
+    [Fact]
+    public void Without_a_batch_a_single_folder_item_resolves_to_the_peer_directory()
+    {
+        SlskdDownloadItem item = NewItem(PeerTrack);
+        item.ResolvedAlbum = new NzbDrone.Core.Music.Album { Title = "Glass Harbour", Artist = new NzbDrone.Core.Datastore.LazyLoaded<NzbDrone.Core.Music.Artist>(new NzbDrone.Core.Music.Artist { Name = "Moonward" }) };
+
+        item.SlskdDownloadDirectory = new SlskdDownloadDirectory(@"@@x\media\Moonward\2016 - Glass Harbour [FLAC]", 1, [CompletedFile(PeerTrack, null)]);
+
+        Assert.Equal(
+            Path.Combine("/downloads", "2016 - Glass Harbour [FLAC]"),
+            item.GetFullFolderPath(new NzbDrone.Common.Disk.OsPath("/downloads")).FullPath);
+    }
+
     [Fact]
     public void A_confirmed_subdirectory_overrides_the_peer_source_directory()
     {
