@@ -459,8 +459,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         private static partial Regex BracketedContentRegex();
 
         // A mix named for its maker ("Name's Night Mix") is a remix; "Original Mix" and "It's a Mix" are not.
-        // DJ-pool edits count too: "ReDrum" after a word or a bracket (a bare title "Redrum" is a song), "Quick Hit", an intro or outro marked clean or dirty.
-        [GeneratedRegex(@"\b(remix(es|ed)?|rmx|re-?work(ed)?|(?<=\b\w[\w'’]*\s+|[\(\[\{])re-?drum|bootleg|v\.?i\.?p|flip|dub|edit|quick\s?hits?|(?:intro|outro)[\s\-/()\[\]{}]*(?:clean|dirty)|(?:clean|dirty)[\s\-/()\[\]{}]*(?:intro|outro)|instrumentals?|a?\s?capp?ellas?|karaokes?|sped[\s-]?up|slowed|nightcore|daycore|reverb|8d|mashups?|cover(ed)?\s+by|(?<=\b(?!(?:it|that|let|what|there|here|he|she|who|where|how)['’])\w+['’]s\b[^()\[\]{}\n]*)mix)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+        // DJ-pool edits count too: "ReDrum" after a word or a bracket (a bare title "Redrum" is a song), "Quick Hit", a bracketed intro or outro marked clean or dirty.
+        [GeneratedRegex(@"\b(remix(es|ed)?|rmx|re-?work(ed)?|(?<=\b\w[\w'’]*\s+|[\(\[\{])re-?drum|bootleg|v\.?i\.?p|flip|dub|edit|quick\s?hits?|(?<=[\(\[\{][^()\[\]{}\n]*)(?:intro|outro)[\s\-/()\[\]{}]*(?:clean|dirty)|(?<=[\(\[\{][^()\[\]{}\n]*)(?:clean|dirty)[\s\-/()\[\]{}]*(?:intro|outro)|instrumentals?|a?\s?capp?ellas?|karaokes?|sped[\s-]?up|slowed|nightcore|daycore|reverb|8d|mashups?|cover(ed)?\s+by|(?<=\b(?!(?:it|that|let|what|there|here|he|she|who|where|how)['’])\w+['’]s\b[^()\[\]{}\n]*)mix)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
         private static partial Regex RemixKeywordRegex();
 
         [GeneratedRegex(@"\b(remix(es|ed)?|rmx|re-?work(ed)?|(?<=\b\w[\w'’]*\s+|[\(\[\{])re-?drum|bootleg|v\.?i\.?p|flip|dub|mashups?|(?<=\b(?!(?:it|that|let|what|there|here|he|she|who|where|how)['’])\w+['’]s\b[^()\[\]{}\n]*)mix)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)]

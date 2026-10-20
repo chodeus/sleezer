@@ -37,6 +37,14 @@ public class DjPoolEditTests
     public void A_lone_marker_is_no_edit(string candidate) =>
         Assert.False(VariantQualifiers.RemixSignaturesConflict("Lantern Song", candidate));
 
+    // A track named "Intro" or "Dirty" carries a lone marker: the pair must start inside a bracket.
+    [Theory]
+    [InlineData("Intro", "Intro (Clean)")]
+    [InlineData("Outro", "Outro [Dirty]")]
+    [InlineData("Dirty", "Dirty (Intro)")]
+    public void A_title_word_does_not_pair_with_a_bracketed_marker(string wanted, string candidate) =>
+        Assert.False(VariantQualifiers.RemixSignaturesConflict(wanted, candidate));
+
     // Clean and dirty, or intro and outro, are different cuts under the same edit label.
     [Theory]
     [InlineData("Lantern Song (Intro) (Clean)", "Lantern Song (Intro) (Dirty)", true)]
@@ -80,7 +88,8 @@ public class DjPoolEditTests
     {
         Assert.False(VariantQualifiers.IsVariantTrack("Redrum"));
         Assert.True(VariantQualifiers.RemixSignaturesConflict("Redrum", "Redrum (Moonward Remix)"));
-        Assert.False(VariantQualifiers.RemixSignaturesConflict("Redrum (Murder)", "Redrum (Murder)"));
+        Assert.False(VariantQualifiers.IsVariantTrack("Redrum (Murder)"));
+        Assert.Null(VariantQualifiers.ExtractRemixSignature("Redrum (Murder)"));
     }
 
     // A plainly named folder of DJ-pool files: the wanted title must not claim the edit.
