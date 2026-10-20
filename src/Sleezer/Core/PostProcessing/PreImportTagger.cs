@@ -1,5 +1,4 @@
 using System.Text;
-using FuzzySharp;
 using NLog;
 using NzbDrone.Common.Disk;
 using NzbDrone.Core.Datastore;
@@ -237,10 +236,13 @@ public class PreImportTagger : IPreImportTagger
         _logger.Debug("Pre-import tag: identifying {FileCount} audio file(s) for {Album} by {Artist} (sourceId={SourceId})",
             audioFiles.Count, album.Title, artist.Name, sourceId);
 
+        ArtistCredit wantedArtist = new(artist.Name, artist.Metadata?.Value?.Aliases);
+        HashSet<string> foreignArtistFiles = [];
         List<LocalTrack> localTracks = audioFiles.Select(path =>
         {
             ParsedTrackInfo info = SafeReadTags(path);
             FeaturedArtistStripper.ForIdentification(info, artist.Name, guests);
+            ApplyCredits(path, info, wantedArtist, foreignArtistFiles);
 
             return new LocalTrack
             {
@@ -389,7 +391,7 @@ public class PreImportTagger : IPreImportTagger
         int titleTagged = 0;
         if (tagged == 0)
         {
-            (titleTagged, int titleErrored, int titleSkipped) = await TryTitleDrivenTaggingAsync(localTracks, album, artist, albumRelease, stripFeaturedArtists, fingerprintTitleFallback, preferDigitalMedia, knownRecordings, sourceId, taggedFiles, ct);
+            (titleTagged, int titleErrored, int titleSkipped) = await TryTitleDrivenTaggingAsync(localTracks, foreignArtistFiles, album, artist, albumRelease, stripFeaturedArtists, fingerprintTitleFallback, preferDigitalMedia, knownRecordings, sourceId, taggedFiles, ct);
             tagged += titleTagged;
             errored += titleErrored;
             skipped += titleSkipped;
@@ -456,6 +458,7 @@ public class PreImportTagger : IPreImportTagger
 
     private async Task<(int Tagged, int Errored, int Skipped)> TryTitleDrivenTaggingAsync(
         List<LocalTrack> localTracks,
+        IReadOnlySet<string> foreignArtistFiles,
         Album album,
         Artist artist,
         AlbumRelease? albumRelease,
@@ -490,21 +493,13 @@ public class PreImportTagger : IPreImportTagger
             return (0, 0, 0);
         }
 
-        string? artistName = album.Artist?.Value?.Name;
         List<string> localTitles = localTracks.Select(lt =>
         {
-            // A present-but-foreign artist tag means a same-titled track by
-            // someone else — exclude it rather than tag across artists. But
-            // ArtistTitle is AlbumArtist-first, and a compilation share tags
-            // AlbumArtist "Various Artists" while the track artist is right —
-            // VA never counts as foreign.
-            string? artistTag = lt.FileTrackInfo?.ArtistTitle;
-            if (!string.IsNullOrWhiteSpace(artistTag) && !string.IsNullOrWhiteSpace(artistName) &&
-                !StoreReleaseVerifier.IsVariousArtists(artistTag) &&
-                Fuzz.TokenSetRatio(artistTag.ToLowerInvariant(), artistName.ToLowerInvariant()) < 60)
+            // Credits naming only other artists mean a same-titled track by someone else.
+            if (foreignArtistFiles.Contains(lt.Path))
             {
-                _logger.Debug("Pre-import tag: excluding {File} from title matching — artist tag '{Tag}' does not match '{Artist}'",
-                    Path.GetFileName(lt.Path), artistTag, artistName);
+                _logger.Debug("Pre-import tag: excluding {File} from title matching — no artist credit names '{Artist}'",
+                    Path.GetFileName(lt.Path), artist.Name);
                 return string.Empty;
             }
 
@@ -830,6 +825,20 @@ public class PreImportTagger : IPreImportTagger
         {
             _logger.Trace(ex, "Pre-import tag: could not read mtime of {Path}; using now()", path);
             return DateTime.UtcNow;
+        }
+    }
+
+    // ArtistTitle is only the first credit: a collaborator listed first or a DJ-pool URL scores the release as another artist's.
+    private static void ApplyCredits(string path, ParsedTrackInfo info, ArtistCredit wantedArtist, HashSet<string> foreignArtistFiles)
+    {
+        switch (FileCredits.Judge(FileCredits.Read(path) ?? [info.ArtistTitle], wantedArtist))
+        {
+            case CreditVerdict.Named:
+                info.ArtistTitle = wantedArtist.Name;
+                break;
+            case CreditVerdict.Foreign:
+                foreignArtistFiles.Add(path);
+                break;
         }
     }
 

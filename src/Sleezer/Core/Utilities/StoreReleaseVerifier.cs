@@ -15,7 +15,6 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
     /// <summary>Flags store results that are not the searched album: wrong artist or title, a variant the album doesn't call for, or a different track count or length.</summary>
     public static class StoreReleaseVerifier
     {
-        private const int ArtistFuzzyFloor = 90;
         private const int TitleFuzzyFloor = 85;
         private const int TrackCountSlack = 2;
         private const double TrackCountRatioSlack = 0.25;
@@ -130,22 +129,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             return $"MusicBrainz has no plain edition of that length — every {store.TrackCount}-track release is a variant";
         }
 
-        private static bool ArtistMatches(string candidate, Target target)
-        {
-            if (target.IsVariousArtists)
-                return true;
-
-            var normalized = Normalize(candidate);
-            if (normalized.Length == 0 || normalized == target.ArtistNormalized || target.AliasesNormalized.Contains(normalized))
-                return true;
-
-            // A collaboration credit ("Afrojack & David Guetta") still contains the searched artist whole.
-            var candidateTokens = normalized.Split(' ').ToHashSet(StringComparer.Ordinal);
-            if (target.ArtistTokens.Count > 0 && target.ArtistTokens.All(candidateTokens.Contains))
-                return true;
-
-            return Fuzz.TokenSortRatio(normalized, target.ArtistNormalized) >= ArtistFuzzyFloor;
-        }
+        private static bool ArtistMatches(string candidate, Target target) =>
+            target.IsVariousArtists || Normalize(candidate).Length == 0 || target.Artist.IsNamedBy(candidate);
 
         internal static bool TitleMatches(string candidate, string target)
         {
@@ -238,29 +223,21 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             }
         }
 
-        private sealed record Target(
-            string ArtistName,
-            string ArtistNormalized,
-            HashSet<string> ArtistTokens,
-            HashSet<string> AliasesNormalized,
-            bool IsVariousArtists,
-            AlbumTarget Album)
+        private sealed record Target(ArtistCredit Artist, AlbumTarget Album)
         {
+            public string ArtistName => Artist.Name;
+
+            public bool IsVariousArtists => Artist.IsVariousArtists;
+
             public static Target From(AlbumSearchCriteria criteria)
             {
                 var album = criteria.Albums?.FirstOrDefault();
-                var aliases = criteria.Artist.Metadata?.Value?.Aliases ?? [];
-                var artistNormalized = Normalize(criteria.Artist.Name);
                 // A product fitting another release would fail at import
                 var pinned = PinnedRelease.Of(album);
                 var title = PinnedRelease.TitleOf(pinned) is { } pinnedTitle && !string.IsNullOrWhiteSpace(pinnedTitle) ? pinnedTitle : album?.Title ?? criteria.AlbumTitle;
 
                 return new Target(
-                    criteria.Artist.Name,
-                    artistNormalized,
-                    [.. artistNormalized.Split(' ', StringSplitOptions.RemoveEmptyEntries)],
-                    [.. aliases.Select(Normalize).Where(a => a.Length > 0)],
-                    StoreReleaseVerifier.IsVariousArtists(criteria.Artist.Name),
+                    new ArtistCredit(criteria.Artist.Name, criteria.Artist.Metadata?.Value?.Aliases),
                     AlbumTarget.Of(album, title, pinned != null ? [pinned] : album?.AlbumReleases?.Value ?? []));
             }
         }

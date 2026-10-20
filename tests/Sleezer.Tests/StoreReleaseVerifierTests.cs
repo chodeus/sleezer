@@ -66,6 +66,15 @@ public class StoreReleaseVerifierTests
         Assert.True(Accepted(criteria, Store("Ministry of Sound", "Ministry of Sound Annual")));
     }
 
+    // A store artist made only of marks can't be judged, so the artist check lets it through.
+    [Fact]
+    public void A_store_artist_made_only_of_marks_is_not_judged()
+    {
+        var criteria = Criteria("Moonward", "Lantern Song");
+
+        Assert.True(Accepted(criteria, Store("!?", "Lantern Song")));
+    }
+
     [Theory]
     [InlineData("chain gang")]
     [InlineData("Chain Gang (Deluxe Edition)")]   // an edition, not a variant
