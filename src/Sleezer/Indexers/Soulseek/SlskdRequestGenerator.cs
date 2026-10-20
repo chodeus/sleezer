@@ -79,6 +79,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             {
                 TrackDurations = [.. releaseTracks.Select(t => t.Duration)],
                 TargetVariantTypes = [.. VariantQualifiers.ForgivenVariants(album)],
+                VariantAlbum = album == null ? null : VariantQualifiers.VariantTitleOf(album, album.Title),
                 AlbumType = album?.AlbumType
             };
 
@@ -401,7 +402,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 Tracks: query.Tracks.Take(50).ToList(),
                 TargetVariantTypes: query.TargetVariantTypes.Count > 0 ? query.TargetVariantTypes.ToList() : null,
                 AlbumType: query.AlbumType,
-                TrackDurations: query.TrackDurations.Count > 0 ? query.TrackDurations.Take(200).ToList() : null));
+                TrackDurations: query.TrackDurations.Count > 0 ? query.TrackDurations.Take(200).ToList() : null,
+                VariantAlbum: query.VariantAlbum));
 
             return request;
         }

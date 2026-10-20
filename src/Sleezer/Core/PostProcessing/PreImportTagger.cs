@@ -224,7 +224,8 @@ public class PreImportTagger : IPreImportTagger
         // remix" download was tagged as the plain single and imported over the
         // original). Fail closed: leave the raw tags for Lidarr to judge.
         // A pinned radio-edit single calls for its edit, though the album title is plain.
-        string wantedTitle = PinnedRelease.TitleOf(pinned) is { } pinnedTitle && !string.IsNullOrWhiteSpace(pinnedTitle) ? pinnedTitle : album.Title;
+        string plainTitle = PinnedRelease.TitleOf(pinned) is { } pinnedTitle && !string.IsNullOrWhiteSpace(pinnedTitle) ? pinnedTitle : album.Title;
+        string wantedTitle = VariantQualifiers.VariantTitleOf(album, plainTitle) ?? plainTitle;
         string folderLeaf = Path.GetFileName(folderPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
         if (VariantQualifiers.RemixSignaturesConflict(wantedTitle, folderLeaf, VariantQualifiers.ForgivenVariants(album)))
         {
