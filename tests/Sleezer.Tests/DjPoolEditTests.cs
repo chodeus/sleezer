@@ -11,6 +11,7 @@ public class DjPoolEditTests
     [Theory]
     [InlineData("Lantern Song (90s ReDrum) (5A - 95)")]
     [InlineData("Lantern Song (Re-Drum)")]
+    [InlineData("Lantern Song {ReDrum}")]
     [InlineData("Lantern Song (Quick Hit)")]
     [InlineData("Lantern Song (Intro) (Clean)")]
     [InlineData("Lantern Song (Intro - Dirty)")]
@@ -55,6 +56,7 @@ public class DjPoolEditTests
     [Theory]
     [InlineData("Lantern Song (90s ReDrum)")]
     [InlineData("Lantern Song (ReDrum)")]
+    [InlineData("Lantern Song {ReDrum}")]
     public void A_redrum_is_a_remix_track(string title) =>
         Assert.True(VariantQualifiers.IsVariantTrack(title));
 
