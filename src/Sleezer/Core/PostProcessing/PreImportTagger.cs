@@ -88,13 +88,25 @@ public class PreImportTagger : IPreImportTagger
         }
     }
 
-    private FingerprintVerdict VerifyRecording(LocalTrack local, Track wantedTrack, Artist artist, Dictionary<string, string>? knownRecordings) =>
-        RecordingVerdict.Resolve(
+    private FingerprintVerdict VerifyRecording(LocalTrack local, Track wantedTrack, Artist artist, Dictionary<string, string>? knownRecordings)
+    {
+        knownRecordings ??= GetArtistRecordingTitles(artist);
+        FingerprintVerdict verdict = RecordingVerdict.Resolve(
             local.AcoustIdResults,
             wantedTrack.ForeignRecordingId,
             wantedTrack.OldForeignRecordingIds,
             wantedTrack.Title,
-            knownRecordings ?? GetArtistRecordingTitles(artist));
+            knownRecordings);
+
+        if (verdict == FingerprintVerdict.Mismatch)
+        {
+            _logger.Info("Pre-import tag: AcoustID named {Recordings} for {File} ({Seconds:F0}s); wanted {WantedId} \"{Wanted}\"",
+                RecordingVerdict.DescribeMatches(local.AcoustIdResults, knownRecordings), Path.GetFileName(local.Path),
+                local.FileTrackInfo?.Duration.TotalSeconds ?? 0, wantedTrack.ForeignRecordingId, wantedTrack.Title);
+        }
+
+        return verdict;
+    }
 
     /// <summary>
     /// recordingId → track title for everything Lidarr knows by this artist, so an

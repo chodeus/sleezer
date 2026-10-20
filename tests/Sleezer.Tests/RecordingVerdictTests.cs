@@ -94,4 +94,19 @@ public class RecordingVerdictTests
         Assert.NotEqual(RecordingVerdict.NormalizeTitle("Should've Said No"),
                         RecordingVerdict.NormalizeTitle("Should've Said No (Taylor's Version)"));
     }
+
+    [Fact]
+    public void The_mismatch_log_names_each_recording_by_its_known_title()
+    {
+        string described = RecordingVerdict.DescribeMatches(new[] { OtherId, WantedId }, Known((OtherId, "Lantern Song (radio edit)")));
+
+        Assert.Equal($"{OtherId} \"Lantern Song (radio edit)\"; {WantedId} (not among the artist's monitored releases)", described);
+    }
+
+    [Fact]
+    public void The_mismatch_log_says_when_acoustid_named_nothing()
+    {
+        Assert.Equal("no recordings", RecordingVerdict.DescribeMatches(null, Known()));
+        Assert.Equal("no recordings", RecordingVerdict.DescribeMatches(Array.Empty<string>(), null));
+    }
 }
