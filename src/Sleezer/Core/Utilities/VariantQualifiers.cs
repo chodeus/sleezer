@@ -158,7 +158,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         {
             HashSet<string> searchClasses = [.. RemixKinds(searchAlbum).Select(RemixClass)];
             HashSet<string> candidateClasses = [.. candidateComponents.SelectMany(RemixKinds).Select(RemixClass)];
-            if (searchClasses.Count > 0 && candidateClasses.Count > 0 && !searchClasses.Overlaps(candidateClasses))
+            if ((searchClasses.Count > 0 && candidateClasses.Count > 0 && !searchClasses.Overlaps(candidateClasses)) || DjCutsDiffer(searchAlbum, candidateComponents))
                 return true;
 
             if (searchSignature.Length == 0 || candidateSignature.Length == 0)
@@ -168,6 +168,22 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
                 && !NameStartsWithin(searchSignature, candidateSignature)
                 && !NameStartsWithin(candidateSignature, searchSignature);
         }
+
+        // Clean and dirty, or intro and outro, are different DJ-pool cuts under one edit label; both sides must say which.
+        private static bool DjCutsDiffer(string? searchAlbum, IReadOnlyList<string?> candidateComponents)
+        {
+            HashSet<string> search = DjCutWords(searchAlbum);
+            HashSet<string> candidate = [.. candidateComponents.SelectMany(DjCutWords)];
+            return AxisDiffers(search, candidate, "clean", "dirty") || AxisDiffers(search, candidate, "intro", "outro");
+        }
+
+        private static bool AxisDiffers(HashSet<string> search, HashSet<string> candidate, string one, string other) =>
+            (search.Contains(one) && candidate.Contains(other) && !candidate.Contains(one)) ||
+            (search.Contains(other) && candidate.Contains(one) && !candidate.Contains(other));
+
+        // Bracketed only: "Clean Bandit" and "Come Clean" name an artist and a song.
+        private static HashSet<string> DjCutWords(string? title) =>
+            string.IsNullOrWhiteSpace(title) ? [] : [.. BracketedContentRegex().Matches(title).SelectMany(b => DjCutWordRegex().Matches(b.Value)).Select(m => m.Value.ToLowerInvariant())];
 
         // Each remix-family word's kind, read where the signature is; edits, bootlegs and covers are remixes.
         private static HashSet<string> RemixKinds(string? title) => RemixZone(title) is { } zone ? KindsIn(zone.Text) : [];
@@ -427,12 +443,15 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         private static partial Regex BracketedContentRegex();
 
         // A mix named for its maker ("Name's Night Mix") is a remix; "Original Mix" and "It's a Mix" are not.
-        // DJ-pool edits count too: "ReDrum", "Quick Hit", an intro or outro marked clean or dirty.
-        [GeneratedRegex(@"\b(remix(es|ed)?|rmx|re-?work(ed)?|re-?drum|bootleg|v\.?i\.?p|flip|dub|edit|quick\s?hits?|(?:intro|outro)[\s\-/()\[\]]*(?:clean|dirty)|(?:clean|dirty)[\s\-/()\[\]]*(?:intro|outro)|instrumentals?|a?\s?capp?ellas?|karaokes?|sped[\s-]?up|slowed|nightcore|daycore|reverb|8d|mashups?|cover(ed)?\s+by|(?<=\b(?!(?:it|that|let|what|there|here|he|she|who|where|how)['’])\w+['’]s\b[^()\[\]{}\n]*)mix)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+        // DJ-pool edits count too: "ReDrum" after a word or a bracket (a bare title "Redrum" is a song), "Quick Hit", an intro or outro marked clean or dirty.
+        [GeneratedRegex(@"\b(remix(es|ed)?|rmx|re-?work(ed)?|(?<=\b\w[\w'’]*\s+|[\(\[])re-?drum|bootleg|v\.?i\.?p|flip|dub|edit|quick\s?hits?|(?:intro|outro)[\s\-/()\[\]]*(?:clean|dirty)|(?:clean|dirty)[\s\-/()\[\]]*(?:intro|outro)|instrumentals?|a?\s?capp?ellas?|karaokes?|sped[\s-]?up|slowed|nightcore|daycore|reverb|8d|mashups?|cover(ed)?\s+by|(?<=\b(?!(?:it|that|let|what|there|here|he|she|who|where|how)['’])\w+['’]s\b[^()\[\]{}\n]*)mix)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
         private static partial Regex RemixKeywordRegex();
 
-        [GeneratedRegex(@"\b(remix(es|ed)?|rmx|re-?work(ed)?|re-?drum|bootleg|v\.?i\.?p|flip|dub|mashups?|(?<=\b(?!(?:it|that|let|what|there|here|he|she|who|where|how)['’])\w+['’]s\b[^()\[\]{}\n]*)mix)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+        [GeneratedRegex(@"\b(remix(es|ed)?|rmx|re-?work(ed)?|(?<=\b\w[\w'’]*\s+|[\(\[])re-?drum|bootleg|v\.?i\.?p|flip|dub|mashups?|(?<=\b(?!(?:it|that|let|what|there|here|he|she|who|where|how)['’])\w+['’]s\b[^()\[\]{}\n]*)mix)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
         private static partial Regex GenuineRemixKeywordRegex();
+
+        [GeneratedRegex(@"\b(clean|dirty|intro|outro)\b", RegexOptions.IgnoreCase)]
+        private static partial Regex DjCutWordRegex();
 
         // Names the kind of one RemixKeywordRegex match; any other match is a remix.
         [GeneratedRegex(@"^(?:(?<instrumental>instrumentals?)|(?<acapella>a?\s?capp?ellas?)|(?<karaoke>karaokes?)|(?<speed>sped[\s-]?up|slowed|nightcore|daycore|reverb|8d)|(?<edit>edit|quick\s?hits?|(intro|outro)[\s\-/()\[\]]*(clean|dirty)|(clean|dirty)[\s\-/()\[\]]*(intro|outro))|(?<bootleg>bootleg)|(?<cover>cover(ed)?\s+by))$", RegexOptions.IgnoreCase | RegexOptions.ExplicitCapture)]

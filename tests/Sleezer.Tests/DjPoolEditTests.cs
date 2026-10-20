@@ -35,9 +35,27 @@ public class DjPoolEditTests
     public void A_lone_marker_is_no_edit(string candidate) =>
         Assert.False(VariantQualifiers.RemixSignaturesConflict("Lantern Song", candidate));
 
+    // Clean and dirty, or intro and outro, are different cuts under the same edit label.
+    [Theory]
+    [InlineData("Lantern Song (Intro) (Clean)", "Lantern Song (Intro) (Dirty)", true)]
+    [InlineData("Lantern Song (Intro) (Clean)", "Lantern Song (Outro) (Clean)", true)]
+    [InlineData("Lantern Song (Intro) (Dirty)", "Clean Bandit - Lantern Song (Intro) (Dirty)", false)]
+    [InlineData("Lantern Song (Quick Hit) (Clean)", "Dirty Harbour - Lantern Song (Quick Hit)", false)]
+    public void Dj_cuts_differ_by_rating_and_end(string wanted, string candidate, bool conflicts) =>
+        Assert.Equal(conflicts, VariantQualifiers.RemixSignaturesConflict(wanted, candidate));
+
     [Fact]
     public void A_redrum_is_a_remix_track() =>
         Assert.True(VariantQualifiers.IsVariantTrack("Lantern Song (90s ReDrum)"));
+
+    // A song can be called "Redrum": as a bare title it is no remix word, and its plain single still refuses a remix.
+    [Fact]
+    public void A_bare_redrum_title_is_a_song()
+    {
+        Assert.False(VariantQualifiers.IsVariantTrack("Redrum"));
+        Assert.True(VariantQualifiers.RemixSignaturesConflict("Redrum", "Redrum (Moonward Remix)"));
+        Assert.False(VariantQualifiers.RemixSignaturesConflict("Redrum (Murder)", "Redrum (Murder)"));
+    }
 
     // A plainly named folder of DJ-pool files: the wanted title must not claim the edit.
     [Fact]
