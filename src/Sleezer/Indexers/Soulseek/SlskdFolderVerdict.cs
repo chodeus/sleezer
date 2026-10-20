@@ -99,12 +99,12 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             ? albumMatch ? "volume series matches" : "volume series differs"
             : albumMatch ? "album named" : "album not named";
 
-        // The album's own folder only ("A+Band\Driftwood" names no "+" album), the marks standing alone ("A+B" names none), spaces between them allowed.
+        // The album's own folder only ("A+Band\Driftwood" names no "+" album), the marks between spaces or folder punctuation ("A+B" and "++" name none).
         private static bool FolderCarriesMarks(string directoryKey, string marks)
         {
             string[] components = SplitPathIntoComponents(directoryKey);
             string spaced = string.Join(@"\s*", marks.EnumerateRunes().Select(r => Regex.Escape(r.ToString())));
-            return components.Length > 0 && Regex.IsMatch(components[^1], @"(?<![\p{L}\p{N}])" + spaced + @"(?![\p{L}\p{N}])");
+            return components.Length > 0 && Regex.IsMatch(components[^1], @"(?<=^|[\s\-_.()\[\]{}])" + spaced + @"(?=$|[\s\-_.()\[\]{}])");
         }
 
         // Path-tail retry: the album name often spans the parent+leaf components ("Artist - Album/CD extras" layouts).

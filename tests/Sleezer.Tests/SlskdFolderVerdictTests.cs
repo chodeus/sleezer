@@ -55,6 +55,18 @@ public class SlskdFolderVerdictTests
         Assert.Contains("album named", v.Reasons);
     }
 
+    // "++" is another album; "+" with folder punctuation around it is this one.
+    [Theory]
+    [InlineData(@"Music\Moonward\Moonward - ++", false)]
+    [InlineData(@"Music\Moonward\Moonward - + (2019)", true)]
+    [InlineData(@"Music\Moonward\Moonward-+", true)]
+    public void a_mark_album_is_not_named_by_a_longer_run_of_marks(string folder, bool named)
+    {
+        SlskdFolderVerdict v = Judge(folder, ["01 Lantern Song.flac"], new SlskdSearchData("Moonward", "+", false, false, 1, null));
+
+        Assert.Contains(named ? "album named" : "album not named", v.Reasons);
+    }
+
     // With no artist to name, a parent folder's "+" would otherwise pass any album beneath it.
     [Fact]
     public void marks_in_a_parent_folder_do_not_name_the_album()
