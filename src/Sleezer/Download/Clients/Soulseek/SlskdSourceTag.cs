@@ -13,7 +13,7 @@ public static class SlskdSourceTag
     /// <summary>Tags each file under the download root the item owns by name and size; returns how many took the tag.</summary>
     public static int Write(SlskdDownloadItem item, string downloadRoot, IEnumerable<string> audioFiles, Logger logger, CancellationToken ct)
     {
-        Dictionary<string, long> owned = item.BuildOwnedFileSizes();
+        SlskdOwnedFiles owned = item.BuildOwnedFiles();
         int written = 0;
 
         foreach (string path in audioFiles)
@@ -28,14 +28,14 @@ public static class SlskdSourceTag
                     continue;
 
                 // A shared download folder can hold another download's files; leave those alone.
-                if (!owned.TryGetValue(name, out long size) || new FileInfo(path).Length != size)
+                if (!owned.Owns(name, new FileInfo(path).Length))
                     continue;
 
                 if (!SourceTagWriter.TryWrite(path, Value, logger))
                     continue;
 
-                // Ownership checks match on size, which the tag write changes — see BuildOwnedFileSizes.
-                item.RecordTaggedFile(name, new FileInfo(path).Length);
+                // Ownership checks match on size, which the tag write changes — see BuildOwnedFiles.
+                item.RecordTaggedFile(path, new FileInfo(path).Length);
                 written++;
             }
             catch (Exception ex)

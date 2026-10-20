@@ -268,7 +268,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             return;
 
         string? directory = item.SlskdDownloadDirectory?.Directory;
-        Dictionary<string, long> ownedFileSizes = item.BuildOwnedFileSizes();
+        SlskdOwnedFiles ownedFiles = item.BuildOwnedFiles();
 
         // Run synchronously so Lidarr sees failures in its own log rather than
         // silently fire-and-forgetting the work behind its back.
@@ -281,13 +281,13 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             _logger.Warn(ex, "[def={DefinitionId}] Failed to remove slskd transfers / files for {Title}", definitionId, clientItem.Title);
         }
 
-        TryDeleteOutputFolder(clientItem, ownedFileSizes, settings);
+        TryDeleteOutputFolder(clientItem, ownedFiles, settings);
         TryDeleteUnmergedDiscFolders(item, settings);
 
         RemoveItemFromDict(definitionId, clientItem.DownloadId);
 
         if (settings.CleanStaleDirectories && !string.IsNullOrEmpty(directory))
-            _ = CleanStaleDirectoriesAsync(directory, ownedFileSizes, settings);
+            _ = CleanStaleDirectoriesAsync(directory, ownedFiles, settings);
     }
 
     /// <summary>
@@ -356,7 +356,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     /// </summary>
     private void CopyExtrasIntoAlbumFolder(SlskdDownloadItem item, IReadOnlyList<string> extras, string folder, string destination)
     {
-        Dictionary<string, long> ownedFileSizes = item.BuildOwnedFileSizes();
+        SlskdOwnedFiles ownedFiles = item.BuildOwnedFiles();
         Dictionary<string, string> onDisk = new(StringComparer.OrdinalIgnoreCase);
         foreach (string file in _diskProvider.GetFiles(folder, recursive: true))
             onDisk.TryAdd(Path.GetFileName(file), file);
@@ -370,7 +370,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 continue;
             }
 
-            if (!IsConclusivelyOwned(source, ownedFileSizes))
+            if (!IsConclusivelyOwned(source, ownedFiles))
             {
                 _logger.Debug("[{ItemId}] Extra '{Extra}' in '{Folder}' is not conclusively this download's — skipping", item.ID, basename, folder);
                 continue;
@@ -394,7 +394,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             _logger.Info("Imported {Count} extra file(s) into {Folder}", copied, destination);
     }
 
-    private void TryDeleteOutputFolder(DownloadClientItem clientItem, Dictionary<string, long> ownedFileSizes, SlskdProviderSettings settings)
+    private void TryDeleteOutputFolder(DownloadClientItem clientItem, SlskdOwnedFiles ownedFiles, SlskdProviderSettings settings)
     {
         if (clientItem.OutputPath.IsEmpty)
         {
@@ -424,7 +424,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             if (_diskProvider.FolderExists(folder))
             {
                 _logger.Debug("[{Title}] Deleting folder '{Folder}'", clientItem.Title, folder);
-                DeleteFolderGuardedByOwnership(folder, ownedFileSizes, clientItem.Title);
+                DeleteFolderGuardedByOwnership(folder, ownedFiles, clientItem.Title);
             }
             else if (_diskProvider.FileExists(folder))
             {
@@ -448,21 +448,22 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     /// overwrote in a shared folder fails the size check). Otherwise only the
     /// conclusively-owned files are deleted; ambiguity always retains data.
     /// </summary>
-    private void DeleteFolderGuardedByOwnership(string folder, Dictionary<string, long> ownedFileSizes, string context)
+    private void DeleteFolderGuardedByOwnership(string folder, SlskdOwnedFiles ownedFiles, string context)
     {
-        List<string> files = _diskProvider.GetFiles(folder, recursive: true).ToList();
-        List<string> ownedOnDisk = new();
-        int foreignAudio = 0;
-
-        foreach (string file in files)
+        // An item that accepted no files claims nothing, not even a folder of extras.
+        if (ownedFiles.FileCount == 0)
         {
-            if (!AudioFormatHelper.IsPostProcessAudioFile(file))
-                continue;
+            _logger.Debug("[{Context}] Owns no files; leaving '{Folder}'", context, folder);
+            return;
+        }
 
-            if (IsConclusivelyOwned(file, ownedFileSizes))
-                ownedOnDisk.Add(file);
-            else
-                foreignAudio++;
+        (List<string> ownedOnDisk, int foreignAudio) = ClassifyAudio(folder, ownedFiles);
+
+        // Equal or fewer is normal: Lidarr moves the audio out on import.
+        if (!ownedFiles.AccountsFor(ownedOnDisk.Count))
+        {
+            _logger.Warn("[{Context}] '{Folder}' holds {Count} audio file(s) matching this download's {Expected}; at least one is another download's, leaving the folder", context, folder, ownedOnDisk.Count, ownedFiles.AudioFileCount);
+            return;
         }
 
         if (foreignAudio == 0)
@@ -485,14 +486,33 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }
     }
 
-    private bool IsConclusivelyOwned(string file, Dictionary<string, long> ownedFileSizes)
+    private (List<string> Owned, int Foreign) ClassifyAudio(string folder, SlskdOwnedFiles ownedFiles)
     {
-        if (!ownedFileSizes.TryGetValue(Path.GetFileName(file), out long expectedSize))
+        List<string> owned = new();
+        int foreign = 0;
+
+        foreach (string file in _diskProvider.GetFiles(folder, recursive: true))
+        {
+            if (!AudioFormatHelper.IsPostProcessAudioFile(file))
+                continue;
+
+            if (IsConclusivelyOwned(file, ownedFiles))
+                owned.Add(file);
+            else
+                foreign++;
+        }
+
+        return (owned, foreign);
+    }
+
+    private bool IsConclusivelyOwned(string file, SlskdOwnedFiles ownedFiles)
+    {
+        if (ownedFiles.SizesOf(Path.GetFileName(file)).Count == 0)
             return false;
 
         try
         {
-            return _diskProvider.GetFileSize(file) == expectedSize;
+            return ownedFiles.Owns(Path.GetFileName(file), _diskProvider.GetFileSize(file));
         }
         catch (Exception)
         {
@@ -510,8 +530,8 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     /// </summary>
     private string? FindFolderOwningItemFiles(SlskdDownloadItem item, string root)
     {
-        Dictionary<string, long> ownedFileSizes = item.BuildOwnedFileSizes();
-        if (ownedFileSizes.Count == 0 || !_diskProvider.FolderExists(root))
+        SlskdOwnedFiles ownedFiles = item.BuildOwnedFiles();
+        if (ownedFiles.AudioFileCount == 0 || !_diskProvider.FolderExists(root))
             return null;
 
         List<(string Folder, int Matches)> candidates = new();
@@ -521,7 +541,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             try
             {
                 candidates.Add((candidate, _diskProvider.GetFiles(candidate, recursive: true)
-                    .Count(f => AudioFormatHelper.IsPostProcessAudioFile(f) && IsConclusivelyOwned(f, ownedFileSizes))));
+                    .Count(f => AudioFormatHelper.IsPostProcessAudioFile(f) && IsConclusivelyOwned(f, ownedFiles))));
             }
             catch (Exception ex)
             {
@@ -529,7 +549,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             }
         }
 
-        return SlskdPathResolver.SelectOwningFolder(candidates, ownedFileSizes.Count);
+        return SlskdPathResolver.SelectOwningFolder(candidates, ownedFiles.AudioFileCount);
     }
 
     /// <summary>
@@ -542,7 +562,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             return;
 
         string localRoot = GetRemoteDownloadPath(settings).FullPath.TrimEnd('/', '\\');
-        Dictionary<string, long> ownedFileSizes = item.BuildOwnedFileSizes();
+        SlskdOwnedFiles ownedFiles = item.BuildOwnedFiles();
 
         foreach (string leaf in item.RemoteDirectoryLeaves())
         {
@@ -553,7 +573,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             try
             {
                 _logger.Debug("[{ItemId}] Deleting unmerged disc folder '{Folder}'", item.ID, folder);
-                DeleteFolderGuardedByOwnership(folder, ownedFileSizes, item.ID);
+                DeleteFolderGuardedByOwnership(folder, ownedFiles, item.ID);
             }
             catch (Exception ex)
             {
@@ -1324,6 +1344,9 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                         return;
                     }
 
+                    // Before tagging: the tagger also matches other downloads' files in a shared folder.
+                    IReadOnlySet<string> ownedPathsBeforeTagging = OwnedPathsIn(folderPath, item.BuildOwnedFiles());
+
                     // 2b. Clean path: run Lidarr-backed pre-import tagging.
                     // Pass null for albumRelease so PreImportTagger lets
                     // Lidarr's CandidateService rank releases by track-count
@@ -1345,7 +1368,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
                     // Refresh ownership identities after tagging — see
                     // SlskdDownloadItem._taggedFileSizes.
-                    RecordTaggedFileIdentities(item, tagResult.TaggedFiles);
+                    RecordTaggedFileIdentities(item, tagResult.TaggedFiles, ownedPathsBeforeTagging);
                 }
             }
             catch (OperationCanceledException)
@@ -1365,21 +1388,35 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         item.PostProcessTasks.Add(task);
     }
 
-    private void RecordTaggedFileIdentities(SlskdDownloadItem item, IReadOnlyList<PreImportTagger.TaggedFile>? taggedFiles)
+    // Unlistable folder = no file provably owned = every tagged file kept.
+    private IReadOnlySet<string> OwnedPathsIn(string folder, SlskdOwnedFiles ownedFiles)
+    {
+        try
+        {
+            return _diskProvider.GetFiles(folder, recursive: true).Where(f => IsConclusivelyOwned(f, ownedFiles)).ToHashSet();
+        }
+        catch (Exception ex)
+        {
+            _logger.Debug(ex, "[post-process] Could not list '{Folder}' before tagging", folder);
+            return new HashSet<string>();
+        }
+    }
+
+    private void RecordTaggedFileIdentities(SlskdDownloadItem item, IReadOnlyList<PreImportTagger.TaggedFile>? taggedFiles, IReadOnlySet<string> ownedPathsBeforeTagging)
     {
         if (taggedFiles == null)
             return;
 
-        foreach (PreImportTagger.TaggedFile tagged in taggedFiles)
+        foreach ((string originalPath, string finalPath) in SlskdOwnedFiles.OwnTaggedFiles(taggedFiles.Select(t => (t.OriginalPath, t.FinalPath)), ownedPathsBeforeTagging))
         {
             try
             {
-                item.RecordTaggedFile(Path.GetFileName(tagged.FinalPath), _diskProvider.GetFileSize(tagged.FinalPath));
+                item.RecordTaggedFile(finalPath, _diskProvider.GetFileSize(finalPath), originalPath);
             }
             catch (Exception ex)
             {
                 // Unrecorded = the old fail-closed behavior (file retained).
-                _logger.Debug(ex, "[post-process] Could not record tagged identity for {Path}", tagged.FinalPath);
+                _logger.Debug(ex, "[post-process] Could not record tagged identity for {Path}", finalPath);
             }
         }
     }
@@ -1633,7 +1670,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }));
     }
 
-    private async Task CleanStaleDirectoriesAsync(string directoryPath, Dictionary<string, long> ownedFileSizes, SlskdProviderSettings settings)
+    private async Task CleanStaleDirectoriesAsync(string directoryPath, SlskdOwnedFiles ownedFiles, SlskdProviderSettings settings)
     {
         try
         {
@@ -1671,7 +1708,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             if (_diskProvider.FolderExists(localPath))
             {
                 _logger.Debug("Removing stale directory: {Path}", localPath);
-                DeleteFolderGuardedByOwnership(localPath, ownedFileSizes, directoryPath);
+                DeleteFolderGuardedByOwnership(localPath, ownedFiles, directoryPath);
 
                 string? parent = Path.GetDirectoryName(localPath);
                 if (!string.IsNullOrEmpty(parent) && _diskProvider.FolderExists(parent) && _diskProvider.FolderEmpty(parent))

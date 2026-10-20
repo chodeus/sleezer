@@ -114,7 +114,27 @@ public class SlskdSourceTagTests : IDisposable
 
         long after = new FileInfo(path).Length;
         Assert.NotEqual(before, after);
-        Assert.Equal(after, item.BuildOwnedFileSizes()["01 Lantern Song.flac"]);
+        Assert.Equal([after], item.BuildOwnedFiles().SizesOf("01 Lantern Song.flac"));
+    }
+
+    // Two disc folders each hold "01.flac" at different sizes: both are this download's.
+    [Fact]
+    public void same_named_files_in_two_disc_folders_both_take_the_tag()
+    {
+        Directory.CreateDirectory(Path.Combine(_dir, "CD1"));
+        Directory.CreateDirectory(Path.Combine(_dir, "CD2"));
+        string one = Flac(Path.Combine("CD1", "01.flac"));
+        string two = FlacWithoutPadding(Path.Combine("CD2", "01.flac"));
+        Assert.NotEqual(new FileInfo(one).Length, new FileInfo(two).Length);
+        string source = "[" + string.Join(",", new[] { (Path: one, Disc: "CD1"), (Path: two, Disc: "CD2") }.Select(f =>
+            $"{{\"Filename\":{JsonSerializer.Serialize($@"@@u\Artist\Album\{f.Disc}\01.flac")},\"Size\":{new FileInfo(f.Path).Length}}}")) + "]";
+        SlskdDownloadItem item = new(new ReleaseInfo { Source = source, Title = "t", DownloadUrl = "u" });
+
+        int written = SlskdSourceTag.Write(item, _dir, [one, two], Log, CancellationToken.None);
+
+        Assert.Equal(2, written);
+        Assert.Equal("soulseek", ReadSource(one));
+        Assert.Equal("soulseek", ReadSource(two));
     }
 
     [Fact]

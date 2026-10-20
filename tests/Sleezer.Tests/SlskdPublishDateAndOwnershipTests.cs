@@ -3,6 +3,7 @@ using NLog;
 using NzbDrone.Core.Download.History;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Plugin.Sleezer.Core.Model;
+using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
 using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek.Models;
 using NzbDrone.Plugin.Sleezer.Indexers.Soulseek;
 using Xunit;
@@ -155,10 +156,10 @@ public class SlskdOwnershipOverlayTests
             (@"@@x\PILOT027 - GLXY - Proposition EP\2. GLXY - Mind Less (Radio Edit).flac", 24_897_013),
             (@"@@x\PILOT027 - GLXY - Proposition EP\4. GLXY - Mind Less.flac", 39_281_821));
 
-        Dictionary<string, long> owned = item.BuildOwnedFileSizes();
+        SlskdOwnedFiles owned = item.BuildOwnedFiles();
 
-        Assert.Equal(24_897_013, owned["2. GLXY - Mind Less (Radio Edit).flac"]);
-        Assert.Equal(39_281_821, owned["4. GLXY - Mind Less.flac"]);
+        Assert.Equal([24_897_013], owned.SizesOf("2. GLXY - Mind Less (Radio Edit).flac"));
+        Assert.Equal([39_281_821], owned.SizesOf("4. GLXY - Mind Less.flac"));
     }
 
     // The live poison chain: the tagger renamed "4. GLXY - Mind Less.flac" to
@@ -170,11 +171,11 @@ public class SlskdOwnershipOverlayTests
         SlskdDownloadItem item = NewItem(
             (@"@@x\PILOT027 - GLXY - Proposition EP\4. GLXY - Mind Less.flac", 39_281_821));
 
-        item.RecordTaggedFile("02 - Mind Less.flac", 39_312_677);
-        Dictionary<string, long> owned = item.BuildOwnedFileSizes();
+        item.RecordTaggedFile(@"/downloads/Proposition EP/02 - Mind Less.flac", 39_312_677);
+        SlskdOwnedFiles owned = item.BuildOwnedFiles();
 
-        Assert.Equal(39_312_677, owned["02 - Mind Less.flac"]);
-        Assert.Equal(39_281_821, owned["4. GLXY - Mind Less.flac"]);
+        Assert.Equal([39_312_677], owned.SizesOf("02 - Mind Less.flac"));
+        Assert.Equal([39_281_821], owned.SizesOf("4. GLXY - Mind Less.flac"));
     }
 
     [Fact]
@@ -182,9 +183,9 @@ public class SlskdOwnershipOverlayTests
     {
         SlskdDownloadItem item = NewItem((@"@@x\d\track.flac", 100));
 
-        item.RecordTaggedFile("track.flac", 130);
+        item.RecordTaggedFile("/downloads/d/track.flac", 130);
 
-        Assert.Equal(130, item.BuildOwnedFileSizes()["track.flac"]);
+        Assert.Equal([130], item.BuildOwnedFiles().SizesOf("track.flac"));
     }
 
     [Fact]
@@ -193,10 +194,11 @@ public class SlskdOwnershipOverlayTests
         SlskdDownloadItem item = NewItem((@"@@x\d\01 track.flac", 100), (@"@@x\d\02 track.flac", 200));
 
         item.MarkEnqueueFailed([@"@@x\d\02 track.flac"]);
-        Dictionary<string, long> owned = item.BuildOwnedFileSizes();
+        SlskdOwnedFiles owned = item.BuildOwnedFiles();
 
-        Assert.Equal(100, owned["01 track.flac"]);
-        Assert.False(owned.ContainsKey("02 track.flac"));
+        Assert.True(owned.Owns("01 track.flac", 100));
+        Assert.Empty(owned.SizesOf("02 track.flac"));
+        Assert.Equal(1, owned.FileCount);
     }
 
     [Fact]
@@ -206,7 +208,134 @@ public class SlskdOwnershipOverlayTests
 
         item.RecordTaggedFile("", 5);
 
-        Assert.Single(item.BuildOwnedFileSizes());
+        Assert.Equal([100], item.BuildOwnedFiles().SizesOf("track.flac"));
+    }
+
+    // Two disc folders each hold "01.flac": both are this download's, each at its own size.
+    [Fact]
+    public void Same_named_files_in_two_disc_folders_are_both_owned()
+    {
+        SlskdDownloadItem item = NewItem((@"@@x\Album\CD1\01.flac", 100), (@"@@x\Album\CD2\01.flac", 200));
+
+        SlskdOwnedFiles owned = item.BuildOwnedFiles();
+
+        Assert.True(owned.Owns("01.flac", 100));
+        Assert.True(owned.Owns("01.flac", 200));
+        Assert.False(owned.Owns("01.flac", 300));
+        Assert.Equal(2, owned.FileCount);
+    }
+
+    [Fact]
+    public void Tagging_one_of_two_same_named_files_keeps_the_other_owned()
+    {
+        SlskdDownloadItem item = NewItem((@"@@x\Album\CD1\01.flac", 100), (@"@@x\Album\CD2\01.flac", 200));
+
+        item.RecordTaggedFile("/downloads/Album/CD1/01.flac", 130);
+        SlskdOwnedFiles owned = item.BuildOwnedFiles();
+
+        Assert.True(owned.Owns("01.flac", 130));
+        Assert.True(owned.Owns("01.flac", 200));
+    }
+
+    [Fact]
+    public void Tagging_both_same_named_files_keeps_both_owned_at_their_new_sizes()
+    {
+        SlskdDownloadItem item = NewItem((@"@@x\Album\CD1\01.flac", 100), (@"@@x\Album\CD2\01.flac", 200));
+
+        item.RecordTaggedFile("/downloads/Album/CD1/01.flac", 130);
+        item.RecordTaggedFile("/downloads/Album/CD2/01.flac", 230);
+        SlskdOwnedFiles owned = item.BuildOwnedFiles();
+
+        Assert.True(owned.Owns("01.flac", 130));
+        Assert.True(owned.Owns("01.flac", 230));
+    }
+
+    [Fact]
+    public void A_file_tagged_twice_is_owned_at_its_latest_size_only()
+    {
+        SlskdDownloadItem item = NewItem((@"@@x\d\track.flac", 100));
+
+        item.RecordTaggedFile("/downloads/d/track.flac", 120);
+        item.RecordTaggedFile("/downloads/d/track.flac", 130);
+
+        Assert.Equal([130], item.BuildOwnedFiles().SizesOf("track.flac"));
+        Assert.False(item.BuildOwnedFiles().Owns("track.flac", 100));
+    }
+
+    // Per-disc artwork must not raise the folder-recovery bar: the majority rule counts audio files.
+    [Fact]
+    public void The_folder_majority_counts_audio_files_only()
+    {
+        SlskdDownloadItem item = NewItem(
+            (@"@@x\Album\CD1\01.flac", 100), (@"@@x\Album\CD1\cover.jpg", 5), (@"@@x\Album\CD1\back.jpg", 6),
+            (@"@@x\Album\CD2\01.flac", 200), (@"@@x\Album\CD2\cover.jpg", 5), (@"@@x\Album\CD2\back.jpg", 6));
+
+        SlskdOwnedFiles owned = item.BuildOwnedFiles();
+
+        Assert.Equal(6, owned.FileCount);
+        Assert.Equal(2, owned.AudioFileCount);
+        Assert.Equal("/dl/Album", SlskdPathResolver.SelectOwningFolder([("/dl/Album", 2)], owned.AudioFileCount));
+    }
+
+    // A third "01.flac" at one of the two accepted sizes is another download's; an emptied folder after a move import is not.
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(2, true)]
+    [InlineData(3, false)]
+    public void Owned_matches_on_disk_beyond_the_accepted_audio_are_not_all_the_downloads(int ownedAudioOnDisk, bool accounted)
+    {
+        SlskdDownloadItem item = NewItem((@"@@x\Album\CD1\01.flac", 100), (@"@@x\Album\CD2\01.flac", 200), (@"@@x\Album\cover.jpg", 5));
+
+        Assert.Equal(accounted, item.BuildOwnedFiles().AccountsFor(ownedAudioOnDisk));
+    }
+
+    [Fact]
+    public void Only_tagged_files_that_were_the_downloads_own_are_recorded()
+    {
+        (string, string)[] tagged = [("/dl/A/01.flac", "/dl/A/01 - Lantern Song.flac"), ("/dl/A/theirs.flac", "/dl/A/02 - Salt Road.flac")];
+
+        Assert.Equal([("/dl/A/01.flac", "/dl/A/01 - Lantern Song.flac")], SlskdOwnedFiles.OwnTaggedFiles(tagged, new HashSet<string> { "/dl/A/01.flac" }));
+    }
+
+    // CD1's "A.flac" renamed to "B.flac" must not take the size of CD2's untouched "B.flac".
+    [Fact]
+    public void A_rename_onto_another_files_name_keeps_that_file_owned()
+    {
+        SlskdDownloadItem item = NewItem((@"@@x\Album\CD1\Lantern Song (feat. Moonward).flac", 100), (@"@@x\Album\CD2\Lantern Song.flac", 200));
+
+        item.RecordTaggedFile("/dl/Album/CD1/Lantern Song.flac", 130, "/dl/Album/CD1/Lantern Song (feat. Moonward).flac");
+        SlskdOwnedFiles owned = item.BuildOwnedFiles();
+
+        Assert.True(owned.Owns("Lantern Song.flac", 130));
+        Assert.True(owned.Owns("Lantern Song.flac", 200));
+    }
+
+    [Fact]
+    public void A_renamed_file_tagged_again_in_place_still_keeps_the_other_file_owned()
+    {
+        SlskdDownloadItem item = NewItem((@"@@x\Album\CD1\Lantern Song (feat. Moonward).flac", 100), (@"@@x\Album\CD2\Lantern Song.flac", 200));
+
+        item.RecordTaggedFile("/dl/Album/CD1/Lantern Song.flac", 130, "/dl/Album/CD1/Lantern Song (feat. Moonward).flac");
+        item.RecordTaggedFile("/dl/Album/CD1/Lantern Song.flac", 140, "/dl/Album/CD1/Lantern Song.flac");
+        SlskdOwnedFiles owned = item.BuildOwnedFiles();
+
+        Assert.True(owned.Owns("Lantern Song.flac", 140));
+        Assert.True(owned.Owns("Lantern Song.flac", 200));
+        Assert.False(owned.Owns("Lantern Song.flac", 130));
+    }
+
+    // On Linux "CD1" and "cd1" are two folders: each file keeps its own tagged size.
+    [Fact]
+    public void Disc_folders_differing_only_by_case_keep_both_tagged_sizes()
+    {
+        SlskdDownloadItem item = NewItem((@"@@x\Album\CD1\01.flac", 100), (@"@@x\Album\cd1\01.flac", 200));
+
+        item.RecordTaggedFile("/dl/Album/CD1/01.flac", 130);
+        item.RecordTaggedFile("/dl/Album/cd1/01.flac", 230);
+        SlskdOwnedFiles owned = item.BuildOwnedFiles();
+
+        Assert.True(owned.Owns("01.flac", 130));
+        Assert.True(owned.Owns("01.flac", 230));
     }
 }
 

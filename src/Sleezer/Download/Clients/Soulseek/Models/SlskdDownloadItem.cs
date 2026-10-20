@@ -98,33 +98,51 @@ public class SlskdDownloadItem
 
     public IReadOnlyDictionary<string, SlskdFileState> FileStates => _previousFileStates;
 
-    // Post-tag identities (local basename → size): tag writes change size and
+    // Post-tag identities (local path → size, renamed): tag writes change size and
     // feat-strip renames, so the enqueued identity alone can't claim the file.
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, long> _taggedFileSizes = new(StringComparer.OrdinalIgnoreCase);
+    // Ordinal: on Linux "CD1/01.flac" and "cd1/01.flac" are two files.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (long Size, bool Renamed)> _taggedFileSizes = new(StringComparer.Ordinal);
 
-    /// <summary>Records a file's post-tagging identity so ownership checks can still claim it.</summary>
-    public void RecordTaggedFile(string basename, long size)
+    /// <summary>Records a file's post-tagging identity so ownership checks can still claim it; pass the pre-rename path when the tagger renamed it.</summary>
+    public void RecordTaggedFile(string path, long size, string? originalPath = null)
     {
-        if (!string.IsNullOrEmpty(basename))
-            _taggedFileSizes[basename] = size;
+        if (string.IsNullOrEmpty(Path.GetFileName(path)))
+            return;
+
+        bool renamed = originalPath != null && !string.Equals(Path.GetFileName(originalPath), Path.GetFileName(path), StringComparison.OrdinalIgnoreCase);
+        _taggedFileSizes.AddOrUpdate(path, (size, renamed), (_, recorded) => (size, renamed || recorded.Renamed));
     }
 
     /// <summary>
-    /// Expected size per local basename of this item's files: the identities
-    /// slskd accepted at enqueue plus any post-tagging identities recorded on top.
+    /// This item's files by local basename: every size slskd accepted for the name at enqueue, with a
+    /// tagged file's latest size in place of its enqueued one, or beside it where two files share the name.
     /// </summary>
-    public Dictionary<string, long> BuildOwnedFileSizes()
+    public SlskdOwnedFiles BuildOwnedFiles()
     {
-        Dictionary<string, long> owned = FileData
+        List<(string Name, long Size)> accepted = [.. FileData
             .Where(f => OwnsAcceptedFile(f.Filename))
-            .GroupBy(f => Path.GetFileName(f.Filename!.Replace('\\', '/')), StringComparer.OrdinalIgnoreCase)
-            .Where(g => !string.IsNullOrEmpty(g.Key))
-            .ToDictionary(g => g.Key, g => g.First().Size, StringComparer.OrdinalIgnoreCase);
+            .Select(f => (Name: Path.GetFileName(f.Filename!.Replace('\\', '/')), f.Size))
+            .Where(f => f.Name.Length > 0)];
 
-        foreach (KeyValuePair<string, long> tagged in _taggedFileSizes)
-            owned[tagged.Key] = tagged.Value;
+        Dictionary<string, HashSet<long>> sizes = accepted
+            .GroupBy(f => f.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.Select(f => f.Size).ToHashSet(), StringComparer.OrdinalIgnoreCase);
 
-        return owned;
+        foreach (IGrouping<string, KeyValuePair<string, (long Size, bool Renamed)>> tagged in _taggedFileSizes.GroupBy(t => Path.GetFileName(t.Key), StringComparer.OrdinalIgnoreCase))
+            ApplyTaggedSizes(sizes, accepted, tagged.Key, [.. tagged.Select(t => t.Value)]);
+
+        return new SlskdOwnedFiles(sizes, [.. accepted.Select(f => f.Name)]);
+    }
+
+    // A name the item holds once takes its tagged size in place of the enqueued one; a name shared by several
+    // files (two discs' "01.flac"), or one a rename landed on, keeps every size, since the write changed only one.
+    private static void ApplyTaggedSizes(Dictionary<string, HashSet<long>> sizes, List<(string Name, long Size)> accepted, string name, List<(long Size, bool Renamed)> tagged)
+    {
+        bool shared = tagged.Any(t => t.Renamed) || accepted.Count(f => string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase)) > 1;
+        if (shared && sizes.TryGetValue(name, out HashSet<long>? known))
+            known.UnionWith(tagged.Select(t => t.Size));
+        else
+            sizes[name] = [.. tagged.Select(t => t.Size)];
     }
 
     public SlskdDownloadDirectory? SlskdDownloadDirectory
