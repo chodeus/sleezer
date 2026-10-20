@@ -251,7 +251,6 @@ public class ComparableTextTests
         Assert.Equal(expected, ComparableText.MarksOnly(text));
     }
 
-    // A wanted title made only of marks used to pass every store title.
     [Theory]
     [InlineData("÷", "÷", true)]
     [InlineData("÷ (Deluxe)", "÷", true)]
