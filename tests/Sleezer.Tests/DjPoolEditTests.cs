@@ -59,8 +59,17 @@ public class DjPoolEditTests
     [InlineData("Lantern Song (Intro)", "DJ Pool (Clean)", true)]
     [InlineData("Lantern Song (Intro)", "DJ Pool", false)]
     [InlineData("Lantern Song", "DJ Pool (Clean)", false)]
+    [InlineData("Lantern Song (Intro) (5A - 95) (Clean)", "DJ Pool", true)]
     public void A_dj_cut_split_over_the_path_is_an_edit(string leaf, string parent, bool conflicts) =>
         Assert.Equal(conflicts, VariantQualifiers.RemixSignaturesConflict("Lantern Song", [leaf, parent], null));
+
+    // Markers in separate brackets make an edit in one name as in a path, wanted or found.
+    [Theory]
+    [InlineData("Lantern Song", "Lantern Song (Intro) (5A - 95) (Clean)", true)]
+    [InlineData("Lantern Song (DJ intro - DJ outro 1) (clean)", "Lantern Song", true)]
+    [InlineData("Lantern Song (DJ intro - DJ outro 1) (clean)", "Lantern Song (DJ intro - DJ outro 1) (clean)", false)]
+    public void Dj_cut_markers_in_separate_brackets_make_an_edit(string wanted, string candidate, bool conflicts) =>
+        Assert.Equal(conflicts, VariantQualifiers.RemixSignaturesConflict(wanted, candidate));
 
     // The innermost folder naming a cut decides: a dirty file in a "(Clean)" pool folder is dirty.
     [Theory]

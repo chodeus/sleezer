@@ -14,8 +14,9 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         /// <summary>Extracts a title's remix qualifier: the remixer, empty for a generic remix release, null for none.</summary>
         public static string? ExtractRemixSignature(string? title)
         {
+            // Both DJ-cut markers in separate brackets, "(Intro) (5A - 95) (Clean)", make an edit too.
             if (RemixZone(title) is not { } zone)
-                return null;
+                return NamesDjCut([title]) ? string.Empty : null;
 
             if (zone.Brackets.Length > 0)
                 return NormalizeRemixerText(RemixKeywordRegex().Replace(SignatureBracket(zone.Brackets), " "));
@@ -395,11 +396,11 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             }
 
             // A DJ cut can be split over the path, "DJ Pool (Clean)" above "Song (Intro)": both markers make it an edit.
-            remixSignature ??= SplitDjCut(components) ? string.Empty : null;
+            remixSignature ??= NamesDjCut(components) ? string.Empty : null;
             return new VariantProfile(live, demo, extended, arrangements, monoStereo, remixSignature);
         }
 
-        private static bool SplitDjCut(IReadOnlyList<string?> components)
+        private static bool NamesDjCut(IReadOnlyList<string?> components)
         {
             HashSet<string> cuts = [.. components.SelectMany(DjCutWords)];
             return (cuts.Contains("intro") || cuts.Contains("outro")) && (cuts.Contains("clean") || cuts.Contains("dirty"));
