@@ -63,7 +63,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         {
             string marks = ComparableText.MarksOnly(searchAlbum);
             if (marks.Length > 0)
-                return (directoryKey.Contains(marks, StringComparison.Ordinal), marks);
+                return (FolderCarriesMarks(directoryKey, marks), marks);
 
             bool named = isVolumeSearch
                 ? CheckVolumeSeriesMatch(directoryKey, searchAlbum, strictnessOffset)
@@ -97,6 +97,13 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         private static string AlbumReason(bool albumMatch, bool isVolumeSearch) => isVolumeSearch
             ? albumMatch ? "volume series matches" : "volume series differs"
             : albumMatch ? "album named" : "album not named";
+
+        // The album's own folder only ("A+Band\Driftwood" names no "+" album), spaces dropped as MarksOnly drops them.
+        private static bool FolderCarriesMarks(string directoryKey, string marks)
+        {
+            string[] components = SplitPathIntoComponents(directoryKey);
+            return components.Length > 0 && string.Concat(components[^1].Where(c => !char.IsWhiteSpace(c))).Contains(marks, StringComparison.Ordinal);
+        }
 
         // Path-tail retry: the album name often spans the parent+leaf components ("Artist - Album/CD extras" layouts).
         private static bool PathTailNamesAlbum(string directoryKey, string searchAlbumNorm, int strictnessOffset)

@@ -37,12 +37,31 @@ public class SlskdFolderVerdictTests
     [Theory]
     [InlineData(@"Music\Moonward\Moonward - ÷ (2017)", true)]
     [InlineData(@"Music\Moonward\Moonward - x (2014)", false)]
-    public void a_marks_only_album_needs_its_marks_in_the_folder(string folder, bool matched)
+    [InlineData(@"Music\Moonward ÷ Tide\Glass Harbour", false)]
+    public void a_marks_only_album_needs_its_marks_in_the_album_folder(string folder, bool matched)
     {
         SlskdFolderVerdict v = Judge(folder, ["01 Lantern Song.flac"], new SlskdSearchData("Moonward", "÷", false, false, 1, null));
 
         Assert.Equal(matched, v.Matched);
         Assert.Contains(matched ? "album named" : "album not named", v.Reasons);
+    }
+
+    [Fact]
+    public void spaced_marks_match_the_same_marks_in_the_folder()
+    {
+        SlskdFolderVerdict v = Judge(@"Music\Moonward\Moonward - ✞ ✦", ["01 Lantern Song.flac"], new SlskdSearchData("Moonward", "✞ ✦", false, false, 1, null));
+
+        Assert.Contains("album named", v.Reasons);
+    }
+
+    // With no artist to name, a parent folder's "+" would otherwise pass any album beneath it.
+    [Fact]
+    public void marks_in_a_parent_folder_do_not_name_the_album()
+    {
+        SlskdFolderVerdict v = Judge(@"Music\Moon+Ward\Driftwood", ["01 Lantern Song.flac"], new SlskdSearchData(null, "+", false, false, 1, null));
+
+        Assert.False(v.Matched);
+        Assert.Contains("album not named", v.Reasons);
     }
 
     [Fact]
