@@ -20,6 +20,38 @@ public class ArtistCreditTests
     public void A_credit_naming_the_artist_names_them(string credit) =>
         Assert.True(Moonward.IsNamedBy(credit));
 
+    // A short name scores under the fuzzy floor once its word break is gone.
+    [Fact]
+    public void A_name_written_without_its_word_break_names_the_artist() =>
+        Assert.True(new ArtistCredit("Ra Vo").IsNamedBy("RaVo"));
+
+    [Theory]
+    [InlineData("MOONWARD")]
+    [InlineData("Lunar Drift")]
+    [InlineData("Salt Road;Moonward")]
+    [InlineData("Salt Road / Moonward")]
+    public void A_credit_listing_the_artist_lists_them(string credit) =>
+        Assert.True(Moonward.IsListedIn(credit));
+
+    // Listed only as a whole part: a longer act or a duo's own name is someone else.
+    [Theory]
+    [InlineData("Moonward Falls")]
+    [InlineData("Salt Road & Moonward")]
+    [InlineData("Salt Road, Moonward")]
+    [InlineData("Moonward presents Glass Harbour")]
+    public void A_credit_that_only_contains_the_artist_does_not_list_them(string credit) =>
+        Assert.False(Moonward.IsListedIn(credit));
+
+    [Fact]
+    public void Words_scattered_across_a_collaboration_do_not_list_the_artist() =>
+        Assert.False(new ArtistCredit("Ivy Moss").IsListedIn("Ivy Lane & Peter Moss"));
+
+    [Theory]
+    [InlineData("Glass/Harbour", "Glass/Harbour;Salt Road")]
+    [InlineData("Salt & Road", "Moonward;Salt & Road")]
+    public void A_name_holding_a_separator_is_still_listed(string artist, string credit) =>
+        Assert.True(new ArtistCredit(artist).IsListedIn(credit));
+
     [Theory]
     [InlineData("Salt Road")]
     [InlineData("Various Artists")]
@@ -71,10 +103,38 @@ public class ArtistCreditTests
         Assert.Equal(CreditVerdict.Unjudged, FileCredits.Judge([], Moonward));
     }
 
-    // A featured guest is not the file's artist, as in identification.
+    // A featured guest is not the file's artist, bracketed or not.
+    [Theory]
+    [InlineData("Salt Road (feat. Moonward)")]
+    [InlineData("Salt Road feat. Moonward")]
+    [InlineData("Salt Road ft. Moonward")]
+    [InlineData("Salt Road featuring Moonward")]
+    public void A_featured_guest_does_not_name_the_artist(string credit) =>
+        Assert.Equal(CreditVerdict.Foreign, FileCredits.Judge([credit], Moonward));
+
     [Fact]
-    public void A_featured_guest_does_not_name_the_artist() =>
-        Assert.Equal(CreditVerdict.Foreign, FileCredits.Judge(["Salt Road (feat. Moonward)"], Moonward));
+    public void The_artist_before_a_bare_guest_is_named() =>
+        Assert.Equal(CreditVerdict.Named, FileCredits.Judge(["Lunar Drift feat. Salt Road"], Moonward));
+
+    // "With" inside a name is no guest credit.
+    [Fact]
+    public void A_name_holding_with_is_named() =>
+        Assert.Equal(CreditVerdict.Named, FileCredits.Judge(["Ride With Lanterns"], new ArtistCredit("Ride With Lanterns")));
+
+    [Fact]
+    public void A_collaborator_listed_first_leaves_the_artist_named() =>
+        Assert.Equal(CreditVerdict.Named, FileCredits.Judge(["Salt Road;Moonward"], Moonward));
+
+    // Loosely named but not listed: neither given the artist's name nor left out of the title fallback.
+    [Theory]
+    [InlineData("Salt Road & Moonward")]
+    [InlineData("Moonward Falls")]
+    public void A_credit_only_containing_the_artist_is_unjudged(string credit) =>
+        Assert.Equal(CreditVerdict.Unjudged, FileCredits.Judge([credit], Moonward));
+
+    [Fact]
+    public void A_blank_wanted_name_judges_nothing() =>
+        Assert.Equal(CreditVerdict.Unjudged, FileCredits.Judge(["Salt Road"], new ArtistCredit("")));
 
     [Theory]
     [InlineData("Various Artists", CreditVerdict.Named)]
