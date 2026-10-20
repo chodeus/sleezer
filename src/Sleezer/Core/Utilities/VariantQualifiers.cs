@@ -19,14 +19,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 
             string[] remixBrackets = [.. BracketedContentRegex().Matches(title).Select(b => b.Value[1..^1]).Where(inner => RemixKeywordRegex().IsMatch(inner))];
             if (remixBrackets.Length > 0)
-            {
-                // The track's own "(Grandtheft Remix)" outranks an album's "(The Remixes)"; a named "(KIKI Remixes)" outranks "(Radio Edit)".
-                string inner = remixBrackets.FirstOrDefault(b => !PluralRemixesRegex().IsMatch(b) && GenuineRemixKeywordRegex().IsMatch(b))
-                    ?? remixBrackets.FirstOrDefault(b => PluralRemixesRegex().IsMatch(b) && !IsGenericRemixesLabel(b))
-                    ?? remixBrackets.FirstOrDefault(b => !IsGenericRemixesLabel(b))
-                    ?? remixBrackets[0];
-                return NormalizeRemixerText(RemixKeywordRegex().Replace(inner, " "));
-            }
+                return NormalizeRemixerText(RemixKeywordRegex().Replace(SignatureBracket(remixBrackets), " "));
 
             int dash = title.LastIndexOf(" - ", StringComparison.Ordinal);
             if (dash >= 0)
@@ -339,6 +332,13 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             loweredTitle.EndsWith(" " + word, StringComparison.Ordinal) || loweredTitle.EndsWith("-" + word, StringComparison.Ordinal);
 
         private static string NormalizeRemixerText(string text) => ComparableText.Of(text);
+
+        // The track's own "(Grandtheft Remix)" outranks an album's "(The Remixes)"; a named "(KIKI Remixes)" outranks "(Radio Edit)".
+        private static string SignatureBracket(string[] remixBrackets) =>
+            remixBrackets.FirstOrDefault(b => !PluralRemixesRegex().IsMatch(b) && GenuineRemixKeywordRegex().IsMatch(b))
+            ?? remixBrackets.FirstOrDefault(b => PluralRemixesRegex().IsMatch(b) && !IsGenericRemixesLabel(b))
+            ?? remixBrackets.FirstOrDefault(b => !IsGenericRemixesLabel(b))
+            ?? remixBrackets[0];
 
         // "(The Remixes)", "(Remixes, Part 2)": a release label, not a remixer.
         private static bool IsGenericRemixesLabel(string bracket) =>
