@@ -63,6 +63,13 @@ public static class RecordingVerdict
         return sawDifferentTitle ? FingerprintVerdict.Mismatch : FingerprintVerdict.Unverifiable;
     }
 
+    /// <summary>Each recording AcoustID named, with the title the verdict judged it by, for the mismatch log.</summary>
+    public static string DescribeMatches(IReadOnlyList<string>? acoustIdRecordingIds, IReadOnlyDictionary<string, string>? knownRecordings) =>
+        acoustIdRecordingIds is not { Count: > 0 }
+            ? "no recordings"
+            : string.Join("; ", acoustIdRecordingIds.Select(id =>
+                knownRecordings != null && knownRecordings.TryGetValue(id, out string? title) ? $"{id} \"{title}\"" : $"{id} (not among the artist's monitored releases)"));
+
     public static string NormalizeTitle(string? title) =>
         ComparableText.Of(FeaturedArtistStripper.Strip(title ?? string.Empty));
 }
