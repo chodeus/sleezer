@@ -457,19 +457,13 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             return;
         }
 
-        List<string> files = _diskProvider.GetFiles(folder, recursive: true).ToList();
-        List<string> ownedOnDisk = new();
-        int foreignAudio = 0;
+        (List<string> ownedOnDisk, int foreignAudio) = ClassifyAudio(folder, ownedFiles);
 
-        foreach (string file in files)
+        // Equal or fewer is normal: Lidarr moves the audio out on import.
+        if (!ownedFiles.AccountsFor(ownedOnDisk.Count))
         {
-            if (!AudioFormatHelper.IsPostProcessAudioFile(file))
-                continue;
-
-            if (IsConclusivelyOwned(file, ownedFiles))
-                ownedOnDisk.Add(file);
-            else
-                foreignAudio++;
+            _logger.Warn("[{Context}] '{Folder}' holds {Count} audio file(s) matching this download's {Expected}; at least one is another download's, leaving the folder", context, folder, ownedOnDisk.Count, ownedFiles.AudioFileCount);
+            return;
         }
 
         if (foreignAudio == 0)
@@ -490,6 +484,25 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 _logger.Warn(ex, "[{Context}] Failed to delete '{File}'", context, file);
             }
         }
+    }
+
+    private (List<string> Owned, int Foreign) ClassifyAudio(string folder, SlskdOwnedFiles ownedFiles)
+    {
+        List<string> owned = new();
+        int foreign = 0;
+
+        foreach (string file in _diskProvider.GetFiles(folder, recursive: true))
+        {
+            if (!AudioFormatHelper.IsPostProcessAudioFile(file))
+                continue;
+
+            if (IsConclusivelyOwned(file, ownedFiles))
+                owned.Add(file);
+            else
+                foreign++;
+        }
+
+        return (owned, foreign);
     }
 
     private bool IsConclusivelyOwned(string file, SlskdOwnedFiles ownedFiles)

@@ -277,6 +277,18 @@ public class SlskdOwnershipOverlayTests
         Assert.Equal("/dl/Album", SlskdPathResolver.SelectOwningFolder([("/dl/Album", 2)], owned.AudioFileCount));
     }
 
+    // A third "01.flac" at one of the two accepted sizes is another download's; an emptied folder after a move import is not.
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(2, true)]
+    [InlineData(3, false)]
+    public void Owned_matches_on_disk_beyond_the_accepted_audio_are_not_all_the_downloads(int ownedAudioOnDisk, bool accounted)
+    {
+        SlskdDownloadItem item = NewItem((@"@@x\Album\CD1\01.flac", 100), (@"@@x\Album\CD2\01.flac", 200), (@"@@x\Album\cover.jpg", 5));
+
+        Assert.Equal(accounted, item.BuildOwnedFiles().AccountsFor(ownedAudioOnDisk));
+    }
+
     [Fact]
     public void Only_tagged_files_that_were_the_downloads_own_are_recorded()
     {

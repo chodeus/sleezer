@@ -14,6 +14,9 @@ public sealed class SlskdOwnedFiles(Dictionary<string, HashSet<long>> sizesByNam
     /// <summary>Whether a file of this basename and size is one of the download's own.</summary>
     public bool Owns(string basename, long size) => sizesByName.TryGetValue(basename, out HashSet<long>? sizes) && sizes.Contains(size);
 
+    /// <summary>Whether this many owned-looking audio files on disk can all be the download's; more than it accepted means one is another download's twin.</summary>
+    public bool AccountsFor(int ownedAudioOnDisk) => ownedAudioOnDisk <= AudioFileCount;
+
     /// <summary>The sizes owned under a basename, empty when the name is not the download's.</summary>
     public IReadOnlyCollection<long> SizesOf(string basename) => sizesByName.TryGetValue(basename, out HashSet<long>? sizes) ? sizes : [];
 
