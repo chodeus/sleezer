@@ -282,7 +282,34 @@ public class SlskdOwnershipOverlayTests
     {
         (string, string)[] tagged = [("/dl/A/01.flac", "/dl/A/01 - Lantern Song.flac"), ("/dl/A/theirs.flac", "/dl/A/02 - Salt Road.flac")];
 
-        Assert.Equal(["/dl/A/01 - Lantern Song.flac"], SlskdOwnedFiles.OwnTaggedFiles(tagged, new HashSet<string> { "/dl/A/01.flac" }));
+        Assert.Equal([("/dl/A/01.flac", "/dl/A/01 - Lantern Song.flac")], SlskdOwnedFiles.OwnTaggedFiles(tagged, new HashSet<string> { "/dl/A/01.flac" }));
+    }
+
+    // CD1's "A.flac" renamed to "B.flac" must not take the size of CD2's untouched "B.flac".
+    [Fact]
+    public void A_rename_onto_another_files_name_keeps_that_file_owned()
+    {
+        SlskdDownloadItem item = NewItem((@"@@x\Album\CD1\Lantern Song (feat. Moonward).flac", 100), (@"@@x\Album\CD2\Lantern Song.flac", 200));
+
+        item.RecordTaggedFile("/dl/Album/CD1/Lantern Song.flac", 130, "/dl/Album/CD1/Lantern Song (feat. Moonward).flac");
+        SlskdOwnedFiles owned = item.BuildOwnedFiles();
+
+        Assert.True(owned.Owns("Lantern Song.flac", 130));
+        Assert.True(owned.Owns("Lantern Song.flac", 200));
+    }
+
+    [Fact]
+    public void A_renamed_file_tagged_again_in_place_still_keeps_the_other_file_owned()
+    {
+        SlskdDownloadItem item = NewItem((@"@@x\Album\CD1\Lantern Song (feat. Moonward).flac", 100), (@"@@x\Album\CD2\Lantern Song.flac", 200));
+
+        item.RecordTaggedFile("/dl/Album/CD1/Lantern Song.flac", 130, "/dl/Album/CD1/Lantern Song (feat. Moonward).flac");
+        item.RecordTaggedFile("/dl/Album/CD1/Lantern Song.flac", 140, "/dl/Album/CD1/Lantern Song.flac");
+        SlskdOwnedFiles owned = item.BuildOwnedFiles();
+
+        Assert.True(owned.Owns("Lantern Song.flac", 140));
+        Assert.True(owned.Owns("Lantern Song.flac", 200));
+        Assert.False(owned.Owns("Lantern Song.flac", 130));
     }
 
     // On Linux "CD1" and "cd1" are two folders: each file keeps its own tagged size.

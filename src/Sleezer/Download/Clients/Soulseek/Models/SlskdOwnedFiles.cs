@@ -17,7 +17,7 @@ public sealed class SlskdOwnedFiles(Dictionary<string, HashSet<long>> sizesByNam
     /// <summary>The sizes owned under a basename, empty when the name is not the download's.</summary>
     public IReadOnlyCollection<long> SizesOf(string basename) => sizesByName.TryGetValue(basename, out HashSet<long>? sizes) ? sizes : [];
 
-    /// <summary>The final paths of tagged files that were the download's own before tagging; the tagger also touches other downloads' files.</summary>
-    public static IEnumerable<string> OwnTaggedFiles(IEnumerable<(string OriginalPath, string FinalPath)> tagged, IReadOnlySet<string> ownedPathsBeforeTagging) =>
-        tagged.Where(t => ownedPathsBeforeTagging.Contains(t.OriginalPath)).Select(t => t.FinalPath);
+    /// <summary>The tagged files that were the download's own before tagging; the tagger also touches other downloads' files.</summary>
+    public static IEnumerable<(string OriginalPath, string FinalPath)> OwnTaggedFiles(IEnumerable<(string OriginalPath, string FinalPath)> tagged, IReadOnlySet<string> ownedPathsBeforeTagging) =>
+        tagged.Where(t => ownedPathsBeforeTagging.Contains(t.OriginalPath));
 }

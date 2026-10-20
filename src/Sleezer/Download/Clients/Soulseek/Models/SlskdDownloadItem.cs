@@ -98,16 +98,19 @@ public class SlskdDownloadItem
 
     public IReadOnlyDictionary<string, SlskdFileState> FileStates => _previousFileStates;
 
-    // Post-tag identities (local path → size): tag writes change size and
+    // Post-tag identities (local path → size, renamed): tag writes change size and
     // feat-strip renames, so the enqueued identity alone can't claim the file.
     // Ordinal: on Linux "CD1/01.flac" and "cd1/01.flac" are two files.
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, long> _taggedFileSizes = new(StringComparer.Ordinal);
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (long Size, bool Renamed)> _taggedFileSizes = new(StringComparer.Ordinal);
 
-    /// <summary>Records a file's post-tagging identity so ownership checks can still claim it.</summary>
-    public void RecordTaggedFile(string path, long size)
+    /// <summary>Records a file's post-tagging identity so ownership checks can still claim it; pass the pre-rename path when the tagger renamed it.</summary>
+    public void RecordTaggedFile(string path, long size, string? originalPath = null)
     {
-        if (!string.IsNullOrEmpty(Path.GetFileName(path)))
-            _taggedFileSizes[path] = size;
+        if (string.IsNullOrEmpty(Path.GetFileName(path)))
+            return;
+
+        bool renamed = originalPath != null && !string.Equals(Path.GetFileName(originalPath), Path.GetFileName(path), StringComparison.OrdinalIgnoreCase);
+        _taggedFileSizes.AddOrUpdate(path, (size, renamed), (_, recorded) => (size, renamed || recorded.Renamed));
     }
 
     /// <summary>
@@ -125,21 +128,21 @@ public class SlskdDownloadItem
             .GroupBy(f => f.Name, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.Select(f => f.Size).ToHashSet(), StringComparer.OrdinalIgnoreCase);
 
-        foreach (IGrouping<string, KeyValuePair<string, long>> tagged in _taggedFileSizes.GroupBy(t => Path.GetFileName(t.Key), StringComparer.OrdinalIgnoreCase))
-            ApplyTaggedSizes(sizes, accepted, tagged.Key, tagged.Select(t => t.Value));
+        foreach (IGrouping<string, KeyValuePair<string, (long Size, bool Renamed)>> tagged in _taggedFileSizes.GroupBy(t => Path.GetFileName(t.Key), StringComparer.OrdinalIgnoreCase))
+            ApplyTaggedSizes(sizes, accepted, tagged.Key, [.. tagged.Select(t => t.Value)]);
 
         return new SlskdOwnedFiles(sizes, [.. accepted.Select(f => f.Name)]);
     }
 
-    // A name the item holds once takes its tagged size in place of the enqueued one; a name shared
-    // by several files (two discs' "01.flac") keeps every size, since the write changed only one of them.
-    private static void ApplyTaggedSizes(Dictionary<string, HashSet<long>> sizes, List<(string Name, long Size)> accepted, string name, IEnumerable<long> taggedSizes)
+    // A name the item holds once takes its tagged size in place of the enqueued one; a name shared by several
+    // files (two discs' "01.flac"), or one a rename landed on, keeps every size, since the write changed only one.
+    private static void ApplyTaggedSizes(Dictionary<string, HashSet<long>> sizes, List<(string Name, long Size)> accepted, string name, List<(long Size, bool Renamed)> tagged)
     {
-        bool shared = accepted.Count(f => string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase)) > 1;
+        bool shared = tagged.Any(t => t.Renamed) || accepted.Count(f => string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase)) > 1;
         if (shared && sizes.TryGetValue(name, out HashSet<long>? known))
-            known.UnionWith(taggedSizes);
+            known.UnionWith(tagged.Select(t => t.Size));
         else
-            sizes[name] = [.. taggedSizes];
+            sizes[name] = [.. tagged.Select(t => t.Size)];
     }
 
     public SlskdDownloadDirectory? SlskdDownloadDirectory

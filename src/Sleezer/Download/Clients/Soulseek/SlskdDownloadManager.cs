@@ -1394,11 +1394,11 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         if (taggedFiles == null)
             return;
 
-        foreach (string finalPath in SlskdOwnedFiles.OwnTaggedFiles(taggedFiles.Select(t => (t.OriginalPath, t.FinalPath)), ownedPathsBeforeTagging))
+        foreach ((string originalPath, string finalPath) in SlskdOwnedFiles.OwnTaggedFiles(taggedFiles.Select(t => (t.OriginalPath, t.FinalPath)), ownedPathsBeforeTagging))
         {
             try
             {
-                item.RecordTaggedFile(finalPath, _diskProvider.GetFileSize(finalPath));
+                item.RecordTaggedFile(finalPath, _diskProvider.GetFileSize(finalPath), originalPath);
             }
             catch (Exception ex)
             {
