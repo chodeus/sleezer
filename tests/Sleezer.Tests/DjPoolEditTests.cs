@@ -114,15 +114,17 @@ public class DjPoolEditTests
         Assert.Null(VariantQualifiers.ExtractRemixSignature("Redrum (Murder)"));
     }
 
-    // A plainly named folder of DJ-pool files: the wanted title must not claim the edit.
-    [Fact]
-    public void A_folder_of_dj_pool_edits_does_not_match_the_plain_single()
+    // A plainly named folder of DJ-pool files: the wanted title must not claim the edit; the plain file is the control.
+    [Theory]
+    [InlineData("01 Lantern Song (Intro) (Clean).mp3", false)]
+    [InlineData("01 Lantern Song.mp3", true)]
+    public void A_folder_of_dj_pool_edits_does_not_match_the_plain_single(string fileName, bool matched)
     {
-        List<SlskdFileData> files = [new SlskdFileData(@"Music\Moonward\Lantern Song\01 Lantern Song (Intro) (Clean).mp3", null, 16, 9_000_000, 210, ".mp3", 44100, 0, false)];
+        List<SlskdFileData> files = [new SlskdFileData(@"Music\Moonward\Lantern Song\" + fileName, null, 16, 9_000_000, 210, ".mp3", 44100, 0, false)];
         SlskdSearchData search = new("Moonward", "Lantern Song", false, false, 1, null, TrackCount: 1, Tracks: ["Lantern Song"], AlbumType: "Single");
 
         SlskdFolderVerdict verdict = new SlskdItemsParser(LogManager.GetLogger("tests")).JudgeFolder(files.GroupBy(f => SlskdTextProcessor.GetMergedDirectoryKey(f.Filename)).Single(), search, null, 1);
 
-        Assert.False(verdict.Matched);
+        Assert.Equal(matched, verdict.Matched);
     }
 }
