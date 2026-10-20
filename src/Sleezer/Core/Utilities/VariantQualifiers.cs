@@ -31,7 +31,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             if (string.IsNullOrWhiteSpace(title) || !RemixKeywordRegex().IsMatch(title))
                 return null;
 
-            string[] remixBrackets = [.. BracketedContentRegex().Matches(title).Select(b => b.Value[1..^1]).Where(inner => RemixKeywordRegex().IsMatch(inner))];
+            // Brackets keep their characters: "(ReDrum)" names a remix where a bare "Redrum" title doesn't.
+            string[] remixBrackets = [.. BracketedContentRegex().Matches(title).Select(b => b.Value).Where(bracket => RemixKeywordRegex().IsMatch(bracket))];
             if (remixBrackets.Length > 0)
                 return new RemixQualifierZone(remixBrackets, null, string.Join("\n", remixBrackets));
 
@@ -173,13 +174,20 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         private static bool DjCutsDiffer(string? searchAlbum, IReadOnlyList<string?> candidateComponents)
         {
             HashSet<string> search = DjCutWords(searchAlbum);
-            HashSet<string> candidate = [.. candidateComponents.SelectMany(DjCutWords)];
-            return AxisDiffers(search, candidate, "clean", "dirty") || AxisDiffers(search, candidate, "intro", "outro");
+            List<HashSet<string>> components = [.. candidateComponents.Select(DjCutWords)];
+            return AxisDiffers(search, components, "clean", "dirty") || AxisDiffers(search, components, "intro", "outro");
         }
 
-        private static bool AxisDiffers(HashSet<string> search, HashSet<string> candidate, string one, string other) =>
-            (search.Contains(one) && candidate.Contains(other) && !candidate.Contains(one)) ||
-            (search.Contains(other) && candidate.Contains(one) && !candidate.Contains(other));
+        // The innermost component naming the axis decides: a dirty file in a "(Clean)" pool folder is dirty, and naming both is no match.
+        private static bool AxisDiffers(HashSet<string> search, IReadOnlyList<HashSet<string>> components, string one, string other)
+        {
+            if (search.Contains(one) == search.Contains(other))
+                return false;
+
+            string wanted = search.Contains(one) ? one : other;
+            HashSet<string>? named = components.FirstOrDefault(c => c.Contains(one) || c.Contains(other));
+            return named != null && !(named.Contains(wanted) && !named.Contains(wanted == one ? other : one));
+        }
 
         // Bracketed only: "Clean Bandit" and "Come Clean" name an artist and a song.
         private static HashSet<string> DjCutWords(string? title) =>
@@ -401,7 +409,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 
             List<string> zones = new();
             foreach (Match bracket in BracketedContentRegex().Matches(title))
-                zones.Add(bracket.Value[1..^1]);
+                zones.Add(bracket.Value);
 
             int firstDash = title.IndexOf(" - ", StringComparison.Ordinal);
             zones.Add(BracketedContentRegex().Replace(firstDash >= 0 ? title[(firstDash + 3)..] : title, " "));

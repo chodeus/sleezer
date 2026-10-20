@@ -44,9 +44,24 @@ public class DjPoolEditTests
     public void Dj_cuts_differ_by_rating_and_end(string wanted, string candidate, bool conflicts) =>
         Assert.Equal(conflicts, VariantQualifiers.RemixSignaturesConflict(wanted, candidate));
 
+    // The innermost folder naming a cut decides: a dirty file in a "(Clean)" pool folder is dirty.
+    [Theory]
+    [InlineData("Lantern Song (Intro) (Dirty)", "DJ Pool (Clean)", true)]
+    [InlineData("Lantern Song (Intro) (Clean)", "DJ Pool (Dirty)", false)]
+    [InlineData("Lantern Song (Intro) (Clean) (Dirty)", "DJ Pool", true)]
+    public void The_innermost_component_naming_a_cut_decides(string leaf, string parent, bool conflicts) =>
+        Assert.Equal(conflicts, VariantQualifiers.RemixSignaturesConflict("Lantern Song (Intro) (Clean)", [leaf, parent], null));
+
+    [Theory]
+    [InlineData("Lantern Song (90s ReDrum)")]
+    [InlineData("Lantern Song (ReDrum)")]
+    public void A_redrum_is_a_remix_track(string title) =>
+        Assert.True(VariantQualifiers.IsVariantTrack(title));
+
+    // A bracketed ReDrum is the qualifier, not the dash tail around it.
     [Fact]
-    public void A_redrum_is_a_remix_track() =>
-        Assert.True(VariantQualifiers.IsVariantTrack("Lantern Song (90s ReDrum)"));
+    public void A_bracketed_redrum_in_a_file_name_is_a_generic_label() =>
+        Assert.Equal(string.Empty, VariantQualifiers.ExtractRemixSignature("Moonward - Lantern Song (ReDrum)"));
 
     // A song can be called "Redrum": as a bare title it is no remix word, and its plain single still refuses a remix.
     [Fact]
