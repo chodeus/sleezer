@@ -16,6 +16,7 @@ public class DjPoolEditTests
     [InlineData("Lantern Song (Intro) (Clean)")]
     [InlineData("Lantern Song (Intro - Dirty)")]
     [InlineData("Lantern Song (Clean Outro)")]
+    [InlineData("Lantern Song {Intro} {Clean}")]
     public void A_dj_pool_edit_is_not_the_plain_track(string candidate) =>
         Assert.True(VariantQualifiers.RemixSignaturesConflict("Lantern Song", candidate));
 
@@ -44,6 +45,14 @@ public class DjPoolEditTests
     [InlineData("Lantern Song (Quick Hit) (Clean)", "Dirty Harbour - Lantern Song (Quick Hit)", false)]
     public void Dj_cuts_differ_by_rating_and_end(string wanted, string candidate, bool conflicts) =>
         Assert.Equal(conflicts, VariantQualifiers.RemixSignaturesConflict(wanted, candidate));
+
+    // A cut split over the path is still an edit; a lone marker on either level is not.
+    [Theory]
+    [InlineData("Lantern Song (Intro)", "DJ Pool (Clean)", true)]
+    [InlineData("Lantern Song (Intro)", "DJ Pool", false)]
+    [InlineData("Lantern Song", "DJ Pool (Clean)", false)]
+    public void A_dj_cut_split_over_the_path_is_an_edit(string leaf, string parent, bool conflicts) =>
+        Assert.Equal(conflicts, VariantQualifiers.RemixSignaturesConflict("Lantern Song", [leaf, parent], null));
 
     // The innermost folder naming a cut decides: a dirty file in a "(Clean)" pool folder is dirty.
     [Theory]
