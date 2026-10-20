@@ -101,11 +101,14 @@ public class DjPoolEditTests
     public void A_bracketed_redrum_in_a_file_name_is_a_generic_label() =>
         Assert.Equal(string.Empty, VariantQualifiers.ExtractRemixSignature("Moonward - Lantern Song (ReDrum)"));
 
-    // A song can be called "Redrum": as a bare title it is no remix word, and its plain single still refuses a remix.
+    // A song can be called "Redrum": bare or after a track number it is no remix word, and its plain single still refuses a remix.
     [Fact]
     public void A_bare_redrum_title_is_a_song()
     {
         Assert.False(VariantQualifiers.IsVariantTrack("Redrum"));
+        Assert.False(VariantQualifiers.IsVariantTrack("01 Redrum"));
+        Assert.False(VariantQualifiers.RemixSignaturesConflict("Redrum", "01 Redrum"));
+        Assert.False(VariantQualifiers.RemixSignaturesConflict("Redrum", "2019 Redrum"));
         Assert.True(VariantQualifiers.RemixSignaturesConflict("Redrum", "Redrum (Moonward Remix)"));
         Assert.False(VariantQualifiers.IsVariantTrack("Redrum (Murder)"));
         Assert.Null(VariantQualifiers.ExtractRemixSignature("Redrum (Murder)"));
