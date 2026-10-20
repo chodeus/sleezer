@@ -77,16 +77,14 @@ public class SlskdDestinationRecoveryTests
             item.GetFullFolderPath(new NzbDrone.Common.Disk.OsPath("/downloads")).FullPath);
     }
 
-    private static SlskdDownloadFile CompletedFile(string filename, string? batchId) => new(
+    private static SlskdDownloadFile CompletedFile(string filename, string? batchId, string state = "Completed, Succeeded") => new(
         Id: "id", Username: "peer", Direction: "Download", Filename: filename, Size: 1000, StartOffset: 0,
-        State: "Completed, Succeeded", RequestedAt: DateTime.UtcNow, EnqueuedAt: DateTime.UtcNow, StartedAt: DateTime.UtcNow,
+        State: state, RequestedAt: DateTime.UtcNow, EnqueuedAt: DateTime.UtcNow, StartedAt: DateTime.UtcNow,
         BytesTransferred: 1000, AverageSpeed: 0, BytesRemaining: 0, ElapsedTime: TimeSpan.Zero, PercentComplete: 100,
         RemainingTime: TimeSpan.Zero, EndedAt: null, BatchId: batchId);
 
     private const string PeerTrack = @"@@x\media\Moonward\2016 - Glass Harbour [FLAC]\01 - Lantern Song.flac";
 
-    // Live 2026-10-20: after a restart a single-folder batch resolved to the peer's "2016 - … [FLAC]" folder.
-    // The tagger had retagged most files, so relocation by name and size found too few to move it.
     [Fact]
     public void A_batch_recovered_after_a_restart_resolves_to_its_destination()
     {
@@ -133,6 +131,24 @@ public class SlskdDestinationRecoveryTests
         Assert.Equal(
             Path.Combine("/downloads", "Moonward - Glass Harbour"),
             item.GetFullFolderPath(new NzbDrone.Common.Disk.OsPath("/downloads")).FullPath);
+    }
+
+    // A failed file raises a retry, and the retry is enqueued to EnqueueDestination.
+    [Fact]
+    public void A_failed_file_waits_for_the_recovered_destination()
+    {
+        SlskdDownloadItem item = NewItem(PeerTrack);
+        NzbDrone.Core.Music.Artist artist = new() { Metadata = new FlakyMetadata(1) };
+        item.ResolvedAlbum = new NzbDrone.Core.Music.Album { Title = "Glass Harbour", Artist = new NzbDrone.Core.Datastore.LazyLoaded<NzbDrone.Core.Music.Artist>(artist) };
+        List<string?> retryDestinations = [];
+        item.FileStateChanged += (_, _) => retryDestinations.Add(item.EnqueueDestination);
+
+        item.SlskdDownloadDirectory = new SlskdDownloadDirectory(@"@@x\media\Moonward\2016 - Glass Harbour [FLAC]", 1, [CompletedFile(PeerTrack, "batch-id", "Completed, Errored")]);
+        Assert.Empty(retryDestinations);
+
+        item.SlskdDownloadDirectory = new SlskdDownloadDirectory(@"@@x\media\Moonward\2016 - Glass Harbour [FLAC]", 1, [CompletedFile(PeerTrack, "batch-id", "Completed, Errored")]);
+
+        Assert.Equal(["Moonward - Glass Harbour"], retryDestinations);
     }
 
     // Inclusive mode: a batch sleezer didn't grab may have run without a destination, so slskd used the source folder.
