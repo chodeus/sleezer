@@ -427,14 +427,15 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         private static partial Regex BracketedContentRegex();
 
         // A mix named for its maker ("Name's Night Mix") is a remix; "Original Mix" and "It's a Mix" are not.
-        [GeneratedRegex(@"\b(remix(es|ed)?|rmx|re-?work(ed)?|bootleg|v\.?i\.?p|flip|dub|edit|instrumentals?|a?\s?capp?ellas?|karaokes?|sped[\s-]?up|slowed|nightcore|daycore|reverb|8d|mashups?|cover(ed)?\s+by|(?<=\b(?!(?:it|that|let|what|there|here|he|she|who|where|how)['’])\w+['’]s\b[^()\[\]{}\n]*)mix)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+        // DJ-pool edits count too: "ReDrum", "Quick Hit", an intro or outro marked clean or dirty.
+        [GeneratedRegex(@"\b(remix(es|ed)?|rmx|re-?work(ed)?|re-?drum|bootleg|v\.?i\.?p|flip|dub|edit|quick\s?hits?|(?:intro|outro)[\s\-/()\[\]]*(?:clean|dirty)|(?:clean|dirty)[\s\-/()\[\]]*(?:intro|outro)|instrumentals?|a?\s?capp?ellas?|karaokes?|sped[\s-]?up|slowed|nightcore|daycore|reverb|8d|mashups?|cover(ed)?\s+by|(?<=\b(?!(?:it|that|let|what|there|here|he|she|who|where|how)['’])\w+['’]s\b[^()\[\]{}\n]*)mix)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
         private static partial Regex RemixKeywordRegex();
 
-        [GeneratedRegex(@"\b(remix(es|ed)?|rmx|re-?work(ed)?|bootleg|v\.?i\.?p|flip|dub|mashups?|(?<=\b(?!(?:it|that|let|what|there|here|he|she|who|where|how)['’])\w+['’]s\b[^()\[\]{}\n]*)mix)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+        [GeneratedRegex(@"\b(remix(es|ed)?|rmx|re-?work(ed)?|re-?drum|bootleg|v\.?i\.?p|flip|dub|mashups?|(?<=\b(?!(?:it|that|let|what|there|here|he|she|who|where|how)['’])\w+['’]s\b[^()\[\]{}\n]*)mix)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
         private static partial Regex GenuineRemixKeywordRegex();
 
         // Names the kind of one RemixKeywordRegex match; any other match is a remix.
-        [GeneratedRegex(@"^(?:(?<instrumental>instrumentals?)|(?<acapella>a?\s?capp?ellas?)|(?<karaoke>karaokes?)|(?<speed>sped[\s-]?up|slowed|nightcore|daycore|reverb|8d)|(?<edit>edit)|(?<bootleg>bootleg)|(?<cover>cover(ed)?\s+by))$", RegexOptions.IgnoreCase | RegexOptions.ExplicitCapture)]
+        [GeneratedRegex(@"^(?:(?<instrumental>instrumentals?)|(?<acapella>a?\s?capp?ellas?)|(?<karaoke>karaokes?)|(?<speed>sped[\s-]?up|slowed|nightcore|daycore|reverb|8d)|(?<edit>edit|quick\s?hits?|(intro|outro)[\s\-/()\[\]]*(clean|dirty)|(clean|dirty)[\s\-/()\[\]]*(intro|outro))|(?<bootleg>bootleg)|(?<cover>cover(ed)?\s+by))$", RegexOptions.IgnoreCase | RegexOptions.ExplicitCapture)]
         private static partial Regex RemixKindRegex();
 
         [GeneratedRegex(@"\blive\b", RegexOptions.Compiled)]
