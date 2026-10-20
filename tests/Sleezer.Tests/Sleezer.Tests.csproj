@@ -116,6 +116,10 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Utilities\StoreReleaseVerifier.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Core\Utilities\ArtistCredit.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Core\PostProcessing\FileCredits.cs"
+             LinkBase="SourceUnderTest" />
     <!-- Two library artists with one CleanName fail a whole search (#124). Lidarr.Core's parser + Artist. -->
     <Compile Include="..\..\src\Sleezer\Core\Utilities\AmbiguousArtistScope.cs"
              LinkBase="SourceUnderTest" />
