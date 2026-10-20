@@ -49,9 +49,19 @@ public class DjPoolEditTests
     [Theory]
     [InlineData("Lantern Song (Intro) (Clean)", "Lantern Song (Intro) (Dirty)", true)]
     [InlineData("Lantern Song (Intro) (Clean)", "Lantern Song (Outro) (Clean)", true)]
-    [InlineData("Lantern Song (Intro) (Dirty)", "Clean Bandit - Lantern Song (Intro) (Dirty)", false)]
+    [InlineData("Lantern Song (Intro) (Dirty)", "Clean Harbour - Lantern Song (Intro) (Dirty)", false)]
     [InlineData("Lantern Song (Quick Hit) (Clean)", "Dirty Harbour - Lantern Song (Quick Hit)", false)]
     public void Dj_cuts_differ_by_rating_and_end(string wanted, string candidate, bool conflicts) =>
+        Assert.Equal(conflicts, VariantQualifiers.RemixSignaturesConflict(wanted, candidate));
+
+    // A remixer's name is no cut; a cut label after the remix word still is.
+    [Theory]
+    [InlineData("Lantern Song (Dirty Harbour Remix)", "Lantern Song (Dirty Harbour Remix) (Clean)", false)]
+    [InlineData("Lantern Song (Clean Harbour Remix)", "Lantern Song (Clean Harbour Remix) (Dirty)", false)]
+    [InlineData("Lantern Song (Moonward Remix - Dirty Harbour Dub)", "Lantern Song (Moonward Remix - Dirty Harbour Dub) (Clean)", false)]
+    [InlineData("Lantern Song (Dirty Harbour Remix - Intro Clean)", "Lantern Song (Dirty Harbour Remix - Intro Dirty)", true)]
+    [InlineData("Lantern Song (Moonward Remix - Clean)", "Lantern Song (Moonward Remix) (Dirty)", true)]
+    public void A_remixer_name_is_no_dj_cut(string wanted, string candidate, bool conflicts) =>
         Assert.Equal(conflicts, VariantQualifiers.RemixSignaturesConflict(wanted, candidate));
 
     // A cut split over the path is still an edit; a lone marker on either level is not.

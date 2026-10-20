@@ -192,7 +192,11 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 
         // Bracketed only: "Clean Bandit" and "Come Clean" name an artist and a song.
         private static HashSet<string> DjCutWords(string? title) =>
-            string.IsNullOrWhiteSpace(title) ? [] : [.. BracketedContentRegex().Matches(title).SelectMany(b => DjCutWordRegex().Matches(b.Value)).Select(m => m.Value.ToLowerInvariant())];
+            string.IsNullOrWhiteSpace(title) ? [] : [.. BracketedContentRegex().Matches(title).SelectMany(b => DjCutWordRegex().Matches(AfterRemixer(b.Value))).Select(m => m.Value.ToLowerInvariant())];
+
+        // Before a remix word stands the remixer's name, "(Dirty South Remix)"; a cut label follows it, "(Moonward Remix - Clean)".
+        private static string AfterRemixer(string bracket) =>
+            GenuineRemixKeywordRegex().Matches(bracket) is { Count: > 0 } remix ? bracket[(remix[^1].Index + remix[^1].Length)..] : bracket;
 
         // Each remix-family word's kind, read where the signature is; edits, bootlegs and covers are remixes.
         private static HashSet<string> RemixKinds(string? title) => RemixZone(title) is { } zone ? KindsIn(zone.Text) : [];
