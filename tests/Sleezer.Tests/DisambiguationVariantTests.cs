@@ -64,6 +64,29 @@ public class DisambiguationVariantTests
     public void A_bootleg_is_borne_out_only_by_bootleg_tracks(string track, bool added) =>
         Assert.Equal(added, VariantQualifiers.VariantTitleOf(Album("Lantern Song", "UA bootleg", track, track), "Lantern Song") != null);
 
+    // A dash inside the disambiguation hides nothing: its kinds come from the whole text.
+    [Theory]
+    [InlineData("UA bootleg - blue vinyl", "Lantern Song (radio edit)")]
+    [InlineData("instrumentals - promo", "Lantern Song (Moonward remix)")]
+    public void A_dash_in_the_disambiguation_keeps_its_kind(string disambiguation, string track) =>
+        Assert.Null(VariantQualifiers.VariantTitleOf(Album("Lantern Song", disambiguation, track, track), "Lantern Song"));
+
+    [Fact]
+    public void A_dashed_disambiguation_its_tracks_bear_out_is_added() =>
+        Assert.Equal("Lantern Song (Moonward bootleg - blue vinyl)",
+            VariantQualifiers.VariantTitleOf(Album("Lantern Song", "Moonward bootleg - blue vinyl", "Lantern Song (Moonward bootleg)"), "Lantern Song"));
+
+    // A title's dash tail takes the disambiguation into its remix name, but "UK release" names no kind.
+    [Fact]
+    public void A_disambiguation_naming_no_kind_adds_nothing_to_a_dashed_remix_title() =>
+        Assert.Null(VariantQualifiers.VariantTitleOf(Album("Lantern Song - Moonward Remix", "UK release", "Lantern Song (Moonward remix)"), "Lantern Song - Moonward Remix"));
+
+    // "Dub" in the title already reads as a remix word; the disambiguation's "Instrumentals" is still a new kind.
+    [Fact]
+    public void A_kind_word_in_the_title_does_not_hide_the_disambiguation() =>
+        Assert.Equal("Dub Cathedral (Instrumentals)",
+            VariantQualifiers.VariantTitleOf(Album("Dub Cathedral", "Instrumentals", "Salt Road (instrumental)", "Lantern Song (instrumental)"), "Dub Cathedral"));
+
     [Fact]
     public void An_unknown_tracklist_adds_nothing() =>
         Assert.Null(VariantQualifiers.VariantTitleOf(new Album { Title = "Glass Harbour", Disambiguation = "Instrumentals" }, "Glass Harbour"));
@@ -92,6 +115,16 @@ public class DisambiguationVariantTests
     [InlineData("Lantern Song (Remixes)", "Lantern Song (Moonward Bootleg)", false)]
     public void A_variant_label_forgives_only_its_own_kind(string wanted, string candidate, bool conflicts) =>
         Assert.Equal(conflicts, VariantQualifiers.RemixSignaturesConflict(wanted, candidate));
+
+    // Kinds are read where the signature is: the qualifier, not a remix word in the base title.
+    [Fact]
+    public void A_kind_word_in_the_base_title_is_not_the_qualifier() =>
+        Assert.True(VariantQualifiers.RemixSignaturesConflict("Dub Cathedral (Instrumental)", "Dub Cathedral (Moonward Remix)"));
+
+    // Each folder counts on its own: the parent's dash must not hide the leaf's "Instrumentals".
+    [Fact]
+    public void A_parent_folder_does_not_hide_the_leaf_folders_kind() =>
+        Assert.False(VariantQualifiers.RemixSignaturesConflict("Glass Harbour (Instrumentals)", ["Glass Harbour Instrumentals", "Moonward - Dub Rarities"], null));
 
     // Mirrors SlskdFolderVerdictTests.Judge.
     private static SlskdFolderVerdict Judge(string folder, SlskdSearchData search)
