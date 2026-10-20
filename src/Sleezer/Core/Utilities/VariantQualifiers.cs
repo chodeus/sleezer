@@ -22,6 +22,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             {
                 // The track's own "(Grandtheft Remix)" outranks an album's "(The Remixes)"; a named "(KIKI Remixes)" outranks "(Radio Edit)".
                 string inner = remixBrackets.FirstOrDefault(b => !PluralRemixesRegex().IsMatch(b) && GenuineRemixKeywordRegex().IsMatch(b))
+                    ?? remixBrackets.FirstOrDefault(b => PluralRemixesRegex().IsMatch(b) && !IsGenericRemixesLabel(b))
                     ?? remixBrackets.FirstOrDefault(b => !IsGenericRemixesLabel(b))
                     ?? remixBrackets[0];
                 return NormalizeRemixerText(RemixKeywordRegex().Replace(inner, " "));

@@ -208,6 +208,7 @@ public class ComparableTextTests
     [InlineData("Lantern Song (Moonward remix)", "Glass Harbour (Remixes, Vol. 2) - 03 - Lantern Song (Harbour Remix)", true)]
     [InlineData("Glass Harbour (Remixes)", "Glass Harbour (Moonward Remix)", false)]
     [InlineData("Lantern Song (Moonward Remixes) (Radio Edit)", "Lantern Song (Salt Road Remixes) (Radio Edit)", true)]
+    [InlineData("Lantern Song (Radio Edit) (Moonward Remixes)", "Lantern Song (Radio Edit) (Salt Road Remixes)", true)]
     [InlineData("Lantern Song (Moonward remix)", "Glass Harbour (D&B+Dubstep Remixes) - 01 - Lantern Song (Moonward Remix)", false)]
     [InlineData("Lantern Song (radio edit)", "Glass Harbour (The Remixes) - 01 - Lantern Song (Radio Edit)", false)]
     [InlineData("Lantern Song (Moonward edit)", "Glass Harbour (The Remixes, Part 1) - 04 - Lantern Song (Moonward edit)", false)]

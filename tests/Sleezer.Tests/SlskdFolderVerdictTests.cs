@@ -38,6 +38,7 @@ public class SlskdFolderVerdictTests
     [InlineData(@"Music\Moonward\Moonward - ÷ (2017)", true)]
     [InlineData(@"Music\Moonward\Moonward - x (2014)", false)]
     [InlineData(@"Music\Moonward ÷ Tide\Glass Harbour", false)]
+    [InlineData(@"Music\Moonward\Glass÷Harbour", false)]
     public void a_marks_only_album_needs_its_marks_in_the_album_folder(string folder, bool matched)
     {
         SlskdFolderVerdict v = Judge(folder, ["01 Lantern Song.flac"], new SlskdSearchData("Moonward", "÷", false, false, 1, null));
