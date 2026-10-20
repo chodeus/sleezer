@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
 namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
@@ -48,15 +49,27 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             // The volume route needs a keyword ("Vol. 3", "Part II"); a title that is a number ("1989", "IV") takes the normal route.
             bool isVolumeSearch = !string.IsNullOrEmpty(searchData.Album) && VolumeKeywordRegex().Match(searchData.Album).Success;
 
-            judgement.AlbumMatch = isVolumeSearch
-                ? CheckVolumeSeriesMatch(directoryKey, searchData.Album, strictnessOffset)
-                : IsFuzzyAlbumNameMatch(dirNameNorm, searchAlbumNorm, strictnessOffset) || PathTailNamesAlbum(directoryKey, searchAlbumNorm, strictnessOffset);
+            (judgement.AlbumMatch, string albumSearched) = AlbumNamed(directoryKey, dirNameNorm, searchAlbumNorm, searchData.Album, isVolumeSearch, strictnessOffset);
             judgement.ArtistMatch = IsFuzzyArtistMatch(dirNameNorm, searchArtistNorm, strictnessOffset);
 
-            AddNameReasons(judgement, searchAlbumNorm, isVolumeSearch);
+            AddNameReasons(judgement, albumSearched, isVolumeSearch);
             bool titlesCarryIt = ApplyTitleEvidence(judgement, evidence);
-            judgement.Matched = NamesMeetSearch(judgement, searchArtistNorm, searchAlbumNorm, titlesCarryIt);
+            judgement.Matched = NamesMeetSearch(judgement, searchArtistNorm, albumSearched, titlesCarryIt);
             JudgeCombinedName(judgement, dirNameNorm, searchData, strictnessOffset);
+        }
+
+        // Whether the folder names the album, and the form it was searched by: an album made only of marks ("÷")
+        // normalizes to nothing, so the folder must carry the marks themselves.
+        private (bool Named, string Searched) AlbumNamed(string directoryKey, string dirNameNorm, string searchAlbumNorm, string? searchAlbum, bool isVolumeSearch, int strictnessOffset)
+        {
+            string marks = ComparableText.MarksOnly(searchAlbum);
+            if (marks.Length > 0)
+                return (FolderCarriesMarks(directoryKey, marks), marks);
+
+            bool named = isVolumeSearch
+                ? CheckVolumeSeriesMatch(directoryKey, searchAlbum, strictnessOffset)
+                : IsFuzzyAlbumNameMatch(dirNameNorm, searchAlbumNorm, strictnessOffset) || PathTailNamesAlbum(directoryKey, searchAlbumNorm, strictnessOffset);
+            return (named, searchAlbumNorm);
         }
 
         private static void AddNameReasons(FolderJudgement judgement, string searchAlbumNorm, bool isVolumeSearch)
@@ -85,6 +98,14 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         private static string AlbumReason(bool albumMatch, bool isVolumeSearch) => isVolumeSearch
             ? albumMatch ? "volume series matches" : "volume series differs"
             : albumMatch ? "album named" : "album not named";
+
+        // The album's own folder only ("A+Band\Driftwood" names no "+" album), the marks between spaces or folder punctuation ("A+B" and "++" name none).
+        private static bool FolderCarriesMarks(string directoryKey, string marks)
+        {
+            string[] components = SplitPathIntoComponents(directoryKey);
+            string spaced = string.Join(@"\s*", marks.EnumerateRunes().Select(r => Regex.Escape(r.ToString())));
+            return components.Length > 0 && Regex.IsMatch(components[^1], @"(?<=^|[\s\-_.()\[\]{}])" + spaced + @"(?=$|[\s\-_.()\[\]{}])");
+        }
 
         // Path-tail retry: the album name often spans the parent+leaf components ("Artist - Album/CD extras" layouts).
         private static bool PathTailNamesAlbum(string directoryKey, string searchAlbumNorm, int strictnessOffset)

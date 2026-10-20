@@ -33,6 +33,50 @@ public class SlskdFolderVerdictTests
         Assert.Equal(["artist not named", "album not named", "artist and album not named together"], v.Reasons);
     }
 
+    [Theory]
+    [InlineData(@"Music\Moonward\Moonward - ÷ (2017)", true)]
+    [InlineData(@"Music\Moonward\Moonward - x (2014)", false)]
+    [InlineData(@"Music\Moonward ÷ Tide\Glass Harbour", false)]
+    [InlineData(@"Music\Moonward\Glass÷Harbour", false)]
+    public void a_marks_only_album_needs_its_marks_in_the_album_folder(string folder, bool matched)
+    {
+        SlskdFolderVerdict v = Judge(folder, ["01 Lantern Song.flac"], new SlskdSearchData("Moonward", "÷", false, false, 1, null));
+
+        Assert.Equal(matched, v.Matched);
+        Assert.Contains(matched ? "album named" : "album not named", v.Reasons);
+    }
+
+    [Fact]
+    public void spaced_marks_match_the_same_marks_in_the_folder()
+    {
+        SlskdFolderVerdict v = Judge(@"Music\Moonward\Moonward - ✞ ✦", ["01 Lantern Song.flac"], new SlskdSearchData("Moonward", "✞ ✦", false, false, 1, null));
+
+        Assert.True(v.Matched);
+        Assert.Contains("album named", v.Reasons);
+    }
+
+    // "++" is another album; "+" with folder punctuation around it is this one.
+    [Theory]
+    [InlineData(@"Music\Moonward\Moonward - ++", false)]
+    [InlineData(@"Music\Moonward\Moonward - + (2019)", true)]
+    [InlineData(@"Music\Moonward\Moonward-+", true)]
+    public void a_mark_album_is_not_named_by_a_longer_run_of_marks(string folder, bool named)
+    {
+        SlskdFolderVerdict v = Judge(folder, ["01 Lantern Song.flac"], new SlskdSearchData("Moonward", "+", false, false, 1, null));
+
+        Assert.Contains(named ? "album named" : "album not named", v.Reasons);
+    }
+
+    // With no artist to name, a parent folder's "+" would otherwise pass any album beneath it.
+    [Fact]
+    public void marks_in_a_parent_folder_do_not_name_the_album()
+    {
+        SlskdFolderVerdict v = Judge(@"Music\Moon+Ward\Driftwood", ["01 Lantern Song.flac"], new SlskdSearchData(null, "+", false, false, 1, null));
+
+        Assert.False(v.Matched);
+        Assert.Contains("album not named", v.Reasons);
+    }
+
     [Fact]
     public void a_different_volume_says_the_volume_differs()
     {

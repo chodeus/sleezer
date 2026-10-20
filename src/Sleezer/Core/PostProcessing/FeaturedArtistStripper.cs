@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
-using NzbDrone.Common.Extensions;
 using NzbDrone.Core.Parser.Model;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
 namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing;
 
@@ -56,7 +56,8 @@ public static class FeaturedArtistStripper
         return rest != Fold(clause) && OnlySeparatorsPattern.IsMatch(rest);
     }
 
-    private static string Fold(string name) => name.RemoveAccent().Trim().ToLowerInvariant();
+    // Optional marks only, as GuestCredits: on kana or Cyrillic й the mark spells another name.
+    private static string Fold(string name) => ComparableText.FoldOptionalMarks(name).Trim().ToLowerInvariant();
 
     private static readonly Regex GuestCreditSeparatorPattern = new(
         @"^(?:\s*[,;]|\s+(?:feat\.?|featuring|ft\.?)\s)",

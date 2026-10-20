@@ -34,6 +34,10 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             return WhitespaceRegex().Replace(folded, " ").Trim();
         }
 
+        /// <summary>The marks a name made only of marks is written with ("÷", "+", "✞"); empty for a name with any letter or digit.</summary>
+        public static string MarksOnly(string? text) =>
+            string.IsNullOrWhiteSpace(text) || Of(text).Length > 0 ? string.Empty : string.Concat(text.Where(c => !char.IsWhiteSpace(c)));
+
         /// <summary>Apostrophes, and an initialism's dots or underscores, removed so "Beto’s" and "S.T.A.R." each stay one word; case is kept.</summary>
         public static string JoinWords(string text) => JoiningMarkRegex().Replace(MapPunctuation(text), string.Empty);
 

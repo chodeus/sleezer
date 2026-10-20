@@ -112,6 +112,9 @@ public class ComparableTextTests
     [InlineData("Lantern Song (Set 2)", "Lantern Song, Set II", true)]
     [InlineData("Lantern Song (Set 2)", "Lantern Song, Set I", false)]
     [InlineData("Lantern Song pt. 1", "Lantern Song 1", true)]
+    [InlineData("Lantern Song Part2", "Lantern Song", false)]
+    [InlineData("Lantern Song Pt2", "Lantern Song, Part 2", true)]
+    [InlineData("Lantern Song MK2", "Lantern Song", true)]
     public void a_numbered_take_or_part_is_another_track_unless_the_wanted_title_is_numbered(string local, string wanted, bool pairs)
     {
         Assert.Equal(pairs, TrackTitleMatcher.Match([local], [wanted]).Count == 1);
@@ -201,6 +204,14 @@ public class ComparableTextTests
     [InlineData("Lantern Song (Dan remix)", "Lantern Song (Jordan Harbour remix)", true)]
     [InlineData("Lantern Song (Dan remix)", "Lantern Song (Danny Harbour remix)", true)]
     [InlineData("Lantern Song (Harbour remix)", "Lantern Song (Moonharbour Late Night remix)", true)]
+    [InlineData("Lantern Song (Moonward remix)", "Glass Harbour (The Remixes) - 03 - Lantern Song (Moonward Remix)", false)]
+    [InlineData("Lantern Song (Moonward remix)", "Glass Harbour (Remixes, Vol. 2) - 03 - Lantern Song (Harbour Remix)", true)]
+    [InlineData("Glass Harbour (Remixes)", "Glass Harbour (Moonward Remix)", false)]
+    [InlineData("Lantern Song (Moonward Remixes) (Radio Edit)", "Lantern Song (Salt Road Remixes) (Radio Edit)", true)]
+    [InlineData("Lantern Song (Radio Edit) (Moonward Remixes)", "Lantern Song (Radio Edit) (Salt Road Remixes)", true)]
+    [InlineData("Lantern Song (Moonward remix)", "Glass Harbour (D&B+Dubstep Remixes) - 01 - Lantern Song (Moonward Remix)", false)]
+    [InlineData("Lantern Song (radio edit)", "Glass Harbour (The Remixes) - 01 - Lantern Song (Radio Edit)", false)]
+    [InlineData("Lantern Song (Moonward edit)", "Glass Harbour (The Remixes, Part 1) - 04 - Lantern Song (Moonward edit)", false)]
     public void a_stylised_remixer_name_split_differently_is_the_same_remixer(string wanted, string candidate, bool conflict)
     {
         Assert.Equal(conflict, VariantQualifiers.RemixSignaturesConflict(wanted, candidate));
@@ -226,6 +237,30 @@ public class ComparableTextTests
     public void various_artists_is_known_however_it_is_written(string artist)
     {
         Assert.True(StoreReleaseVerifier.IsVariousArtists(artist));
+    }
+
+    [Theory]
+    [InlineData("÷", "÷")]
+    [InlineData(" ÷ ", "÷")]
+    [InlineData("✞ ✦", "✞✦")]
+    [InlineData("Divide", "")]
+    [InlineData("x", "")]
+    [InlineData("", "")]
+    public void marks_only_is_the_marks_of_a_name_without_letters(string text, string expected)
+    {
+        Assert.Equal(expected, ComparableText.MarksOnly(text));
+    }
+
+    [Theory]
+    [InlineData("÷", "÷", true)]
+    [InlineData("÷ (Deluxe)", "÷", true)]
+    [InlineData("x", "÷", false)]
+    [InlineData("...", "÷", false)]
+    [InlineData("Divide", "÷", false)]
+    [InlineData("...", "Glass Harbour", true)]
+    public void a_store_title_matches_a_marks_only_title_by_its_marks(string candidate, string target, bool matches)
+    {
+        Assert.Equal(matches, StoreReleaseVerifier.TitleMatches(candidate, target));
     }
 
     // One check for the store verifier, the Qobuz result filter and the pre-import tagger's artist-tag guard.

@@ -233,4 +233,22 @@ public class FeaturedArtistStripperTests
     {
         Assert.Equal("Track Title", FeaturedArtistStripper.StripCredits("Track Title (with Guest Artist)", ["Artist Name, Guest Artist"]));
     }
+
+    // A credit is stripped when it names a credited artist; a mark that spells another name keeps it apart.
+    [Theory]
+    [InlineData("Lantern Song (with Zoë Harbour)", "Zoe Harbour", "Lantern Song")]
+    [InlineData("Lantern Song (with カラス)", "ガラス", "Lantern Song (with カラス)")]
+    [InlineData("Lantern Song (with Лумой)", "Лумои", "Lantern Song (with Лумой)")]
+    public void StripCredits_compares_names_by_their_optional_marks_only(string input, string credited, string expected)
+    {
+        Assert.Equal(expected, FeaturedArtistStripper.StripCredits(input, [credited]).Trim());
+    }
+
+    [Theory]
+    [InlineData("feat. Zoë Harbour", "Zoe Harbour", true)]
+    [InlineData("feat. カラス", "ガラス", false)]
+    public void GuestCredits_compares_names_by_their_optional_marks_only(string guestText, string name, bool names)
+    {
+        Assert.Equal(names, NzbDrone.Plugin.Sleezer.Core.Utilities.GuestCredits.NamesExactly(guestText, [name], "Moonward"));
+    }
 }

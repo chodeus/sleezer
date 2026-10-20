@@ -17,12 +17,9 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             if (string.IsNullOrWhiteSpace(title) || !RemixKeywordRegex().IsMatch(title))
                 return null;
 
-            foreach (Match bracket in BracketedContentRegex().Matches(title))
-            {
-                string inner = bracket.Value[1..^1];
-                if (RemixKeywordRegex().IsMatch(inner))
-                    return NormalizeRemixerText(RemixKeywordRegex().Replace(inner, " "));
-            }
+            string[] remixBrackets = [.. BracketedContentRegex().Matches(title).Select(b => b.Value[1..^1]).Where(inner => RemixKeywordRegex().IsMatch(inner))];
+            if (remixBrackets.Length > 0)
+                return NormalizeRemixerText(RemixKeywordRegex().Replace(SignatureBracket(remixBrackets), " "));
 
             int dash = title.LastIndexOf(" - ", StringComparison.Ordinal);
             if (dash >= 0)
@@ -335,6 +332,24 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             loweredTitle.EndsWith(" " + word, StringComparison.Ordinal) || loweredTitle.EndsWith("-" + word, StringComparison.Ordinal);
 
         private static string NormalizeRemixerText(string text) => ComparableText.Of(text);
+
+        // The track's own "(Grandtheft Remix)" outranks an album's "(The Remixes)"; a named "(KIKI Remixes)" outranks "(Radio Edit)".
+        private static string SignatureBracket(string[] remixBrackets) =>
+            remixBrackets.FirstOrDefault(b => !PluralRemixesRegex().IsMatch(b) && GenuineRemixKeywordRegex().IsMatch(b))
+            ?? remixBrackets.FirstOrDefault(b => PluralRemixesRegex().IsMatch(b) && !IsGenericRemixesLabel(b))
+            ?? remixBrackets.FirstOrDefault(b => !IsGenericRemixesLabel(b))
+            ?? remixBrackets[0];
+
+        // "(The Remixes)", "(Remixes, Part 2)": a release label, not a remixer.
+        private static bool IsGenericRemixesLabel(string bracket) =>
+            PluralRemixesRegex().IsMatch(bracket) &&
+            NormalizeRemixerText(RemixKeywordRegex().Replace(bracket, " ")).Split(' ', StringSplitOptions.RemoveEmptyEntries).All(word => GenericLabelWordRegex().IsMatch(word));
+
+        [GeneratedRegex(@"^(?:the|vol|volume|pt|part|no|ep|\d+|[ivx]+)$")]
+        private static partial Regex GenericLabelWordRegex();
+
+        [GeneratedRegex(@"\bremixes\b", RegexOptions.IgnoreCase)]
+        private static partial Regex PluralRemixesRegex();
 
         [GeneratedRegex(@"[\(\[\{].*?[\)\]\}]", RegexOptions.Compiled)]
         private static partial Regex BracketedContentRegex();
