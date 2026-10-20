@@ -139,6 +139,18 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
                 return false;
             if (searchSignature == null || candidateSignature == null)
                 return true;
+
+            return RemixLabelsConflict(searchSignature, candidateSignature, searchAlbum, candidateName);
+        }
+
+        // An instrumental is no remix, nor an acapella an instrumental: a label forgives only its own kind.
+        private static bool RemixLabelsConflict(string searchSignature, string candidateSignature, string? searchAlbum, string candidateName)
+        {
+            HashSet<string> searchClasses = [.. RemixKinds(searchAlbum).Select(RemixClass)];
+            HashSet<string> candidateClasses = [.. RemixKinds(candidateName).Select(RemixClass)];
+            if (searchClasses.Count > 0 && candidateClasses.Count > 0 && !searchClasses.Overlaps(candidateClasses))
+                return true;
+
             if (searchSignature.Length == 0 || candidateSignature.Length == 0)
                 return false;
 
@@ -146,6 +158,15 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
                 && !NameStartsWithin(searchSignature, candidateSignature)
                 && !NameStartsWithin(candidateSignature, searchSignature);
         }
+
+        // Each remix-family word's kind; edits, bootlegs and covers are remixes for the conflict check.
+        private static HashSet<string> RemixKinds(string? title) =>
+            string.IsNullOrWhiteSpace(title) ? [] : [.. RemixKeywordRegex().Matches(QualifierZones(title)).Select(m => RemixKind(m.Value))];
+
+        private static string RemixKind(string keyword) =>
+            RemixKindRegex().Match(keyword) is { Success: true } kind ? kind.Groups.Cast<Group>().Skip(1).First(g => g.Success).Name : "remix";
+
+        private static string RemixClass(string kind) => kind is "edit" or "bootleg" or "cover" ? "remix" : kind;
 
         // Joined forms forgive a stylised or longer name ("k?d" vs "kd", "Avicii" in "Avicii's Dirty Mouth"): it must
         // begin a word of the other and end one, a possessive "s" allowed; "Corvin" is not "Corvina Brothers".
@@ -230,30 +251,37 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         /// <summary>The title with the album's disambiguation added when that names a variant at least half the album's own tracks carry; otherwise null.</summary>
         // MusicBrainz keeps "(Instrumentals)" or "(Huglife remix)" in the disambiguation while the title stays plain;
         // "blue cover" names the artwork, and no track says so.
-        public static string? VariantTitleOf(Album? album, string title)
+        public static string? VariantTitleOf(Album? album, string title) =>
+            VariantTitleOf(title, album?.Disambiguation, TracklistOf(album));
+
+        /// <summary>As <see cref="VariantTitleOf(Album?, string)"/>, judged against the given track titles.</summary>
+        public static string? VariantTitleOf(string title, string? disambiguation, IReadOnlyList<string?> trackTitles)
         {
-            if (string.IsNullOrWhiteSpace(album?.Disambiguation))
+            if (string.IsNullOrWhiteSpace(disambiguation))
                 return null;
 
-            string variantTitle = $"{title} ({album.Disambiguation})";
-            List<VariantProfile> tracks = [.. TracklistOf(album).Select(ExtractVariantProfile)];
-            return TracksCarryAddedVariants(ExtractVariantProfile(title), ExtractVariantProfile(variantTitle), tracks) ? variantTitle : null;
+            string variantTitle = $"{title} ({disambiguation})";
+            List<TrackVariant> tracks = [.. trackTitles.Select(t => new TrackVariant(ExtractVariantProfile(t), RemixKinds(t)))];
+            return TracksCarryAddedVariants(ExtractVariantProfile(title), ExtractVariantProfile(variantTitle), RemixKinds(disambiguation), tracks) ? variantTitle : null;
         }
 
-        private static bool TracksCarryAddedVariants(VariantProfile plain, VariantProfile named, IReadOnlyList<VariantProfile> tracks)
+        private readonly record struct TrackVariant(VariantProfile Profile, HashSet<string> RemixKinds);
+
+        private static bool TracksCarryAddedVariants(VariantProfile plain, VariantProfile named, HashSet<string> namedKinds, IReadOnlyList<TrackVariant> tracks)
         {
             HashSet<string> addedArrangements = [.. named.Arrangements.Except(plain.Arrangements)];
-            (bool Added, Func<VariantProfile, bool> Carried)[] dimensions =
+            (bool Added, Func<TrackVariant, bool> Carried)[] dimensions =
             [
-                (plain.RemixSignature != named.RemixSignature, t => t.RemixSignature != null),
-                (plain.Live != named.Live, t => t.Live),
-                (plain.Demo != named.Demo, t => t.Demo),
-                (plain.Extended != named.Extended, t => t.Extended),
-                (addedArrangements.Count > 0, t => addedArrangements.IsSubsetOf(t.Arrangements)),
-                (plain.MonoStereo != named.MonoStereo, t => t.MonoStereo == named.MonoStereo),
+                // "Remixes" is borne out by any remix-class word, a narrower kind only by its own: "(radio edit)" tracks don't make a "bootleg".
+                (plain.RemixSignature != named.RemixSignature, t => t.Profile.RemixSignature != null && namedKinds.All(k => k == "remix" ? t.RemixKinds.Any(tk => RemixClass(tk) == "remix") : t.RemixKinds.Contains(k))),
+                (plain.Live != named.Live, t => t.Profile.Live),
+                (plain.Demo != named.Demo, t => t.Profile.Demo),
+                (plain.Extended != named.Extended, t => t.Profile.Extended),
+                (addedArrangements.Count > 0, t => addedArrangements.IsSubsetOf(t.Profile.Arrangements)),
+                (plain.MonoStereo != named.MonoStereo, t => t.Profile.MonoStereo == named.MonoStereo),
             ];
 
-            List<Func<VariantProfile, bool>> added = [.. dimensions.Where(d => d.Added).Select(d => d.Carried)];
+            List<Func<TrackVariant, bool>> added = [.. dimensions.Where(d => d.Added).Select(d => d.Carried)];
             return added.Count > 0 && tracks.Count > 0 && added.All(carried => tracks.Count(carried) * 2 >= tracks.Count);
         }
 
@@ -334,28 +362,28 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         private static bool HasSecondaryType(IReadOnlyCollection<string>? types, string name) =>
             types != null && types.Any(t => string.Equals(t, name, StringComparison.OrdinalIgnoreCase));
 
-        // Qualifier zones mirror ExtractRemixSignature: bracketed segments, or text
-        // after the first " - " (keywords in an artist prefix don't count).
         private static bool HasOnlyRemixFamilyQualifiers(string? title)
         {
             if (string.IsNullOrWhiteSpace(title))
                 return false;
 
-            List<string> zones = new();
-            foreach (Match bracket in BracketedContentRegex().Matches(title))
-                zones.Add(bracket.Value[1..^1]);
-
-            int firstDash = title.IndexOf(" - ", StringComparison.Ordinal);
-            zones.Add(BracketedContentRegex().Replace(firstDash >= 0 ? title[(firstDash + 3)..] : title, " "));
-
-            // A line break, which a named mix's possessive can't reach across: "Voodoo (It's in the Wall) (original mix)".
-            string joined = string.Join("\n", zones);
+            string joined = QualifierZones(title);
             if (!GenuineRemixKeywordRegex().IsMatch(joined))
                 return false;
 
             // Any variant keyword left after removing remix-family terms is a mixed
             // qualifier ("Remix Radio Edit") — still a different recording.
             return !RemixKeywordRegex().IsMatch(GenuineRemixKeywordRegex().Replace(joined, " "));
+        }
+
+        // Qualifier zones mirror ExtractRemixSignature: bracketed segments, or text after the first " - " (keywords in an
+        // artist prefix don't count). A line apiece, which a named mix's possessive can't reach across: "Voodoo (It's in the Wall) (original mix)".
+        private static string QualifierZones(string title)
+        {
+            List<string> zones = [.. BracketedContentRegex().Matches(title).Select(b => b.Value[1..^1])];
+            int firstDash = title.IndexOf(" - ", StringComparison.Ordinal);
+            zones.Add(BracketedContentRegex().Replace(firstDash >= 0 ? title[(firstDash + 3)..] : title, " "));
+            return string.Join("\n", zones);
         }
 
         private static bool TrailingWord(string word, string loweredTitle) =>
@@ -390,6 +418,10 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 
         [GeneratedRegex(@"\b(remix(es|ed)?|rmx|re-?work(ed)?|bootleg|v\.?i\.?p|flip|dub|mashups?|(?<=\b(?!(?:it|that|let|what|there|here|he|she|who|where|how)['’])\w+['’]s\b[^()\[\]{}\n]*)mix)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
         private static partial Regex GenuineRemixKeywordRegex();
+
+        // Names the kind of one RemixKeywordRegex match; any other match is a remix.
+        [GeneratedRegex(@"^(?:(?<instrumental>instrumentals?)|(?<acapella>a?\s?capp?ellas?)|(?<karaoke>karaokes?)|(?<speed>sped[\s-]?up|slowed|nightcore|daycore|reverb|8d)|(?<edit>edit)|(?<bootleg>bootleg)|(?<cover>cover(ed)?\s+by))$", RegexOptions.IgnoreCase | RegexOptions.ExplicitCapture)]
+        private static partial Regex RemixKindRegex();
 
         [GeneratedRegex(@"\blive\b", RegexOptions.Compiled)]
         private static partial Regex LiveQualifierRegex();

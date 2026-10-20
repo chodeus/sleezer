@@ -247,8 +247,14 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         {
             public string TrackCountSummary => string.Join("/", Releases.Select(r => r.TrackCount).Distinct().OrderBy(c => c));
 
-            public static AlbumTarget Of(Album? album, string title, IEnumerable<AlbumRelease> releases) =>
-                new(title, VariantQualifiers.VariantTitleOf(album, title) ?? title, VariantQualifiers.ForgivenVariants(album), [.. releases.Select(r => new TargetRelease(r.TrackCount, DurationSeconds(r), r))]);
+            // The tracklist comes from the releases given: a sibling's own may not be loaded.
+            public static AlbumTarget Of(Album? album, string title, IEnumerable<AlbumRelease> releases)
+            {
+                List<AlbumRelease> known = [.. releases];
+                AlbumRelease? tracked = known.FirstOrDefault(r => r.Monitored) ?? known.FirstOrDefault();
+                string variantTitle = VariantQualifiers.VariantTitleOf(title, album?.Disambiguation, VariantQualifiers.TracklistOf(tracked)) ?? title;
+                return new(title, variantTitle, VariantQualifiers.ForgivenVariants(album), [.. known.Select(r => new TargetRelease(r.TrackCount, DurationSeconds(r), r))]);
+            }
 
             private static int DurationSeconds(AlbumRelease release)
             {

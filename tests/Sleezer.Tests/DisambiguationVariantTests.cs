@@ -52,6 +52,18 @@ public class DisambiguationVariantTests
     public void A_disambiguation_the_tracks_do_not_carry_adds_nothing(string? disambiguation, string track) =>
         Assert.Null(VariantQualifiers.VariantTitleOf(Album("Glass Harbour", disambiguation, track), "Glass Harbour"));
 
+    // A remix EP lists its original and its edits beside the remixes; a narrower word needs tracks naming it.
+    [Fact]
+    public void Remixes_are_borne_out_by_remixes_and_edits_together() =>
+        Assert.NotNull(VariantQualifiers.VariantTitleOf(
+            Album("Lantern Song", "remixes", "Lantern Song (original mix)", "Lantern Song (Moonward remix)", "Lantern Song (radio edit)", "Lantern Song (Salt Road remix)", "Lantern Song (DJ edit)"), "Lantern Song"));
+
+    [Theory]
+    [InlineData("Lantern Song (radio edit)", false)]
+    [InlineData("Lantern Song (Moonward bootleg)", true)]
+    public void A_bootleg_is_borne_out_only_by_bootleg_tracks(string track, bool added) =>
+        Assert.Equal(added, VariantQualifiers.VariantTitleOf(Album("Lantern Song", "UA bootleg", track, track), "Lantern Song") != null);
+
     [Fact]
     public void An_unknown_tracklist_adds_nothing() =>
         Assert.Null(VariantQualifiers.VariantTitleOf(new Album { Title = "Glass Harbour", Disambiguation = "Instrumentals" }, "Glass Harbour"));
@@ -65,6 +77,21 @@ public class DisambiguationVariantTests
         Assert.True(VariantQualifiers.RemixSignaturesConflict(wanted, "Glass Harbour", VariantQualifiers.ForgivenVariants(album)));
         Assert.False(VariantQualifiers.RemixSignaturesConflict(wanted, "Glass Harbour (Instrumentals)", VariantQualifiers.ForgivenVariants(album)));
     }
+
+    // A generic label forgives only its own kind: an instrumental is no remix, nor an acapella an instrumental.
+    [Theory]
+    [InlineData("Glass Harbour (Instrumentals)", "Glass Harbour (Acapellas)", true)]
+    [InlineData("Glass Harbour (Instrumentals)", "Glass Harbour (Tidewater Remix)", true)]
+    [InlineData("Lantern Song (Moonward remix)", "Lantern Song (Instrumental)", true)]
+    [InlineData("Lantern Song (Remixes)", "Lantern Song (Slowed + Reverb)", true)]
+    [InlineData("Lantern Song (Acapella)", "Lantern Song (Moonward Remix)", true)]
+    [InlineData("Lantern Song (Karaoke)", "Lantern Song (Remixes)", true)]
+    [InlineData("Glass Harbour (Instrumentals)", "Glass Harbour (Instrumental Version)", false)]
+    [InlineData("Lantern Song (Remixes)", "Lantern Song (Moonward Remix)", false)]
+    [InlineData("Lantern Song (Remixes)", "Lantern Song (Radio Edit)", false)]
+    [InlineData("Lantern Song (Remixes)", "Lantern Song (Moonward Bootleg)", false)]
+    public void A_variant_label_forgives_only_its_own_kind(string wanted, string candidate, bool conflicts) =>
+        Assert.Equal(conflicts, VariantQualifiers.RemixSignaturesConflict(wanted, candidate));
 
     // Mirrors SlskdFolderVerdictTests.Judge.
     private static SlskdFolderVerdict Judge(string folder, SlskdSearchData search)

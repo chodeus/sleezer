@@ -77,6 +77,16 @@ public class StoreReleaseVerifierTests
         Assert.True(Accepted(criteria, Store("Moonward", "Glass Harbour", trackCount: 2, candidateTitle: "Glass Harbour (Instrumentals)")));
     }
 
+    // A sibling's own releases may not be loaded: the variant title reads the releases it is given.
+    [Fact]
+    public void A_sibling_is_judged_by_the_tracklist_it_is_given()
+    {
+        var album = new Album { Title = "Glass Harbour", Disambiguation = "Instrumentals" };
+        var release = new AlbumRelease { TrackCount = 2, Monitored = true, Tracks = new LazyLoaded<List<Track>>([new Track { Title = "Salt Road (instrumental)" }, new Track { Title = "Lantern Song (instrumental)" }]) };
+
+        Assert.False(StoreReleaseVerifier.PassesFor(Store("Moonward", "Glass Harbour", trackCount: 2), "Glass Harbour", album, [release]));
+    }
+
     // A store artist made only of marks can't be judged, so the artist check lets it through.
     [Fact]
     public void A_store_artist_made_only_of_marks_is_not_judged()
