@@ -254,10 +254,28 @@ public class FeaturedArtistStripperTests
     }
 
     [Theory]
+    [InlineData("Lantern Song (with Moon Harbour)", "Moon Harbour")]
+    [InlineData("Lantern Song (with Moon Harbour)", "Moon Harbour")]
+    [InlineData("Lantern Song (with Moon  Harbour)", "Moon Harbour")]
+    public void StripCredits_matches_a_credit_whatever_spaces_it_is_written_with(string input, string credited)
+    {
+        Assert.Equal("Lantern Song", FeaturedArtistStripper.StripCredits(input, [credited]));
+    }
+
+    [Theory]
     [InlineData("feat. Zoë Harbour", "Zoe Harbour", true)]
     [InlineData("feat. カラス", "ガラス", false)]
     public void GuestCredits_compares_names_by_their_optional_marks_only(string guestText, string name, bool names)
     {
         Assert.Equal(names, NzbDrone.Plugin.Sleezer.Core.Utilities.GuestCredits.NamesExactly(guestText, [name], "Moonward"));
+    }
+
+    [Theory]
+    [InlineData("feat. Moon'n'Harbour", "Moon’n’Harbour", "Moonward")]
+    [InlineData("feat. Moon’n’Harbour", "Moon'n'Harbour", "Moonward")]
+    [InlineData("Glass’n’Harbour & Moon Rook", "Moon Rook", "Glass'n'Harbour")]
+    public void GuestCredits_matches_a_name_whichever_apostrophe_it_is_written_with(string guestText, string name, string searchedArtist)
+    {
+        Assert.True(NzbDrone.Plugin.Sleezer.Core.Utilities.GuestCredits.NamesExactly(guestText, [name], searchedArtist));
     }
 }

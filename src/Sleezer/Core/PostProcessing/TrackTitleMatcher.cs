@@ -65,6 +65,79 @@ public static partial class TrackTitleMatcher
         return mapping;
     }
 
+    /// <summary>The names a release supplies: its credited artists and its title.</summary>
+    public sealed record ReleaseNames(IEnumerable<string?> CreditedArtists, string? AlbumTitle);
+
+    /// <summary>
+    /// As above; then a file still unmatched matches by its title without the release's names
+    /// ("Song (with Artist)", "Artist - Song", "Song - Album"), to an exact title only.
+    /// </summary>
+    public static Dictionary<int, int> Match(IReadOnlyList<string?> localTitles, IReadOnlyList<WantedTitles> wanted, ReleaseNames names, int threshold = DefaultThreshold)
+    {
+        Dictionary<int, int> mapping = Match(localTitles, wanted, threshold);
+        HashSet<int> claimed = [.. mapping.Values];
+        HashSet<string> trackTitles = [.. wanted.Select(w => Normalize(w.Title))];
+        // Read only for a file left unmatched: the list can cost a MusicBrainz lookup.
+        Lazy<string?[]> credited = new(() => [.. names.CreditedArtists]);
+
+        for (int i = 0; i < localTitles.Count; i++)
+        {
+            string local = Normalize(localTitles[i]);
+            if (mapping.ContainsKey(i) || local.Length == 0)
+                continue;
+
+            // A title without its names is a guess: exact only, any track's own title before its other titles, the least cut first.
+            string[] cuts = [.. WithoutReleaseNames(localTitles[i], Credited(), names.AlbumTitle, trackTitles).Select(Normalize).Where(s => s.Length > 0 && s != local).Distinct()];
+            int found = cuts.Select(s => FirstUnclaimed(j => Normalize(wanted[j].Title) == s)).FirstOrDefault(j => j >= 0, -1);
+            if (found < 0)
+                found = cuts.Select(s => FirstUnclaimed(j => wanted[j].OtherTitles.Any(o => Normalize(o) == s))).FirstOrDefault(j => j >= 0, -1);
+            if (found < 0)
+                continue;
+
+            mapping[i] = found;
+            claimed.Add(found);
+        }
+
+        return mapping;
+
+        int FirstUnclaimed(Func<int, bool> matches) => Enumerable.Range(0, wanted.Count).FirstOrDefault(j => !claimed.Contains(j) && matches(j), -1);
+
+        IEnumerable<string?> Credited()
+        {
+            foreach (string? artist in credited.Value)
+                yield return artist;
+        }
+    }
+
+    // The title after each cut: "(with X)" and "feat. X", then "X - " and " - X" or " - Album" peeled from either end.
+    // The last part left stays, and so does a part that is one of the release's titles, as it may be the title.
+    private static IEnumerable<string> WithoutReleaseNames(string? title, IEnumerable<string?> credited, string? albumTitle, IReadOnlySet<string> trackTitles)
+    {
+        string text = FeaturedArtistStripper.StripBareCredits(FeaturedArtistStripper.StripCredits(title, credited), credited);
+        yield return text;
+
+        MatchCollection dashes = AffixDashRegex().Matches(text);
+        int head = 0, tail = dashes.Count - 1, from = 0, to = text.Length;
+        for (; head <= tail && IsReleaseName(text[from..dashes[head].Index], credited, null, trackTitles); head++)
+        {
+            from = dashes[head].Index + dashes[head].Length;
+            yield return text[from..to];
+        }
+
+        for (; tail >= head && IsReleaseName(text[(dashes[tail].Index + dashes[tail].Length)..to], credited, albumTitle, trackTitles); tail--)
+        {
+            to = dashes[tail].Index;
+            yield return text[from..to];
+        }
+    }
+
+    private static bool IsReleaseName(string affix, IEnumerable<string?> credited, string? albumTitle, IReadOnlySet<string> trackTitles)
+    {
+        string name = Normalize(affix);
+        return name.Length > 0 && !trackTitles.Contains(name) &&
+               (name == Normalize(albumTitle) || FeaturedArtistStripper.NamesOnlyCredited(affix, credited));
+    }
+
     private static (int Gate, int TieBreak)? Score(string? localTitle, string local, string? wantedTitle, int threshold)
     {
         string wanted = Normalize(wantedTitle);
@@ -229,4 +302,8 @@ public static partial class TrackTitleMatcher
 
     [GeneratedRegex(@"^.*_\d{1,3}(?:-\d{1,3})?_(?=.)")]
     private static partial Regex UnderscoreTrackFieldPrefixRegex();
+
+    // A spaced dash of any kind ("Song – Artist"), never the hyphen inside "Anti-D".
+    [GeneratedRegex(@"\s+[-‐‑‒–—―−]\s+")]
+    private static partial Regex AffixDashRegex();
 }

@@ -93,6 +93,23 @@ public class PreImportTaggerFallbackGuardTests
         Assert.False(TitleFallbackGuard.IsEligibleAlbum(A("Single", SecondaryAlbumType.Live), ["Song (live)"]));
     }
 
+    // Built from the ids Lidarr stores, as it loads them; it names the mixtape type "Mixtape/Street".
+    [Theory]
+    [InlineData(6)]
+    [InlineData(9)]
+    [InlineData(10)]
+    public void A_live_mixtape_or_demo_single_stays_ineligible(int storedTypeId)
+    {
+        Assert.False(TitleFallbackGuard.IsEligibleAlbum(A("Single", (SecondaryAlbumType)storedTypeId), ["Song"]));
+    }
+
+    [Fact]
+    public void A_remix_single_read_from_its_stored_id_is_still_judged_by_its_titles()
+    {
+        Assert.False(TitleFallbackGuard.IsEligibleAlbum(A("Single", (SecondaryAlbumType)7), ["Song"]));
+        Assert.True(TitleFallbackGuard.IsEligibleAlbum(A("Single", (SecondaryAlbumType)7), ["Song (Remixer remix)"]));
+    }
+
     [Theory]
     [InlineData("Single", true)]
     [InlineData("EP", true)]
