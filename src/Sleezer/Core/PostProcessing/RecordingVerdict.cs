@@ -71,7 +71,7 @@ public static partial class RecordingVerdict
             if (tracks.Any(t => Comparable(t.Title, wanted.CreditedArtists) == wantedTitle))
                 return FingerprintVerdict.Unverifiable;
 
-            // AcoustID hears an instrumental, clean or explicit cut as the same audio as the others.
+            // AcoustID hears an instrumental, clean, explicit or dirty cut as the same audio as the others.
             if (fitsWanted && tracks.Any(t => Comparable(WithoutUnheardCut(t.Title), wanted.CreditedArtists) == wantedSong))
                 return FingerprintVerdict.Unverifiable;
 
@@ -109,30 +109,40 @@ public static partial class RecordingVerdict
         ComparableText.Of(FeaturedArtistStripper.Strip(title ?? string.Empty));
 
     // Not NormalizeTitle: title matching shares that one, and must keep "(Remixer Remix)" apart from "(Remixer)".
-    private static string Comparable(string? title, IEnumerable<string?> creditedArtists) =>
-        ComparableText.Of(WithoutRemixWord(FeaturedArtistStripper.StripCredits(title, creditedArtists)));
+    private static string Comparable(string? title, IEnumerable<string?> creditedArtists)
+    {
+        string stripped = FeaturedArtistStripper.StripCredits(title, creditedArtists);
+        string comparable = ComparableText.Of(WithoutRemixWord(ComparableText.MapPunctuation(stripped)));
+        return comparable.Length > 0 ? comparable : ComparableText.MarksOnly(stripped);
+    }
 
-    // "(Moonward)" names the remix "(Moonward Remix)" does; a lone "(Remix)" still marks one.
+    // "(Moonward)" names the remix "(Moonward Remix)" does; "(Remix)", "(Extended Remix)" and "(Remix Edit)" still name a cut.
     private static string WithoutRemixWord(string title)
     {
-        string bracketed = QualifierBracketRegex().Replace(title, m => DropRemixWord(m.Value));
+        string bracketed = QualifierBracketRegex().Replace(title, m => m.Value[0] + DropRemixWord(m.Value[1..^1]) + m.Value[^1]);
         int dash = bracketed.LastIndexOf(" - ", StringComparison.Ordinal);
         return dash < 0 ? bracketed : bracketed[..(dash + 3)] + DropRemixWord(bracketed[(dash + 3)..]);
     }
 
-    private static string DropRemixWord(string qualifier)
-    {
-        string dropped = RemixWordRegex().Replace(qualifier, " ");
-        return dropped.Any(char.IsLetterOrDigit) ? dropped : qualifier;
-    }
+    private static string DropRemixWord(string qualifier) =>
+        TrailingRemixWordRegex().Match(qualifier) is { Success: true } match && IsRemixerName(match.Groups["name"].Value)
+            ? match.Groups["name"].Value
+            : qualifier;
+
+    private static bool IsRemixerName(string name) =>
+        !MixDescriptionRegex().IsMatch(name) && !VariantQualifiers.HasVariantQualifier($"({name})");
 
     private static string WithoutUnheardCut(string? title) => UnheardCutRegex().Replace(title ?? string.Empty, " ");
 
-    [GeneratedRegex(@"[\(\[\{][^\(\)\[\]\{\}]*[\)\]\}]")]
+    [GeneratedRegex(@"[\(\[\{（［｛][^\(\)\[\]\{\}（）［］｛｝]*[\)\]\}）］｝]")]
     private static partial Regex QualifierBracketRegex();
 
-    [GeneratedRegex(@"\b(?:re)?mix\b", RegexOptions.IgnoreCase)]
-    private static partial Regex RemixWordRegex();
+    [GeneratedRegex(@"^\s*(?<name>.*\S)\s+(?:re)?mix\s*$", RegexOptions.IgnoreCase)]
+    private static partial Regex TrailingRemixWordRegex();
+
+    // Words that describe a mix where VariantQualifiers sees no variant: "(Radio Mix)" is no remixer's.
+    [GeneratedRegex(@"\b(?:radio|club|original|vocal|version|album|single|main|short|long|full|dance|video|alternate|alternative|bonus|the)\b", RegexOptions.IgnoreCase)]
+    private static partial Regex MixDescriptionRegex();
 
     [GeneratedRegex(@"\s*[\(\[\{]\s*(?:instrumental|clean|explicit|dirty)(?:\s+version)?\s*[\)\]\}]", RegexOptions.IgnoreCase)]
     private static partial Regex UnheardCutRegex();

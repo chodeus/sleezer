@@ -133,10 +133,26 @@ public class RecordingVerdictTests
     [InlineData("Lantern Song (Moonward remix)", "Lantern Song (Moonward)", FingerprintVerdict.Unverifiable)]
     [InlineData("Lantern Song - Moonward", "Lantern Song (Moonward Remix)", FingerprintVerdict.Unverifiable)]
     [InlineData("Lantern Song - Moonward Remix", "Lantern Song (Moonward)", FingerprintVerdict.Unverifiable)]
+    [InlineData("Lantern Song – Moonward Remix", "Lantern Song (Moonward)", FingerprintVerdict.Unverifiable)]
+    [InlineData("Lantern Song（Moonward Remix）", "Lantern Song (Moonward)", FingerprintVerdict.Unverifiable)]
     [InlineData("Lantern Song (Remix)", "Lantern Song", FingerprintVerdict.Mismatch)]
     [InlineData("Lantern Song - Remix", "Lantern Song", FingerprintVerdict.Mismatch)]
     [InlineData("Lantern Song (Moonward remix)", "Lantern Song", FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song (Extended Mix)", "Lantern Song (Extended Remix)", FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song (Edit)", "Lantern Song (Remix Edit)", FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song (Moonward)", "Lantern Song (Moonward Remix Edit)", FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song (Instrumental)", "Lantern Song (Instrumental Remix)", FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song (Club)", "Lantern Song (Club Remix)", FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song - Radio Edit", "Lantern Song - Radio Remix Edit", FingerprintVerdict.Mismatch)]
     public void A_remixer_named_without_the_word_remix_is_the_same_remix(string wantedTitle, string knownTitle, FingerprintVerdict expected)
+    {
+        Assert.Equal(expected, Resolve(new[] { OtherId }, Wanted(wantedTitle), Known((OtherId, knownTitle))));
+    }
+
+    [Theory]
+    [InlineData("÷", "×", FingerprintVerdict.Mismatch)]
+    [InlineData("÷", "÷", FingerprintVerdict.Unverifiable)]
+    public void A_title_of_marks_only_compares_by_its_marks(string wantedTitle, string knownTitle, FingerprintVerdict expected)
     {
         Assert.Equal(expected, Resolve(new[] { OtherId }, Wanted(wantedTitle), Known((OtherId, knownTitle))));
     }
