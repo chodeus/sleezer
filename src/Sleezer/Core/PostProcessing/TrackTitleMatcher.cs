@@ -150,7 +150,7 @@ public static partial class TrackTitleMatcher
         // is a different song ("Part 1" vs "Part 12" scores 92), and two or
         // more leftover local tokens mean an unknown qualifier — fail closed
         // so future variant vocabulary ("sped up" of tomorrow) never scores.
-        if (DigitTokensDiffer(local, wanted) || NamesAnotherPart(local, wanted) || LeftoverTokenCount(local, wanted) >= 2)
+        if (DigitTokensDiffer(local, wanted) || NamesAnotherPart(local, wanted) || LeftoverTokenCount(local, wanted) >= 2 || MissesTitleWords(local, wantedTitle))
             return null;
 
         int gate = Fuzz.TokenSetRatio(local, wanted);
@@ -196,6 +196,46 @@ public static partial class TrackTitleMatcher
         .Where(t => t.All(char.IsDigit))
         .Select(t => t.TrimStart('0'))
         .ToHashSet(StringComparer.Ordinal);
+
+    // Two words of the wanted title proper that the file lacks name another song ("Fire" is not "Line of Fire"); a bracketed
+    // qualifier may go unsaid, and a file named for one half of the wanted's dash ("Song", "Moss Remix") lost the other.
+    private static bool MissesTitleWords(string local, string? wantedTitle)
+    {
+        if (string.IsNullOrEmpty(wantedTitle))
+            return false;
+
+        Match dash = AffixDashRegex().Match(wantedTitle);
+        if (dash.Success && (Normalize(wantedTitle[..dash.Index]) == local || Normalize(wantedTitle[(dash.Index + dash.Length)..]) == local))
+            return false;
+
+        HashSet<string> localTokens = local.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.Ordinal);
+        string[] words = Normalize(RecordingVerdict.QualifierBracketRegex().Replace(wantedTitle, " ")).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        HashSet<string> missing = new(StringComparer.Ordinal);
+        for (int i = 0; i < words.Length; i++)
+        {
+            // Words the file writes as one are there ("Antihero"); numbers and numbering words are NamesAnotherPart's ("Pt. 2" is "Part II").
+            if (JoinedRun(words, i, localTokens) is > 0 and int run)
+                i += run - 1;
+            else if (!localTokens.Contains(words[i]) && NumberValue(words[i]) == null && !NumberingWords.Contains(words[i]))
+                missing.Add(words[i]);
+        }
+
+        return missing.Count >= 2;
+    }
+
+    // How many words from `start` the file joins into one of its own, "anti hero" as "antihero"; 0 when none.
+    private static int JoinedRun(string[] words, int start, HashSet<string> localTokens)
+    {
+        string joined = words[start];
+        for (int end = start + 1; end < words.Length; end++)
+        {
+            joined += words[end];
+            if (localTokens.Contains(joined))
+                return end - start + 1;
+        }
+
+        return 0;
+    }
 
     private static int LeftoverTokenCount(string local, string wanted)
     {

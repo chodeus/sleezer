@@ -29,7 +29,11 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 
         private static RemixQualifierZone? RemixZone(string? title)
         {
-            if (string.IsNullOrWhiteSpace(title) || !RemixKeywordRegex().IsMatch(title))
+            if (string.IsNullOrWhiteSpace(title))
+                return null;
+
+            title = Ascii(title);
+            if (!RemixKeywordRegex().IsMatch(title))
                 return null;
 
             // Brackets keep their characters: "(ReDrum)" names a remix where a bare "Redrum" title doesn't.
@@ -65,6 +69,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             if (string.IsNullOrWhiteSpace(title))
                 return new VariantProfile(false, false, false, new HashSet<string>(), null, null);
 
+            title = Ascii(title);
             string lowered = title.ToLowerInvariant();
             string qualifierZones = string.Join(" ", BracketedContentRegex().Matches(title).Select(m => m.Value[1..^1])).ToLowerInvariant();
 
@@ -192,7 +197,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 
         // Bracketed only: "Clean Bandit" and "Come Clean" name an artist and a song.
         private static HashSet<string> DjCutWords(string? title) =>
-            string.IsNullOrWhiteSpace(title) ? [] : [.. BracketedContentRegex().Matches(title).SelectMany(b => DjCutWordRegex().Matches(AfterRemixer(b.Value))).Select(m => m.Value.ToLowerInvariant())];
+            string.IsNullOrWhiteSpace(title) ? [] : [.. BracketedContentRegex().Matches(Ascii(title)).SelectMany(b => DjCutWordRegex().Matches(AfterRemixer(b.Value))).Select(m => m.Value.ToLowerInvariant())];
 
         // Before a remix word stands the remixer's name, "(Dirty South Remix)"; a cut label follows it, "(Moonward Remix - Clean)".
         private static string AfterRemixer(string bracket) =>
@@ -201,7 +206,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
         // Each remix-family word's kind, read where the signature is; edits, bootlegs and covers are remixes.
         private static HashSet<string> RemixKinds(string? title) => RemixZone(title) is { } zone ? KindsIn(zone.Text) : [];
 
-        private static HashSet<string> KindsIn(string text) => [.. RemixKeywordRegex().Matches(text).Select(m => RemixKind(m.Value))];
+        private static HashSet<string> KindsIn(string text) => [.. RemixKeywordRegex().Matches(Ascii(text)).Select(m => RemixKind(m.Value))];
 
         private static string RemixKind(string keyword) =>
             RemixKindRegex().Match(keyword) is { Success: true } kind ? kind.Groups.Cast<Group>().Skip(1).First(g => g.Success).Name : "remix";
@@ -420,6 +425,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             if (string.IsNullOrWhiteSpace(title))
                 return false;
 
+            title = Ascii(title);
             List<string> zones = new();
             foreach (Match bracket in BracketedContentRegex().Matches(title))
                 zones.Add(bracket.Value);
@@ -436,6 +442,9 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             // qualifier ("Remix Radio Edit") — still a different recording.
             return !RemixKeywordRegex().IsMatch(GenuineRemixKeywordRegex().Replace(joined, " "));
         }
+
+        // Every title meets these patterns through here: MusicBrainz writes "re‐recorded" and "Name´s" where files write ASCII.
+        private static string Ascii(string title) => ComparableText.MapWordPunctuation(title);
 
         private static bool TrailingWord(string word, string loweredTitle) =>
             loweredTitle.EndsWith(" " + word, StringComparison.Ordinal) || loweredTitle.EndsWith("-" + word, StringComparison.Ordinal);

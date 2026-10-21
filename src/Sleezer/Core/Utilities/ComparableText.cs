@@ -60,6 +60,9 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             return sb.ToString();
         }
 
+        /// <summary>Apostrophes, and a dash joining two letters or digits ("re‐recorded"), as ASCII; a spaced dash stays, as it may separate.</summary>
+        public static string MapWordPunctuation(string text) => InWordDashRegex().Replace(ApostropheRegex().Replace(text, "'"), "-");
+
         /// <summary>The text without diacritics on any script, ligatures spelled out; case is kept. For search queries, not comparisons.</summary>
         public static string FoldAccents(string text) => Fold(text, keepSpellingMarks: false);
 
@@ -126,5 +129,11 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 
         [GeneratedRegex(@"\s+")]
         private static partial Regex WhitespaceRegex();
+
+        [GeneratedRegex(@"(?<=\w)[‐‑‒–—―−](?=\w)")]
+        private static partial Regex InWordDashRegex();
+
+        [GeneratedRegex(@"[‘’‚ʼ`´]")]
+        private static partial Regex ApostropheRegex();
     }
 }
