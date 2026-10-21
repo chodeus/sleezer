@@ -21,12 +21,13 @@ public static partial class TrackTitleMatcher
     /// files that matched; unmatched files are simply absent.
     /// </summary>
     public static Dictionary<int, int> Match(IReadOnlyList<string?> localTitles, IReadOnlyList<string?> wantedTitles, int threshold = DefaultThreshold) =>
-        Match(localTitles, [.. wantedTitles.Select(t => (IReadOnlyList<string?>)[t])], threshold);
+        Match(localTitles, [.. wantedTitles.Select(t => new WantedTitles(t, []))], threshold);
 
-    /// <summary>As above, where each wanted track answers to any of its titles: a pair scores by its best-matching title.</summary>
-    public static Dictionary<int, int> Match(IReadOnlyList<string?> localTitles, IReadOnlyList<IReadOnlyList<string?>> wantedTitles, int threshold = DefaultThreshold)
+    /// <summary>As above; a file also matches a track whose recording carries the file's exact title on another release.</summary>
+    public static Dictionary<int, int> Match(IReadOnlyList<string?> localTitles, IReadOnlyList<WantedTitles> wanted, int threshold = DefaultThreshold)
     {
         string[] locals = [.. localTitles.Select(Normalize)];
+        HashSet<string>[] others = [.. wanted.Select(w => w.OtherTitles.Select(Normalize).ToHashSet(StringComparer.Ordinal))];
 
         List<(int Local, int Wanted, int Gate, int TieBreak)> candidates = [];
         for (int i = 0; i < locals.Length; i++)
@@ -34,9 +35,10 @@ public static partial class TrackTitleMatcher
             if (locals[i].Length == 0)
                 continue;
 
-            for (int j = 0; j < wantedTitles.Count; j++)
+            for (int j = 0; j < wanted.Count; j++)
             {
-                if (wantedTitles[j].Select(w => Score(localTitles[i], locals[i], w, threshold)).Where(s => s != null).Max() is { } best)
+                // Other titles match exactly: a fuzzy one would draw in files of the release's other recordings.
+                if ((others[j].Contains(locals[i]) ? (100, 100) : Score(localTitles[i], locals[i], wanted[j].Title, threshold)) is { } best)
                     candidates.Add((i, j, best.Gate, best.TieBreak));
             }
         }
@@ -78,26 +80,32 @@ public static partial class TrackTitleMatcher
         return gate >= threshold ? (gate, Fuzz.TokenSortRatio(local, wanted)) : null;
     }
 
+    /// <summary>A wanted track's own title, and the other titles its recording carries on other releases.</summary>
+    public sealed record WantedTitles(string? Title, IReadOnlyList<string> OtherTitles);
+
     /// <summary>
-    /// Each wanted track's own title, then every other title Lidarr holds for its recording.
-    /// A title two of the tracks' recordings share places neither, so it is left out.
+    /// Each wanted track's own title and every other title Lidarr holds for its recording. An other
+    /// title that a second recording of the release also carries, as its own or another, is left out.
     /// </summary>
-    public static List<IReadOnlyList<string?>> TitlesOf(IReadOnlyList<Track> wanted, IReadOnlyDictionary<string, IReadOnlyList<KnownTrack>> knownRecordings)
+    public static List<WantedTitles> TitlesOf(IReadOnlyList<Track> wanted, IReadOnlyDictionary<string, IReadOnlyList<KnownTrack>> knownRecordings)
     {
-        List<string[]> others = [.. wanted.Select(t => OtherTitles(t, knownRecordings))];
+        List<string[]> known = [.. wanted.Select(t => t.ForeignRecordingId is { } id && knownRecordings.TryGetValue(id, out IReadOnlyList<KnownTrack>? tracks)
+            ? tracks.Select(k => k.Title).Distinct().ToArray()
+            : [])];
         HashSet<string> shared = [.. wanted
-            .SelectMany((t, i) => others[i].Append(t.Title).Select(title => (Title: Normalize(title), Owner: t.ForeignRecordingId ?? $"#{i}")))
+            .SelectMany((t, i) => known[i].Append(t.Title).Select(title => (Title: Normalize(title), Owner: t.ForeignRecordingId?.ToLowerInvariant() ?? $"#{i}")))
             .Distinct()
             .GroupBy(x => x.Title)
             .Where(g => g.Count() > 1)
             .Select(g => g.Key)];
-        return [.. wanted.Select((t, i) => (IReadOnlyList<string?>)[t.Title, .. others[i].Where(title => !shared.Contains(Normalize(title)))])];
+        return [.. wanted.Select((t, i) => new WantedTitles(
+            t.Title,
+            [.. known[i].Where(title => title != t.Title && !shared.Contains(Normalize(title)) && NamesTheVariant(t.Title, title))]))];
     }
 
-    private static string[] OtherTitles(Track track, IReadOnlyDictionary<string, IReadOnlyList<KnownTrack>> knownRecordings) =>
-        track.ForeignRecordingId is { } id && knownRecordings.TryGetValue(id, out IReadOnlyList<KnownTrack>? known)
-            ? [.. known.Select(k => k.Title).Where(title => title != track.Title).Distinct()]
-            : [];
+    // A plain title never stands in for a variant: a compilation's plain "Song" for a remix single would name any "Song".
+    private static bool NamesTheVariant(string? own, string other) =>
+        !VariantQualifiers.HasVariantQualifier(own) || VariantQualifiers.HasVariantQualifier(other);
 
     private static bool DigitTokensDiffer(string a, string b)
     {

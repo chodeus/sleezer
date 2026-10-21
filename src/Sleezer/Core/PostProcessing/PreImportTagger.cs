@@ -128,7 +128,7 @@ public class PreImportTagger : IPreImportTagger
     }
 
     /// <summary>Every title the wanted tracks' recordings carry on any release; each track's own title alone if Lidarr can't say.</summary>
-    private List<IReadOnlyList<string?>> GetWantedTitles(List<Track> tracks)
+    private List<TrackTitleMatcher.WantedTitles> GetWantedTitles(List<Track> tracks)
     {
         List<string> recordings = [.. tracks.Select(t => t.ForeignRecordingId).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase)];
         IReadOnlyDictionary<string, IReadOnlyList<KnownTrack>> known;
