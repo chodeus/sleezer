@@ -85,11 +85,11 @@ public class PreImportTagger : IPreImportTagger
         return verdict;
     }
 
-    // A recording MusicBrainz can't answer for is left out; the verdict skips it like any other Lidarr lacks.
-    private List<KnownTrack> MusicBrainzOnly(IReadOnlyList<string>? recordingIds, IReadOnlyDictionary<string, IReadOnlyList<KnownTrack>> knownRecordings) =>
-        [.. (recordingIds ?? []).Where(id => !knownRecordings.ContainsKey(id))
+    // Lazy, so the verdict stops asking MusicBrainz at the first match; one it can't answer for is left out, like any Lidarr lacks.
+    private IEnumerable<KnownTrack> MusicBrainzOnly(IReadOnlyList<string>? recordingIds, IReadOnlyDictionary<string, IReadOnlyList<KnownTrack>> knownRecordings) =>
+        (recordingIds ?? []).Where(id => !knownRecordings.ContainsKey(id))
             .Select(_musicBrainzCredits.RecordingOf).OfType<MusicBrainzRecording>()
-            .Select(r => new KnownTrack(r.Title, r.LengthMs))];
+            .Select(r => new KnownTrack(r.Title, r.LengthMs));
 
     /// <summary>
     /// Every title and length Lidarr holds for the recordings AcoustID named, on any release,

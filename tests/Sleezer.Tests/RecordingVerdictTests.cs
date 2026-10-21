@@ -242,6 +242,27 @@ public class RecordingVerdictTests
         Assert.Equal(FingerprintVerdict.Unverifiable, verdict);
     }
 
+    // Each one is a rate-limited MusicBrainz request.
+    [Fact]
+    public void Recordings_only_MusicBrainz_holds_are_read_until_one_names_the_wanted()
+    {
+        List<string> read = [];
+        IEnumerable<KnownTrack> Elsewhere()
+        {
+            foreach (string title in new[] { "Lantern Song (Moss remix)", "Salt Road", "Tide Clock" })
+            {
+                read.Add(title);
+                yield return new KnownTrack(title, 0);
+            }
+        }
+
+        FingerprintVerdict verdict = RecordingVerdict.Resolve(new[] { OtherId, ElsewhereId }, TimeSpan.Zero, Wanted("Lantern Song (Moss remix)"),
+            Known((OtherId, "Lantern Song (Fern dub)")), Elsewhere());
+
+        Assert.Equal(FingerprintVerdict.Unverifiable, verdict);
+        Assert.Equal(["Lantern Song (Moss remix)"], read);
+    }
+
     [Fact]
     public void Another_title_MusicBrainz_holds_leaves_a_mismatch_standing()
     {

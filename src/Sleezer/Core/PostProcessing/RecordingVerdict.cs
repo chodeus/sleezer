@@ -31,13 +31,13 @@ public static partial class RecordingVerdict
     private const int FitsWantedMs = 3000;
     private const int SameAudioMs = 10000;
 
-    /// <param name="musicBrainzOnly">Recordings AcoustID named that Lidarr holds nowhere, as MusicBrainz files them; they can only defer.</param>
+    /// <param name="musicBrainzOnly">Recordings AcoustID named that Lidarr holds nowhere, as MusicBrainz files them; they can only defer. Read once, up to the first match.</param>
     public static FingerprintVerdict Resolve(
         IReadOnlyList<string>? acoustIdRecordingIds,
         TimeSpan fileDuration,
         WantedRecording wanted,
         IReadOnlyDictionary<string, IReadOnlyList<KnownTrack>>? knownRecordings,
-        IReadOnlyCollection<KnownTrack>? musicBrainzOnly = null)
+        IEnumerable<KnownTrack>? musicBrainzOnly = null)
     {
         if (acoustIdRecordingIds is not { Count: > 0 })
             return FingerprintVerdict.Unverifiable;
