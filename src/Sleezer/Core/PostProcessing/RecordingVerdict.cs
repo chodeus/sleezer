@@ -132,7 +132,7 @@ public static partial class RecordingVerdict
     private static bool IsRemixerName(string name) =>
         !MixDescriptionRegex().IsMatch(name) && !VariantQualifiers.HasVariantQualifier($"({name})");
 
-    private static string WithoutUnheardCut(string? title) => UnheardCutRegex().Replace(title ?? string.Empty, " ");
+    private static string WithoutUnheardCut(string? title) => UnheardCutRegex().Replace(ComparableText.MapPunctuation(title ?? string.Empty), " ");
 
     [GeneratedRegex(@"[\(\[\{（［｛][^\(\)\[\]\{\}（）［］｛｝]*[\)\]\}）］｝]")]
     private static partial Regex QualifierBracketRegex();
@@ -144,6 +144,6 @@ public static partial class RecordingVerdict
     [GeneratedRegex(@"\b(?:radio|club|original|vocal|version|album|single|main|short|long|full|dance|video|alternate|alternative|bonus|the)\b", RegexOptions.IgnoreCase)]
     private static partial Regex MixDescriptionRegex();
 
-    [GeneratedRegex(@"\s*[\(\[\{]\s*(?:instrumental|clean|explicit|dirty)(?:\s+version)?\s*[\)\]\}]", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"\s*(?:[\(\[\{（［｛]\s*(?:instrumental|clean|explicit|dirty)(?:\s+version)?\s*[\)\]\}）］｝]|\s-\s(?:instrumental|clean|explicit|dirty)(?:\s+version)?\s*$)", RegexOptions.IgnoreCase)]
     private static partial Regex UnheardCutRegex();
 }
