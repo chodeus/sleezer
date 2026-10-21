@@ -14,13 +14,13 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
             if (!smallRelease)
                 return false;
 
-            // Live/Remix/Demo singles can carry plain MB TRACK titles, so the variant
-            // guard can't tell a studio file from the live cut — fail closed.
-            if (album.SecondaryTypes?.Any(t => t?.Name is "Live" or "Demo" or "Mixtape") == true)
+            // Live/Demo/Mixtape singles can carry plain MB TRACK titles, so the variant guard can't tell a studio file
+            // from the live cut — fail closed. Types, not names: Lidarr names the mixtape type "Mixtape/Street".
+            if (album.SecondaryTypes?.Any(t => t == SecondaryAlbumType.Live || t == SecondaryAlbumType.Demo || t == SecondaryAlbumType.Mixtape) == true)
                 return false;
 
             // A remix track that names its remix is safe: RemixSignaturesConflict rejects a plain file against it.
-            return album.SecondaryTypes?.Any(t => t?.Name == "Remix") != true ||
+            return album.SecondaryTypes?.Any(t => t == SecondaryAlbumType.Remix) != true ||
                    (trackTitles.Count > 0 && trackTitles.All(t => VariantQualifiers.ExtractRemixSignature(t) != null));
         }
 

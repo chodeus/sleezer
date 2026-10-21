@@ -50,8 +50,9 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
                 .Select(c => c.GetProperty("name").GetString() ?? string.Empty)];
         }
 
-        // Optional marks only: on kana or Cyrillic й the mark spells another name. Punctuation is kept for the clause checks.
-        private static string Fold(string value) => Regex.Replace(ComparableText.FoldOptionalMarks(value).ToLowerInvariant(), @"\s+", " ").Trim();
+        // Optional marks only: on kana or Cyrillic й the mark spells another name. Punctuation is kept for the clause checks,
+        // mapped to ASCII first as FeaturedArtistStripper.Fold does ("Moon’n’Harbour" is "Moon'n'Harbour").
+        private static string Fold(string value) => Regex.Replace(ComparableText.FoldOptionalMarks(ComparableText.MapPunctuation(value)).ToLowerInvariant(), @"\s+", " ").Trim();
 
         private static Regex WholeName(string name) => new($@"(?<!\w){Regex.Escape(name)}(?!\w)");
 

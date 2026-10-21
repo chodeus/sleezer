@@ -513,7 +513,7 @@ public class PreImportTagger : IPreImportTagger
             return title;
         }).ToList();
 
-        Dictionary<int, int> mapping = TrackTitleMatcher.Match(localTitles, GetWantedTitles(tracks));
+        Dictionary<int, int> mapping = TrackTitleMatcher.Match(localTitles, GetWantedTitles(tracks), new TrackTitleMatcher.ReleaseNames(credited, album.Title));
         if (mapping.Count == 0)
             return (0, 0, 0);
 

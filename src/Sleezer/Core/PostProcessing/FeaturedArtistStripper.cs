@@ -5,11 +5,10 @@ using NzbDrone.Plugin.Sleezer.Core.Utilities;
 namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing;
 
 /// <summary>
-/// Strips bracketed featured-artist suffixes from track titles / artist names.
-/// Only handles bracketed forms — `Foo (feat. Bar)`, `Foo [featuring Bar]`,
-/// `Foo {ft Bar}`. Bare-text forms (`Foo feat. Bar`) are intentionally left
-/// alone in v1: too easy to chew through legitimate text like "feat" inside
-/// a song name.
+/// Strips featured-artist credits from track titles / artist names.
+/// <see cref="Strip"/> handles bracketed forms only — `Foo (feat. Bar)`, `Foo [featuring Bar]`,
+/// `Foo {ft Bar}`. Bare-text forms (`Foo feat. Bar`) are stripped only where known names
+/// anchor them: unanchored, they chew through legitimate text like "feat" inside a song name.
 /// </summary>
 public static class FeaturedArtistStripper
 {
@@ -38,17 +37,32 @@ public static class FeaturedArtistStripper
     /// <see cref="Strip"/>, plus a "(with X)" credit naming credited artists, whole or as listed;
     /// any other "(with …)" is title text ("Dancing (With Myself)").
     /// </summary>
-    // Credited entries split only on commas (joined tags list artists that way), so "Simon & Garfunkel" never credits "Simon".
     public static string StripCredits(string? input, IEnumerable<string?> creditedArtists)
     {
         string text = Strip(input);
         // Read only once a "(with …)" turns up: the list can cost a MusicBrainz lookup.
-        Lazy<string[]> credited = new(() => [.. creditedArtists.OfType<string>().SelectMany(a => a.Split(',').Prepend(a)).Select(Fold).Where(n => n.Length > 0).Distinct().OrderByDescending(n => n.Length)]);
-        return BracketedWithPattern.Replace(text, m => NamesOnlyCredited(m.Groups[1].Value, credited.Value) ? string.Empty : m.Value).Trim();
+        Lazy<string[]> credited = new(() => FoldedCredits(creditedArtists));
+        return BracketedWithPattern.Replace(text, m => NamesOnly(m.Groups[1].Value, credited.Value) ? string.Empty : m.Value).Trim();
     }
 
+    private static readonly Regex BareFeatPattern = new(
+        @"\s+(?:feat\.|ft\.|featuring)\s+(?<names>[^()\[\]{}]+?)(?=\s+[-‐‑‒–—―−]\s+|\s*[\(\[\{]|$)",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    /// <summary>A bare "Foo feat. X" credit removed when X names only credited artists.</summary>
+    // Ends at a dash or a bracket, so "Song feat. X (Y remix)" keeps its remix.
+    public static string StripBareCredits(string text, IEnumerable<string?> creditedArtists) =>
+        BareFeatPattern.Replace(text, m => NamesOnlyCredited(m.Groups["names"].Value, creditedArtists) ? string.Empty : m.Value);
+
+    /// <summary>True when the text names credited artists, whole or as listed, and nothing else but separators.</summary>
+    public static bool NamesOnlyCredited(string text, IEnumerable<string?> creditedArtists) => NamesOnly(text, FoldedCredits(creditedArtists));
+
+    // Credited entries split only on commas (joined tags list artists that way), so "Simon & Garfunkel" never credits "Simon".
+    private static string[] FoldedCredits(IEnumerable<string?> creditedArtists) =>
+        [.. creditedArtists.OfType<string>().SelectMany(a => a.Split(',').Prepend(a)).Select(Fold).Where(n => n.Length > 0).Distinct().OrderByDescending(n => n.Length)];
+
     // Whole credited names are removed, longest first; a credit leaves only separators behind.
-    private static bool NamesOnlyCredited(string clause, IEnumerable<string> credited)
+    private static bool NamesOnly(string clause, IEnumerable<string> credited)
     {
         string rest = Fold(clause);
         foreach (string name in credited)
@@ -57,8 +71,8 @@ public static class FeaturedArtistStripper
     }
 
     // Optional marks only, as GuestCredits: on kana or Cyrillic й the mark spells another name.
-    // Punctuation mapped first: MusicBrainz credits "Moon’n’Harbour" where a title writes "Moon'n'Harbour".
-    private static string Fold(string name) => ComparableText.FoldOptionalMarks(ComparableText.MapPunctuation(name)).Trim().ToLowerInvariant();
+    // Punctuation mapped and spaces collapsed first: MusicBrainz credits "Moon’n’Harbour" where a title writes "Moon'n'Harbour".
+    private static string Fold(string name) => Regex.Replace(ComparableText.FoldOptionalMarks(ComparableText.MapPunctuation(name)).ToLowerInvariant(), @"\s+", " ").Trim();
 
     private static readonly Regex GuestCreditSeparatorPattern = new(
         @"^(?:\s*[,;]|\s+(?:feat\.?|featuring|ft\.?)\s)",
