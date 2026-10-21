@@ -3,14 +3,14 @@ using static NzbDrone.Plugin.Sleezer.Core.PostProcessing.TrackTitleMatcher;
 
 namespace Sleezer.Tests;
 
-// A file title inside a longer wanted title passed the fuzzy gate: "Fire" matched "Line of Fire", and a shared
-// "(extended mix)" carried "Glass" onto "Moon Over Glass (extended mix)".
 public class TrackTitleMatcherGateTests
 {
     [Theory]
     [InlineData("Fire", "Line of Fire")]
     [InlineData("Glass (extended mix)", "Moon Over Glass (extended mix)")]
     [InlineData("Lantern Song", "The Lantern Song Returns")]
+    [InlineData("Time", "One More Time")]
+    [InlineData("Glass", "Two Glass Lanterns")]
     public void Two_words_of_the_wanted_title_missing_name_another_song(string local, string wanted)
     {
         Assert.Empty(Match([local], [wanted]));
@@ -22,6 +22,8 @@ public class TrackTitleMatcherGateTests
     [InlineData("Moss Remix", "Lantern Song - Moss Remix")]
     [InlineData("Moss Remix", "Lantern Song – Moss Remix")]
     [InlineData("Lantern Song, Pt. 2", "Lantern Song, Part II")]
+    [InlineData("Lantern Song Volume 2 Part 3", "Lantern Song Volume Two Part Three")]
+    [InlineData("Lantern Song 2 3", "Lantern Song Volume 2 Part 3")]
     [InlineData("Lantern", "Lantern Song")]
     [InlineData("Lanternsong", "Lantern-Song")]
     [InlineData("Ballad of Glass", "The Ballad of the Glass")]

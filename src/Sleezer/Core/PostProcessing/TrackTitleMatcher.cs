@@ -213,15 +213,19 @@ public static partial class TrackTitleMatcher
         HashSet<string> missing = new(StringComparer.Ordinal);
         for (int i = 0; i < words.Length; i++)
         {
-            // Words the file writes as one are there ("Antihero"); numbers and numbering words are NamesAnotherPart's ("Pt. 2" is "Part II").
+            // Words the file writes as one are there ("Antihero").
             if (JoinedRun(words, i, localTokens) is > 0 and int run)
                 i += run - 1;
-            else if (!localTokens.Contains(words[i]) && NumberValue(words[i]) == null && !NumberingWords.Contains(words[i]))
+            else if (!localTokens.Contains(words[i]) && !Numbering(words, i))
                 missing.Add(words[i]);
         }
 
         return missing.Count >= 2;
     }
+
+    // A part number is NamesAnotherPart's to judge ("Pt. 2" is "Part II"); "One" in "One More Time" is a title word.
+    private static bool Numbering(string[] words, int i) =>
+        words[i].All(char.IsDigit) || NumberingWords.Contains(words[i]) || (i > 0 && NumberingWords.Contains(words[i - 1]) && NumberValue(words[i]) != null);
 
     // How many words from `start` the file joins into one of its own, "anti hero" as "antihero"; 0 when none.
     private static int JoinedRun(string[] words, int start, HashSet<string> localTokens)
