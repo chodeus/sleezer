@@ -62,33 +62,8 @@ public class PreImportTagger : IPreImportTagger
         _logger = logger;
     }
 
-    /// <summary>
-    /// Fingerprints every file in ONE batched AcoustID request (Lookup populates
-    /// each LocalTrack.AcoustIdResults in place). Per-file lookups would serialize
-    /// against AcoustID's ~1-per-3s rate limit — minutes on a full album.
-    /// </summary>
-    private async Task PrefetchFingerprintsAsync(List<LocalTrack> localTracks, CancellationToken ct)
-    {
-        if (localTracks.Count == 0 || !_fingerprintingService.IsSetup())
-            return;
-
-        try
-        {
-            // Lookup is synchronous and has no CancellationToken (Lidarr core), so it
-            // must run off-thread to stay cancellable; awaiting keeps the caller's
-            // thread free rather than blocking a second one.
-            await Task.Run(() => _fingerprintingService.Lookup(localTracks, FingerprintScoreThreshold))
-                .WaitAsync(ct);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger.Warn(ex, "Pre-import tag: fingerprint lookup failed for {Count} file(s); treating as unverifiable", localTracks.Count);
-        }
-    }
+    private Task PrefetchFingerprintsAsync(List<LocalTrack> localTracks, CancellationToken ct) =>
+        FingerprintLookup.RunAsync(_fingerprintingService, localTracks, FingerprintScoreThreshold, _logger, ct);
 
     private FingerprintVerdict VerifyRecording(LocalTrack local, Track wantedTrack, IEnumerable<string?> creditedArtists, IReadOnlyDictionary<string, IReadOnlyList<KnownTrack>> knownRecordings)
     {
@@ -335,7 +310,7 @@ public class PreImportTagger : IPreImportTagger
         IEnumerable<string?> credited = guests.Prepend(artist.Name);
         IReadOnlyDictionary<string, IReadOnlyList<KnownTrack>> knownRecordings = new Dictionary<string, IReadOnlyList<KnownTrack>>();
 
-        // One batched AcoustID round trip up front rather than one per file.
+        // AcoustID up front, a request per batch of files rather than one per file.
         if (verifyAllWithFingerprint)
         {
             await PrefetchFingerprintsAsync(localTracks, ct);
