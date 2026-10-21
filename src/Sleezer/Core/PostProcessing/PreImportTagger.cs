@@ -118,17 +118,40 @@ public class PreImportTagger : IPreImportTagger
         List<string> named = [.. localTracks.SelectMany(t => t.AcoustIdResults ?? []).Distinct(StringComparer.OrdinalIgnoreCase)];
         try
         {
-            // As Lidarr's CandidateService: the releases holding the recordings, then their tracks.
-            List<int> releaseIds = named.Count == 0 ? [] : [.. _releaseService.GetReleasesByRecordingIds(named).Select(r => r.Id)];
-            if (releaseIds.Count > 0)
-                return RecordingVerdict.KnownTracks(named, _trackService.GetTracksByReleases(releaseIds));
+            return LoadRecordingTracks(named);
         }
         catch (Exception ex)
         {
             _logger.Warn(ex, "Pre-import tag: could not load the {Count} recording(s) AcoustID named; fingerprint mismatches stay unverifiable", named.Count);
+            return new Dictionary<string, IReadOnlyList<KnownTrack>>(StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    /// <summary>The titles each wanted track answers to (see TrackTitleMatcher.TitlesOf); its own title alone if Lidarr can't say.</summary>
+    private List<TrackTitleMatcher.WantedTitles> GetWantedTitles(List<Track> tracks)
+    {
+        List<string> recordings = [.. tracks.Select(t => t.ForeignRecordingId).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase)];
+        IReadOnlyDictionary<string, IReadOnlyList<KnownTrack>> known;
+        try
+        {
+            known = LoadRecordingTracks(recordings);
+        }
+        catch (Exception ex)
+        {
+            _logger.Warn(ex, "Pre-import tag: could not load the other titles of {Count} wanted recording(s); matching each track's own title", recordings.Count);
+            known = new Dictionary<string, IReadOnlyList<KnownTrack>>();
         }
 
-        return new Dictionary<string, IReadOnlyList<KnownTrack>>(StringComparer.OrdinalIgnoreCase);
+        return TrackTitleMatcher.TitlesOf(tracks, known);
+    }
+
+    private Dictionary<string, IReadOnlyList<KnownTrack>> LoadRecordingTracks(List<string> recordingIds)
+    {
+        // As Lidarr's CandidateService: the releases holding the recordings, then their tracks.
+        List<int> releaseIds = recordingIds.Count == 0 ? [] : [.. _releaseService.GetReleasesByRecordingIds(recordingIds).Select(r => r.Id)];
+        return releaseIds.Count == 0
+            ? new Dictionary<string, IReadOnlyList<KnownTrack>>(StringComparer.OrdinalIgnoreCase)
+            : RecordingVerdict.KnownTracks(recordingIds, _trackService.GetTracksByReleases(releaseIds));
     }
 
     // Tagged              — track was identified and Lidarr's tag writer succeeded.
@@ -391,7 +414,8 @@ public class PreImportTagger : IPreImportTagger
         // Album-level identification cannot pass for a single/EP pulled out of
         // an album share — the file's album tag names the share's album. When
         // everything above failed, fall back to per-track title matching
-        // against the target release (remix/variant qualifiers still conflict).
+        // against the target release (remix/variant qualifiers still conflict on
+        // the own title; another title of the recording must match exactly).
         int titleTagged = 0;
         if (tagged == 0)
         {
@@ -514,7 +538,7 @@ public class PreImportTagger : IPreImportTagger
             return title;
         }).ToList();
 
-        Dictionary<int, int> mapping = TrackTitleMatcher.Match(localTitles, tracks.Select(t => t.Title).ToList());
+        Dictionary<int, int> mapping = TrackTitleMatcher.Match(localTitles, GetWantedTitles(tracks));
         if (mapping.Count == 0)
             return (0, 0, 0);
 

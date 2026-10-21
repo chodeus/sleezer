@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using FuzzySharp;
+using NzbDrone.Core.Music;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
 namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing;
@@ -19,41 +20,38 @@ public static partial class TrackTitleMatcher
     /// agreeing remix/variant signatures. Returns local→wanted indices for the
     /// files that matched; unmatched files are simply absent.
     /// </summary>
-    public static Dictionary<int, int> Match(IReadOnlyList<string?> localTitles, IReadOnlyList<string?> wantedTitles, int threshold = DefaultThreshold)
+    public static Dictionary<int, int> Match(IReadOnlyList<string?> localTitles, IReadOnlyList<string?> wantedTitles, int threshold = DefaultThreshold) =>
+        Match(localTitles, [.. wantedTitles.Select(t => new WantedTitles(t, []))], threshold);
+
+    /// <summary>As above; a file also matches a track whose recording carries the file's exact title on another release.</summary>
+    public static Dictionary<int, int> Match(IReadOnlyList<string?> localTitles, IReadOnlyList<WantedTitles> wanted, int threshold = DefaultThreshold)
     {
         string[] locals = [.. localTitles.Select(Normalize)];
-        string[] wanted = [.. wantedTitles.Select(Normalize)];
+        HashSet<string>[] others = [.. wanted.Select(w => w.OtherTitles.Select(Normalize).ToHashSet(StringComparer.Ordinal))];
 
-        // TokenSetRatio saturates at 100 for ANY token superset, so it stays
-        // the accept gate but cannot rank: TokenSortRatio breaks the ties
-        // (subset pairs collapse well below 100), a differing digit-token pair
-        // is a different song ("Part 1" vs "Part 12" scores 92), and two or
-        // more leftover local tokens mean an unknown qualifier — fail closed
-        // so future variant vocabulary ("sped up" of tomorrow) never scores.
-        List<(int Local, int Wanted, int Gate, int TieBreak)> candidates = [];
+        List<(int Local, int Wanted, int Gate, int TieBreak, bool OwnTitle)> candidates = [];
         for (int i = 0; i < locals.Length; i++)
         {
             if (locals[i].Length == 0)
                 continue;
 
-            for (int j = 0; j < wanted.Length; j++)
+            for (int j = 0; j < wanted.Count; j++)
             {
-                if (wanted[j].Length == 0 || VariantQualifiers.RemixSignaturesConflict(wantedTitles[j], localTitles[i]))
-                    continue;
-                if (DigitTokensDiffer(locals[i], wanted[j]) || NamesAnotherPart(locals[i], wanted[j]) || LeftoverTokenCount(locals[i], wanted[j]) >= 2)
-                    continue;
+                (int Gate, int TieBreak)? own = Score(localTitles[i], locals[i], wanted[j].Title, threshold);
 
-                int gate = Fuzz.TokenSetRatio(locals[i], wanted[j]);
-                if (gate >= threshold)
-                    candidates.Add((i, j, gate, Fuzz.TokenSortRatio(locals[i], wanted[j])));
+                // Other titles match exactly: a fuzzy one would draw in files of the release's other recordings.
+                if ((others[j].Contains(locals[i]) ? (100, 100) : own) is { } best)
+                    candidates.Add((i, j, best.Gate, best.TieBreak, own == best));
             }
         }
 
         Dictionary<int, int> mapping = [];
         HashSet<int> claimedWanted = [];
-        foreach ((int local, int wantedIndex, _, _) in candidates
+        // An exact own title outranks an exact other title: a recording listed twice keeps each file at its own position.
+        foreach ((int local, int wantedIndex, _, _, _) in candidates
                      .OrderByDescending(c => c.Gate)
                      .ThenByDescending(c => c.TieBreak)
+                     .ThenByDescending(c => c.OwnTitle)
                      .ThenBy(c => c.Local)
                      .ThenBy(c => c.Wanted))
         {
@@ -66,6 +64,52 @@ public static partial class TrackTitleMatcher
 
         return mapping;
     }
+
+    private static (int Gate, int TieBreak)? Score(string? localTitle, string local, string? wantedTitle, int threshold)
+    {
+        string wanted = Normalize(wantedTitle);
+        if (wanted.Length == 0 || VariantQualifiers.RemixSignaturesConflict(wantedTitle, localTitle))
+            return null;
+
+        // TokenSetRatio saturates at 100 for ANY token superset, so it stays
+        // the accept gate but cannot rank: TokenSortRatio breaks the ties
+        // (subset pairs collapse well below 100), a differing digit-token pair
+        // is a different song ("Part 1" vs "Part 12" scores 92), and two or
+        // more leftover local tokens mean an unknown qualifier — fail closed
+        // so future variant vocabulary ("sped up" of tomorrow) never scores.
+        if (DigitTokensDiffer(local, wanted) || NamesAnotherPart(local, wanted) || LeftoverTokenCount(local, wanted) >= 2)
+            return null;
+
+        int gate = Fuzz.TokenSetRatio(local, wanted);
+        return gate >= threshold ? (gate, Fuzz.TokenSortRatio(local, wanted)) : null;
+    }
+
+    /// <summary>A wanted track's own title, and the other titles its recording carries on other releases.</summary>
+    public sealed record WantedTitles(string? Title, IReadOnlyList<string> OtherTitles);
+
+    /// <summary>
+    /// Each wanted track's own title and every other title Lidarr holds for its recording. An other
+    /// title that a second recording of the release also carries, as its own or another, is left out.
+    /// </summary>
+    public static List<WantedTitles> TitlesOf(IReadOnlyList<Track> wanted, IReadOnlyDictionary<string, IReadOnlyList<KnownTrack>> knownRecordings)
+    {
+        List<string[]> known = [.. wanted.Select(t => t.ForeignRecordingId is { } id && knownRecordings.TryGetValue(id, out IReadOnlyList<KnownTrack>? tracks)
+            ? tracks.Select(k => k.Title).Distinct().ToArray()
+            : [])];
+        HashSet<string> shared = [.. wanted
+            .SelectMany((t, i) => known[i].Append(t.Title).Select(title => (Title: Normalize(title), Owner: t.ForeignRecordingId?.ToLowerInvariant() ?? $"#{i}")))
+            .Distinct()
+            .GroupBy(x => x.Title)
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key)];
+        return [.. wanted.Select((t, i) => new WantedTitles(
+            t.Title,
+            [.. known[i].Where(title => title != t.Title && !shared.Contains(Normalize(title)) && NamesTheVariant(t.Title, title))]))];
+    }
+
+    // A plain title never stands in for a variant: a compilation's plain "Song" for a remix single would name any "Song".
+    private static bool NamesTheVariant(string? own, string other) =>
+        !VariantQualifiers.HasVariantQualifier(own) || VariantQualifiers.HasVariantQualifier(other);
 
     private static bool DigitTokensDiffer(string a, string b)
     {
