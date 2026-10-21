@@ -31,11 +31,13 @@ public static partial class RecordingVerdict
     private const int FitsWantedMs = 3000;
     private const int SameAudioMs = 10000;
 
+    /// <param name="musicBrainzOnly">Recordings AcoustID named that Lidarr holds nowhere, as MusicBrainz files them; they can only defer. Read once, up to the first match.</param>
     public static FingerprintVerdict Resolve(
         IReadOnlyList<string>? acoustIdRecordingIds,
         TimeSpan fileDuration,
         WantedRecording wanted,
-        IReadOnlyDictionary<string, IReadOnlyList<KnownTrack>>? knownRecordings)
+        IReadOnlyDictionary<string, IReadOnlyList<KnownTrack>>? knownRecordings,
+        IEnumerable<KnownTrack>? musicBrainzOnly = null)
     {
         if (acoustIdRecordingIds is not { Count: > 0 })
             return FingerprintVerdict.Unverifiable;
@@ -63,16 +65,17 @@ public static partial class RecordingVerdict
         bool sawDifferentTitle = false;
         bool differentTitleHeard = false;
 
+        // AcoustID hears an instrumental, clean, explicit or dirty cut as the same audio as the others.
+        bool NamesWanted(KnownTrack t) =>
+            Comparable(t.Title, wanted.CreditedArtists) == wantedTitle ||
+            (fitsWanted && Comparable(WithoutUnheardCut(t.Title), wanted.CreditedArtists) == wantedSong);
+
         foreach (string id in acoustIdRecordingIds)
         {
             if (!knownRecordings.TryGetValue(id, out IReadOnlyList<KnownTrack>? tracks) || tracks.Count == 0)
                 continue;
 
-            if (tracks.Any(t => Comparable(t.Title, wanted.CreditedArtists) == wantedTitle))
-                return FingerprintVerdict.Unverifiable;
-
-            // AcoustID hears an instrumental, clean, explicit or dirty cut as the same audio as the others.
-            if (fitsWanted && tracks.Any(t => Comparable(WithoutUnheardCut(t.Title), wanted.CreditedArtists) == wantedSong))
+            if (tracks.Any(NamesWanted))
                 return FingerprintVerdict.Unverifiable;
 
             sawDifferentTitle = true;
@@ -83,7 +86,8 @@ public static partial class RecordingVerdict
         if (sawDifferentTitle && fitsWanted && !differentTitleHeard)
             return FingerprintVerdict.Unverifiable;
 
-        return sawDifferentTitle ? FingerprintVerdict.Mismatch : FingerprintVerdict.Unverifiable;
+        // MusicBrainz's titles only defer: measured on real imports, refusing by them refused right files.
+        return sawDifferentTitle && musicBrainzOnly?.Any(NamesWanted) != true ? FingerprintVerdict.Mismatch : FingerprintVerdict.Unverifiable;
     }
 
     /// <summary>Every title and length Lidarr holds for the named recordings, across all the releases they sit on.</summary>

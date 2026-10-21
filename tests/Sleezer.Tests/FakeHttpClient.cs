@@ -3,7 +3,7 @@ using NzbDrone.Common.Http;
 
 namespace Sleezer.Tests;
 
-// Lidarr's IHttpClient answered by one handler; TidalSharp only uses the async execute path.
+// Lidarr's IHttpClient answered by one handler; TidalSharp uses the async execute path, MusicBrainzCredits the sync Get.
 internal sealed class FakeHttpClient(Func<HttpRequest, HttpResponse> handler) : IHttpClient
 {
     public List<HttpRequest> Requests { get; } = [];
@@ -14,9 +14,14 @@ internal sealed class FakeHttpClient(Func<HttpRequest, HttpResponse> handler) : 
         return Task.FromResult(handler(request));
     }
 
+    public HttpResponse Get(HttpRequest request)
+    {
+        Requests.Add(request);
+        return handler(request);
+    }
+
     HttpResponse IHttpClient.Execute(HttpRequest request) => throw new NotSupportedException();
     void IHttpClient.DownloadFile(string url, string fileName) => throw new NotSupportedException();
-    HttpResponse IHttpClient.Get(HttpRequest request) => throw new NotSupportedException();
     HttpResponse<T> IHttpClient.Get<T>(HttpRequest request) => throw new NotSupportedException();
     HttpResponse IHttpClient.Head(HttpRequest request) => throw new NotSupportedException();
     HttpResponse IHttpClient.Post(HttpRequest request) => throw new NotSupportedException();
