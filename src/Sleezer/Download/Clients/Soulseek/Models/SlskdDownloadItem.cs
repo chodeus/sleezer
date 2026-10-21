@@ -89,11 +89,28 @@ public class SlskdDownloadItem
 
     // slskd echoes the batch id on every transfer, the only copy that survives a restart. A batch always
     // carried a destination, so its discs are already merged; re-merging could move another download's folder.
-    private void RecoverBatch(string batchId)
+    private bool TryRecoverBatch(string batchId)
     {
+        // The artist's name loads from Lidarr's database on first read: a failed read leaves recovery to the next poll.
+        string destination;
+        try
+        {
+            destination = EnqueueDestination ?? PreferredDestinationFolderName();
+        }
+        catch (Exception ex)
+        {
+            _logger.Debug(ex, "Could not name the destination of batch {BatchId}; retrying on the next poll", batchId);
+            return false;
+        }
+
         BatchId = batchId;
         DiscFoldersMerged = true;
-        EnqueueDestination ??= PreferredDestinationFolderName();
+        EnqueueDestination = destination;
+
+        // As DownloadAsync does: slskd wrote the grab's batch there. Without the grab's album the name is only a guess.
+        if (ResolvedAlbum != null)
+            DerivedSubdirectory ??= destination;
+        return true;
     }
 
     public IReadOnlyDictionary<string, SlskdFileState> FileStates => _previousFileStates;
@@ -336,9 +353,10 @@ public class SlskdDownloadItem
         if (_remoteDirectories.TryGetValue(directory.Directory, out SlskdDownloadDirectory? existing) && existing == directory)
             return;
 
-        // Before CompareFileStates: it can raise FileStateChanged, and a retry needs the destination.
-        if (BatchId == null && directory.Files?.Where(f => OwnsAcceptedFile(f.Filename)).Select(f => f.BatchId).FirstOrDefault(id => !string.IsNullOrEmpty(id)) is { } batchId)
-            RecoverBatch(batchId);
+        // Before CompareFileStates: it can raise FileStateChanged, and a retry needs the destination, so wait for it.
+        if (BatchId == null && directory.Files?.Where(f => OwnsAcceptedFile(f.Filename)).Select(f => f.BatchId).FirstOrDefault(id => !string.IsNullOrEmpty(id)) is { } batchId &&
+            !TryRecoverBatch(batchId))
+            return;
 
         CompareFileStates(directory);
         _remoteDirectories[directory.Directory] = directory;
