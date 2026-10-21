@@ -204,6 +204,12 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Utilities\GuestCredits.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Core\Utilities\MusicBrainzCredits.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Core\Utilities\MusicBrainzRecording.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Core\Model\ApiCircuitBreaker.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Utilities\SiblingAlbumMatch.cs"
              LinkBase="SourceUnderTest" />
     <!-- Colliding-CleanName import fix. ParsingService and IArtistService come from

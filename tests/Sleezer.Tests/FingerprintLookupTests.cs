@@ -16,6 +16,7 @@ public class FingerprintLookupTests
     {
         public bool Setup { get; init; } = true;
         public Action<int>? OnBatch { get; init; }
+        public Func<int, bool> Answers { get; init; } = _ => true;
         public List<string> Requested { get; } = [];
         public List<int> Batches { get; } = [];
 
@@ -31,8 +32,9 @@ public class FingerprintLookupTests
                 Requested.AddRange(tracks.Select(t => t.Path));
             }
 
-            OnBatch?.Invoke(Batches.Count - 1);
-            if (tracks.Count > limit)
+            int batch = Batches.Count - 1;
+            OnBatch?.Invoke(batch);
+            if (tracks.Count > limit || !Answers(batch))
                 return;
             foreach (LocalTrack track in tracks)
                 track.AcoustIdResults = [$"recording-of-{track.Path}"];
@@ -109,6 +111,100 @@ public class FingerprintLookupTests
         await Task.Delay(200);
 
         Assert.Empty(acoustId.Batches);
+    }
+
+    // Scaled down: a "timeout" here is a lookup slower than 100 ms, and the pause before asking again is 10 ms.
+    private static Task RunScaled(FakeAcoustId acoustId, List<LocalTrack> tracks, CancellationToken ct = default, int pauseMs = 10) =>
+        FingerprintLookup.RunAsync(acoustId, tracks, 0.5, Log, TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(pauseMs), ct);
+
+    [Fact]
+    public async Task A_batch_that_timed_out_is_asked_once_more()
+    {
+        List<LocalTrack> tracks = Files(10);
+        FakeAcoustId acoustId = new() { OnBatch = i => { if (i == 0) Thread.Sleep(150); }, Answers = i => i > 0 };
+
+        await RunScaled(acoustId, tracks);
+
+        Assert.Equal([10, 10], acoustId.Batches);
+        Assert.All(tracks, t => Assert.NotNull(t.AcoustIdResults));
+    }
+
+    [Fact]
+    public async Task A_batch_answered_empty_in_time_is_not_asked_again()
+    {
+        FakeAcoustId acoustId = new() { Answers = _ => false };
+
+        await RunScaled(acoustId, Files(10));
+
+        Assert.Equal([10], acoustId.Batches);
+    }
+
+    [Fact]
+    public async Task A_slow_batch_with_answers_is_not_asked_again()
+    {
+        FakeAcoustId acoustId = new() { OnBatch = _ => Thread.Sleep(150) };
+
+        await RunScaled(acoustId, Files(10));
+
+        Assert.Equal([10], acoustId.Batches);
+    }
+
+    [Fact]
+    public async Task A_batch_is_asked_again_only_once()
+    {
+        List<LocalTrack> tracks = Files(10);
+        FakeAcoustId acoustId = new() { OnBatch = _ => Thread.Sleep(150), Answers = _ => false };
+
+        await RunScaled(acoustId, tracks);
+
+        Assert.Equal([10, 10], acoustId.Batches);
+        Assert.All(tracks, t => Assert.Null(t.AcoustIdResults));
+    }
+
+    [Fact]
+    public async Task Only_the_batch_that_timed_out_is_asked_again()
+    {
+        List<LocalTrack> tracks = Files(25);
+        FakeAcoustId acoustId = new() { OnBatch = i => { if (i == 1) Thread.Sleep(150); }, Answers = i => i != 1 };
+
+        await RunScaled(acoustId, tracks);
+
+        Assert.Equal([10, 10, 10, 5], acoustId.Batches);
+        Assert.Equal(tracks.Take(10).Concat(tracks.Skip(10).Take(10)).Concat(tracks.Skip(10).Take(10)).Concat(tracks.Skip(20)).Select(t => t.Path), acoustId.Requested);
+        Assert.All(tracks, t => Assert.NotNull(t.AcoustIdResults));
+    }
+
+    [Fact]
+    public async Task AcoustID_still_down_after_a_retry_gets_no_more_retries()
+    {
+        FakeAcoustId acoustId = new() { OnBatch = _ => Thread.Sleep(150), Answers = _ => false };
+
+        await RunScaled(acoustId, Files(30));
+
+        Assert.Equal([10, 10, 10, 10], acoustId.Batches);
+    }
+
+    [Fact]
+    public async Task A_retry_that_got_answers_keeps_retries_for_later_batches()
+    {
+        List<LocalTrack> tracks = Files(20);
+        FakeAcoustId acoustId = new() { OnBatch = i => { if (i % 2 == 0) Thread.Sleep(150); }, Answers = i => i % 2 == 1 };
+
+        await RunScaled(acoustId, tracks);
+
+        Assert.Equal([10, 10, 10, 10], acoustId.Batches);
+        Assert.All(tracks, t => Assert.NotNull(t.AcoustIdResults));
+    }
+
+    [Fact]
+    public async Task A_cancelled_pause_asks_no_more()
+    {
+        using CancellationTokenSource cts = new();
+        FakeAcoustId acoustId = new() { OnBatch = _ => { Thread.Sleep(150); cts.CancelAfter(50); }, Answers = _ => false };
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => RunScaled(acoustId, Files(10), cts.Token, pauseMs: 5000));
+
+        Assert.Single(acoustId.Batches);
     }
 
     [Theory]

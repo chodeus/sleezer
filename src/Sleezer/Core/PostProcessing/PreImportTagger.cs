@@ -68,11 +68,12 @@ public class PreImportTagger : IPreImportTagger
     private FingerprintVerdict VerifyRecording(LocalTrack local, Track wantedTrack, IEnumerable<string?> creditedArtists, IReadOnlyDictionary<string, IReadOnlyList<KnownTrack>> knownRecordings)
     {
         TimeSpan fileDuration = local.FileTrackInfo?.Duration ?? TimeSpan.Zero;
-        FingerprintVerdict verdict = RecordingVerdict.Resolve(
-            local.AcoustIdResults,
-            fileDuration,
-            new WantedRecording(wantedTrack.ForeignRecordingId, wantedTrack.OldForeignRecordingIds, wantedTrack.Title, wantedTrack.Duration, creditedArtists),
-            knownRecordings);
+        WantedRecording wanted = new(wantedTrack.ForeignRecordingId, wantedTrack.OldForeignRecordingIds, wantedTrack.Title, wantedTrack.Duration, creditedArtists);
+        FingerprintVerdict verdict = RecordingVerdict.Resolve(local.AcoustIdResults, fileDuration, wanted, knownRecordings);
+
+        // Only a refusal is worth MusicBrainz lookups: its titles for recordings Lidarr lacks can only defer.
+        if (verdict == FingerprintVerdict.Mismatch)
+            verdict = RecordingVerdict.Resolve(local.AcoustIdResults, fileDuration, wanted, knownRecordings, MusicBrainzOnly(local.AcoustIdResults, knownRecordings));
 
         if (verdict == FingerprintVerdict.Mismatch)
         {
@@ -83,6 +84,12 @@ public class PreImportTagger : IPreImportTagger
 
         return verdict;
     }
+
+    // A recording MusicBrainz can't answer for is left out; the verdict skips it like any other Lidarr lacks.
+    private List<KnownTrack> MusicBrainzOnly(IReadOnlyList<string>? recordingIds, IReadOnlyDictionary<string, IReadOnlyList<KnownTrack>> knownRecordings) =>
+        [.. (recordingIds ?? []).Where(id => !knownRecordings.ContainsKey(id))
+            .Select(_musicBrainzCredits.RecordingOf).OfType<MusicBrainzRecording>()
+            .Select(r => new KnownTrack(r.Title, r.LengthMs))];
 
     /// <summary>
     /// Every title and length Lidarr holds for the recordings AcoustID named, on any release,

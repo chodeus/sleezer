@@ -10,59 +10,69 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
     {
         /// <summary>Names a release group credits besides the primary artist; null when MusicBrainz can't be read.</summary>
         IReadOnlyList<string>? GuestsOf(string releaseGroupId, string primaryArtistId);
+
+        /// <summary>A recording's title and length; null when MusicBrainz can't be read or no longer has it.</summary>
+        MusicBrainzRecording? RecordingOf(string recordingId);
     }
 
-    /// <summary>Reads artist credits straight from MusicBrainz, which Lidarr's metadata drops to one artist per album.</summary>
+    /// <summary>Reads artist credits and recordings straight from MusicBrainz, which Lidarr's metadata drops or never holds.</summary>
     public class MusicBrainzCredits(IHttpClient httpClient, Logger logger) : IMusicBrainzCredits
     {
         private static readonly string UserAgent = $"Sleezer/{PluginInfo.Version} ( {PluginInfo.RepoUrl} )";
 
         // Successes only: a failed lookup must be retried later, not remembered.
-        private static readonly ConcurrentDictionary<string, IReadOnlyList<string>> Cache = new();
+        private static readonly ConcurrentDictionary<string, IReadOnlyList<string>?> Guests = new();
+        private static readonly ConcurrentDictionary<string, MusicBrainzRecording?> Recordings = new();
 
-        // These lookups run inside release decisions; one stalled request pauses them all for five minutes
-        // rather than letting every candidate wait out its own timeout.
-        private static readonly ICircuitBreaker Breaker = CircuitBreakerFactory.GetCustomBreaker<MusicBrainzCredits>(1, 5);
+        // These lookups run inside release decisions; one stalled request pauses its kind for five minutes
+        // rather than letting every candidate wait out its own timeout. One breaker each: a missing guest list lets sibling copies through.
+        internal static readonly ICircuitBreaker GuestsBreaker = CircuitBreakerFactory.GetCustomBreaker<MusicBrainzCredits>(1, 5);
+        internal static readonly ICircuitBreaker RecordingsBreaker = new ApiCircuitBreaker(1, 5);
 
-        public IReadOnlyList<string>? GuestsOf(string releaseGroupId, string primaryArtistId)
+        // A release group MusicBrainz no longer has credits nobody; that is an answer, not an outage.
+        public IReadOnlyList<string>? GuestsOf(string releaseGroupId, string primaryArtistId) =>
+            Read(Guests, GuestsBreaker, $"{releaseGroupId}|{primaryArtistId}", $"release-group/{releaseGroupId}", "artist-credits",
+                json => GuestCredits.FromMusicBrainz(json, primaryArtistId), notFound: []);
+
+        public MusicBrainzRecording? RecordingOf(string recordingId) =>
+            Read(Recordings, RecordingsBreaker, recordingId.ToLowerInvariant(), $"recording/{recordingId}", null, MusicBrainzRecording.FromJson, notFound: null);
+
+        private T? Read<T>(ConcurrentDictionary<string, T?> cache, ICircuitBreaker breaker, string key, string resource, string? inc, Func<string, T> parse, T? notFound)
+            where T : class
         {
-            string key = $"{releaseGroupId}|{primaryArtistId}";
-            if (Cache.TryGetValue(key, out IReadOnlyList<string>? cached))
+            if (cache.TryGetValue(key, out T? cached))
                 return cached;
 
-            if (Breaker.IsOpen)
+            if (breaker.IsOpen)
                 return null;
 
             try
             {
                 // MusicBrainz allows one request per second per client.
-                HttpRequest request = new HttpRequestBuilder($"https://musicbrainz.org/ws/2/release-group/{releaseGroupId}")
-                    .AddQueryParam("inc", "artist-credits")
-                    .AddQueryParam("fmt", "json")
-                    .WithRateLimit(1.1)
-                    .Build();
+                HttpRequestBuilder builder = new($"https://musicbrainz.org/ws/2/{resource}");
+                if (inc != null)
+                    builder.AddQueryParam("inc", inc);
+                HttpRequest request = builder.AddQueryParam("fmt", "json").WithRateLimit(1.1).Build();
                 request.Headers.Add("User-Agent", UserAgent);
                 request.RequestTimeout = TimeSpan.FromSeconds(5);
                 request.SuppressHttpError = true;
 
                 HttpResponse response = httpClient.Get(request);
-
-                // A release group MusicBrainz no longer has credits nobody; that is an answer, not an outage.
-                IReadOnlyList<string> guests = response.StatusCode switch
+                T? value = response.StatusCode switch
                 {
-                    HttpStatusCode.OK => GuestCredits.FromMusicBrainz(response.Content, primaryArtistId),
-                    HttpStatusCode.NotFound => [],
+                    HttpStatusCode.OK => parse(response.Content),
+                    HttpStatusCode.NotFound => notFound,
                     _ => throw new HttpException(request, response)
                 };
 
-                Breaker.RecordSuccess();
-                Cache[key] = guests;
-                return guests;
+                breaker.RecordSuccess();
+                cache[key] = value;
+                return value;
             }
             catch (Exception ex)
             {
-                Breaker.RecordFailure();
-                logger.Debug(ex, "MusicBrainz credits unavailable for release group {ReleaseGroupId}; pausing lookups for five minutes", releaseGroupId);
+                breaker.RecordFailure();
+                logger.Debug(ex, "MusicBrainz unavailable for {Resource}; pausing lookups for five minutes", resource);
                 return null;
             }
         }

@@ -210,6 +210,47 @@ public class RecordingVerdictTests
         Assert.Equal($"{OtherId} \"Lantern Song (radio edit)\" (180s/181s); {WantedId} (not in Lidarr)", described);
     }
 
+    // A recording Lidarr holds nowhere, as MusicBrainz files it: measured on real refusals, its title may only defer.
+    private const string ElsewhereId = "0e9c6d8b-3f1a-4c52-9b7e-2d4f6a8c1e30";
+
+    [Theory]
+    [InlineData("Lantern Song (Moss remix)", 0)]
+    [InlineData("Lantern Song (Moss remix) (instrumental)", 224)]
+    public void A_recording_only_MusicBrainz_holds_under_the_wanted_title_defers(string elsewhereTitle, int fileSeconds)
+    {
+        WantedRecording wanted = Wanted("Lantern Song (Moss remix)", seconds: 224);
+        Dictionary<string, IReadOnlyList<KnownTrack>> known = Timed((OtherId, "Lantern Song (Fern dub)", 224));
+        Assert.Equal(FingerprintVerdict.Mismatch, RecordingVerdict.Resolve(new[] { OtherId, ElsewhereId }, TimeSpan.FromSeconds(fileSeconds), wanted, known));
+
+        FingerprintVerdict verdict = RecordingVerdict.Resolve(new[] { OtherId, ElsewhereId }, TimeSpan.FromSeconds(fileSeconds), wanted, known, [new KnownTrack(elsewhereTitle, 224000)]);
+
+        Assert.Equal(FingerprintVerdict.Unverifiable, verdict);
+    }
+
+    // Lidarr's recording is too far off the file's length to be heard, so this defers; judged like Lidarr's own,
+    // MusicBrainz's same-length recording under another title would refuse it.
+    [Fact]
+    public void A_recording_only_MusicBrainz_holds_under_another_title_never_refuses()
+    {
+        WantedRecording wanted = Wanted("Lantern Song (1976)", seconds: 117);
+        Dictionary<string, IReadOnlyList<KnownTrack>> known = Timed((OtherId, "Lantern Song", 139));
+        Assert.Equal(FingerprintVerdict.Unverifiable, RecordingVerdict.Resolve(new[] { OtherId, ElsewhereId }, TimeSpan.FromSeconds(116), wanted, known));
+
+        FingerprintVerdict verdict = RecordingVerdict.Resolve(new[] { OtherId, ElsewhereId }, TimeSpan.FromSeconds(116), wanted,
+            known, [new KnownTrack("Lantern Song", 117000)]);
+
+        Assert.Equal(FingerprintVerdict.Unverifiable, verdict);
+    }
+
+    [Fact]
+    public void Another_title_MusicBrainz_holds_leaves_a_mismatch_standing()
+    {
+        FingerprintVerdict verdict = RecordingVerdict.Resolve(new[] { OtherId, ElsewhereId }, TimeSpan.Zero, Wanted("Angel"),
+            Known((OtherId, "Guardian Angel")), [new KnownTrack("Guardian Angel (live)", 0)]);
+
+        Assert.Equal(FingerprintVerdict.Mismatch, verdict);
+    }
+
     [Fact]
     public void The_mismatch_log_says_when_acoustid_named_nothing()
     {
