@@ -127,7 +127,7 @@ public class PreImportTagger : IPreImportTagger
         }
     }
 
-    /// <summary>Every title the wanted tracks' recordings carry on any release; each track's own title alone if Lidarr can't say.</summary>
+    /// <summary>The titles each wanted track answers to (see TrackTitleMatcher.TitlesOf); its own title alone if Lidarr can't say.</summary>
     private List<TrackTitleMatcher.WantedTitles> GetWantedTitles(List<Track> tracks)
     {
         List<string> recordings = [.. tracks.Select(t => t.ForeignRecordingId).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase)];
@@ -414,7 +414,8 @@ public class PreImportTagger : IPreImportTagger
         // Album-level identification cannot pass for a single/EP pulled out of
         // an album share — the file's album tag names the share's album. When
         // everything above failed, fall back to per-track title matching
-        // against the target release (remix/variant qualifiers still conflict).
+        // against the target release (remix/variant qualifiers still conflict on
+        // the own title; another title of the recording must match exactly).
         int titleTagged = 0;
         if (tagged == 0)
         {

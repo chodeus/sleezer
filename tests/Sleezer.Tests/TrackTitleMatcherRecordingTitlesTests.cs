@@ -59,6 +59,17 @@ public class TrackTitleMatcherRecordingTitlesTests
     }
 
     [Fact]
+    public void A_recording_listed_twice_keeps_each_file_at_its_own_title()
+    {
+        Track[] wanted = [new() { Title = "Glass Pier", ForeignRecordingId = WantedId }, new() { Title = "Glass Pier (Reprise)", ForeignRecordingId = WantedId }];
+        List<WantedTitles> titles = TitlesOf(wanted, Known((WantedId, "Glass Pier"), (WantedId, "Glass Pier (Reprise)")));
+
+        Dictionary<int, int> mapping = Match(["Glass Pier (Reprise)", "Glass Pier"], titles);
+
+        Assert.Equal(new Dictionary<int, int> { [0] = 1, [1] = 0 }, mapping);
+    }
+
+    [Fact]
     public void Titles_are_the_tracks_own_then_the_other_titles_of_its_recording()
     {
         Track wanted = new() { Title = "Lantern Song", ForeignRecordingId = WantedId };

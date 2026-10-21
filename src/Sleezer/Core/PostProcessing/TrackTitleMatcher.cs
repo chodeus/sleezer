@@ -29,7 +29,7 @@ public static partial class TrackTitleMatcher
         string[] locals = [.. localTitles.Select(Normalize)];
         HashSet<string>[] others = [.. wanted.Select(w => w.OtherTitles.Select(Normalize).ToHashSet(StringComparer.Ordinal))];
 
-        List<(int Local, int Wanted, int Gate, int TieBreak)> candidates = [];
+        List<(int Local, int Wanted, int Gate, int TieBreak, bool OwnTitle)> candidates = [];
         for (int i = 0; i < locals.Length; i++)
         {
             if (locals[i].Length == 0)
@@ -37,17 +37,21 @@ public static partial class TrackTitleMatcher
 
             for (int j = 0; j < wanted.Count; j++)
             {
+                (int Gate, int TieBreak)? own = Score(localTitles[i], locals[i], wanted[j].Title, threshold);
+
                 // Other titles match exactly: a fuzzy one would draw in files of the release's other recordings.
-                if ((others[j].Contains(locals[i]) ? (100, 100) : Score(localTitles[i], locals[i], wanted[j].Title, threshold)) is { } best)
-                    candidates.Add((i, j, best.Gate, best.TieBreak));
+                if ((others[j].Contains(locals[i]) ? (100, 100) : own) is { } best)
+                    candidates.Add((i, j, best.Gate, best.TieBreak, own == best));
             }
         }
 
         Dictionary<int, int> mapping = [];
         HashSet<int> claimedWanted = [];
-        foreach ((int local, int wantedIndex, _, _) in candidates
+        // An exact own title outranks an exact other title: a recording listed twice keeps each file at its own position.
+        foreach ((int local, int wantedIndex, _, _, _) in candidates
                      .OrderByDescending(c => c.Gate)
                      .ThenByDescending(c => c.TieBreak)
+                     .ThenByDescending(c => c.OwnTitle)
                      .ThenBy(c => c.Local)
                      .ThenBy(c => c.Wanted))
         {
