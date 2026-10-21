@@ -244,6 +244,15 @@ public class FeaturedArtistStripperTests
         Assert.Equal(expected, FeaturedArtistStripper.StripCredits(input, [credited]).Trim());
     }
 
+    // MusicBrainz writes a credit's apostrophes typographically where a title often writes them straight.
+    [Theory]
+    [InlineData("Lantern Song (with Moon'n'Harbour)", "Moon’n’Harbour")]
+    [InlineData("Lantern Song (with Moon’n’Harbour)", "Moon'n'Harbour")]
+    public void StripCredits_matches_a_credit_whichever_apostrophe_it_is_written_with(string input, string credited)
+    {
+        Assert.Equal("Lantern Song", FeaturedArtistStripper.StripCredits(input, ["Glass Harbour", credited]));
+    }
+
     [Theory]
     [InlineData("feat. Zoë Harbour", "Zoe Harbour", true)]
     [InlineData("feat. カラス", "ガラス", false)]

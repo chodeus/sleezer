@@ -57,7 +57,8 @@ public static class FeaturedArtistStripper
     }
 
     // Optional marks only, as GuestCredits: on kana or Cyrillic й the mark spells another name.
-    private static string Fold(string name) => ComparableText.FoldOptionalMarks(name).Trim().ToLowerInvariant();
+    // Punctuation mapped first: MusicBrainz credits "Moon’n’Harbour" where a title writes "Moon'n'Harbour".
+    private static string Fold(string name) => ComparableText.FoldOptionalMarks(ComparableText.MapPunctuation(name)).Trim().ToLowerInvariant();
 
     private static readonly Regex GuestCreditSeparatorPattern = new(
         @"^(?:\s*[,;]|\s+(?:feat\.?|featuring|ft\.?)\s)",
