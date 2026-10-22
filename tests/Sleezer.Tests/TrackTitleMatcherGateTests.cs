@@ -21,6 +21,7 @@ public class TrackTitleMatcherGateTests
     [Theory]
     [InlineData("Lantern Song", "Lantern Song (album version)")]
     [InlineData("Lantern Song", "Lantern Song (from the Glass Harbour soundtrack)")]
+    [InlineData("Lantern Song", "Lantern Song (from (Glass Harbour) soundtrack)")]
     [InlineData("Moss Remix", "Lantern Song - Moss Remix")]
     [InlineData("Moss Remix", "Lantern Song – Moss Remix")]
     [InlineData("Lantern Song, Pt. 2", "Lantern Song, Part II")]

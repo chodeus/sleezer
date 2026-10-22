@@ -209,7 +209,7 @@ public static partial class TrackTitleMatcher
             return false;
 
         HashSet<string> localTokens = local.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.Ordinal);
-        string[] words = Normalize(RecordingVerdict.QualifierBracketRegex().Replace(wantedTitle, " ")).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        string[] words = Normalize(WithoutBrackets(wantedTitle)).Split(' ', StringSplitOptions.RemoveEmptyEntries);
         HashSet<string> missing = new(StringComparer.Ordinal);
         for (int i = 0; i < words.Length; i++)
         {
@@ -221,6 +221,13 @@ public static partial class TrackTitleMatcher
         }
 
         return missing.Count >= 2;
+    }
+
+    // Innermost first, until none is left: "Song (from (Film) soundtrack)" is "Song".
+    private static string WithoutBrackets(string title)
+    {
+        string stripped = RecordingVerdict.QualifierBracketRegex().Replace(title, " ");
+        return stripped == title ? title : WithoutBrackets(stripped);
     }
 
     // A part number and its word are NamesAnotherPart's to judge ("Pt. 2" is "Part II"); "One More Time" and "Take Me Home" are title words.
