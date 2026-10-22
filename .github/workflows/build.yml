@@ -513,7 +513,7 @@ jobs:
   # posts it: post it here, or the failed build.
   notify:
     needs: [build, publish]
-    if: ${{ always() && (needs.publish.result == 'success' || needs.build.result == 'failure' || needs.publish.result == 'failure') }}
+    if: ${{ !cancelled() && (needs.publish.result == 'success' || needs.build.result == 'failure' || needs.publish.result == 'failure') }}
     permissions: {}
     uses: chodeus/chodeus-ops/.github/workflows/notify-discord.yml@cbd544d21103cfe854c8e0ec717ee2be4f097ad7 # main
     with:
