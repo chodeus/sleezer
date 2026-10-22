@@ -39,7 +39,7 @@ public class PreImportTagger : IPreImportTagger
     private readonly ITrackService _trackService;
     private readonly IReleaseService _releaseService;
     private readonly IDiskProvider _diskProvider;
-    private readonly IMusicBrainzCredits _musicBrainzCredits;
+    private readonly IMusicBrainzLookups _musicBrainz;
     private readonly Logger _logger;
 
     public PreImportTagger(
@@ -49,7 +49,7 @@ public class PreImportTagger : IPreImportTagger
         ITrackService trackService,
         IReleaseService releaseService,
         IDiskProvider diskProvider,
-        IMusicBrainzCredits musicBrainzCredits,
+        IMusicBrainzLookups musicBrainz,
         Logger logger)
     {
         _identificationService = identificationService;
@@ -58,7 +58,7 @@ public class PreImportTagger : IPreImportTagger
         _trackService = trackService;
         _releaseService = releaseService;
         _diskProvider = diskProvider;
-        _musicBrainzCredits = musicBrainzCredits;
+        _musicBrainz = musicBrainz;
         _logger = logger;
     }
 
@@ -88,7 +88,7 @@ public class PreImportTagger : IPreImportTagger
     // Lazy, so the verdict stops asking MusicBrainz at the first match; one it can't answer for is left out, like any Lidarr lacks.
     private IEnumerable<KnownTrack> MusicBrainzOnly(IReadOnlyList<string>? recordingIds, IReadOnlyDictionary<string, IReadOnlyList<KnownTrack>> knownRecordings) =>
         (recordingIds ?? []).Where(id => !knownRecordings.ContainsKey(id))
-            .Select(_musicBrainzCredits.RecordingOf).OfType<MusicBrainzRecording>()
+            .Select(_musicBrainz.RecordingOf).OfType<MusicBrainzRecording>()
             .Select(r => new KnownTrack(r.Title, r.LengthMs));
 
     /// <summary>
@@ -676,7 +676,7 @@ public class PreImportTagger : IPreImportTagger
         if (string.IsNullOrEmpty(album.ForeignAlbumId) || string.IsNullOrEmpty(artist.ForeignArtistId))
             yield break;
 
-        foreach (string guest in _musicBrainzCredits.GuestsOf(album.ForeignAlbumId, artist.ForeignArtistId) ?? [])
+        foreach (string guest in _musicBrainz.GuestsOf(album.ForeignAlbumId, artist.ForeignArtistId) ?? [])
             yield return guest;
     }
 

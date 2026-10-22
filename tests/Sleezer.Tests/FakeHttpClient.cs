@@ -3,7 +3,7 @@ using NzbDrone.Common.Http;
 
 namespace Sleezer.Tests;
 
-// Lidarr's IHttpClient answered by one handler; TidalSharp uses the async execute path, MusicBrainzCredits the sync Get.
+// Lidarr's IHttpClient answered by one handler; TidalSharp uses the async execute path, MusicBrainzLookups the sync Get.
 internal sealed class FakeHttpClient(Func<HttpRequest, HttpResponse> handler) : IHttpClient
 {
     public List<HttpRequest> Requests { get; } = [];

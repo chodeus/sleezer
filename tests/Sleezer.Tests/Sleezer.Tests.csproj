@@ -204,7 +204,7 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Utilities\GuestCredits.cs"
              LinkBase="SourceUnderTest" />
-    <Compile Include="..\..\src\Sleezer\Core\Utilities\MusicBrainzCredits.cs"
+    <Compile Include="..\..\src\Sleezer\Core\Utilities\MusicBrainzLookups.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Utilities\MusicBrainzRecording.cs"
              LinkBase="SourceUnderTest" />
