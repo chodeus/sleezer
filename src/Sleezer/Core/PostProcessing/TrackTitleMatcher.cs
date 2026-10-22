@@ -205,7 +205,8 @@ public static partial class TrackTitleMatcher
             return false;
 
         Match dash = AffixDashRegex().Match(wantedTitle);
-        if (dash.Success && (Normalize(wantedTitle[..dash.Index]) == local || Normalize(wantedTitle[(dash.Index + dash.Length)..]) == local))
+        if (dash.Success && new[] { wantedTitle[..dash.Index], wantedTitle[(dash.Index + dash.Length)..] }
+                .Any(half => Normalize(half) == local || Normalize(WithoutBrackets(half)) == local))
             return false;
 
         HashSet<string> localTokens = local.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.Ordinal);
