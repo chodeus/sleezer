@@ -6,7 +6,7 @@ using NzbDrone.Plugin.Sleezer.Core.Model;
 
 namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 {
-    public interface IMusicBrainzCredits
+    public interface IMusicBrainzLookups
     {
         /// <summary>Names a release group credits besides the primary artist; null when MusicBrainz can't be read.</summary>
         IReadOnlyList<string>? GuestsOf(string releaseGroupId, string primaryArtistId);
@@ -16,7 +16,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
     }
 
     /// <summary>Reads artist credits and recordings straight from MusicBrainz, which Lidarr's metadata drops or never holds.</summary>
-    public class MusicBrainzCredits(IHttpClient httpClient, Logger logger) : IMusicBrainzCredits
+    public class MusicBrainzLookups(IHttpClient httpClient, Logger logger) : IMusicBrainzLookups
     {
         private static readonly string UserAgent = $"Sleezer/{PluginInfo.Version} ( {PluginInfo.RepoUrl} )";
 
@@ -26,7 +26,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 
         // These lookups run inside release decisions; one stalled request pauses its kind for five minutes
         // rather than letting every candidate wait out its own timeout. One breaker each: a missing guest list lets sibling copies through.
-        internal static readonly ICircuitBreaker GuestsBreaker = CircuitBreakerFactory.GetCustomBreaker<MusicBrainzCredits>(1, 5);
+        internal static readonly ICircuitBreaker GuestsBreaker = CircuitBreakerFactory.GetCustomBreaker<MusicBrainzLookups>(1, 5);
         internal static readonly ICircuitBreaker RecordingsBreaker = new ApiCircuitBreaker(1, 5);
 
         // A release group MusicBrainz no longer has credits nobody; that is an answer, not an outage.
