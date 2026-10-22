@@ -11,6 +11,8 @@ public class TrackTitleMatcherGateTests
     [InlineData("Lantern Song", "The Lantern Song Returns")]
     [InlineData("Time", "One More Time")]
     [InlineData("Glass", "Two Glass Lanterns")]
+    [InlineData("Me", "Take Me Home")]
+    [InlineData("Lanterns", "Book of Lanterns")]
     public void Two_words_of_the_wanted_title_missing_name_another_song(string local, string wanted)
     {
         Assert.Empty(Match([local], [wanted]));

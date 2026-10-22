@@ -223,9 +223,11 @@ public static partial class TrackTitleMatcher
         return missing.Count >= 2;
     }
 
-    // A part number is NamesAnotherPart's to judge ("Pt. 2" is "Part II"); "One" in "One More Time" is a title word.
+    // A part number and its word are NamesAnotherPart's to judge ("Pt. 2" is "Part II"); "One More Time" and "Take Me Home" are title words.
     private static bool Numbering(string[] words, int i) =>
-        words[i].All(char.IsDigit) || NumberingWords.Contains(words[i]) || (i > 0 && NumberingWords.Contains(words[i - 1]) && NumberValue(words[i]) != null);
+        words[i].All(char.IsDigit) ||
+        (NumberingWords.Contains(words[i]) && i + 1 < words.Length && NumberValue(words[i + 1]) != null) ||
+        (i > 0 && NumberingWords.Contains(words[i - 1]) && NumberValue(words[i]) != null);
 
     // How many words from `start` the file joins into one of its own, "anti hero" as "antihero"; 0 when none.
     private static int JoinedRun(string[] words, int start, HashSet<string> localTokens)
