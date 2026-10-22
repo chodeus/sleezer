@@ -139,7 +139,7 @@ public static partial class RecordingVerdict
     private static string WithoutUnheardCut(string? title) => UnheardCutRegex().Replace(ComparableText.MapPunctuation(title ?? string.Empty), " ");
 
     [GeneratedRegex(@"[\(\[\{（［｛][^\(\)\[\]\{\}（）［］｛｝]*[\)\]\}）］｝]")]
-    private static partial Regex QualifierBracketRegex();
+    internal static partial Regex QualifierBracketRegex();
 
     [GeneratedRegex(@"^\s*(?<name>.*\S)\s+(?:re)?mix\s*$", RegexOptions.IgnoreCase)]
     private static partial Regex TrailingRemixWordRegex();
