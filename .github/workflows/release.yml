@@ -83,3 +83,5 @@ jobs:
     uses: ./.github/workflows/build.yml
     with:
       tag_ref: refs/tags/${{ needs.tag.outputs.tag }}
+    secrets:
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
