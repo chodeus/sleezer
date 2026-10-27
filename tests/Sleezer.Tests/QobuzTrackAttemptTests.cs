@@ -13,7 +13,7 @@ public class QobuzTrackAttemptTests
 {
     private const int MaxAttempts = 3;
 
-    public static TheoryData<Exception> Transient => new()
+    public static TheoryData<Exception> Transient => new(new Exception[]
     {
         new HttpRequestException("Connection refused (streaming.invalid:443)"),
         new HttpRequestException("Response status code does not indicate success: 503", null, HttpStatusCode.ServiceUnavailable),
@@ -22,9 +22,9 @@ public class QobuzTrackAttemptTests
         UnreadablePage(HttpStatusCode.BadGateway),
         new IOException("Incomplete download for Qobuz track 1: server reported 100 bytes but 10 were written."),
         new TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout of 100 seconds elapsing."),
-    };
+    });
 
-    public static TheoryData<Exception> Lasting => new()
+    public static TheoryData<Exception> Lasting => new(new Exception[]
     {
         ApiError("401"),
         ApiError("400"),
@@ -33,7 +33,7 @@ public class QobuzTrackAttemptTests
         new HttpRequestException("Response status code does not indicate success: 403", null, HttpStatusCode.Forbidden),
         new UnauthorizedAccessException("Access to the path '/downloads/qobuz/1.flac.part' is denied."),
         new InvalidOperationException("Qobuz track 1 has no media source at FLAC_LOSSLESS."),
-    };
+    });
 
     [Fact]
     public void A_sample_is_skipped_on_the_first_attempt_without_retrying()
