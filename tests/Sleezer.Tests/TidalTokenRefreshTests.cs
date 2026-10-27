@@ -26,7 +26,7 @@ public class TidalTokenRefreshTests
         var endpoint = new FakeHttpClient(r => FakeHttpClient.Respond(r, HttpStatusCode.OK, Refreshed));
         var user = Login(signedInWithPkce);
 
-        Assert.True(await new Session(endpoint).AttemptTokenRefresh(user));
+        Assert.True(await new Session(endpoint).AttemptTokenRefresh(user, token: TestContext.Current.CancellationToken));
 
         var form = SentForm(endpoint);
         Assert.Equal("refresh", form["refresh_token"]);
@@ -40,7 +40,7 @@ public class TidalTokenRefreshTests
     {
         var endpoint = new FakeHttpClient(r => FakeHttpClient.Respond(r, HttpStatusCode.OK, Refreshed));
 
-        Assert.True(await new Session(endpoint, refreshClient: new ClientCredentials("custom-id", "custom-secret")).AttemptTokenRefresh(Login()));
+        Assert.True(await new Session(endpoint, refreshClient: new ClientCredentials("custom-id", "custom-secret")).AttemptTokenRefresh(Login(), token: TestContext.Current.CancellationToken));
 
         var form = SentForm(endpoint);
         Assert.Equal("custom-id", form["client_id"]);
@@ -57,7 +57,7 @@ public class TidalTokenRefreshTests
             : FakeHttpClient.Respond(r, HttpStatusCode.OK, """{"sessionId":"session","userId":1,"countryCode":"CA"}"""));
         var client = new TidalClient(null, http);
 
-        Assert.True(await client.LoadFromTokens("old-access", "refresh", "Bearer", 1, DateTime.UtcNow.AddHours(1), onTokensRefreshed: user => persisted = user));
+        Assert.True(await client.LoadFromTokens("old-access", "refresh", "Bearer", 1, DateTime.UtcNow.AddHours(1), onTokensRefreshed: user => persisted = user, token: TestContext.Current.CancellationToken));
 
         Assert.Equal("new-access", persisted?.AccessToken);
         Assert.Equal("new-access", client.ActiveUser!.AccessToken);
@@ -71,7 +71,7 @@ public class TidalTokenRefreshTests
             : FakeHttpClient.Respond(r, HttpStatusCode.OK, """{"sessionId":"session","userId":1,"countryCode":"CA"}"""));
         var client = new TidalClient(null, http);
 
-        Assert.False(await client.LoadFromTokens("old-access", "refresh", "Bearer", 1, DateTime.UtcNow.AddHours(1)));
+        Assert.False(await client.LoadFromTokens("old-access", "refresh", "Bearer", 1, DateTime.UtcNow.AddHours(1), token: TestContext.Current.CancellationToken));
 
         Assert.Equal("old-access", client.ActiveUser!.AccessToken);
         Assert.Equal("session", client.ActiveUser.SessionID);
@@ -93,7 +93,7 @@ public class TidalTokenRefreshTests
         var endpoint = new FakeHttpClient(r => FakeHttpClient.Respond(r, HttpStatusCode.BadRequest, """{"status":400,"error":"invalid_grant","sub_status":11101}"""));
         var user = Login();
 
-        Assert.False(await new Session(endpoint).AttemptTokenRefresh(user));
+        Assert.False(await new Session(endpoint).AttemptTokenRefresh(user, token: TestContext.Current.CancellationToken));
         Assert.Equal("old-access", user.AccessToken);
     }
 }

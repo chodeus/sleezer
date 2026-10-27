@@ -22,7 +22,8 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
-    <PackageReference Include="xunit" Version="2.9.3" />
+    <!-- mtp-off: dotnet test drives it through VSTest (xunit.runner.visualstudio) on SDK 8 and 10 alike. -->
+    <PackageReference Include="xunit.v3.mtp-off" Version="4.0.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="4.0.1" />
     <!-- Same version as Sleezer.csproj — SlskdItemsParser fuzzy matching. -->
     <PackageReference Include="FuzzySharp" Version="2.0.2" />

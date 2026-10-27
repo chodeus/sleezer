@@ -40,7 +40,7 @@ public class DeezerStreamDecoderTests
 
         using var input = new MemoryStream(StripeEncrypt(plain));
         using var output = new MemoryStream();
-        await DeezerStreamDecoder.DecodeAsync(input, output, isEncrypted: true, Key);
+        await DeezerStreamDecoder.DecodeAsync(input, output, isEncrypted: true, Key, token: TestContext.Current.CancellationToken);
 
         Assert.Equal(plain, output.ToArray());
     }
@@ -52,7 +52,7 @@ public class DeezerStreamDecoderTests
 
         using var input = new CappedReadStream(StripeEncrypt(plain), maxBytesPerRead: 1400);
         using var output = new MemoryStream();
-        await DeezerStreamDecoder.DecodeAsync(input, output, isEncrypted: true, Key);
+        await DeezerStreamDecoder.DecodeAsync(input, output, isEncrypted: true, Key, token: TestContext.Current.CancellationToken);
 
         Assert.Equal(plain, output.ToArray());
     }
@@ -64,7 +64,7 @@ public class DeezerStreamDecoderTests
 
         using var input = new MemoryStream(plain);
         using var output = new MemoryStream();
-        await DeezerStreamDecoder.DecodeAsync(input, output, isEncrypted: false, Key);
+        await DeezerStreamDecoder.DecodeAsync(input, output, isEncrypted: false, Key, token: TestContext.Current.CancellationToken);
 
         Assert.Equal(plain, output.ToArray());
     }
@@ -81,7 +81,7 @@ public class DeezerStreamDecoderTests
 
         using var input = new MemoryStream(StripeEncrypt(plain));
         using var output = new MemoryStream();
-        await DeezerStreamDecoder.DecodeAsync(input, output, isEncrypted: true, Key);
+        await DeezerStreamDecoder.DecodeAsync(input, output, isEncrypted: true, Key, token: TestContext.Current.CancellationToken);
 
         Assert.Equal(plain[3..], output.ToArray());
     }
@@ -101,7 +101,7 @@ public class DeezerStreamDecoderTests
 
         using var input = new MemoryStream(StripeEncrypt(plain));
         using var output = new MemoryStream();
-        await DeezerStreamDecoder.DecodeAsync(input, output, isEncrypted: true, Key);
+        await DeezerStreamDecoder.DecodeAsync(input, output, isEncrypted: true, Key, token: TestContext.Current.CancellationToken);
 
         Assert.Equal(plain, output.ToArray());
     }
@@ -111,7 +111,7 @@ public class DeezerStreamDecoderTests
     {
         using var input = new MemoryStream();
         using var output = new MemoryStream();
-        await DeezerStreamDecoder.DecodeAsync(input, output, isEncrypted: true, Key);
+        await DeezerStreamDecoder.DecodeAsync(input, output, isEncrypted: true, Key, token: TestContext.Current.CancellationToken);
 
         Assert.Empty(output.ToArray());
     }
