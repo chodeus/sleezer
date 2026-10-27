@@ -49,7 +49,7 @@ public class TidalDownloaderTests
         string path = TempTrack();
         try
         {
-            await DownloaderFor(Tidal()).WriteRawTrackToFile("1", AudioQuality.LOSSLESS, path);
+            await DownloaderFor(Tidal()).WriteRawTrackToFile("1", AudioQuality.LOSSLESS, path, token: TestContext.Current.CancellationToken);
 
             Assert.Equal("IAB", File.ReadAllText(path));
             Assert.False(File.Exists(path + ".part"));
@@ -65,7 +65,7 @@ public class TidalDownloaderTests
     {
         string path = TempTrack();
 
-        await Assert.ThrowsAsync<APIException>(() => DownloaderFor(Tidal(lastSegment: HttpStatusCode.Forbidden)).WriteRawTrackToFile("1", AudioQuality.LOSSLESS, path));
+        await Assert.ThrowsAsync<APIException>(() => DownloaderFor(Tidal(lastSegment: HttpStatusCode.Forbidden)).WriteRawTrackToFile("1", AudioQuality.LOSSLESS, path, token: TestContext.Current.CancellationToken));
 
         Assert.False(File.Exists(path));
         Assert.False(File.Exists(path + ".part"));
@@ -76,7 +76,7 @@ public class TidalDownloaderTests
     {
         string path = TempTrack();
 
-        var ex = await Assert.ThrowsAsync<APIException>(() => DownloaderFor(Tidal(audioMode: "DOLBY_ATMOS")).WriteRawTrackToFile("1", AudioQuality.LOSSLESS, path));
+        var ex = await Assert.ThrowsAsync<APIException>(() => DownloaderFor(Tidal(audioMode: "DOLBY_ATMOS")).WriteRawTrackToFile("1", AudioQuality.LOSSLESS, path, token: TestContext.Current.CancellationToken));
 
         Assert.Contains("DOLBY_ATMOS", ex.Message);
         Assert.False(File.Exists(path));
@@ -100,7 +100,7 @@ public class TidalDownloaderTests
         File.Copy(Path.Combine(AppContext.BaseDirectory, "Fixtures", "silence.flac"), path);
         try
         {
-            await DownloaderFor(Catalogue()).ApplyMetadataToFile("1", path, composers: ["Ann Writer"]);
+            await DownloaderFor(Catalogue()).ApplyMetadataToFile("1", path, composers: ["Ann Writer"], token: TestContext.Current.CancellationToken);
 
             using var tagged = TagLib.File.Create(path);
             Assert.Equal("USABC2600001", tagged.Tag.ISRC);
@@ -120,7 +120,7 @@ public class TidalDownloaderTests
         var http = new FakeHttpClient(r => FakeHttpClient.Respond(r, HttpStatusCode.Forbidden, "<html>Access denied</html>"));
         var session = new Session(http);
 
-        await Assert.ThrowsAsync<APIException>(() => new API(http, session).GetTrack("1"));
+        await Assert.ThrowsAsync<APIException>(() => new API(http, session).GetTrack("1", token: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -130,7 +130,7 @@ public class TidalDownloaderTests
         File.Copy(Path.Combine(AppContext.BaseDirectory, "Fixtures", "silence.flac"), path);
         try
         {
-            await DownloaderFor(Catalogue(trackCopyright: "", albumCopyright: "℗ 2026 Album Label")).ApplyMetadataToFile("1", path);
+            await DownloaderFor(Catalogue(trackCopyright: "", albumCopyright: "℗ 2026 Album Label")).ApplyMetadataToFile("1", path, token: TestContext.Current.CancellationToken);
 
             using var tagged = TagLib.File.Create(path);
             Assert.Equal("℗ 2026 Album Label", tagged.Tag.Copyright);

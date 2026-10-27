@@ -95,7 +95,7 @@ public class FingerprintLookupTests
         FakeAcoustId acoustId = new() { OnBatch = _ => cts.Cancel() };
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => FingerprintLookup.RunAsync(acoustId, Files(count), 0.5, Log, cts.Token));
-        await Task.Delay(200);
+        await Task.Delay(200, TestContext.Current.CancellationToken);
 
         Assert.Single(acoustId.Batches);
     }
@@ -108,7 +108,7 @@ public class FingerprintLookupTests
         FakeAcoustId acoustId = new();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => FingerprintLookup.RunAsync(acoustId, Files(5), 0.5, Log, cts.Token));
-        await Task.Delay(200);
+        await Task.Delay(200, TestContext.Current.CancellationToken);
 
         Assert.Empty(acoustId.Batches);
     }
@@ -123,7 +123,7 @@ public class FingerprintLookupTests
         List<LocalTrack> tracks = Files(10);
         FakeAcoustId acoustId = new() { OnBatch = i => { if (i == 0) Thread.Sleep(150); }, Answers = i => i > 0 };
 
-        await RunScaled(acoustId, tracks);
+        await RunScaled(acoustId, tracks, ct: TestContext.Current.CancellationToken);
 
         Assert.Equal([10, 10], acoustId.Batches);
         Assert.All(tracks, t => Assert.NotNull(t.AcoustIdResults));
@@ -134,7 +134,7 @@ public class FingerprintLookupTests
     {
         FakeAcoustId acoustId = new() { Answers = _ => false };
 
-        await RunScaled(acoustId, Files(10));
+        await RunScaled(acoustId, Files(10), ct: TestContext.Current.CancellationToken);
 
         Assert.Equal([10], acoustId.Batches);
     }
@@ -144,7 +144,7 @@ public class FingerprintLookupTests
     {
         FakeAcoustId acoustId = new() { OnBatch = _ => Thread.Sleep(150) };
 
-        await RunScaled(acoustId, Files(10));
+        await RunScaled(acoustId, Files(10), ct: TestContext.Current.CancellationToken);
 
         Assert.Equal([10], acoustId.Batches);
     }
@@ -155,7 +155,7 @@ public class FingerprintLookupTests
         List<LocalTrack> tracks = Files(10);
         FakeAcoustId acoustId = new() { OnBatch = _ => Thread.Sleep(150), Answers = _ => false };
 
-        await RunScaled(acoustId, tracks);
+        await RunScaled(acoustId, tracks, ct: TestContext.Current.CancellationToken);
 
         Assert.Equal([10, 10], acoustId.Batches);
         Assert.All(tracks, t => Assert.Null(t.AcoustIdResults));
@@ -167,7 +167,7 @@ public class FingerprintLookupTests
         List<LocalTrack> tracks = Files(25);
         FakeAcoustId acoustId = new() { OnBatch = i => { if (i == 1) Thread.Sleep(150); }, Answers = i => i != 1 };
 
-        await RunScaled(acoustId, tracks);
+        await RunScaled(acoustId, tracks, ct: TestContext.Current.CancellationToken);
 
         Assert.Equal([10, 10, 10, 5], acoustId.Batches);
         Assert.Equal(tracks.Take(10).Concat(tracks.Skip(10).Take(10)).Concat(tracks.Skip(10).Take(10)).Concat(tracks.Skip(20)).Select(t => t.Path), acoustId.Requested);
@@ -179,7 +179,7 @@ public class FingerprintLookupTests
     {
         FakeAcoustId acoustId = new() { OnBatch = _ => Thread.Sleep(150), Answers = _ => false };
 
-        await RunScaled(acoustId, Files(30));
+        await RunScaled(acoustId, Files(30), ct: TestContext.Current.CancellationToken);
 
         Assert.Equal([10, 10, 10, 10], acoustId.Batches);
     }
@@ -190,7 +190,7 @@ public class FingerprintLookupTests
         List<LocalTrack> tracks = Files(20);
         FakeAcoustId acoustId = new() { OnBatch = i => { if (i % 2 == 0) Thread.Sleep(150); }, Answers = i => i % 2 == 1 };
 
-        await RunScaled(acoustId, tracks);
+        await RunScaled(acoustId, tracks, ct: TestContext.Current.CancellationToken);
 
         Assert.Equal([10, 10, 10, 10], acoustId.Batches);
         Assert.All(tracks, t => Assert.NotNull(t.AcoustIdResults));

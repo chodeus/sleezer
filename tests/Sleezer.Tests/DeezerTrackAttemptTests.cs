@@ -10,7 +10,7 @@ public class DeezerTrackAttemptTests
 {
     private static readonly Logger Log = LogManager.CreateNullLogger();
 
-    public static TheoryData<Exception> Transient => new()
+    public static TheoryData<Exception> Transient => new(new Exception[]
     {
         new IOException("connection reset by peer"),
         new HttpRequestException("Connection refused (cdn.invalid:443)"),
@@ -18,9 +18,9 @@ public class DeezerTrackAttemptTests
         new HttpRequestException("Response status code does not indicate success: 429", null, HttpStatusCode.TooManyRequests),
         new TimeoutException("Deezer track 1 stalled for over 10 minutes; aborting."),
         new TrackIncompleteException("Deezer track 1 at FLAC truncated: got 10 of expected 100 bytes (10%)."),
-    };
+    });
 
-    public static TheoryData<Exception> Lasting => new()
+    public static TheoryData<Exception> Lasting => new(new Exception[]
     {
         new InsufficientLicenseRightsException("License check failed"),
         new GeoRestrictionException("Track 1 is not available in your country (code 2002)."),
@@ -31,7 +31,7 @@ public class DeezerTrackAttemptTests
         new InvalidOperationException("No Deezer license token available — the ARL session is not initialized or was rejected."),
         new HttpRequestException("Response status code does not indicate success: 401", null, HttpStatusCode.Unauthorized),
         new UnauthorizedAccessException("Access to the path '/downloads/deezer/1.flac' is denied."),
-    };
+    });
 
     [Theory]
     [MemberData(nameof(Transient))]
