@@ -1,6 +1,9 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["github>chodeus/chodeus-ops"],
+  "git-submodules": {
+    "enabled": true
+  },
   "packageRules": [
     {
       "description": "Hard pin: System.Text.Json / System.IO.Pipelines must stay on 8.x while TargetFramework=net8.0. 9+ brings runtime assemblies Lidarr's host does not ship, and the plugin silently fails to load (DryIoc FileNotFoundException). See PR #20.",
