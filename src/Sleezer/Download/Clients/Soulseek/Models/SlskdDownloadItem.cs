@@ -107,11 +107,8 @@ public class SlskdDownloadItem
     {
         lock (_removalLock)
         {
-            if (_removed)
-                return false;
-
             _retryBatchIds.Add(batchId);
-            return true;
+            return !_removed;
         }
     }
 
@@ -121,11 +118,23 @@ public class SlskdDownloadItem
         lock (_removalLock)
         {
             _removed = true;
-            HashSet<string> batches = [.. _retryBatchIds];
-            if (!string.IsNullOrEmpty(BatchId))
-                batches.Add(BatchId);
-            return batches;
+            return EnqueuedBatchesLocked();
         }
+    }
+
+    /// <summary>Every batch the grab enqueued, including a retry recorded after its removal.</summary>
+    public IReadOnlySet<string> EnqueuedBatches()
+    {
+        lock (_removalLock)
+            return EnqueuedBatchesLocked();
+    }
+
+    private HashSet<string> EnqueuedBatchesLocked()
+    {
+        HashSet<string> batches = [.. _retryBatchIds];
+        if (!string.IsNullOrEmpty(BatchId))
+            batches.Add(BatchId);
+        return batches;
     }
 
     // slskd echoes the batch id on every transfer, the only copy that survives a restart. A batch always

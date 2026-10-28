@@ -48,9 +48,26 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     private static readonly TimeSpan SweepQuietPeriod = TimeSpan.FromMinutes(15);
     // Latest settings snapshot per definition ID: used by event-triggered retry callbacks
     private readonly ConcurrentDictionary<int, SlskdProviderSettings> _settingsCache = new();
-    // Grabs removed this session, so AdoptUnknownDirectory never rebuilds one from its leftover transfers.
-    private readonly ConcurrentDictionary<DownloadKey<int, string>, DateTime> _removedGrabs = new();
+    // Grabs removed this session: AdoptUnknownDirectory cancels their leftover transfers rather than rebuilding them.
+    private readonly ConcurrentDictionary<DownloadKey<int, string>, RemovedGrab> _removedGrabs = new();
     private static readonly TimeSpan RemovedGrabMemory = TimeSpan.FromDays(1);
+    private static readonly TimeSpan LeftoverCancelInterval = TimeSpan.FromSeconds(30);
+
+    private sealed class RemovedGrab(SlskdDownloadItem? item, DateTime at)
+    {
+        private long _nextCancelTicks;
+
+        public DateTime At { get; } = at;
+
+        public IReadOnlySet<string> Batches => item?.EnqueuedBatches() ?? new HashSet<string>();
+
+        // Polls run every few seconds; a cancel that keeps failing must not be re-sent on each.
+        public bool TryClaimCancel(DateTime now)
+        {
+            long next = Interlocked.Read(ref _nextCancelTicks);
+            return now.Ticks >= next && Interlocked.CompareExchange(ref _nextCancelTicks, (now + LeftoverCancelInterval).Ticks, next) == next;
+        }
+    }
 
     private readonly ISlskdApiClient _apiClient;
     private readonly IDownloadHistoryService _downloadHistoryService;
@@ -136,7 +153,8 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 foreach (SlskdDownloadItem stale in GetItemsForDef(definitionId).Where(i => i.ID != retryId && i.OwnsFile(probeFile)).ToList())
                 {
                     _logger.Debug("Evicting stale tracked attempt {StaleId} superseded by {RetryId}", stale.ID, retryId);
-                    RememberRemovedGrab(definitionId, stale.ID);
+                    stale.MarkRemoved();
+                    RememberRemovedGrab(definitionId, stale.ID, stale);
                     RemoveItemFromDict(definitionId, stale.ID);
                     supersededAttempts.Add(stale);
                 }
@@ -269,8 +287,9 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         if (!deleteData)
             return;
 
-        RememberRemovedGrab(definitionId, clientItem.DownloadId);
         SlskdDownloadItem? item = GetItem(definitionId, clientItem.DownloadId);
+        item?.MarkRemoved();
+        RememberRemovedGrab(definitionId, clientItem.DownloadId, item);
         if (item == null)
             return;
 
@@ -850,11 +869,13 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         _logger.Trace("[def={DefinitionId}] Unknown item {Hash}: checking history", definitionId, hash);
         DownloadHistory? history = FindGrabOwningDirectory(hash, dir);
 
-        // Rebuilding a removed grab restarts its retries. Not cancelled here: a retry grab's transfers can probe to
-        // the removed original before the retry is tracked. RemoveItem cancels by batch, which can't mistake them.
-        if (history != null && _removedGrabs.ContainsKey(new DownloadKey<int, string>(definitionId, history.DownloadId)))
+        // Rebuilding a removed grab restarts its retries. Only its own batches are cancelled: a retry grab's transfers
+        // can probe to the removed original before the retry is tracked. An inclusive item has no grab; its id is the hash.
+        string removalId = history?.DownloadId ?? hash;
+        if (_removedGrabs.TryGetValue(new DownloadKey<int, string>(definitionId, removalId), out RemovedGrab? removed))
         {
-            _logger.Debug("[def={DefinitionId}] Not re-attaching transfers of removed grab {DownloadId}", definitionId, history.DownloadId);
+            _logger.Debug("[def={DefinitionId}] Not re-attaching transfers of removed grab {DownloadId}", definitionId, removalId);
+            CancelLeftoverTransfers(settings, username, dir, removed, removalId);
             return null;
         }
 
@@ -1805,33 +1826,69 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         _postProcessed.TryRemove(id, out _);
     }
 
-    private void RememberRemovedGrab(int definitionId, string id)
+    private void RememberRemovedGrab(int definitionId, string id, SlskdDownloadItem? item)
     {
         DateTime now = DateTime.UtcNow;
-        _removedGrabs[new DownloadKey<int, string>(definitionId, id)] = now;
+        _removedGrabs[new DownloadKey<int, string>(definitionId, id)] = new RemovedGrab(item, now);
 
-        foreach (KeyValuePair<DownloadKey<int, string>, DateTime> old in _removedGrabs.Where(kvp => now - kvp.Value > RemovedGrabMemory).ToList())
+        foreach (KeyValuePair<DownloadKey<int, string>, RemovedGrab> old in _removedGrabs.Where(kvp => now - kvp.Value.At > RemovedGrabMemory).ToList())
             _removedGrabs.TryRemove(old.Key, out _);
+    }
+
+    // Retries a cancel that failed at removal, or reaches a transfer the removal's listing missed.
+    private void CancelLeftoverTransfers(SlskdProviderSettings settings, string username, SlskdDownloadDirectory dir, RemovedGrab removed, string removalId)
+    {
+        List<SlskdDownloadFile> leftovers = SlskdBatchCanceller.InBatches(dir.Files ?? [], removed.Batches, null);
+        if (leftovers.Count == 0 || !removed.TryClaimCancel(DateTime.UtcNow))
+            return;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                int count = await SlskdBatchCanceller.CancelFilesAsync(_apiClient, settings, username, leftovers, _logger);
+                _logger.Debug("Removed {Count} leftover transfer(s) of removed grab {DownloadId}", count, removalId);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warn(ex, "Could not cancel leftover transfers of removed grab {DownloadId}", removalId);
+            }
+        });
     }
 
     private void MoveAsideLeftovers(int definitionId, SlskdProviderSettings settings, string destination, string title)
     {
+        string folder;
+        List<string> tracked;
         try
         {
             string root = GetRemoteDownloadPath(settings).FullPath;
-            string folder = Path.Combine(root, destination);
-            if (!IsStrictDescendantOfRoot(folder, root))
+            folder = Path.Combine(root, destination);
+            if (!folder.IsPathValid(PathValidationType.CurrentOs) || !IsStrictDescendantOfRoot(folder, root))
                 return;
 
             OsPath rootPath = new(root);
-            List<string> tracked = [.. GetItemsForDef(definitionId).Select(i => i.GetFullFolderPath(rootPath).FullPath)];
-            if (SlskdLeftoverFolder.MoveAside(_diskProvider, folder, tracked, DateTime.UtcNow) is { } aside)
-                _logger.Info("Moved an earlier attempt's files from '{Folder}' to '{Aside}' before grabbing {Title}", folder, aside, title);
+            tracked = [.. GetItemsForDef(definitionId).Select(i => i.GetFullFolderPath(rootPath).FullPath)];
         }
         catch (Exception ex)
         {
-            _logger.Warn(ex, "Could not move an earlier attempt's files out of '{Destination}'; {Title} will share the folder", destination, title);
+            _logger.Debug(ex, "Could not resolve '{Destination}' locally; not checking it for an earlier attempt's files", destination);
+            return;
         }
+
+        // Sharing the folder is what this prevents, so a folder that can't be moved fails the grab.
+        string? aside;
+        try
+        {
+            aside = SlskdLeftoverFolder.MoveAside(_diskProvider, folder, tracked, DateTime.UtcNow);
+        }
+        catch (Exception ex)
+        {
+            throw new DownloadClientException($"'{folder}' holds an earlier attempt's files and could not be moved aside, so {title} was not grabbed: {ex.Message}", ex);
+        }
+
+        if (aside != null)
+            _logger.Info("Moved an earlier attempt's files from '{Folder}' to '{Aside}' before grabbing {Title}", folder, aside, title);
     }
 
     private HashSet<string> GetActiveUsernames(int definitionId) =>

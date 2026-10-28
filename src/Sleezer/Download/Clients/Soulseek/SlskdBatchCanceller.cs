@@ -1,19 +1,18 @@
+using System.Net;
 using NLog;
+using NzbDrone.Common.Http;
 using NzbDrone.Core.Download;
 using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek.Models;
 
 namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
 
-/// <summary>
-/// Cancels and removes a peer's transfers by enqueue batch. slskd echoes the batch id on every
-/// transfer, so it reaches the ones a removed grab's last poll never saw (a retry, a first poll).
-/// </summary>
+/// <summary>Cancels and removes a peer's transfers by enqueue batch, the id slskd echoes on every transfer.</summary>
 public static class SlskdBatchCanceller
 {
     // As RemoveItem has always waited: slskd removes a transfer only once the cancel has ended it.
     private static readonly TimeSpan CancelSettle = TimeSpan.FromSeconds(1);
 
-    /// <summary>Returns how many transfers slskd removed; transfers in <paramref name="skipTransferIds"/> are the caller's.</summary>
+    /// <summary>Lists the peer's transfers and cancels those in <paramref name="batchIds"/>; returns how many slskd removed.</summary>
     public static async Task<int> CancelAsync(
         ISlskdApiClient apiClient,
         SlskdProviderSettings settings,
@@ -32,14 +31,20 @@ public static class SlskdBatchCanceller
         }
         catch (Exception ex)
         {
-            logger.Warn(ex, "Could not list {Username}'s transfers to cancel batch(es) {Batches}", username, string.Join(", ", batchIds));
+            logger.Warn(ex, "Could not list {Username}'s transfers to cancel batch(es) {Batches}; the next poll retries", username, string.Join(", ", batchIds));
             return 0;
         }
 
-        List<SlskdDownloadFile> files = [.. (transfers?.Directories ?? [])
-            .SelectMany(d => d.Files ?? [])
-            .Where(f => f.BatchId != null && batchIds.Contains(f.BatchId) && skipTransferIds?.Contains(f.Id) != true)];
+        return await CancelFilesAsync(apiClient, settings, username, InBatches((transfers?.Directories ?? []).SelectMany(d => d.Files ?? []), batchIds, skipTransferIds), logger);
+    }
 
+    /// <summary>The transfers enqueued in one of <paramref name="batchIds"/>; a transfer without a batch id is never one.</summary>
+    public static List<SlskdDownloadFile> InBatches(IEnumerable<SlskdDownloadFile> files, IReadOnlySet<string> batchIds, IReadOnlySet<string>? skipTransferIds) =>
+        [.. files.Where(f => f.BatchId != null && batchIds.Contains(f.BatchId) && skipTransferIds?.Contains(f.Id) != true)];
+
+    /// <summary>Cancels the live transfers, then removes them all; returns how many slskd removed.</summary>
+    public static async Task<int> CancelFilesAsync(ISlskdApiClient apiClient, SlskdProviderSettings settings, string username, List<SlskdDownloadFile> files, Logger logger)
+    {
         List<SlskdDownloadFile> live = [.. files.Where(f => SlskdFileState.GetStatus(f.State) != DownloadItemStatus.Completed)];
         foreach (SlskdDownloadFile file in live)
             await TryDeleteAsync(apiClient, settings, username, file, remove: false, logger);
@@ -65,9 +70,14 @@ public static class SlskdBatchCanceller
             await apiClient.DeleteTransferAsync(settings, username, file.Id, remove);
             return true;
         }
+        catch (HttpException ex) when (ex.Response?.StatusCode == HttpStatusCode.NotFound)
+        {
+            logger.Debug("Transfer {TransferId} ({Filename}) was already gone", file.Id, Path.GetFileName(file.Filename));
+            return false;
+        }
         catch (Exception ex)
         {
-            logger.Debug(ex, "Could not {Action} transfer {TransferId} ({Filename})", remove ? "remove" : "cancel", file.Id, Path.GetFileName(file.Filename));
+            logger.Warn(ex, "Could not {Action} transfer {TransferId} ({Filename}); the next poll retries", remove ? "remove" : "cancel", file.Id, Path.GetFileName(file.Filename));
             return false;
         }
     }

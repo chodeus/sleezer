@@ -10,8 +10,6 @@ using Xunit;
 
 namespace Sleezer.Tests;
 
-// Live 2026-10-28: a grab failed on peer rejections, sleezer re-enqueued the rejected files as Lidarr removed it,
-// and the retries finished into the folder the next grab of the album used.
 public class SlskdRemovedGrabTests
 {
     private const string Track = @"@@peer\Artist\Album\01.flac";
@@ -118,12 +116,13 @@ public class SlskdRemovedGrabTests
     }
 
     [Fact]
-    public void a_retry_batch_after_removal_is_refused()
+    public void a_retry_batch_after_removal_is_refused_but_still_recorded_for_later_cancels()
     {
         SlskdDownloadItem item = Grab();
         item.MarkRemoved();
 
         Assert.False(item.TryRecordRetryBatch("retry-batch"));
+        Assert.Contains("retry-batch", item.EnqueuedBatches());
     }
 
     [Fact]
@@ -154,7 +153,7 @@ public class SlskdRemovedGrabTests
     }
 
     [Fact]
-    public void a_retry_that_beats_the_removal_is_left_for_the_removal_to_cancel()
+    public void a_retry_that_beats_the_removal_is_handed_to_it()
     {
         FakeSlskd api = new();
         SlskdDownloadItem item = Grab();
@@ -277,6 +276,17 @@ public sealed class SlskdLeftoverFolderTests : IDisposable
         string folder = Folder("16 - Track.flac");
 
         Assert.NotNull(SlskdLeftoverFolder.MoveAside(_disk, folder, [folder + " (Deluxe)"], Now));
+    }
+
+    [Fact]
+    public void a_tracked_folder_naming_it_with_decomposed_accents_protects_it()
+    {
+        string folder = Path.Combine(_root, "Café - Album");
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, "01.flac"), "audio");
+
+        Assert.Null(SlskdLeftoverFolder.MoveAside(_disk, folder, [Path.Combine(_root, "Café - Album")], Now));
+        Assert.True(Directory.Exists(folder));
     }
 
     // Lidarr's path rule: case-insensitive on Windows only.
