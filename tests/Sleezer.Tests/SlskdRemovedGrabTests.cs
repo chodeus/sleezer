@@ -206,6 +206,62 @@ public class SlskdRemovedGrabTests
         Assert.Equal(0, count);
         Assert.Empty(api.Deletes);
     }
+
+    private static SlskdRemovedGrab Removed(SlskdDownloadItem item, params SlskdDownloadFile[] lastPoll)
+    {
+        item.SlskdDownloadDirectory = new SlskdDownloadDirectory(@"@@peer\Artist\Album", lastPoll.Length, [.. lastPoll]);
+        item.MarkRemoved();
+        return new SlskdRemovedGrab(item, DateTime.UtcNow);
+    }
+
+    [Fact]
+    public void its_leftovers_are_its_batches_and_its_last_poll_s_transfers()
+    {
+        SlskdDownloadItem item = Grab();
+        SlskdRemovedGrab removed = Removed(item, Transfer("polled", "InProgress", null));
+        item.TryRecordRetryBatch("retry-batch");
+
+        List<SlskdDownloadFile> leftovers = removed.Leftovers(
+        [
+            Transfer("polled", "InProgress", null),
+            Transfer("grab", "Queued, Remotely", "grab-batch"),
+            Transfer("retry", "Queued, Remotely", "retry-batch"),
+            Transfer("another-grab", "Queued, Remotely", "other-batch"),
+            Transfer("unbatched", "Queued, Remotely", null)
+        ]);
+
+        Assert.Equal(["grab", "polled", "retry"], leftovers.Select(f => f.Id).Order());
+    }
+
+    [Fact]
+    public void a_cancel_claim_holds_off_only_its_own_directory()
+    {
+        SlskdRemovedGrab removed = Removed(Grab());
+        DateTime now = DateTime.UtcNow;
+
+        Assert.True(removed.TryClaimCancel("CD1", now));
+        Assert.True(removed.TryClaimCancel("CD2", now));
+        Assert.False(removed.TryClaimCancel("CD1", now.AddSeconds(10)));
+        Assert.True(removed.TryClaimCancel("CD1", now.AddSeconds(30)));
+    }
+
+    [Fact]
+    public void it_settles_only_once_its_peer_lists_none_of_its_transfers()
+    {
+        SlskdRemovedGrab removed = Removed(Grab());
+
+        removed.SettleUnlessListed([Transfer("grab", "Queued, Remotely", "grab-batch")]);
+        Assert.False(removed.Settled);
+
+        removed.SettleUnlessListed([Transfer("another-grab", "Queued, Remotely", "other-batch")]);
+        Assert.True(removed.Settled);
+    }
+
+    [Fact]
+    public void a_removed_grab_with_no_peer_has_nothing_to_poll_for()
+    {
+        Assert.True(new SlskdRemovedGrab(null, DateTime.UtcNow).Settled);
+    }
 }
 
 // Through Lidarr's own DiskProviderBase on a real folder: only the platform members are stubbed.
@@ -241,11 +297,11 @@ public sealed class SlskdLeftoverFolderTests : IDisposable
     }
 
     [Fact]
-    public void an_untracked_folder_holding_files_is_renamed_aside_with_its_files()
+    public void a_folder_holding_files_is_renamed_aside_with_its_files()
     {
         string folder = Folder("16 - Track.flac");
 
-        string? aside = SlskdLeftoverFolder.MoveAside(_disk, folder, [], Now);
+        string? aside = SlskdLeftoverFolder.MoveAside(_disk, folder, Now);
 
         Assert.Equal(folder + " (leftover 20261028-070944)", aside);
         Assert.False(Directory.Exists(folder));
@@ -253,60 +309,43 @@ public sealed class SlskdLeftoverFolderTests : IDisposable
     }
 
     [Fact]
-    public void a_folder_a_tracked_grab_resolves_to_is_left_alone()
+    public void an_empty_or_missing_folder_is_left_alone()
     {
-        string folder = Folder("16 - Track.flac");
+        Assert.Null(SlskdLeftoverFolder.MoveAside(_disk, Path.Combine(_root, "Missing"), Now));
 
-        Assert.Null(SlskdLeftoverFolder.MoveAside(_disk, folder, [folder + Path.DirectorySeparatorChar], Now));
-        Assert.True(File.Exists(Path.Combine(folder, "16 - Track.flac")));
+        string empty = Folder();
+        Assert.Null(SlskdLeftoverFolder.MoveAside(_disk, empty, Now));
+        Assert.True(Directory.Exists(empty));
     }
 
     [Fact]
-    public void a_folder_holding_a_tracked_grab_s_subfolder_is_left_alone()
+    public void a_folder_holds_itself_and_its_disc_subfolders()
     {
-        string folder = Folder("16 - Track.flac");
+        string folder = Path.Combine(_root, "Artist - Album");
 
-        Assert.Null(SlskdLeftoverFolder.MoveAside(_disk, folder, [Path.Combine(folder, "CD1")], Now));
-        Assert.True(Directory.Exists(folder));
+        Assert.True(SlskdLeftoverFolder.Contains(folder, folder + Path.DirectorySeparatorChar));
+        Assert.True(SlskdLeftoverFolder.Contains(folder, Path.Combine(folder, "CD1")));
     }
 
     [Fact]
-    public void a_tracked_sibling_whose_name_extends_the_folder_s_does_not_protect_it()
+    public void a_sibling_whose_name_extends_the_folder_s_is_not_inside_it()
     {
-        string folder = Folder("16 - Track.flac");
+        string folder = Path.Combine(_root, "Artist - Album");
 
-        Assert.NotNull(SlskdLeftoverFolder.MoveAside(_disk, folder, [folder + " (Deluxe)"], Now));
+        Assert.False(SlskdLeftoverFolder.Contains(folder, folder + " (Deluxe)"));
     }
 
+    // One folder on macOS; Linux and Windows keep the two spellings as two folders.
     [Fact]
-    public void a_tracked_folder_naming_it_with_decomposed_accents_protects_it()
+    public void composed_and_decomposed_accents_name_the_same_folder_only_on_macos()
     {
-        string folder = Path.Combine(_root, "Café - Album");
-        Directory.CreateDirectory(folder);
-        File.WriteAllText(Path.Combine(folder, "01.flac"), "audio");
-
-        Assert.Null(SlskdLeftoverFolder.MoveAside(_disk, folder, [Path.Combine(_root, "Café - Album")], Now));
-        Assert.True(Directory.Exists(folder));
+        Assert.Equal(OperatingSystem.IsMacOS(), SlskdLeftoverFolder.Contains(Path.Combine(_root, "Caf\u00e9 - Album"), Path.Combine(_root, "Cafe\u0301 - Album")));
     }
 
     // Lidarr's path rule: case-insensitive on Windows only.
     [Fact]
-    public void a_tracked_folder_differing_only_by_case_protects_it_only_on_windows()
+    public void a_name_differing_only_by_case_is_the_same_folder_only_on_windows()
     {
-        string folder = Folder("16 - Track.flac");
-
-        string? aside = SlskdLeftoverFolder.MoveAside(_disk, folder, [Path.Combine(_root, "artist - album")], Now);
-
-        Assert.Equal(OperatingSystem.IsWindows(), aside == null);
-    }
-
-    [Fact]
-    public void an_empty_or_missing_folder_is_left_alone()
-    {
-        Assert.Null(SlskdLeftoverFolder.MoveAside(_disk, Path.Combine(_root, "Missing"), [], Now));
-
-        string empty = Folder();
-        Assert.Null(SlskdLeftoverFolder.MoveAside(_disk, empty, [], Now));
-        Assert.True(Directory.Exists(empty));
+        Assert.Equal(OperatingSystem.IsWindows(), SlskdLeftoverFolder.Contains(Path.Combine(_root, "Artist - Album"), Path.Combine(_root, "artist - album")));
     }
 }
