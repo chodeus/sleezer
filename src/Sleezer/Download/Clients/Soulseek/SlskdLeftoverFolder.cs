@@ -14,9 +14,10 @@ public static class SlskdLeftoverFolder
         if (!disk.FolderExists(folder) || disk.FolderEmpty(folder))
             return null;
 
-        // Ordinal: on Linux two folders can differ only by case.
+        // A tracked grab can resolve to a subfolder (a disc folder), and Windows paths ignore case.
         string target = Normalize(folder);
-        if (trackedFolders.Any(t => string.Equals(Normalize(t), target, StringComparison.Ordinal)))
+        StringComparison comparison = DiskProviderBase.PathStringComparison;
+        if (trackedFolders.Select(Normalize).Any(t => string.Equals(t, target, comparison) || t.StartsWith(target + Path.DirectorySeparatorChar, comparison)))
             return null;
 
         // Renamed, not deleted: slskd's file retention clears it, and the empty-folder sweep then removes it.

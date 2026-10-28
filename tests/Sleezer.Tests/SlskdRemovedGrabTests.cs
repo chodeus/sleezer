@@ -191,8 +191,9 @@ public class SlskdRemovedGrabTests
         api.Transfers.Add(Transfer("next", "Completed, Succeeded", "grab-batch"));
         api.FailingDeletes.Add("gone");
 
-        await SlskdBatchCanceller.CancelAsync(api, new SlskdProviderSettings(), "peer", new HashSet<string> { "grab-batch" }, null, LogManager.CreateNullLogger());
+        int count = await SlskdBatchCanceller.CancelAsync(api, new SlskdProviderSettings(), "peer", new HashSet<string> { "grab-batch" }, null, LogManager.CreateNullLogger());
 
+        Assert.Equal(1, count);
         Assert.Equal([("next", true)], api.Deletes);
     }
 
@@ -262,11 +263,31 @@ public sealed class SlskdLeftoverFolderTests : IDisposable
     }
 
     [Fact]
-    public void a_tracked_folder_differing_only_by_case_does_not_protect_it()
+    public void a_folder_holding_a_tracked_grab_s_subfolder_is_left_alone()
     {
         string folder = Folder("16 - Track.flac");
 
-        Assert.NotNull(SlskdLeftoverFolder.MoveAside(_disk, folder, [Path.Combine(_root, "artist - album")], Now));
+        Assert.Null(SlskdLeftoverFolder.MoveAside(_disk, folder, [Path.Combine(folder, "CD1")], Now));
+        Assert.True(Directory.Exists(folder));
+    }
+
+    [Fact]
+    public void a_tracked_sibling_whose_name_extends_the_folder_s_does_not_protect_it()
+    {
+        string folder = Folder("16 - Track.flac");
+
+        Assert.NotNull(SlskdLeftoverFolder.MoveAside(_disk, folder, [folder + " (Deluxe)"], Now));
+    }
+
+    // Lidarr's path rule: case-insensitive on Windows only.
+    [Fact]
+    public void a_tracked_folder_differing_only_by_case_protects_it_only_on_windows()
+    {
+        string folder = Folder("16 - Track.flac");
+
+        string? aside = SlskdLeftoverFolder.MoveAside(_disk, folder, [Path.Combine(_root, "artist - album")], Now);
+
+        Assert.Equal(OperatingSystem.IsWindows(), aside == null);
     }
 
     [Fact]

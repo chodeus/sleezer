@@ -13,7 +13,7 @@ public static class SlskdBatchCanceller
     // As RemoveItem has always waited: slskd removes a transfer only once the cancel has ended it.
     private static readonly TimeSpan CancelSettle = TimeSpan.FromSeconds(1);
 
-    /// <summary>Returns how many transfers it cancelled or removed; transfers in <paramref name="skipTransferIds"/> are the caller's.</summary>
+    /// <summary>Returns how many transfers slskd removed; transfers in <paramref name="skipTransferIds"/> are the caller's.</summary>
     public static async Task<int> CancelAsync(
         ISlskdApiClient apiClient,
         SlskdProviderSettings settings,
@@ -47,22 +47,28 @@ public static class SlskdBatchCanceller
         if (live.Count > 0)
             await Task.Delay(CancelSettle);
 
+        int removed = 0;
         foreach (SlskdDownloadFile file in files)
-            await TryDeleteAsync(apiClient, settings, username, file, remove: true, logger);
+        {
+            if (await TryDeleteAsync(apiClient, settings, username, file, remove: true, logger))
+                removed++;
+        }
 
-        return files.Count;
+        return removed;
     }
 
     // A transfer slskd already dropped answers 404; the rest of the batch must still go.
-    private static async Task TryDeleteAsync(ISlskdApiClient apiClient, SlskdProviderSettings settings, string username, SlskdDownloadFile file, bool remove, Logger logger)
+    private static async Task<bool> TryDeleteAsync(ISlskdApiClient apiClient, SlskdProviderSettings settings, string username, SlskdDownloadFile file, bool remove, Logger logger)
     {
         try
         {
             await apiClient.DeleteTransferAsync(settings, username, file.Id, remove);
+            return true;
         }
         catch (Exception ex)
         {
             logger.Debug(ex, "Could not {Action} transfer {TransferId} ({Filename})", remove ? "remove" : "cancel", file.Id, Path.GetFileName(file.Filename));
+            return false;
         }
     }
 }

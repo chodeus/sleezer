@@ -1644,7 +1644,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         // from it. Before the snapshot, whose deletes can throw.
         int late = await SlskdBatchCanceller.CancelAsync(_apiClient, settings, item.Username, batches, files.Select(f => f.Id).ToHashSet(), _logger);
         if (late > 0)
-            _logger.Debug("Cancelled {Count} transfer(s) of {ItemId} that its last poll had not seen", late, item.ID);
+            _logger.Debug("Removed {Count} transfer(s) of {ItemId} that its last poll had not seen", late, item.ID);
 
         await CancelSnapshotFilesAsync(item, item.Username, files, settings, protectBasenames);
     }
