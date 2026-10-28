@@ -166,6 +166,37 @@ public class SlskdDestinationRecoveryTests
             item.GetFullFolderPath(new NzbDrone.Common.Disk.OsPath("/downloads")).FullPath);
     }
 
+    // That folder is a guess, so the folder check can't rule this grab out of any other folder until slskd reports where it wrote.
+    [Fact]
+    public void A_batch_without_the_grabs_album_has_an_unknown_folder_until_slskd_reports_it()
+    {
+        SlskdDownloadItem item = NewItem(PeerTrack);
+
+        item.SlskdDownloadDirectory = new SlskdDownloadDirectory(@"@@x\media\Moonward\2016 - Glass Harbour [FLAC]", 1, [CompletedFile(PeerTrack, "batch-id")]);
+        Assert.True(item.FolderUnknown);
+
+        item.ConfirmedSubdirectory = "Moonward - Glass Harbour";
+        Assert.False(item.FolderUnknown);
+    }
+
+    [Fact]
+    public void A_batch_with_the_grabs_album_or_from_this_session_and_a_transfer_without_a_batch_have_known_folders()
+    {
+        SlskdDownloadItem named = NewItem(PeerTrack);
+        named.ResolvedAlbum = new NzbDrone.Core.Music.Album { Title = "Glass Harbour", Artist = new NzbDrone.Core.Datastore.LazyLoaded<NzbDrone.Core.Music.Artist>(new NzbDrone.Core.Music.Artist { Name = "Moonward" }) };
+        SlskdDownloadItem enqueued = NewItem(PeerTrack);
+        enqueued.BatchId = "batch-id";
+        SlskdDownloadItem legacy = NewItem(PeerTrack);
+
+        named.SlskdDownloadDirectory = new SlskdDownloadDirectory(@"@@x\media\Moonward\2016 - Glass Harbour [FLAC]", 1, [CompletedFile(PeerTrack, "batch-id")]);
+        enqueued.SlskdDownloadDirectory = new SlskdDownloadDirectory(@"@@x\media\Moonward\2016 - Glass Harbour [FLAC]", 1, [CompletedFile(PeerTrack, "batch-id")]);
+        legacy.SlskdDownloadDirectory = new SlskdDownloadDirectory(@"@@x\media\Moonward\2016 - Glass Harbour [FLAC]", 1, [CompletedFile(PeerTrack, null)]);
+
+        Assert.False(named.FolderUnknown);
+        Assert.False(enqueued.FolderUnknown);
+        Assert.False(legacy.FolderUnknown);
+    }
+
     [Fact]
     public void Without_a_batch_a_single_folder_item_resolves_to_the_peer_directory()
     {

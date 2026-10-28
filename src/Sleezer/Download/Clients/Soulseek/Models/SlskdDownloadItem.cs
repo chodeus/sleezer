@@ -87,6 +87,61 @@ public class SlskdDownloadItem
     /// <summary>Destination slskd accepted at enqueue; a retried file must land there too.</summary>
     public string? EnqueueDestination { get; set; }
 
+    private bool _destinationGuessed;
+
+    /// <summary>A batch rebuilt without the grab's album went to a folder this can only guess, until slskd reports it.</summary>
+    public bool FolderUnknown => _destinationGuessed && ConfirmedSubdirectory == null;
+
+    // One lock for both sides, so a retry enqueue racing RemoveItem is cancelled by exactly one of them.
+    private readonly object _removalLock = new();
+    private readonly HashSet<string> _retryBatchIds = [];
+    private bool _removed;
+
+    /// <summary>Set once the grab is removed; its retries must stop with it.</summary>
+    public bool Removed
+    {
+        get
+        {
+            lock (_removalLock)
+                return _removed;
+        }
+    }
+
+    /// <summary>Records a retry's batch; false once the grab is removed, and the caller must cancel the batch.</summary>
+    public bool TryRecordRetryBatch(string batchId)
+    {
+        lock (_removalLock)
+        {
+            _retryBatchIds.Add(batchId);
+            return !_removed;
+        }
+    }
+
+    /// <summary>Marks the grab removed and returns every batch it enqueued, retries included.</summary>
+    public IReadOnlySet<string> MarkRemoved()
+    {
+        lock (_removalLock)
+        {
+            _removed = true;
+            return EnqueuedBatchesLocked();
+        }
+    }
+
+    /// <summary>Every batch the grab enqueued, including a retry recorded after its removal.</summary>
+    public IReadOnlySet<string> EnqueuedBatches()
+    {
+        lock (_removalLock)
+            return EnqueuedBatchesLocked();
+    }
+
+    private HashSet<string> EnqueuedBatchesLocked()
+    {
+        HashSet<string> batches = [.. _retryBatchIds];
+        if (!string.IsNullOrEmpty(BatchId))
+            batches.Add(BatchId);
+        return batches;
+    }
+
     // slskd echoes the batch id on every transfer, the only copy that survives a restart. A batch always
     // carried a destination, so its discs are already merged; re-merging could move another download's folder.
     private bool TryRecoverBatch(string batchId)
@@ -110,6 +165,8 @@ public class SlskdDownloadItem
         // As DownloadAsync does: slskd wrote the grab's batch there. Without the grab's album the name is only a guess.
         if (ResolvedAlbum != null)
             DerivedSubdirectory ??= destination;
+        else
+            _destinationGuessed = true;
         return true;
     }
 
@@ -214,6 +271,11 @@ public class SlskdDownloadItem
     public static bool IsAbandonedExtra(SlskdFileState state) =>
         state.GetStatus() == DownloadItemStatus.Failed &&
         !AudioFormatHelper.IsAudioFilename(state.File.Filename);
+
+    /// <summary>A transfer of its own, as last polled, has yet to finish; a state slskd names that isn't parsed counts as running.</summary>
+    public bool HasLiveTransfers() =>
+        (SlskdDownloadDirectory?.Files ?? []).Any(f => OwnsAcceptedFile(f.Filename) &&
+            !(Enum.TryParse(f.State, ignoreCase: true, out TransferStates state) && state.HasFlag(TransferStates.Completed)));
 
     /// <summary>Every accepted file completed; abandoned extras don't block completion.</summary>
     public bool AllAcceptedFilesCompleted()
