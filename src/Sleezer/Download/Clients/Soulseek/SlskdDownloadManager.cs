@@ -128,20 +128,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         {
             _logger.Debug("Release {Id} has terminal download history; tracking this attempt as {RetryId}", item.ID, retryId);
             item.ID = retryId;
-
-            // Evict a stale attempt from tracking (its per-directory hash matches
-            // first and would starve this retry). Its files are deleted only after a
-            // successful enqueue (below), so a failed enqueue can't strand content.
-            string? probeFile = item.FileData.FirstOrDefault(f => !string.IsNullOrEmpty(f.Filename))?.Filename;
-            if (probeFile != null)
-            {
-                foreach (SlskdDownloadItem stale in GetItemsForDef(definitionId).Where(i => i.ID != retryId && i.OwnsFile(probeFile)).ToList())
-                {
-                    _logger.Debug("Evicting stale tracked attempt {StaleId} superseded by {RetryId}", stale.ID, retryId);
-                    RemoveItemFromDict(definitionId, stale.ID);
-                    supersededAttempts.Add(stale);
-                }
-            }
+            supersededAttempts = EvictSupersededAttempts(definitionId, item);
         }
 
         _logger.Trace("Download initiated: {Title} | Files: {FileCount}", remoteAlbum.Release.Title, item.FileData.Count);
@@ -188,25 +175,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             SubscribeStateChanges(item, definitionId);
             AddItem(definitionId, item);
             _removedGrabs.TryRemove(new DownloadKey<int, string>(definitionId, item.ID), out _);
-
-            // Delete superseded attempts' leftovers only after a successful enqueue
-            // (slskd keys the local folder by remote NAME, so a failed attempt and
-            // this retry can share one — stale leftovers interleave sources). Protect
-            // the retry's own basenames so a shared file is never deleted.
-            if (supersededAttempts.Count > 0)
-            {
-                // Only now: had the enqueue failed, a superseded attempt would stay adoptable.
-                foreach (SlskdDownloadItem stale in supersededAttempts)
-                    RememberRemovedGrab(definitionId, stale.ID, stale);
-
-                HashSet<string> retryBasenames = item.FileData
-                    .Select(f => Path.GetFileName((f.Filename ?? string.Empty).Replace('\\', '/')))
-                    .Where(n => !string.IsNullOrEmpty(n))
-                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
-                // Fire-and-forget: it self-bounds, protects retry files, and handles
-                // its own errors, so it needn't delay the grab return.
-                _ = CleanupSupersededAttemptsAsync(supersededAttempts, settings, retryBasenames);
-            }
+            RetireSupersededAttempts(definitionId, settings, item, supersededAttempts);
 
             return item.ID;
         }
@@ -215,6 +184,47 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             _logger.Error(ex, "Download enqueue failed for {Title}", remoteAlbum.Release.Title);
             throw;
         }
+    }
+
+    // Evict a stale attempt from tracking (its per-directory hash matches
+    // first and would starve this retry). Its files are deleted only after a
+    // successful enqueue (RetireSupersededAttempts), so a failed enqueue can't strand content.
+    private List<SlskdDownloadItem> EvictSupersededAttempts(int definitionId, SlskdDownloadItem retry)
+    {
+        string? probeFile = retry.FileData.FirstOrDefault(f => !string.IsNullOrEmpty(f.Filename))?.Filename;
+        if (probeFile == null)
+            return [];
+
+        List<SlskdDownloadItem> superseded = [.. GetItemsForDef(definitionId).Where(i => i.ID != retry.ID && i.OwnsFile(probeFile))];
+        foreach (SlskdDownloadItem stale in superseded)
+        {
+            _logger.Debug("Evicting stale tracked attempt {StaleId} superseded by {RetryId}", stale.ID, retry.ID);
+            RemoveItemFromDict(definitionId, stale.ID);
+        }
+
+        return superseded;
+    }
+
+    // Delete superseded attempts' leftovers only after a successful enqueue
+    // (slskd keys the local folder by remote NAME, so a failed attempt and
+    // this retry can share one — stale leftovers interleave sources). Protect
+    // the retry's own basenames so a shared file is never deleted.
+    private void RetireSupersededAttempts(int definitionId, SlskdProviderSettings settings, SlskdDownloadItem retry, List<SlskdDownloadItem> superseded)
+    {
+        if (superseded.Count == 0)
+            return;
+
+        // Only now: had the enqueue failed, a superseded attempt would stay adoptable.
+        foreach (SlskdDownloadItem stale in superseded)
+            RememberRemovedGrab(definitionId, stale.ID, stale);
+
+        HashSet<string> retryBasenames = retry.FileData
+            .Select(f => Path.GetFileName((f.Filename ?? string.Empty).Replace('\\', '/')))
+            .Where(n => !string.IsNullOrEmpty(n))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        // Fire-and-forget: it self-bounds, protects retry files, and handles
+        // its own errors, so it needn't delay the grab return.
+        _ = CleanupSupersededAttemptsAsync(superseded, settings, retryBasenames);
     }
 
     public IEnumerable<DownloadClientItem> GetItems(int definitionId, SlskdProviderSettings settings, OsPath remotePath)
@@ -753,38 +763,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     private async Task PollTransfersAsync(int definitionId, SlskdProviderSettings settings, HashSet<string> activeUsernames)
     {
         ConcurrentDictionary<string, bool> currentIdSet = new();
-        // Counted before the listings: a retry batch recorded while they run must not be settled by them.
-        List<(SlskdRemovedGrab Grab, int Batches)> unsettled = [.. RemovedGrabsOf(definitionId).Where(r => !r.Settled).Select(r => (r, r.BatchCount))];
-
-        if (!settings.Inclusive && activeUsernames.Count > 0)
-        {
-            // A removed grab's peer may have nothing tracked left to poll it for; it is polled until its leftovers are gone.
-            await Task.WhenAll(activeUsernames.Union(unsettled.Select(u => u.Grab.Username).OfType<string>()).Select(async username =>
-            {
-                SlskdUserTransfers? userTransfers;
-                try
-                {
-                    userTransfers = await _apiClient.GetUserTransfersAsync(settings, username);
-                }
-                catch (Exception ex) when (!activeUsernames.Contains(username))
-                {
-                    _logger.Debug(ex, "Could not list {Username}'s transfers for a removed grab's leftovers; the next poll retries", username);
-                    return;
-                }
-
-                if (userTransfers != null)
-                    ProcessUserTransfers(definitionId, settings, userTransfers, currentIdSet);
-                SettleRemovedGrabs(unsettled, username, userTransfers);
-            }));
-        }
-        else
-        {
-            List<SlskdUserTransfers> all = await _apiClient.GetAllTransfersAsync(settings);
-            foreach (SlskdUserTransfers user in all)
-                ProcessUserTransfers(definitionId, settings, user, currentIdSet);
-            foreach (string username in unsettled.Select(u => u.Grab.Username).OfType<string>().Distinct())
-                SettleRemovedGrabs(unsettled, username, all.FirstOrDefault(u => u.Username == username));
-        }
+        await ListTransfersAsync(definitionId, settings, activeUsernames, currentIdSet);
 
         _logger.Debug("[def={DefinitionId}] Polled {UserCount} users | Tracked: {Tracked}", definitionId, activeUsernames.Count, currentIdSet.Count);
 
@@ -813,6 +792,51 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 RemoveItemFromDict(definitionId, item.ID);
             }
         }
+    }
+
+    // Applies slskd's transfers to the tracked items, and settles each removed grab its peer no longer lists.
+    private async Task ListTransfersAsync(int definitionId, SlskdProviderSettings settings, HashSet<string> activeUsernames, ConcurrentDictionary<string, bool> currentIdSet)
+    {
+        // Counted before the listings: a retry batch recorded while they run must not be settled by them.
+        List<(SlskdRemovedGrab Grab, int Batches)> unsettled = [.. RemovedGrabsOf(definitionId).Where(r => !r.Settled).Select(r => (r, r.BatchCount))];
+
+        if (!settings.Inclusive && activeUsernames.Count > 0)
+        {
+            // A removed grab's peer may have nothing tracked left to poll it for; it is polled until its leftovers are gone.
+            await Task.WhenAll(activeUsernames.Union(unsettled.Select(u => u.Grab.Username).OfType<string>())
+                .Select(username => ListPeerTransfersAsync(definitionId, settings, username, activeUsernames.Contains(username), unsettled, currentIdSet)));
+            return;
+        }
+
+        List<SlskdUserTransfers> all = await _apiClient.GetAllTransfersAsync(settings);
+        foreach (SlskdUserTransfers user in all)
+            ProcessUserTransfers(definitionId, settings, user, currentIdSet);
+        foreach (string username in unsettled.Select(u => u.Grab.Username).OfType<string>().Distinct())
+            SettleRemovedGrabs(unsettled, username, all.FirstOrDefault(u => u.Username == username));
+    }
+
+    private async Task ListPeerTransfersAsync(
+        int definitionId,
+        SlskdProviderSettings settings,
+        string username,
+        bool tracked,
+        List<(SlskdRemovedGrab Grab, int Batches)> unsettled,
+        ConcurrentDictionary<string, bool> currentIdSet)
+    {
+        SlskdUserTransfers? userTransfers;
+        try
+        {
+            userTransfers = await _apiClient.GetUserTransfersAsync(settings, username);
+        }
+        catch (Exception ex) when (!tracked)
+        {
+            _logger.Debug(ex, "Could not list {Username}'s transfers for a removed grab's leftovers; the next poll retries", username);
+            return;
+        }
+
+        if (userTransfers != null)
+            ProcessUserTransfers(definitionId, settings, userTransfers, currentIdSet);
+        SettleRemovedGrabs(unsettled, username, userTransfers);
     }
 
     private void ProcessUserTransfers(
