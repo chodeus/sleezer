@@ -3,6 +3,7 @@ using NzbDrone.Core.Download;
 using System.Text.Json;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek.Models;
+using NzbDrone.Plugin.Sleezer.Indexers.Soulseek;
 
 namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
 
@@ -17,7 +18,7 @@ public class SlskdRetryHandler(ISlskdApiClient apiClient, Logger logger)
 
         if (fileState.GetStatus() != DownloadItemStatus.Warning)
             return;
-        if (item == null)
+        if (item == null || item.Removed)
             return;
         // Foreign transfers (shared peer directory) and files slskd rejected at
         // enqueue both raise state changes; retrying either fails this item.
@@ -46,8 +47,15 @@ public class SlskdRetryHandler(ISlskdApiClient apiClient, Logger logger)
             long size = matchingEl.TryGetProperty("Size", out JsonElement sz) ? sz.GetInt64() : 0L;
             string username = item.Username ?? ExtractUsernameFromPath(item.ReleaseInfo.DownloadUrl);
 
-            await _apiClient.EnqueueDownloadAsync(settings, username, [(fileState.File.Filename, size)], externalId: item.ID, destination: item.EnqueueDestination);
+            SlskdEnqueueResult result = await _apiClient.EnqueueDownloadAsync(settings, username, [(fileState.File.Filename, size)], externalId: item.ID, destination: item.EnqueueDestination);
             _logger.Trace("Retry enqueued: {Filename}", Path.GetFileName(fileState.File.Filename));
+
+            // Removed while the enqueue was in flight: RemoveItem never saw this batch.
+            if (result.BatchId != null && !item.TryRecordRetryBatch(result.BatchId))
+            {
+                _logger.Debug("{ItemId} was removed while {Filename} was retried; cancelling the retry", item.ID, Path.GetFileName(fileState.File.Filename));
+                await SlskdBatchCanceller.CancelAsync(_apiClient, settings, username, new HashSet<string> { result.BatchId }, null, _logger);
+            }
         }
         catch (Exception ex)
         {

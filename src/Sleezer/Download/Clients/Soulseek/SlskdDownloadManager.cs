@@ -48,6 +48,9 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     private static readonly TimeSpan SweepQuietPeriod = TimeSpan.FromMinutes(15);
     // Latest settings snapshot per definition ID: used by event-triggered retry callbacks
     private readonly ConcurrentDictionary<int, SlskdProviderSettings> _settingsCache = new();
+    // Grabs removed this session, so AdoptUnknownDirectory never rebuilds one from its leftover transfers.
+    private readonly ConcurrentDictionary<DownloadKey<int, string>, DateTime> _removedGrabs = new();
+    private static readonly TimeSpan RemovedGrabMemory = TimeSpan.FromDays(1);
 
     private readonly ISlskdApiClient _apiClient;
     private readonly IDownloadHistoryService _downloadHistoryService;
@@ -133,6 +136,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 foreach (SlskdDownloadItem stale in GetItemsForDef(definitionId).Where(i => i.ID != retryId && i.OwnsFile(probeFile)).ToList())
                 {
                     _logger.Debug("Evicting stale tracked attempt {StaleId} superseded by {RetryId}", stale.ID, retryId);
+                    RememberRemovedGrab(definitionId, stale.ID);
                     RemoveItemFromDict(definitionId, stale.ID);
                     supersededAttempts.Add(stale);
                 }
@@ -151,6 +155,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             // generic name ("_Unknown Album") collide and interleave sources.
             // Multi-disc additionally lands pre-merged, skipping the local move.
             string? destination = item.PreferredDestinationFolderName();
+            MoveAsideLeftovers(definitionId, settings, destination, remoteAlbum.Release.Title);
 
             SlskdEnqueueResult result = await _apiClient.EnqueueDownloadAsync(settings, username, files, externalId: item.ID, destination: destination);
 
@@ -181,6 +186,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             item.Username = username;
             SubscribeStateChanges(item, definitionId);
             AddItem(definitionId, item);
+            _removedGrabs.TryRemove(new DownloadKey<int, string>(definitionId, item.ID), out _);
 
             // Delete superseded attempts' leftovers only after a successful enqueue
             // (slskd keys the local folder by remote NAME, so a failed attempt and
@@ -263,6 +269,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         if (!deleteData)
             return;
 
+        RememberRemovedGrab(definitionId, clientItem.DownloadId);
         SlskdDownloadItem? item = GetItem(definitionId, clientItem.DownloadId);
         if (item == null)
             return;
@@ -842,6 +849,14 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         string hash = SlskdDownloadItem.GetStableMD5Id(dir.Files?.Select(f => f.Filename) ?? []);
         _logger.Trace("[def={DefinitionId}] Unknown item {Hash}: checking history", definitionId, hash);
         DownloadHistory? history = FindGrabOwningDirectory(hash, dir);
+
+        // Rebuilding a removed grab restarts its retries. Not cancelled here: a retry grab's transfers can probe to
+        // the removed original before the retry is tracked. RemoveItem cancels by batch, which can't mistake them.
+        if (history != null && _removedGrabs.ContainsKey(new DownloadKey<int, string>(definitionId, history.DownloadId)))
+        {
+            _logger.Debug("[def={DefinitionId}] Not re-attaching transfers of removed grab {DownloadId}", definitionId, history.DownloadId);
+            return null;
+        }
 
         SlskdDownloadItem? item = null;
         if (history != null)
@@ -1610,15 +1625,35 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
     private async Task RemoveItemFilesAsync(SlskdDownloadItem item, SlskdProviderSettings settings, HashSet<string>? protectBasenames = null)
     {
+        // First, so a retry enqueue still in flight cancels itself rather than outliving the grab.
+        IReadOnlySet<string> batches = item.MarkRemoved();
+
         // The merged directory view can carry another item's transfers from a shared
         // peer directory; cancelling/removing those would kill a live download.
         List<SlskdDownloadFile> files = (item.SlskdDownloadDirectory?.Files ?? [])
             .Where(f => item.OwnsAcceptedFile(f.Filename))
             .ToList();
 
-        if (files.Count == 0 || item.Username == null)
+        if (item.Username == null)
         {
-            _logger.Debug("No slskd transfers to cancel for {ItemId} (directory not populated); relying on local folder deletion", item.ID);
+            _logger.Debug("No slskd transfers to cancel for {ItemId} (no peer recorded); relying on local folder deletion", item.ID);
+            return;
+        }
+
+        // The snapshot is the last poll's: a retry enqueued since, or a grab removed before its first poll, is missing
+        // from it. Before the snapshot, whose deletes can throw.
+        int late = await SlskdBatchCanceller.CancelAsync(_apiClient, settings, item.Username, batches, files.Select(f => f.Id).ToHashSet(), _logger);
+        if (late > 0)
+            _logger.Debug("Cancelled {Count} transfer(s) of {ItemId} that its last poll had not seen", late, item.ID);
+
+        await CancelSnapshotFilesAsync(item, item.Username, files, settings, protectBasenames);
+    }
+
+    private async Task CancelSnapshotFilesAsync(SlskdDownloadItem item, string username, List<SlskdDownloadFile> files, SlskdProviderSettings settings, HashSet<string>? protectBasenames)
+    {
+        if (files.Count == 0)
+        {
+            _logger.Debug("No polled slskd transfers for {ItemId} (directory not populated); relying on its batch and local folder deletion", item.ID);
             return;
         }
 
@@ -1626,10 +1661,10 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         {
             if (SlskdFileState.GetStatus(file.State) != DownloadItemStatus.Completed)
             {
-                await _apiClient.DeleteTransferAsync(settings, item.Username, file.Id);
+                await _apiClient.DeleteTransferAsync(settings, username, file.Id);
                 await Task.Delay(1000);
             }
-            await _apiClient.DeleteTransferAsync(settings, item.Username, file.Id, remove: true);
+            await _apiClient.DeleteTransferAsync(settings, username, file.Id, remove: true);
 
             try
             {
@@ -1768,6 +1803,35 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     {
         _downloadMappings.TryRemove(new DownloadKey<int, string>(definitionId, id), out _);
         _postProcessed.TryRemove(id, out _);
+    }
+
+    private void RememberRemovedGrab(int definitionId, string id)
+    {
+        DateTime now = DateTime.UtcNow;
+        _removedGrabs[new DownloadKey<int, string>(definitionId, id)] = now;
+
+        foreach (KeyValuePair<DownloadKey<int, string>, DateTime> old in _removedGrabs.Where(kvp => now - kvp.Value > RemovedGrabMemory).ToList())
+            _removedGrabs.TryRemove(old.Key, out _);
+    }
+
+    private void MoveAsideLeftovers(int definitionId, SlskdProviderSettings settings, string destination, string title)
+    {
+        try
+        {
+            string root = GetRemoteDownloadPath(settings).FullPath;
+            string folder = Path.Combine(root, destination);
+            if (!IsStrictDescendantOfRoot(folder, root))
+                return;
+
+            OsPath rootPath = new(root);
+            List<string> tracked = [.. GetItemsForDef(definitionId).Select(i => i.GetFullFolderPath(rootPath).FullPath)];
+            if (SlskdLeftoverFolder.MoveAside(_diskProvider, folder, tracked, DateTime.UtcNow) is { } aside)
+                _logger.Info("Moved an earlier attempt's files from '{Folder}' to '{Aside}' before grabbing {Title}", folder, aside, title);
+        }
+        catch (Exception ex)
+        {
+            _logger.Warn(ex, "Could not move an earlier attempt's files out of '{Destination}'; {Title} will share the folder", destination, title);
+        }
     }
 
     private HashSet<string> GetActiveUsernames(int definitionId) =>

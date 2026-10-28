@@ -87,6 +87,47 @@ public class SlskdDownloadItem
     /// <summary>Destination slskd accepted at enqueue; a retried file must land there too.</summary>
     public string? EnqueueDestination { get; set; }
 
+    // One lock for both sides, so a retry enqueue racing RemoveItem is cancelled by exactly one of them.
+    private readonly object _removalLock = new();
+    private readonly HashSet<string> _retryBatchIds = [];
+    private bool _removed;
+
+    /// <summary>Set once the grab is removed; its retries must stop with it.</summary>
+    public bool Removed
+    {
+        get
+        {
+            lock (_removalLock)
+                return _removed;
+        }
+    }
+
+    /// <summary>Records a retry's batch; false once the grab is removed, and the caller must cancel the batch.</summary>
+    public bool TryRecordRetryBatch(string batchId)
+    {
+        lock (_removalLock)
+        {
+            if (_removed)
+                return false;
+
+            _retryBatchIds.Add(batchId);
+            return true;
+        }
+    }
+
+    /// <summary>Marks the grab removed and returns every batch it enqueued, retries included.</summary>
+    public IReadOnlySet<string> MarkRemoved()
+    {
+        lock (_removalLock)
+        {
+            _removed = true;
+            HashSet<string> batches = [.. _retryBatchIds];
+            if (!string.IsNullOrEmpty(BatchId))
+                batches.Add(BatchId);
+            return batches;
+        }
+    }
+
     // slskd echoes the batch id on every transfer, the only copy that survives a restart. A batch always
     // carried a destination, so its discs are already merged; re-merging could move another download's folder.
     private bool TryRecoverBatch(string batchId)
