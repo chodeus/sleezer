@@ -62,6 +62,9 @@ public static class SlskdBatchCanceller
         return removed;
     }
 
+    // slskd reports the peer's path, often with Windows separators.
+    private static string LocalName(SlskdDownloadFile file) => Path.GetFileName(file.Filename.Replace('\\', '/'));
+
     // A transfer slskd already dropped answers 404; the rest of the batch must still go.
     private static async Task<bool> TryDeleteAsync(ISlskdApiClient apiClient, SlskdProviderSettings settings, string username, SlskdDownloadFile file, bool remove, Logger logger)
     {
@@ -72,12 +75,12 @@ public static class SlskdBatchCanceller
         }
         catch (HttpException ex) when (ex.Response?.StatusCode == HttpStatusCode.NotFound)
         {
-            logger.Debug("Transfer {TransferId} ({Filename}) was already gone", file.Id, Path.GetFileName(file.Filename));
+            logger.Debug("Transfer {TransferId} ({Filename}) was already gone", file.Id, LocalName(file));
             return false;
         }
         catch (Exception ex)
         {
-            logger.Warn(ex, "Could not {Action} transfer {TransferId} ({Filename}); the next poll retries", remove ? "remove" : "cancel", file.Id, Path.GetFileName(file.Filename));
+            logger.Warn(ex, "Could not {Action} transfer {TransferId} ({Filename}); the next poll retries", remove ? "remove" : "cancel", file.Id, LocalName(file));
             return false;
         }
     }

@@ -9,6 +9,9 @@ public static class SlskdLeftoverFolder
     // ext4, XFS and APFS cap a name at 255 bytes.
     private const int MaxNameBytes = 255;
 
+    /// <summary>Compares folder names as <see cref="Contains"/> does.</summary>
+    public static IEqualityComparer<string> NameComparer { get; } = new FolderNameComparer();
+
     /// <summary>Whether <paramref name="path"/> is <paramref name="folder"/> or inside it (a disc folder), as the filesystem compares names.</summary>
     public static bool Contains(string folder, string path)
     {
@@ -45,4 +48,12 @@ public static class SlskdLeftoverFolder
 
     // macOS treats composed and decomposed accents as one name; Linux and Windows keep them as two folders.
     private static string Key(string path) => OperatingSystem.IsMacOS() ? path.Normalize(NormalizationForm.FormC) : path;
+
+    private sealed class FolderNameComparer : IEqualityComparer<string>
+    {
+        public bool Equals(string? x, string? y) =>
+            x == null || y == null ? x == y : string.Equals(Key(x), Key(y), DiskProviderBase.PathStringComparison);
+
+        public int GetHashCode(string name) => Key(name).GetHashCode(DiskProviderBase.PathStringComparison);
+    }
 }

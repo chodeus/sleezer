@@ -186,9 +186,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }
     }
 
-    // Evict a stale attempt from tracking (its per-directory hash matches
-    // first and would starve this retry). Its files are deleted only after a
-    // successful enqueue (RetireSupersededAttempts), so a failed enqueue can't strand content.
+    // A stale attempt's per-directory hash matches first and would starve this retry. Its files go only after a successful enqueue.
     private List<SlskdDownloadItem> EvictSupersededAttempts(int definitionId, SlskdDownloadItem retry)
     {
         string? probeFile = retry.FileData.FirstOrDefault(f => !string.IsNullOrEmpty(f.Filename))?.Filename;
@@ -205,10 +203,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         return superseded;
     }
 
-    // Delete superseded attempts' leftovers only after a successful enqueue
-    // (slskd keys the local folder by remote NAME, so a failed attempt and
-    // this retry can share one — stale leftovers interleave sources). Protect
-    // the retry's own basenames so a shared file is never deleted.
+    // Runs only after a successful enqueue. A superseded attempt and this retry can share a folder, so the retry's basenames are kept.
     private void RetireSupersededAttempts(int definitionId, SlskdProviderSettings settings, SlskdDownloadItem retry, List<SlskdDownloadItem> superseded)
     {
         if (superseded.Count == 0)

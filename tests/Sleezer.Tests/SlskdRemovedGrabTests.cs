@@ -1,7 +1,11 @@
 using System.IO.Abstractions;
+using System.Net;
 using FluentValidation.Results;
 using NLog;
+using NLog.Config;
+using NLog.Targets;
 using NzbDrone.Common.Disk;
+using NzbDrone.Common.Http;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
 using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek.Models;
@@ -22,6 +26,7 @@ public class SlskdRemovedGrabTests
         public string EnqueueBatchId { get; set; } = "retry-batch";
         public Action? DuringEnqueue { get; set; }
         public HashSet<string> FailingDeletes { get; } = [];
+        public HashSet<string> GoneDeletes { get; } = [];
         public bool FailListing { get; set; }
         public TaskCompletionSource RemovedOne { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -45,8 +50,10 @@ public class SlskdRemovedGrabTests
 
         public Task DeleteTransferAsync(SlskdProviderSettings settings, string username, string fileId, bool remove = false)
         {
+            if (GoneDeletes.Contains(fileId))
+                throw new HttpException(new HttpResponse(new HttpRequest("http://slskd/api/v0/transfers"), new HttpHeader(), string.Empty, HttpStatusCode.NotFound));
             if (FailingDeletes.Contains(fileId))
-                throw new InvalidOperationException("404");
+                throw new InvalidOperationException("slskd error");
             Deletes.Add((fileId, remove));
             if (remove)
                 RemovedOne.TrySetResult();
@@ -182,18 +189,44 @@ public class SlskdRemovedGrabTests
         Assert.Equal([("live", false), ("live", true), ("finished", true)], api.Deletes);
     }
 
+    private static (Logger Logger, MemoryTarget Logs) CapturingLogger()
+    {
+        MemoryTarget logs = new() { Layout = "${level}|${message}" };
+        LoggingConfiguration config = new();
+        config.AddRuleForAllLevels(logs);
+        return (new LogFactory { Configuration = config }.GetLogger("canceller"), logs);
+    }
+
     [Fact]
-    public async Task a_transfer_slskd_already_dropped_does_not_stop_the_rest()
+    public async Task a_transfer_slskd_already_dropped_is_skipped_quietly()
     {
         FakeSlskd api = new();
         api.Transfers.Add(Transfer("gone", "Completed, Succeeded", "grab-batch"));
         api.Transfers.Add(Transfer("next", "Completed, Succeeded", "grab-batch"));
-        api.FailingDeletes.Add("gone");
+        api.GoneDeletes.Add("gone");
+        (Logger logger, MemoryTarget logs) = CapturingLogger();
 
-        int count = await SlskdBatchCanceller.CancelAsync(api, new SlskdProviderSettings(), "peer", new HashSet<string> { "grab-batch" }, null, LogManager.CreateNullLogger());
+        int count = await SlskdBatchCanceller.CancelAsync(api, new SlskdProviderSettings(), "peer", new HashSet<string> { "grab-batch" }, null, logger);
 
         Assert.Equal(1, count);
         Assert.Equal([("next", true)], api.Deletes);
+        Assert.Equal(["Debug|Transfer \"gone\" (\"01.flac\") was already gone"], logs.Logs);
+    }
+
+    [Fact]
+    public async Task a_delete_slskd_refuses_is_warned_and_does_not_stop_the_rest()
+    {
+        FakeSlskd api = new();
+        api.Transfers.Add(Transfer("refused", "Completed, Succeeded", "grab-batch"));
+        api.Transfers.Add(Transfer("next", "Completed, Succeeded", "grab-batch"));
+        api.FailingDeletes.Add("refused");
+        (Logger logger, MemoryTarget logs) = CapturingLogger();
+
+        int count = await SlskdBatchCanceller.CancelAsync(api, new SlskdProviderSettings(), "peer", new HashSet<string> { "grab-batch" }, null, logger);
+
+        Assert.Equal(1, count);
+        Assert.Equal([("next", true)], api.Deletes);
+        Assert.Equal(["Warn|Could not \"remove\" transfer \"refused\" (\"01.flac\"); the next poll retries"], logs.Logs);
     }
 
     [Fact]
@@ -301,6 +334,17 @@ public class SlskdRemovedGrabTests
 
         first.Dispose();
         Assert.NotNull(claims.TryHold(1, "Artist - Album"));
+    }
+
+    // Held names compare as the folder check does: accent forms are one name on macOS, case on Windows.
+    [Fact]
+    public void a_name_the_filesystem_treats_as_the_held_folder_is_held_too()
+    {
+        SlskdDestinationClaims claims = new();
+        Assert.NotNull(claims.TryHold(1, "Café - Album"));
+
+        Assert.Equal(OperatingSystem.IsMacOS(), claims.TryHold(1, "Café - Album") == null);
+        Assert.Equal(OperatingSystem.IsWindows(), claims.TryHold(1, "café - album") == null);
     }
 }
 
