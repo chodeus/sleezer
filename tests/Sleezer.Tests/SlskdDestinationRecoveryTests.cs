@@ -197,6 +197,22 @@ public class SlskdDestinationRecoveryTests
         Assert.False(legacy.FolderUnknown);
     }
 
+    // Lidarr removing a finished grab deletes its file names from the folder slskd reports later, which a guess can't rule out.
+    [Fact]
+    public void A_guessed_folder_on_either_side_counts_as_shared()
+    {
+        NzbDrone.Common.Disk.OsPath root = new("/downloads");
+        SlskdDownloadItem guessed = NewItem(PeerTrack);
+        guessed.SlskdDownloadDirectory = new SlskdDownloadDirectory(@"@@x\media\Moonward\2016 - Glass Harbour [FLAC]", 1, [CompletedFile(PeerTrack, "batch-id")]);
+        SlskdDownloadItem placed = NewItem(PeerTrack);
+        placed.DerivedSubdirectory = "Moonward - Glass Harbour";
+
+        Assert.True(SlskdLeftoverFolder.SharesFolder(guessed, root, []));
+        Assert.True(SlskdLeftoverFolder.SharesFolder(placed, root, [(1, root, [guessed])]));
+        Assert.False(SlskdLeftoverFolder.SharesFolder(placed, root, [(1, root, [])]));
+        Assert.False(SlskdLeftoverFolder.SharesFolder(placed, root, [(2, new NzbDrone.Common.Disk.OsPath("/elsewhere"), [guessed])]));
+    }
+
     // Two clients can poll one slskd: client 1 re-attaches its own grab, or one whose client is gone or unrecorded, never client 2's.
     [Theory]
     [InlineData(1, true)]

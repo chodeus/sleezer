@@ -895,7 +895,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         DownloadHistory? history = FindGrabOwningDirectory(hash, dir);
 
         // Two clients can poll one slskd: another client's grab is left to it, never re-attached or rebuilt as inclusive here.
-        if (history != null && !SlskdDownloadItem.IsGrabOf(history.DownloadClientId, definitionId, [.. _downloadClientRepository.All().Select(d => d.Id)]))
+        if (history != null && !IsOwnGrab(definitionId, history))
             return null;
 
         // Rebuilding a removed grab restarts its retries. Only its own transfers are cancelled: a retry grab's transfers
@@ -940,7 +940,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
         if (history != null && FinishedGrabInUsedFolder(settings, username, item, dir) is { } finished)
         {
-            _logger.Debug("[def={DefinitionId}] Not re-attaching {DownloadId}, finished in Lidarr, into a folder a tracked grab uses", definitionId, finished.ID);
+            _logger.Debug("[def={DefinitionId}] Not re-attaching {DownloadId}, finished in Lidarr, into a folder a tracked grab may use", definitionId, finished.ID);
             finished.MarkRemoved();
             CancelLeftoverTransfers(settings, username, dir, RememberRemovedGrab(definitionId, finished.ID, finished), finished.ID);
             return null;
@@ -2014,7 +2014,33 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             return null;
 
         SlskdDownloadItem placed = new(item.ReleaseInfo) { ID = item.ID, ResolvedAlbum = item.ResolvedAlbum, Username = username, SlskdDownloadDirectory = dir };
-        return SlskdLeftoverFolder.InUse(placed.GetFullFolderPath(GetRemoteDownloadPath(settings)).FullPath, ClientFolders()) ? placed : null;
+        try
+        {
+            return SlskdLeftoverFolder.SharesFolder(placed, GetRemoteDownloadPath(settings), ClientFolders()) ? placed : null;
+        }
+        catch (Exception ex)
+        {
+            // The folder name comes from the peer; a path that can't be checked counts as shared rather than wedging this poll.
+            _logger.Debug(ex, "Could not check the folder of finished grab {DownloadId}; treating it as shared", item.ID);
+            return placed;
+        }
+    }
+
+    // A failed read of the client list leaves the grab to its client; the next poll reads it again.
+    private bool IsOwnGrab(int definitionId, DownloadHistory grab)
+    {
+        if (grab.DownloadClientId == definitionId)
+            return true;
+
+        try
+        {
+            return SlskdDownloadItem.IsGrabOf(grab.DownloadClientId, definitionId, [.. _downloadClientRepository.All().Select(d => d.Id)]);
+        }
+        catch (Exception ex)
+        {
+            _logger.Debug(ex, "[def={DefinitionId}] Could not list the download clients; leaving grab {DownloadId} to client {ClientId}", definitionId, grab.DownloadId, grab.DownloadClientId);
+            return false;
+        }
     }
 
     private HashSet<string> GetActiveUsernames(int definitionId) =>

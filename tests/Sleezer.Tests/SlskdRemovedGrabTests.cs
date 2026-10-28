@@ -513,15 +513,19 @@ public sealed class SlskdLeftoverFolderTests : IDisposable
 
     // A finished grab re-attached into it would delete these grabs' file names when Lidarr removes it.
     [Fact]
-    public void a_folder_is_in_use_while_a_tracked_grab_in_any_client_resolves_to_it_or_inside_it()
+    public void a_grab_shares_its_folder_with_a_tracked_grab_in_any_client_resolving_to_it_inside_it_or_above_it()
     {
-        string folder = Path.Combine(_root, "Artist - Album");
+        OsPath root = new(_root);
+        SlskdDownloadItem album = InFolder("Artist - Album"), disc = InFolder(Path.Combine("Artist - Album", "CD1"));
 
-        Assert.True(SlskdLeftoverFolder.InUse(folder, [
-            (1, new OsPath(_root), [InFolder("Artist - Other Album")]),
-            (2, new OsPath(_root), [InFolder(Path.Combine("Artist - Album", "CD1"))])]));
-        Assert.False(SlskdLeftoverFolder.InUse(folder, [
-            (1, new OsPath(_root), [InFolder("Artist - Other Album")]),
+        Assert.True(SlskdLeftoverFolder.SharesFolder(album, root, [
+            (1, root, [InFolder("Artist - Other Album")]),
+            (2, root, [disc])]));
+        Assert.True(SlskdLeftoverFolder.SharesFolder(disc, root, [(1, root, [album])]));
+        // A grab not yet placed resolves to the download root.
+        Assert.True(SlskdLeftoverFolder.SharesFolder(album, root, [(1, root, [new SlskdDownloadItem(new ReleaseInfo { Source = "[]", Title = "t" })])]));
+        Assert.False(SlskdLeftoverFolder.SharesFolder(album, root, [
+            (1, root, [InFolder("Artist - Other Album")]),
             (2, new OsPath(Path.Combine(_root, "other")), [InFolder("Artist - Album")])]));
     }
 
