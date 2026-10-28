@@ -24,6 +24,9 @@ public sealed class SlskdRemovedGrab
 
     public DateTime At { get; }
 
+    /// <summary>Lidarr removing a grab sleezer already untracked brings no item, so this record's transfers are kept.</summary>
+    public SlskdRemovedGrab RemovedAgain(SlskdDownloadItem? item, DateTime at) => item == null ? this : new SlskdRemovedGrab(item, at);
+
     public string? Username { get; }
 
     public bool Settled => Username == null || Volatile.Read(ref _settledBatches) == BatchCount;

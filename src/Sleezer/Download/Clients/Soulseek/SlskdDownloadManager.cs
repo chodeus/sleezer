@@ -1854,7 +1854,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     private void RememberRemovedGrab(int definitionId, string id, SlskdDownloadItem? item)
     {
         DateTime now = DateTime.UtcNow;
-        _removedGrabs[new DownloadKey<int, string>(definitionId, id)] = new SlskdRemovedGrab(item, now);
+        _removedGrabs.AddOrUpdate(new DownloadKey<int, string>(definitionId, id), _ => new SlskdRemovedGrab(item, now), (_, known) => known.RemovedAgain(item, now));
 
         foreach (KeyValuePair<DownloadKey<int, string>, SlskdRemovedGrab> old in _removedGrabs.Where(kvp => now - kvp.Value.At > RemovedGrabMemory).ToList())
             _removedGrabs.TryRemove(old.Key, out _);

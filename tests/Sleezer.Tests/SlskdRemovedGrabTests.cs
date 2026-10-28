@@ -316,6 +316,19 @@ public class SlskdRemovedGrabTests
     }
 
     [Fact]
+    public void a_removal_lidarr_reports_after_the_grab_was_untracked_keeps_its_transfers()
+    {
+        SlskdRemovedGrab removed = Removed(Grab());
+        DateTime later = DateTime.UtcNow.AddMinutes(5);
+
+        SlskdRemovedGrab again = removed.RemovedAgain(null, later);
+        Assert.Same(removed, again);
+        Assert.Equal(["grab"], again.Leftovers([Transfer("grab", "Queued, Remotely", "grab-batch")]).Select(f => f.Id));
+
+        Assert.Equal(later, removed.RemovedAgain(Grab(), later).At);
+    }
+
+    [Fact]
     public void a_removed_grab_with_no_peer_has_nothing_to_poll_for()
     {
         Assert.True(new SlskdRemovedGrab(null, DateTime.UtcNow).Settled);
@@ -382,16 +395,15 @@ public class SlskdRemovedGrabTests
         Assert.NotNull(claims.TryHold(folder));
     }
 
-    // Held folders compare as the folder check does: accent forms are one name on macOS, case on Windows.
     [Fact]
-    public void a_name_the_filesystem_treats_as_the_held_folder_is_held_too()
+    public void a_name_differing_from_the_held_folder_only_by_case_or_accent_form_is_held_too()
     {
         SlskdDestinationClaims claims = new();
         string downloads = Path.Combine(Path.GetTempPath(), "downloads");
         Assert.NotNull(claims.TryHold(Path.Combine(downloads, "Caf\u00e9 - Album")));
 
-        Assert.Equal(OperatingSystem.IsMacOS(), claims.TryHold(Path.Combine(downloads, "Cafe\u0301 - Album")) == null);
-        Assert.Equal(OperatingSystem.IsWindows(), claims.TryHold(Path.Combine(downloads, "caf\u00e9 - album")) == null);
+        Assert.Null(claims.TryHold(Path.Combine(downloads, "Cafe\u0301 - Album")));
+        Assert.Null(claims.TryHold(Path.Combine(downloads, "caf\u00e9 - album")));
     }
 }
 
@@ -516,17 +528,11 @@ public sealed class SlskdLeftoverFolderTests : IDisposable
         Assert.False(SlskdLeftoverFolder.Contains(folder, folder + " (Deluxe)"));
     }
 
-    // One folder on macOS; Linux and Windows keep the two spellings as two folders.
+    // On any OS: the volume, not the OS, decides whether the two spellings are one folder.
     [Fact]
-    public void composed_and_decomposed_accents_name_the_same_folder_only_on_macos()
+    public void a_name_differing_only_by_case_or_accent_form_is_the_same_folder()
     {
-        Assert.Equal(OperatingSystem.IsMacOS(), SlskdLeftoverFolder.Contains(Path.Combine(_root, "Caf\u00e9 - Album"), Path.Combine(_root, "Cafe\u0301 - Album")));
-    }
-
-    // Lidarr's path rule: case-insensitive on Windows only.
-    [Fact]
-    public void a_name_differing_only_by_case_is_the_same_folder_only_on_windows()
-    {
-        Assert.Equal(OperatingSystem.IsWindows(), SlskdLeftoverFolder.Contains(Path.Combine(_root, "Artist - Album"), Path.Combine(_root, "artist - album")));
+        Assert.True(SlskdLeftoverFolder.Contains(Path.Combine(_root, "Caf\u00e9 - Album"), Path.Combine(_root, "Cafe\u0301 - Album")));
+        Assert.True(SlskdLeftoverFolder.Contains(Path.Combine(_root, "Artist - Album"), Path.Combine(_root, "artist - album", "CD1")));
     }
 }

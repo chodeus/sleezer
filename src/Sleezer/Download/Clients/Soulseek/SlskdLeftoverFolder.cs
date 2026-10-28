@@ -11,16 +11,18 @@ public static class SlskdLeftoverFolder
     // ext4, XFS and APFS cap a name at 255 bytes.
     private const int MaxNameBytes = 255;
 
+    // A case- or accent-insensitive volume (APFS, SMB) can sit behind any OS; a false match only holds a grab back.
+    private const StringComparison NameComparison = StringComparison.OrdinalIgnoreCase;
+
     /// <summary>Compares folders as <see cref="Contains"/> matches one exactly.</summary>
     public static IEqualityComparer<string> FolderComparer { get; } = new PathComparer();
 
-    /// <summary>Whether <paramref name="path"/> is <paramref name="folder"/> or inside it (a disc folder), as the filesystem compares names.</summary>
+    /// <summary>Whether <paramref name="path"/> is <paramref name="folder"/> or inside it (a disc folder), ignoring case and accent form.</summary>
     public static bool Contains(string folder, string path)
     {
         string key = Key(FullPath(folder));
         string candidate = Key(FullPath(path));
-        StringComparison comparison = DiskProviderBase.PathStringComparison;
-        return string.Equals(candidate, key, comparison) || candidate.StartsWith(key + Path.DirectorySeparatorChar, comparison);
+        return string.Equals(candidate, key, NameComparison) || candidate.StartsWith(key + Path.DirectorySeparatorChar, NameComparison);
     }
 
     /// <summary>Each client whose download root holds <paramref name="folder"/> or lies inside it, with its grabs inside it; one slskd can sit behind several clients.</summary>
@@ -63,14 +65,13 @@ public static class SlskdLeftoverFolder
     private static string FullPath(string path) =>
         Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 
-    // macOS treats composed and decomposed accents as one name; Linux and Windows keep them as two folders.
-    private static string Key(string path) => OperatingSystem.IsMacOS() ? path.Normalize(NormalizationForm.FormC) : path;
+    private static string Key(string path) => path.Normalize(NormalizationForm.FormC);
 
     private sealed class PathComparer : IEqualityComparer<string>
     {
         public bool Equals(string? x, string? y) =>
-            x == null || y == null ? x == y : string.Equals(Key(FullPath(x)), Key(FullPath(y)), DiskProviderBase.PathStringComparison);
+            x == null || y == null ? x == y : string.Equals(Key(FullPath(x)), Key(FullPath(y)), NameComparison);
 
-        public int GetHashCode(string path) => Key(FullPath(path)).GetHashCode(DiskProviderBase.PathStringComparison);
+        public int GetHashCode(string path) => Key(FullPath(path)).GetHashCode(NameComparison);
     }
 }
