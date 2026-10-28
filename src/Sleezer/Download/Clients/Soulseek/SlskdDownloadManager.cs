@@ -894,8 +894,8 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         _logger.Trace("[def={DefinitionId}] Unknown item {Hash}: checking history", definitionId, hash);
         DownloadHistory? history = FindGrabOwningDirectory(hash, dir);
 
-        // Two clients can poll one slskd: another client's grab is left to it, never re-attached or rebuilt as inclusive here.
-        if (history != null && !IsOwnGrab(definitionId, history))
+        // Never re-attached or rebuilt as inclusive here.
+        if (LeftToAnotherClient(definitionId, history))
             return null;
 
         // Rebuilding a removed grab restarts its retries. Only its own transfers are cancelled: a retry grab's transfers
@@ -932,16 +932,22 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         if (item == null)
             return null;
 
+        return AdoptItem(definitionId, settings, username, dir, item, grabbed: history != null);
+    }
+
+    // Lidarr removing a finished grab deletes its file names from its folder, so one is re-attached only into a folder no tracked grab may use.
+    private SlskdDownloadItem? AdoptItem(int definitionId, SlskdProviderSettings settings, string username, SlskdDownloadDirectory dir, SlskdDownloadItem item, bool grabbed)
+    {
         // AddItem overwrites by ID, and the history probe matches on the enqueued
         // set — so a live item's own rejected file would rebuild it here and drop
         // the transfer state it has accumulated.
         if (GetItem(definitionId, item.ID) != null)
             return null;
 
-        if (history == null || !FinishedInLidarr(item.ID))
+        if (!grabbed || !FinishedInLidarr(item.ID))
             return Track(definitionId, item);
 
-        // Lidarr removing a finished grab deletes its file names from its folder. Placed on a copy, so the tracked item's first poll still raises its file states.
+        // Placed on a copy, so the tracked item's first poll still raises its file states.
         SlskdDownloadItem placed = new(item.ReleaseInfo) { ID = item.ID, ResolvedAlbum = item.ResolvedAlbum, Username = username, SlskdDownloadDirectory = dir };
         bool? inUse = FinishedGrabFolderInUse(settings, placed, out IDisposable? hold);
         using (hold)
@@ -2056,20 +2062,20 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }
     }
 
-    // A failed read of the client list leaves the grab to its client; the next poll reads it again.
-    private bool IsOwnGrab(int definitionId, DownloadHistory grab)
+    // Two clients can poll one slskd: another client's grab is left to it. So is one when the client list can't be read; the next poll reads it again.
+    private bool LeftToAnotherClient(int definitionId, DownloadHistory? grab)
     {
-        if (grab.DownloadClientId == definitionId)
-            return true;
+        if (grab == null || grab.DownloadClientId == definitionId)
+            return false;
 
         try
         {
-            return SlskdDownloadItem.IsGrabOf(grab.DownloadClientId, definitionId, [.. _downloadClientRepository.All().Select(d => d.Id)]);
+            return !SlskdDownloadItem.IsGrabOf(grab.DownloadClientId, definitionId, [.. _downloadClientRepository.All().Select(d => d.Id)]);
         }
         catch (Exception ex)
         {
             _logger.Debug(ex, "[def={DefinitionId}] Could not list the download clients; leaving grab {DownloadId} to client {ClientId}", definitionId, grab.DownloadId, grab.DownloadClientId);
-            return false;
+            return true;
         }
     }
 
