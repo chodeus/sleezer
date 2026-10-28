@@ -33,15 +33,17 @@ public static class SlskdLeftoverFolder
             .Where(c => RootReaches(c.Root, folder))
             .Select(c => (c.DefinitionId, c.Items.Where(i => Contains(folder, i.GetFullFolderPath(c.Root).FullPath)).ToList()))];
 
-    /// <summary>Whether a tracked grab may use the grab's folder: one resolves to it, inside it or above it, or either folder is a guess.</summary>
-    public static bool SharesFolder(SlskdDownloadItem grab, OsPath root, IEnumerable<(int DefinitionId, OsPath Root, IEnumerable<SlskdDownloadItem> Items)> clients)
+    /// <summary>The folder a grab resolves to; null while it is a guess.</summary>
+    public static string? KnownFolder(SlskdDownloadItem grab, OsPath root) => grab.FolderUnknown ? null : grab.GetFullFolderPath(root).FullPath;
+
+    /// <summary>Whether a tracked grab may use the folder: one resolves to it, inside it or above it, or its folder is a guess. Null while a client reaching it hasn't loaded slskd's transfers.</summary>
+    public static bool? InUse(string folder, IEnumerable<(int DefinitionId, OsPath Root, IEnumerable<SlskdDownloadItem> Items)> clients, Func<int, bool> loaded)
     {
-        if (grab.FolderUnknown)
+        List<(int DefinitionId, OsPath Root, IEnumerable<SlskdDownloadItem> Items)> reaching = [.. clients.Where(c => RootReaches(c.Root, folder))];
+        if (reaching.Any(c => c.Items.Any(i => i.FolderUnknown || Overlaps(folder, i.GetFullFolderPath(c.Root).FullPath))))
             return true;
 
-        string folder = grab.GetFullFolderPath(root).FullPath;
-        return clients.Where(c => RootReaches(c.Root, folder))
-            .Any(c => c.Items.Any(i => i.FolderUnknown || Overlaps(folder, i.GetFullFolderPath(c.Root).FullPath)));
+        return reaching.All(c => loaded(c.DefinitionId)) ? false : null;
     }
 
     /// <summary>The grab still using the folder: its transfers run, or Lidarr isn't finished with it and the new grab doesn't replace it.</summary>

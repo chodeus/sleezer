@@ -938,14 +938,32 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         if (GetItem(definitionId, item.ID) != null)
             return null;
 
-        if (history != null && FinishedGrabInUsedFolder(settings, username, item, dir) is { } finished)
+        if (history == null || !FinishedInLidarr(item.ID))
+            return Track(definitionId, item);
+
+        // Lidarr removing a finished grab deletes its file names from its folder. Placed on a copy, so the tracked item's first poll still raises its file states.
+        SlskdDownloadItem placed = new(item.ReleaseInfo) { ID = item.ID, ResolvedAlbum = item.ResolvedAlbum, Username = username, SlskdDownloadDirectory = dir };
+        bool? inUse = FinishedGrabFolderInUse(settings, placed, out IDisposable? hold);
+        using (hold)
         {
-            _logger.Debug("[def={DefinitionId}] Not re-attaching {DownloadId}, finished in Lidarr, into a folder a tracked grab may use", definitionId, finished.ID);
-            finished.MarkRemoved();
-            CancelLeftoverTransfers(settings, username, dir, RememberRemovedGrab(definitionId, finished.ID, finished), finished.ID);
+            if (inUse == false)
+                return Track(definitionId, item);
+        }
+
+        if (inUse == null)
+        {
+            _logger.Trace("[def={DefinitionId}] Re-attaching {DownloadId}, finished in Lidarr, waits until every client sharing its folder has loaded slskd's transfers", definitionId, item.ID);
             return null;
         }
 
+        _logger.Debug("[def={DefinitionId}] Not re-attaching {DownloadId}, finished in Lidarr, into a folder a tracked grab may use", definitionId, item.ID);
+        placed.MarkRemoved();
+        CancelLeftoverTransfers(settings, username, dir, RememberRemovedGrab(definitionId, placed.ID, placed), placed.ID);
+        return null;
+    }
+
+    private SlskdDownloadItem Track(int definitionId, SlskdDownloadItem item)
+    {
         SubscribeStateChanges(item, definitionId);
         AddItem(definitionId, item);
         return item;
@@ -1958,12 +1976,11 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }
 
         // Until the first poll rebuilds the queue, a live download's folder looks like leftovers. Lidarr keeps the release pending.
-        if (clients.Any(c => _lastTransferPollTimes.GetValueOrDefault(c.DefinitionId) == default))
+        if (clients.Any(c => !TransfersLoaded(c.DefinitionId)))
             throw new DownloadClientUnavailableException("slskd's transfers have not been loaded since Lidarr started; the grab is retried on a later pass");
 
         // Lidarr is finished with an imported, failed or ignored grab; any other, or one still downloading, would mix its files with this one's.
-        SlskdDownloadItem? holder = SlskdLeftoverFolder.Holder(clients.SelectMany(c => c.Owners), superseded,
-            i => SlskdDownloadItem.IsTerminalDownloadEvent(_downloadHistoryService.GetLatestDownloadHistoryItem(i.ID)?.EventType));
+        SlskdDownloadItem? holder = SlskdLeftoverFolder.Holder(clients.SelectMany(c => c.Owners), superseded, i => FinishedInLidarr(i.ID));
         if (holder != null)
             throw new DownloadClientRejectedReleaseException(release, $"'{folder}' is in use by {holder.ReleaseInfo.Title}, which is still downloading or still in Lidarr's queue; {release.Title} was not grabbed so their files don't mix");
 
@@ -2004,25 +2021,38 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }
     }
 
-    private IEnumerable<(int DefinitionId, OsPath Root, IEnumerable<SlskdDownloadItem> Items)> ClientFolders() =>
-        _settingsCache.Select(kvp => (kvp.Key, GetRemoteDownloadPath(kvp.Value), GetItemsForDef(kvp.Key)));
-
-    // Lidarr removing a finished grab deletes its file names from its folder. Placed on a copy, so the adopted item's first poll still raises its file states.
-    private SlskdDownloadItem? FinishedGrabInUsedFolder(SlskdProviderSettings settings, string username, SlskdDownloadItem item, SlskdDownloadDirectory dir)
+    // Every enabled slskd client, loaded since Lidarr started or not: one slskd can sit behind several.
+    private IEnumerable<(int DefinitionId, OsPath Root, IEnumerable<SlskdDownloadItem> Items)> ClientFolders()
     {
-        if (!SlskdDownloadItem.IsTerminalDownloadEvent(_downloadHistoryService.GetLatestDownloadHistoryItem(item.ID)?.EventType))
-            return null;
+        foreach (DownloadClientDefinition client in _downloadClientRepository.All())
+        {
+            if (client.Enable && client.Settings is SlskdProviderSettings settings)
+                yield return (client.Id, GetRemoteDownloadPath(settings), GetItemsForDef(client.Id));
+        }
+    }
 
-        SlskdDownloadItem placed = new(item.ReleaseInfo) { ID = item.ID, ResolvedAlbum = item.ResolvedAlbum, Username = username, SlskdDownloadDirectory = dir };
+    // Until a client's first transfer poll since Lidarr started, its live downloads aren't tracked.
+    private bool TransfersLoaded(int definitionId) => _lastTransferPollTimes.GetValueOrDefault(definitionId) != default;
+
+    private bool FinishedInLidarr(string downloadId) =>
+        SlskdDownloadItem.IsTerminalDownloadEvent(_downloadHistoryService.GetLatestDownloadHistoryItem(downloadId)?.EventType);
+
+    // A free folder comes back held until the grab is tracked: a grab being sent into it is tracked only once it releases its own claim.
+    private bool? FinishedGrabFolderInUse(SlskdProviderSettings settings, SlskdDownloadItem placed, out IDisposable? hold)
+    {
+        hold = null;
         try
         {
-            return SlskdLeftoverFolder.SharesFolder(placed, GetRemoteDownloadPath(settings), ClientFolders()) ? placed : null;
+            if (SlskdLeftoverFolder.KnownFolder(placed, GetRemoteDownloadPath(settings)) is not { } folder || (hold = _destinationClaims.TryHold(folder)) == null)
+                return true;
+
+            return SlskdLeftoverFolder.InUse(folder, ClientFolders(), TransfersLoaded);
         }
         catch (Exception ex)
         {
             // The folder name comes from the peer; a path that can't be checked counts as shared rather than wedging this poll.
-            _logger.Debug(ex, "Could not check the folder of finished grab {DownloadId}; treating it as shared", item.ID);
-            return placed;
+            _logger.Debug(ex, "Could not check the folder of finished grab {DownloadId}; treating it as shared", placed.ID);
+            return true;
         }
     }
 

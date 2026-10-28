@@ -199,18 +199,20 @@ public class SlskdDestinationRecoveryTests
 
     // Lidarr removing a finished grab deletes its file names from the folder slskd reports later, which a guess can't rule out.
     [Fact]
-    public void A_guessed_folder_on_either_side_counts_as_shared()
+    public void A_guessed_folder_is_unknown_and_puts_any_folder_its_client_reaches_in_use()
     {
         NzbDrone.Common.Disk.OsPath root = new("/downloads");
         SlskdDownloadItem guessed = NewItem(PeerTrack);
         guessed.SlskdDownloadDirectory = new SlskdDownloadDirectory(@"@@x\media\Moonward\2016 - Glass Harbour [FLAC]", 1, [CompletedFile(PeerTrack, "batch-id")]);
         SlskdDownloadItem placed = NewItem(PeerTrack);
         placed.DerivedSubdirectory = "Moonward - Glass Harbour";
+        string folder = Path.Combine("/downloads", "Moonward - Glass Harbour");
 
-        Assert.True(SlskdLeftoverFolder.SharesFolder(guessed, root, []));
-        Assert.True(SlskdLeftoverFolder.SharesFolder(placed, root, [(1, root, [guessed])]));
-        Assert.False(SlskdLeftoverFolder.SharesFolder(placed, root, [(1, root, [])]));
-        Assert.False(SlskdLeftoverFolder.SharesFolder(placed, root, [(2, new NzbDrone.Common.Disk.OsPath("/elsewhere"), [guessed])]));
+        Assert.Null(SlskdLeftoverFolder.KnownFolder(guessed, root));
+        Assert.Equal(folder, SlskdLeftoverFolder.KnownFolder(placed, root));
+        Assert.True(SlskdLeftoverFolder.InUse(folder, [(1, root, [guessed])], _ => true));
+        Assert.False(SlskdLeftoverFolder.InUse(folder, [(1, root, [])], _ => true));
+        Assert.False(SlskdLeftoverFolder.InUse(folder, [(2, new NzbDrone.Common.Disk.OsPath("/elsewhere"), [guessed])], _ => true));
     }
 
     // Two clients can poll one slskd: client 1 re-attaches its own grab, or one whose client is gone or unrecorded, never client 2's.
