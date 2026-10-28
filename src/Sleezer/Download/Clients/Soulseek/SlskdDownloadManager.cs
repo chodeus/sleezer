@@ -1949,9 +1949,22 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         SlskdDownloadItem? holder = SlskdLeftoverFolder.Holder(clients.SelectMany(c => c.Owners), superseded,
             i => SlskdDownloadItem.IsTerminalDownloadEvent(_downloadHistoryService.GetLatestDownloadHistoryItem(i.ID)?.EventType));
         if (holder != null)
-            throw new DownloadClientRejectedReleaseException(release, $"'{folder}' is in use by {holder.ReleaseInfo.Title}, still queued or downloading; {release.Title} was not grabbed so their files don't mix");
+            throw new DownloadClientRejectedReleaseException(release, $"'{folder}' is in use by {holder.ReleaseInfo.Title}, which is still downloading or still in Lidarr's queue; {release.Title} was not grabbed so their files don't mix");
 
-        // Sharing the folder is what this prevents, so a folder that can't be moved fails the grab.
+        // A grab rebuilt without its album may be downloading into this folder, so its files aren't leftovers. Lidarr keeps the release pending.
+        if (clients.SelectMany(c => GetItemsForDef(c.DefinitionId)).FirstOrDefault(i => i.FolderUnknown && i.HasLiveTransfers()) is { } unplaced &&
+            SlskdLeftoverFolder.HoldsFiles(_diskProvider, folder))
+        {
+            _logger.Debug("'{Folder}' may be where {Title}, restored without its album, is downloading", folder, unplaced.ReleaseInfo.Title);
+            throw new DownloadClientUnavailableException("A grab restored after Lidarr started is downloading into a folder sleezer can't name; the grab is retried on a later pass");
+        }
+
+        TakeOverFolder(release, folder, clients, superseded);
+    }
+
+    // Sharing the folder is what the check prevents, so a folder that can't be moved fails the grab.
+    private void TakeOverFolder(ReleaseInfo release, string folder, List<(int DefinitionId, List<SlskdDownloadItem> Owners)> clients, List<SlskdDownloadItem> superseded)
+    {
         string? aside;
         try
         {
@@ -1964,6 +1977,15 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
         if (aside != null)
             _logger.Info("Moved an earlier attempt's files from '{Folder}' to '{Aside}' before grabbing {Title}", folder, aside, release.Title);
+
+        // Lidarr is done with them; removing one later would delete its file names from the new grab's folder. Replaced attempts retire with the grab.
+        foreach ((int definitionId, SlskdDownloadItem finished) in clients.SelectMany(c => c.Owners.Except(superseded).Select(o => (c.DefinitionId, o))))
+        {
+            _logger.Debug("Untracking {DownloadId}, finished in Lidarr, as '{Folder}' goes to {Title}", finished.ID, folder, release.Title);
+            finished.MarkRemoved();
+            RememberRemovedGrab(definitionId, finished.ID, finished);
+            RemoveItemFromDict(definitionId, finished.ID);
+        }
     }
 
     private HashSet<string> GetActiveUsernames(int definitionId) =>

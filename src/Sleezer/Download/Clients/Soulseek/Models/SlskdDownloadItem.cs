@@ -87,6 +87,11 @@ public class SlskdDownloadItem
     /// <summary>Destination slskd accepted at enqueue; a retried file must land there too.</summary>
     public string? EnqueueDestination { get; set; }
 
+    private bool _destinationGuessed;
+
+    /// <summary>A batch rebuilt without the grab's album went to a folder this can only guess, until slskd reports it.</summary>
+    public bool FolderUnknown => _destinationGuessed && ConfirmedSubdirectory == null;
+
     // One lock for both sides, so a retry enqueue racing RemoveItem is cancelled by exactly one of them.
     private readonly object _removalLock = new();
     private readonly HashSet<string> _retryBatchIds = [];
@@ -160,6 +165,8 @@ public class SlskdDownloadItem
         // As DownloadAsync does: slskd wrote the grab's batch there. Without the grab's album the name is only a guess.
         if (ResolvedAlbum != null)
             DerivedSubdirectory ??= destination;
+        else
+            _destinationGuessed = true;
         return true;
     }
 

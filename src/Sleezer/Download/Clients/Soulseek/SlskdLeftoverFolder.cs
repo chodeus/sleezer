@@ -23,22 +23,25 @@ public static class SlskdLeftoverFolder
         return string.Equals(candidate, key, comparison) || candidate.StartsWith(key + Path.DirectorySeparatorChar, comparison);
     }
 
-    /// <summary>Each client whose download root holds <paramref name="folder"/>, with its grabs inside it; one slskd can sit behind several clients.</summary>
+    /// <summary>Each client whose download root holds <paramref name="folder"/> or lies inside it, with its grabs inside it; one slskd can sit behind several clients.</summary>
     public static List<(int DefinitionId, List<SlskdDownloadItem> Owners)> ClientsHolding(
         string folder,
         IEnumerable<(int DefinitionId, OsPath Root, IEnumerable<SlskdDownloadItem> Items)> clients) =>
         [.. clients
-            .Where(c => c.Root.FullPath.IsPathValid(PathValidationType.CurrentOs) && Contains(c.Root.FullPath, folder))
+            .Where(c => c.Root.FullPath.IsPathValid(PathValidationType.CurrentOs) && (Contains(c.Root.FullPath, folder) || Contains(folder, c.Root.FullPath)))
             .Select(c => (c.DefinitionId, c.Items.Where(i => Contains(folder, i.GetFullFolderPath(c.Root).FullPath)).ToList()))];
 
     /// <summary>The grab still using the folder: its transfers run, or Lidarr isn't finished with it and the new grab doesn't replace it.</summary>
     public static SlskdDownloadItem? Holder(IEnumerable<SlskdDownloadItem> owners, IReadOnlyCollection<SlskdDownloadItem> replaced, Func<SlskdDownloadItem, bool> finishedInLidarr) =>
         owners.FirstOrDefault(i => i.HasLiveTransfers() || (!replaced.Contains(i) && !finishedInLidarr(i)));
 
+    /// <summary>Whether the folder has anything in it to move aside.</summary>
+    public static bool HoldsFiles(IDiskProvider disk, string folder) => disk.FolderExists(folder) && !disk.FolderEmpty(folder);
+
     /// <summary>Renames a non-empty folder aside; returns where it went, or null when there was nothing to move.</summary>
     public static string? MoveAside(IDiskProvider disk, string folder, DateTime utcNow)
     {
-        if (!disk.FolderExists(folder) || disk.FolderEmpty(folder))
+        if (!HoldsFiles(disk, folder))
             return null;
 
         // Renamed, not deleted: it stays until slskd's file retention, if configured, or a manual cleanup clears it.

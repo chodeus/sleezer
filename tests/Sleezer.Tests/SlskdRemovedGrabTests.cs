@@ -449,6 +449,14 @@ public sealed class SlskdLeftoverFolderTests : IDisposable
         Assert.True(Directory.Exists(empty));
     }
 
+    [Fact]
+    public void only_a_folder_with_something_in_it_holds_files()
+    {
+        Assert.False(SlskdLeftoverFolder.HoldsFiles(_disk, Path.Combine(_root, "Missing")));
+        Assert.False(SlskdLeftoverFolder.HoldsFiles(_disk, Folder()));
+        Assert.True(SlskdLeftoverFolder.HoldsFiles(_disk, Folder("01.flac")));
+    }
+
     // The renamed folder's name must fit in 255 bytes; the accented name only fits when the cut counts bytes, not characters.
     [Theory]
     [InlineData('a', 235)]
@@ -470,22 +478,25 @@ public sealed class SlskdLeftoverFolderTests : IDisposable
         new(new ReleaseInfo { Source = "[]", Title = subdirectory }) { DerivedSubdirectory = subdirectory };
 
     // Two clients can sit behind one slskd: each one's grabs in the folder count, and a client with none still counts.
+    // A client rooted inside the folder keeps all its grabs there.
     [Fact]
-    public void every_client_whose_root_holds_the_folder_is_listed_with_its_grabs_inside_it()
+    public void every_client_whose_root_holds_the_folder_or_lies_inside_it_is_listed_with_its_grabs_inside_it()
     {
         string folder = Path.Combine(_root, "Artist - Album");
         SlskdDownloadItem queued = InFolder("Artist - Album"), disc = InFolder(Path.Combine("Artist - Album", "CD1"));
-        SlskdDownloadItem sibling = InFolder("Artist - Other Album"), elsewhere = InFolder("Artist - Album");
+        SlskdDownloadItem sibling = InFolder("Artist - Other Album"), elsewhere = InFolder("Artist - Album"), nested = InFolder("Other - Album");
 
         List<(int DefinitionId, List<SlskdDownloadItem> Owners)> clients = SlskdLeftoverFolder.ClientsHolding(folder, [
             (1, new OsPath(_root), [sibling]),
             (2, new OsPath(_root), [queued, disc]),
             (3, new OsPath(Path.Combine(_root, "other")), [elsewhere]),
-            (4, new OsPath(string.Empty), [])]);
+            (4, new OsPath(string.Empty), []),
+            (5, new OsPath(Path.Combine(folder, "nested")), [nested])]);
 
-        Assert.Equal([1, 2], clients.Select(c => c.DefinitionId));
+        Assert.Equal([1, 2, 5], clients.Select(c => c.DefinitionId));
         Assert.Empty(clients[0].Owners);
         Assert.Equal([queued, disc], clients[1].Owners);
+        Assert.Equal([nested], clients[2].Owners);
     }
 
     [Fact]
