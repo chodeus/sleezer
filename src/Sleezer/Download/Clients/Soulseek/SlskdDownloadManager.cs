@@ -143,7 +143,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             // generic name ("_Unknown Album") collide and interleave sources.
             // Multi-disc additionally lands pre-merged, skipping the local move.
             string? destination = item.PreferredDestinationFolderName();
-            using IDisposable claim = ClaimDestinationFolder(definitionId, settings, remoteAlbum.Release, destination);
+            using IDisposable? claim = ClaimDestinationFolder(settings, remoteAlbum.Release, destination);
 
             SlskdEnqueueResult result = await _apiClient.EnqueueDownloadAsync(settings, username, files, externalId: item.ID, destination: destination);
 
@@ -1891,14 +1891,18 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         });
     }
 
-    // Held until AddItem tracks the grab, or a concurrent grab of the same album would pass the folder check too.
-    private IDisposable ClaimDestinationFolder(int definitionId, SlskdProviderSettings settings, ReleaseInfo release, string destination)
+    // Held until AddItem tracks the grab, or a concurrent grab into the same folder would pass the check too.
+    private IDisposable? ClaimDestinationFolder(SlskdProviderSettings settings, ReleaseInfo release, string destination)
     {
-        IDisposable claim = _destinationClaims.TryHold(definitionId, destination)
-            ?? throw new DownloadClientRejectedReleaseException(release, $"Another grab into '{destination}' is being sent to slskd; {release.Title} was not grabbed so their files don't mix");
+        string? folder = LocalDestinationFolder(settings, destination);
+        if (folder == null)
+            return null;
+
+        IDisposable claim = _destinationClaims.TryHold(folder)
+            ?? throw new DownloadClientRejectedReleaseException(release, $"Another grab into '{folder}' is being sent to slskd; {release.Title} was not grabbed so their files don't mix");
         try
         {
-            CheckDestinationFolder(definitionId, settings, release, destination);
+            CheckDestinationFolder(release, folder);
             return claim;
         }
         catch
@@ -1908,33 +1912,41 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }
     }
 
-    // The grab's folder must hold only its own files: a queued grab's folder refuses it, an earlier attempt's files move aside.
-    private void CheckDestinationFolder(int definitionId, SlskdProviderSettings settings, ReleaseInfo release, string destination)
+    private string? LocalDestinationFolder(SlskdProviderSettings settings, string destination)
     {
-        string folder;
-        List<SlskdDownloadItem> owners;
         try
         {
             string root = GetRemoteDownloadPath(settings).FullPath;
-            folder = Path.Combine(root, destination);
-            if (!folder.IsPathValid(PathValidationType.CurrentOs) || !IsStrictDescendantOfRoot(folder, root))
-                return;
-
-            OsPath rootPath = new(root);
-            owners = [.. GetItemsForDef(definitionId).Where(i => SlskdLeftoverFolder.Contains(folder, i.GetFullFolderPath(rootPath).FullPath))];
+            string folder = Path.Combine(root, destination);
+            return folder.IsPathValid(PathValidationType.CurrentOs) && IsStrictDescendantOfRoot(folder, root) ? folder : null;
         }
         catch (Exception ex)
         {
             _logger.Debug(ex, "Could not resolve '{Destination}' locally; not checking it for an earlier attempt's files", destination);
+            return null;
+        }
+    }
+
+    // The grab's folder must hold only its own files: a queued grab's folder refuses it, an earlier attempt's files move aside.
+    private void CheckDestinationFolder(ReleaseInfo release, string folder)
+    {
+        List<(int DefinitionId, List<SlskdDownloadItem> Owners)> clients;
+        try
+        {
+            clients = SlskdLeftoverFolder.ClientsHolding(folder, _settingsCache.Select(kvp => (kvp.Key, GetRemoteDownloadPath(kvp.Value), GetItemsForDef(kvp.Key))));
+        }
+        catch (Exception ex)
+        {
+            _logger.Debug(ex, "Could not match '{Folder}' against the queue; not checking it for an earlier attempt's files", folder);
             return;
         }
 
         // Until the first poll rebuilds the queue, a live download's folder looks like leftovers. Lidarr keeps the release pending.
-        if (_lastTransferPollTimes.GetValueOrDefault(definitionId) == default)
+        if (clients.Any(c => _lastTransferPollTimes.GetValueOrDefault(c.DefinitionId) == default))
             throw new DownloadClientUnavailableException("slskd's transfers have not been loaded since Lidarr started; the grab is retried on a later pass");
 
         // A finished grab (imported, failed or ignored) is done with its folder; any other would mix its files with this one's.
-        SlskdDownloadItem? queued = owners.FirstOrDefault(i => !SlskdDownloadItem.IsTerminalDownloadEvent(_downloadHistoryService.GetLatestDownloadHistoryItem(i.ID)?.EventType));
+        SlskdDownloadItem? queued = clients.SelectMany(c => c.Owners).FirstOrDefault(i => !SlskdDownloadItem.IsTerminalDownloadEvent(_downloadHistoryService.GetLatestDownloadHistoryItem(i.ID)?.EventType));
         if (queued != null)
             throw new DownloadClientRejectedReleaseException(release, $"'{folder}' is in use by {queued.ReleaseInfo.Title}, still in the queue; {release.Title} was not grabbed so their files don't mix");
 

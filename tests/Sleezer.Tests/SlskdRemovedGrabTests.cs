@@ -322,29 +322,33 @@ public class SlskdRemovedGrabTests
     }
 
     [Fact]
-    public void a_folder_is_held_by_one_grab_until_its_claim_is_released()
+    public void a_folder_is_held_by_one_grab_through_any_client_until_its_claim_is_released()
     {
         SlskdDestinationClaims claims = new();
+        string downloads = Path.Combine(Path.GetTempPath(), "downloads");
+        string folder = Path.Combine(downloads, "Artist - Album");
 
-        IDisposable? first = claims.TryHold(1, "Artist - Album");
+        IDisposable? first = claims.TryHold(folder);
         Assert.NotNull(first);
-        Assert.Null(claims.TryHold(1, "Artist - Album"));
-        Assert.NotNull(claims.TryHold(1, "Artist - Other Album"));
-        Assert.NotNull(claims.TryHold(2, "Artist - Album"));
+        Assert.Null(claims.TryHold(folder));
+        Assert.Null(claims.TryHold(folder + Path.DirectorySeparatorChar));
+        Assert.NotNull(claims.TryHold(Path.Combine(downloads, "Artist - Other Album")));
+        Assert.NotNull(claims.TryHold(Path.Combine(Path.GetTempPath(), "other downloads", "Artist - Album")));
 
         first.Dispose();
-        Assert.NotNull(claims.TryHold(1, "Artist - Album"));
+        Assert.NotNull(claims.TryHold(folder));
     }
 
-    // Held names compare as the folder check does: accent forms are one name on macOS, case on Windows.
+    // Held folders compare as the folder check does: accent forms are one name on macOS, case on Windows.
     [Fact]
     public void a_name_the_filesystem_treats_as_the_held_folder_is_held_too()
     {
         SlskdDestinationClaims claims = new();
-        Assert.NotNull(claims.TryHold(1, "Café - Album"));
+        string downloads = Path.Combine(Path.GetTempPath(), "downloads");
+        Assert.NotNull(claims.TryHold(Path.Combine(downloads, "Caf\u00e9 - Album")));
 
-        Assert.Equal(OperatingSystem.IsMacOS(), claims.TryHold(1, "Café - Album") == null);
-        Assert.Equal(OperatingSystem.IsWindows(), claims.TryHold(1, "café - album") == null);
+        Assert.Equal(OperatingSystem.IsMacOS(), claims.TryHold(Path.Combine(downloads, "Cafe\u0301 - Album")) == null);
+        Assert.Equal(OperatingSystem.IsWindows(), claims.TryHold(Path.Combine(downloads, "caf\u00e9 - album")) == null);
     }
 }
 
@@ -417,6 +421,28 @@ public sealed class SlskdLeftoverFolderTests : IDisposable
         Assert.True(File.Exists(Path.Combine(aside!, "01.flac")));
         Assert.EndsWith(" (leftover 20261028-070944)", aside);
         Assert.InRange(System.Text.Encoding.UTF8.GetByteCount(Path.GetFileName(aside)!), 250, 255);
+    }
+
+    private static SlskdDownloadItem InFolder(string subdirectory) =>
+        new(new ReleaseInfo { Source = "[]", Title = subdirectory }) { DerivedSubdirectory = subdirectory };
+
+    // Two clients can sit behind one slskd: each one's grabs in the folder count, and a client with none still counts.
+    [Fact]
+    public void every_client_whose_root_holds_the_folder_is_listed_with_its_grabs_inside_it()
+    {
+        string folder = Path.Combine(_root, "Artist - Album");
+        SlskdDownloadItem queued = InFolder("Artist - Album"), disc = InFolder(Path.Combine("Artist - Album", "CD1"));
+        SlskdDownloadItem sibling = InFolder("Artist - Other Album"), elsewhere = InFolder("Artist - Album");
+
+        List<(int DefinitionId, List<SlskdDownloadItem> Owners)> clients = SlskdLeftoverFolder.ClientsHolding(folder, [
+            (1, new OsPath(_root), [sibling]),
+            (2, new OsPath(_root), [queued, disc]),
+            (3, new OsPath(Path.Combine(_root, "other")), [elsewhere]),
+            (4, new OsPath(string.Empty), [])]);
+
+        Assert.Equal([1, 2], clients.Select(c => c.DefinitionId));
+        Assert.Empty(clients[0].Owners);
+        Assert.Equal([queued, disc], clients[1].Owners);
     }
 
     [Fact]

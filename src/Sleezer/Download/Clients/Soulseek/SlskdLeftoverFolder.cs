@@ -1,5 +1,7 @@
 using System.Text;
 using NzbDrone.Common.Disk;
+using NzbDrone.Common.Extensions;
+using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek.Models;
 
 namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
 
@@ -9,8 +11,8 @@ public static class SlskdLeftoverFolder
     // ext4, XFS and APFS cap a name at 255 bytes.
     private const int MaxNameBytes = 255;
 
-    /// <summary>Compares folder names as <see cref="Contains"/> does.</summary>
-    public static IEqualityComparer<string> NameComparer { get; } = new FolderNameComparer();
+    /// <summary>Compares folders as <see cref="Contains"/> matches one exactly.</summary>
+    public static IEqualityComparer<string> FolderComparer { get; } = new PathComparer();
 
     /// <summary>Whether <paramref name="path"/> is <paramref name="folder"/> or inside it (a disc folder), as the filesystem compares names.</summary>
     public static bool Contains(string folder, string path)
@@ -20,6 +22,14 @@ public static class SlskdLeftoverFolder
         StringComparison comparison = DiskProviderBase.PathStringComparison;
         return string.Equals(candidate, key, comparison) || candidate.StartsWith(key + Path.DirectorySeparatorChar, comparison);
     }
+
+    /// <summary>Each client whose download root holds <paramref name="folder"/>, with its grabs inside it; one slskd can sit behind several clients.</summary>
+    public static List<(int DefinitionId, List<SlskdDownloadItem> Owners)> ClientsHolding(
+        string folder,
+        IEnumerable<(int DefinitionId, OsPath Root, IEnumerable<SlskdDownloadItem> Items)> clients) =>
+        [.. clients
+            .Where(c => c.Root.FullPath.IsPathValid(PathValidationType.CurrentOs) && Contains(c.Root.FullPath, folder))
+            .Select(c => (c.DefinitionId, c.Items.Where(i => Contains(folder, i.GetFullFolderPath(c.Root).FullPath)).ToList()))];
 
     /// <summary>Renames a non-empty folder aside; returns where it went, or null when there was nothing to move.</summary>
     public static string? MoveAside(IDiskProvider disk, string folder, DateTime utcNow)
@@ -49,11 +59,11 @@ public static class SlskdLeftoverFolder
     // macOS treats composed and decomposed accents as one name; Linux and Windows keep them as two folders.
     private static string Key(string path) => OperatingSystem.IsMacOS() ? path.Normalize(NormalizationForm.FormC) : path;
 
-    private sealed class FolderNameComparer : IEqualityComparer<string>
+    private sealed class PathComparer : IEqualityComparer<string>
     {
         public bool Equals(string? x, string? y) =>
-            x == null || y == null ? x == y : string.Equals(Key(x), Key(y), DiskProviderBase.PathStringComparison);
+            x == null || y == null ? x == y : string.Equals(Key(FullPath(x)), Key(FullPath(y)), DiskProviderBase.PathStringComparison);
 
-        public int GetHashCode(string name) => Key(name).GetHashCode(DiskProviderBase.PathStringComparison);
+        public int GetHashCode(string path) => Key(FullPath(path)).GetHashCode(DiskProviderBase.PathStringComparison);
     }
 }
