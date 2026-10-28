@@ -321,6 +321,49 @@ public class SlskdRemovedGrabTests
         Assert.True(new SlskdRemovedGrab(null, DateTime.UtcNow).Settled);
     }
 
+    private static SlskdDownloadItem Polled(params SlskdDownloadFile[] transfers)
+    {
+        SlskdDownloadItem item = Grab();
+        item.SlskdDownloadDirectory = new SlskdDownloadDirectory(@"@@peer\Artist\Album", transfers.Length, [.. transfers]);
+        return item;
+    }
+
+    // slskd marks every finished state Completed; "Requested" isn't in the parsed set and still runs.
+    [Theory]
+    [InlineData("Requested", true)]
+    [InlineData("Queued, Remotely", true)]
+    [InlineData("InProgress", true)]
+    [InlineData("Completed, Succeeded", false)]
+    [InlineData("Completed, Errored", false)]
+    public void a_grab_runs_while_a_transfer_of_its_own_is_unfinished(string state, bool running)
+    {
+        Assert.Equal(running, Polled(Transfer("t", state, "grab-batch")).HasLiveTransfers());
+    }
+
+    [Fact]
+    public void another_grab_s_running_transfer_in_the_same_peer_folder_is_not_its_own()
+    {
+        SlskdDownloadFile other = Transfer("other", "InProgress", "other-batch") with { Filename = @"@@peer\Artist\Album\02.flac" };
+
+        Assert.False(Polled(Transfer("t", "Completed, Succeeded", "grab-batch"), other).HasLiveTransfers());
+    }
+
+    // Lidarr's history decides unless the grab still downloads; an attempt the new grab replaces holds only while it downloads.
+    [Fact]
+    public void the_folder_is_held_by_a_grab_lidarr_still_has_or_one_still_downloading()
+    {
+        SlskdDownloadItem finished = Polled(Transfer("a", "Completed, Succeeded", "grab-batch"));
+        SlskdDownloadItem queued = Polled(Transfer("b", "Completed, Succeeded", "grab-batch"));
+        SlskdDownloadItem downloading = Polled(Transfer("c", "InProgress", "grab-batch"));
+        HashSet<SlskdDownloadItem> doneInLidarr = [finished, downloading];
+
+        Assert.Null(SlskdLeftoverFolder.Holder([finished], [], doneInLidarr.Contains));
+        Assert.Same(queued, SlskdLeftoverFolder.Holder([finished, queued], [], doneInLidarr.Contains));
+        Assert.Same(downloading, SlskdLeftoverFolder.Holder([finished, downloading], [], doneInLidarr.Contains));
+        Assert.Null(SlskdLeftoverFolder.Holder([queued], [queued], doneInLidarr.Contains));
+        Assert.Same(downloading, SlskdLeftoverFolder.Holder([downloading], [downloading], doneInLidarr.Contains));
+    }
+
     [Fact]
     public void a_folder_is_held_by_one_grab_through_any_client_until_its_claim_is_released()
     {

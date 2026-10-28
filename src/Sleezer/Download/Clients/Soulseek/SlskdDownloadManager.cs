@@ -128,7 +128,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         {
             _logger.Debug("Release {Id} has terminal download history; tracking this attempt as {RetryId}", item.ID, retryId);
             item.ID = retryId;
-            supersededAttempts = EvictSupersededAttempts(definitionId, item);
+            supersededAttempts = SupersededAttempts(definitionId, item);
         }
 
         _logger.Trace("Download initiated: {Title} | Files: {FileCount}", remoteAlbum.Release.Title, item.FileData.Count);
@@ -143,7 +143,8 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             // generic name ("_Unknown Album") collide and interleave sources.
             // Multi-disc additionally lands pre-merged, skipping the local move.
             string? destination = item.PreferredDestinationFolderName();
-            using IDisposable? claim = ClaimDestinationFolder(settings, remoteAlbum.Release, destination);
+            using IDisposable? claim = ClaimDestinationFolder(settings, remoteAlbum.Release, destination, supersededAttempts);
+            EvictSupersededAttempts(definitionId, item.ID, supersededAttempts);
 
             SlskdEnqueueResult result = await _apiClient.EnqueueDownloadAsync(settings, username, files, externalId: item.ID, destination: destination);
 
@@ -186,21 +187,20 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }
     }
 
-    // A stale attempt's per-directory hash matches first and would starve this retry. Its files go only after a successful enqueue.
-    private List<SlskdDownloadItem> EvictSupersededAttempts(int definitionId, SlskdDownloadItem retry)
+    private List<SlskdDownloadItem> SupersededAttempts(int definitionId, SlskdDownloadItem retry)
     {
         string? probeFile = retry.FileData.FirstOrDefault(f => !string.IsNullOrEmpty(f.Filename))?.Filename;
-        if (probeFile == null)
-            return [];
+        return probeFile == null ? [] : [.. GetItemsForDef(definitionId).Where(i => i.ID != retry.ID && i.OwnsFile(probeFile))];
+    }
 
-        List<SlskdDownloadItem> superseded = [.. GetItemsForDef(definitionId).Where(i => i.ID != retry.ID && i.OwnsFile(probeFile))];
+    // A stale attempt's per-directory hash matches first and would starve this retry. Its files go only after a successful enqueue.
+    private void EvictSupersededAttempts(int definitionId, string retryId, List<SlskdDownloadItem> superseded)
+    {
         foreach (SlskdDownloadItem stale in superseded)
         {
-            _logger.Debug("Evicting stale tracked attempt {StaleId} superseded by {RetryId}", stale.ID, retry.ID);
+            _logger.Debug("Evicting stale tracked attempt {StaleId} superseded by {RetryId}", stale.ID, retryId);
             RemoveItemFromDict(definitionId, stale.ID);
         }
-
-        return superseded;
     }
 
     // Runs only after a successful enqueue. A superseded attempt and this retry can share a folder, so the retry's basenames are kept.
@@ -1892,7 +1892,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     }
 
     // Held until AddItem tracks the grab, or a concurrent grab into the same folder would pass the check too.
-    private IDisposable? ClaimDestinationFolder(SlskdProviderSettings settings, ReleaseInfo release, string destination)
+    private IDisposable? ClaimDestinationFolder(SlskdProviderSettings settings, ReleaseInfo release, string destination, List<SlskdDownloadItem> superseded)
     {
         string? folder = LocalDestinationFolder(settings, destination);
         if (folder == null)
@@ -1902,7 +1902,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             ?? throw new DownloadClientRejectedReleaseException(release, $"Another grab into '{folder}' is being sent to slskd; {release.Title} was not grabbed so their files don't mix");
         try
         {
-            CheckDestinationFolder(release, folder);
+            CheckDestinationFolder(release, folder, superseded);
             return claim;
         }
         catch
@@ -1928,7 +1928,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     }
 
     // The grab's folder must hold only its own files: a queued grab's folder refuses it, an earlier attempt's files move aside.
-    private void CheckDestinationFolder(ReleaseInfo release, string folder)
+    private void CheckDestinationFolder(ReleaseInfo release, string folder, List<SlskdDownloadItem> superseded)
     {
         List<(int DefinitionId, List<SlskdDownloadItem> Owners)> clients;
         try
@@ -1945,10 +1945,11 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         if (clients.Any(c => _lastTransferPollTimes.GetValueOrDefault(c.DefinitionId) == default))
             throw new DownloadClientUnavailableException("slskd's transfers have not been loaded since Lidarr started; the grab is retried on a later pass");
 
-        // A finished grab (imported, failed or ignored) is done with its folder; any other would mix its files with this one's.
-        SlskdDownloadItem? queued = clients.SelectMany(c => c.Owners).FirstOrDefault(i => !SlskdDownloadItem.IsTerminalDownloadEvent(_downloadHistoryService.GetLatestDownloadHistoryItem(i.ID)?.EventType));
-        if (queued != null)
-            throw new DownloadClientRejectedReleaseException(release, $"'{folder}' is in use by {queued.ReleaseInfo.Title}, still in the queue; {release.Title} was not grabbed so their files don't mix");
+        // Lidarr is finished with an imported, failed or ignored grab; any other, or one still downloading, would mix its files with this one's.
+        SlskdDownloadItem? holder = SlskdLeftoverFolder.Holder(clients.SelectMany(c => c.Owners), superseded,
+            i => SlskdDownloadItem.IsTerminalDownloadEvent(_downloadHistoryService.GetLatestDownloadHistoryItem(i.ID)?.EventType));
+        if (holder != null)
+            throw new DownloadClientRejectedReleaseException(release, $"'{folder}' is in use by {holder.ReleaseInfo.Title}, still queued or downloading; {release.Title} was not grabbed so their files don't mix");
 
         // Sharing the folder is what this prevents, so a folder that can't be moved fails the grab.
         string? aside;

@@ -31,6 +31,10 @@ public static class SlskdLeftoverFolder
             .Where(c => c.Root.FullPath.IsPathValid(PathValidationType.CurrentOs) && Contains(c.Root.FullPath, folder))
             .Select(c => (c.DefinitionId, c.Items.Where(i => Contains(folder, i.GetFullFolderPath(c.Root).FullPath)).ToList()))];
 
+    /// <summary>The grab still using the folder: its transfers run, or Lidarr isn't finished with it and the new grab doesn't replace it.</summary>
+    public static SlskdDownloadItem? Holder(IEnumerable<SlskdDownloadItem> owners, IReadOnlyCollection<SlskdDownloadItem> replaced, Func<SlskdDownloadItem, bool> finishedInLidarr) =>
+        owners.FirstOrDefault(i => i.HasLiveTransfers() || (!replaced.Contains(i) && !finishedInLidarr(i)));
+
     /// <summary>Renames a non-empty folder aside; returns where it went, or null when there was nothing to move.</summary>
     public static string? MoveAside(IDiskProvider disk, string folder, DateTime utcNow)
     {

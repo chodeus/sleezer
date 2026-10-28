@@ -265,6 +265,11 @@ public class SlskdDownloadItem
         state.GetStatus() == DownloadItemStatus.Failed &&
         !AudioFormatHelper.IsAudioFilename(state.File.Filename);
 
+    /// <summary>A transfer of its own, as last polled, has yet to finish; a state slskd names that isn't parsed counts as running.</summary>
+    public bool HasLiveTransfers() =>
+        (SlskdDownloadDirectory?.Files ?? []).Any(f => OwnsAcceptedFile(f.Filename) &&
+            !(Enum.TryParse(f.State, ignoreCase: true, out TransferStates state) && state.HasFlag(TransferStates.Completed)));
+
     /// <summary>Every accepted file completed; abandoned extras don't block completion.</summary>
     public bool AllAcceptedFilesCompleted()
     {
