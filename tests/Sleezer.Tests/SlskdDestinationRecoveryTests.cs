@@ -123,6 +123,8 @@ public class SlskdDestinationRecoveryTests
 
         item.SlskdDownloadDirectory = new SlskdDownloadDirectory(@"@@x\media\Moonward\2016 - Glass Harbour [FLAC]", 1, [CompletedFile(PeerTrack, "batch-id")]);
         Assert.Null(item.BatchId);
+        // Not taken until recovery names the folder: a finished grab's folder check waits for it.
+        Assert.Null(item.SlskdDownloadDirectory);
 
         item.SlskdDownloadDirectory = new SlskdDownloadDirectory(@"@@x\media\Moonward\2016 - Glass Harbour [FLAC]", 1, [CompletedFile(PeerTrack, "batch-id")]);
 

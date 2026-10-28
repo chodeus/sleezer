@@ -2047,12 +2047,30 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     private bool? FinishedGrabFolderInUse(SlskdProviderSettings settings, SlskdDownloadItem placed, out IDisposable? hold)
     {
         hold = null;
+        // Batch recovery couldn't name the folder yet (a failed read); the next poll retries it.
+        if (placed.SlskdDownloadDirectory == null)
+            return null;
+
+        List<(int DefinitionId, OsPath Root, IEnumerable<SlskdDownloadItem> Items)> clients;
+        OsPath root;
         try
         {
-            if (SlskdLeftoverFolder.KnownFolder(placed, GetRemoteDownloadPath(settings)) is not { } folder || (hold = _destinationClaims.TryHold(folder)) == null)
+            // Each client's tracked grabs stay a live view, read after the claim below.
+            clients = [.. ClientFolders()];
+            root = GetRemoteDownloadPath(settings);
+        }
+        catch (Exception ex)
+        {
+            _logger.Debug(ex, "Could not list the download clients to check finished grab {DownloadId}; the next poll retries", placed.ID);
+            return null;
+        }
+
+        try
+        {
+            if (SlskdLeftoverFolder.KnownFolder(placed, root) is not { } folder || (hold = _destinationClaims.TryHold(folder)) == null)
                 return true;
 
-            return SlskdLeftoverFolder.InUse(folder, ClientFolders(), TransfersLoaded);
+            return SlskdLeftoverFolder.InUse(folder, clients, TransfersLoaded);
         }
         catch (Exception ex)
         {
