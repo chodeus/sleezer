@@ -147,7 +147,7 @@ public class SlskdRemovedGrabTests
         api.Transfers.Add(Transfer("other-grab-transfer", "Queued, Remotely", "other-batch"));
 
         Reject(new SlskdRetryHandler(api, LogManager.CreateNullLogger()), item);
-        await api.RemovedOne.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await api.RemovedOne.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
 
         Assert.Equal([("retry-transfer", false), ("retry-transfer", true)], api.Deletes);
     }
@@ -250,17 +250,57 @@ public class SlskdRemovedGrabTests
     {
         SlskdRemovedGrab removed = Removed(Grab());
 
-        removed.SettleUnlessListed([Transfer("grab", "Queued, Remotely", "grab-batch")]);
+        removed.SettleUnlessListed([Transfer("grab", "Queued, Remotely", "grab-batch")], removed.BatchCount);
         Assert.False(removed.Settled);
 
-        removed.SettleUnlessListed([Transfer("another-grab", "Queued, Remotely", "other-batch")]);
+        removed.SettleUnlessListed([Transfer("another-grab", "Queued, Remotely", "other-batch")], removed.BatchCount);
         Assert.True(removed.Settled);
+    }
+
+    [Fact]
+    public void a_retry_batch_recorded_while_its_peer_was_listed_keeps_it_unsettled()
+    {
+        SlskdDownloadItem item = Grab();
+        SlskdRemovedGrab removed = Removed(item);
+        int beforeListing = removed.BatchCount;
+
+        item.TryRecordRetryBatch("retry-batch");
+        removed.SettleUnlessListed([], beforeListing);
+
+        Assert.False(removed.Settled);
+    }
+
+    [Fact]
+    public void a_retry_batch_recorded_after_it_settled_reopens_it()
+    {
+        SlskdDownloadItem item = Grab();
+        SlskdRemovedGrab removed = Removed(item);
+        removed.SettleUnlessListed([], removed.BatchCount);
+
+        item.TryRecordRetryBatch("retry-batch");
+
+        Assert.False(removed.Settled);
     }
 
     [Fact]
     public void a_removed_grab_with_no_peer_has_nothing_to_poll_for()
     {
         Assert.True(new SlskdRemovedGrab(null, DateTime.UtcNow).Settled);
+    }
+
+    [Fact]
+    public void a_folder_is_held_by_one_grab_until_its_claim_is_released()
+    {
+        SlskdDestinationClaims claims = new();
+
+        IDisposable? first = claims.TryHold(1, "Artist - Album");
+        Assert.NotNull(first);
+        Assert.Null(claims.TryHold(1, "Artist - Album"));
+        Assert.NotNull(claims.TryHold(1, "Artist - Other Album"));
+        Assert.NotNull(claims.TryHold(2, "Artist - Album"));
+
+        first.Dispose();
+        Assert.NotNull(claims.TryHold(1, "Artist - Album"));
     }
 }
 
@@ -316,6 +356,23 @@ public sealed class SlskdLeftoverFolderTests : IDisposable
         string empty = Folder();
         Assert.Null(SlskdLeftoverFolder.MoveAside(_disk, empty, Now));
         Assert.True(Directory.Exists(empty));
+    }
+
+    // The renamed folder's name must fit in 255 bytes; the accented name only fits when the cut counts bytes, not characters.
+    [Theory]
+    [InlineData('a', 235)]
+    [InlineData('\u00e9', 115)]
+    public void a_long_folder_name_is_cut_short_so_the_rename_fits(char letter, int count)
+    {
+        string folder = Path.Combine(_root, "Artist - " + new string(letter, count));
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, "01.flac"), "audio");
+
+        string? aside = SlskdLeftoverFolder.MoveAside(_disk, folder, Now);
+
+        Assert.True(File.Exists(Path.Combine(aside!, "01.flac")));
+        Assert.EndsWith(" (leftover 20261028-070944)", aside);
+        Assert.InRange(System.Text.Encoding.UTF8.GetByteCount(Path.GetFileName(aside)!), 250, 255);
     }
 
     [Fact]

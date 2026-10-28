@@ -52,6 +52,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     // Grabs removed this session: AdoptUnknownDirectory cancels their leftover transfers rather than rebuilding them.
     private readonly ConcurrentDictionary<DownloadKey<int, string>, SlskdRemovedGrab> _removedGrabs = new();
     private static readonly TimeSpan RemovedGrabMemory = TimeSpan.FromDays(1);
+    private readonly SlskdDestinationClaims _destinationClaims = new();
 
     private readonly ISlskdApiClient _apiClient;
     private readonly IDownloadHistoryService _downloadHistoryService;
@@ -155,7 +156,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             // generic name ("_Unknown Album") collide and interleave sources.
             // Multi-disc additionally lands pre-merged, skipping the local move.
             string? destination = item.PreferredDestinationFolderName();
-            ClaimDestinationFolder(definitionId, settings, remoteAlbum.Release, destination);
+            using IDisposable claim = ClaimDestinationFolder(definitionId, settings, remoteAlbum.Release, destination);
 
             SlskdEnqueueResult result = await _apiClient.EnqueueDownloadAsync(settings, username, files, externalId: item.ID, destination: destination);
 
@@ -752,12 +753,13 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     private async Task PollTransfersAsync(int definitionId, SlskdProviderSettings settings, HashSet<string> activeUsernames)
     {
         ConcurrentDictionary<string, bool> currentIdSet = new();
-        List<SlskdRemovedGrab> unsettled = [.. RemovedGrabsOf(definitionId).Where(r => !r.Settled)];
+        // Counted before the listings: a retry batch recorded while they run must not be settled by them.
+        List<(SlskdRemovedGrab Grab, int Batches)> unsettled = [.. RemovedGrabsOf(definitionId).Where(r => !r.Settled).Select(r => (r, r.BatchCount))];
 
         if (!settings.Inclusive && activeUsernames.Count > 0)
         {
             // A removed grab's peer may have nothing tracked left to poll it for; it is polled until its leftovers are gone.
-            await Task.WhenAll(activeUsernames.Union(unsettled.Select(r => r.Username).OfType<string>()).Select(async username =>
+            await Task.WhenAll(activeUsernames.Union(unsettled.Select(u => u.Grab.Username).OfType<string>()).Select(async username =>
             {
                 SlskdUserTransfers? userTransfers;
                 try
@@ -780,7 +782,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             List<SlskdUserTransfers> all = await _apiClient.GetAllTransfersAsync(settings);
             foreach (SlskdUserTransfers user in all)
                 ProcessUserTransfers(definitionId, settings, user, currentIdSet);
-            foreach (string username in unsettled.Select(r => r.Username).OfType<string>().Distinct())
+            foreach (string username in unsettled.Select(u => u.Grab.Username).OfType<string>().Distinct())
                 SettleRemovedGrabs(unsettled, username, all.FirstOrDefault(u => u.Username == username));
         }
 
@@ -1842,11 +1844,11 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     private IEnumerable<SlskdRemovedGrab> RemovedGrabsOf(int definitionId) =>
         _removedGrabs.Where(kvp => kvp.Key.OuterKey == definitionId).Select(kvp => kvp.Value);
 
-    private static void SettleRemovedGrabs(List<SlskdRemovedGrab> unsettled, string username, SlskdUserTransfers? transfers)
+    private static void SettleRemovedGrabs(List<(SlskdRemovedGrab Grab, int Batches)> unsettled, string username, SlskdUserTransfers? transfers)
     {
         List<SlskdDownloadFile> files = [.. (transfers?.Directories ?? []).SelectMany(d => d.Files ?? [])];
-        foreach (SlskdRemovedGrab removed in unsettled.Where(r => r.Username == username))
-            removed.SettleUnlessListed(files);
+        foreach ((SlskdRemovedGrab grab, int batches) in unsettled.Where(u => u.Grab.Username == username))
+            grab.SettleUnlessListed(files, batches);
     }
 
     // Retries a cancel that failed at removal, or reaches a transfer the removal's listing missed.
@@ -1870,8 +1872,25 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         });
     }
 
+    // Held until AddItem tracks the grab, or a concurrent grab of the same album would pass the folder check too.
+    private IDisposable ClaimDestinationFolder(int definitionId, SlskdProviderSettings settings, ReleaseInfo release, string destination)
+    {
+        IDisposable claim = _destinationClaims.TryHold(definitionId, destination)
+            ?? throw new DownloadClientRejectedReleaseException(release, $"Another grab into '{destination}' is being sent to slskd; {release.Title} was not grabbed so their files don't mix");
+        try
+        {
+            CheckDestinationFolder(definitionId, settings, release, destination);
+            return claim;
+        }
+        catch
+        {
+            claim.Dispose();
+            throw;
+        }
+    }
+
     // The grab's folder must hold only its own files: a queued grab's folder refuses it, an earlier attempt's files move aside.
-    private void ClaimDestinationFolder(int definitionId, SlskdProviderSettings settings, ReleaseInfo release, string destination)
+    private void CheckDestinationFolder(int definitionId, SlskdProviderSettings settings, ReleaseInfo release, string destination)
     {
         string folder;
         List<SlskdDownloadItem> owners;

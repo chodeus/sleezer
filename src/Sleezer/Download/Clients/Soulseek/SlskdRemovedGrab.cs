@@ -12,7 +12,7 @@ public sealed class SlskdRemovedGrab
     // Its last poll's transfers: an inclusive item has no batch to find them by.
     private readonly HashSet<string> _transferIds;
     private readonly ConcurrentDictionary<string, DateTime> _nextCancel = new();
-    private volatile bool _settled;
+    private int _settledBatches = -1;
 
     public SlskdRemovedGrab(SlskdDownloadItem? item, DateTime at)
     {
@@ -20,14 +20,16 @@ public sealed class SlskdRemovedGrab
         _transferIds = [.. (item?.SlskdDownloadDirectory?.Files ?? []).Where(f => item!.OwnsAcceptedFile(f.Filename)).Select(f => f.Id)];
         At = at;
         Username = item?.Username;
-        _settled = Username == null;
     }
 
     public DateTime At { get; }
 
     public string? Username { get; }
 
-    public bool Settled => _settled;
+    public bool Settled => Username == null || Volatile.Read(ref _settledBatches) == BatchCount;
+
+    /// <summary>How many batches it has enqueued; read before listing its peer, for <see cref="SettleUnlessListed"/>.</summary>
+    public int BatchCount => _item?.EnqueuedBatches().Count ?? 0;
 
     /// <summary>The files enqueued in one of its batches, or seen by its last poll.</summary>
     public List<SlskdDownloadFile> Leftovers(IEnumerable<SlskdDownloadFile> files)
@@ -36,11 +38,11 @@ public sealed class SlskdRemovedGrab
         return [.. files.Where(f => (f.BatchId != null && batches.Contains(f.BatchId)) || _transferIds.Contains(f.Id))];
     }
 
-    /// <summary>Settles once its peer's listing holds none of its transfers; until then that peer is polled for them.</summary>
-    public void SettleUnlessListed(List<SlskdDownloadFile> peerFiles)
+    /// <summary>Settles once its peer's listing holds none of its transfers; a retry batch recorded since the count reopens it.</summary>
+    public void SettleUnlessListed(List<SlskdDownloadFile> peerFiles, int batchesBeforeListing)
     {
         if (Leftovers(peerFiles).Count == 0)
-            _settled = true;
+            Volatile.Write(ref _settledBatches, batchesBeforeListing);
     }
 
     // Polls run every few seconds; a cancel that keeps failing must not be re-sent on each, nor hold up its other directories.

@@ -6,6 +6,9 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
 /// <summary>Every attempt at an album shares its folder; an earlier attempt's files there would sit beside the new grab's.</summary>
 public static class SlskdLeftoverFolder
 {
+    // ext4, XFS and APFS cap a name at 255 bytes.
+    private const int MaxNameBytes = 255;
+
     /// <summary>Whether <paramref name="path"/> is <paramref name="folder"/> or inside it (a disc folder), as the filesystem compares names.</summary>
     public static bool Contains(string folder, string path)
     {
@@ -23,9 +26,18 @@ public static class SlskdLeftoverFolder
 
         // Renamed, not deleted: it stays until slskd's file retention, if configured, or a manual cleanup clears it.
         string target = FullPath(folder);
-        string aside = $"{target} (leftover {utcNow:yyyyMMdd-HHmmss})";
+        string suffix = $" (leftover {utcNow:yyyyMMdd-HHmmss})";
+        string aside = Path.Combine(Path.GetDirectoryName(target) ?? string.Empty, Shorten(Path.GetFileName(target), MaxNameBytes - Encoding.UTF8.GetByteCount(suffix)) + suffix);
         disk.MoveFolder(target, aside);
         return aside;
+    }
+
+    // A long album name gives up room for the suffix.
+    private static string Shorten(string name, int maxBytes)
+    {
+        while (Encoding.UTF8.GetByteCount(name) > maxBytes)
+            name = name[..^(name.Length > 1 && char.IsLowSurrogate(name[^1]) ? 2 : 1)];
+        return name.TrimEnd();
     }
 
     private static string FullPath(string path) =>
