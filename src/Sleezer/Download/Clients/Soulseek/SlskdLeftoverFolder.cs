@@ -33,6 +33,10 @@ public static class SlskdLeftoverFolder
             .Where(c => c.Root.FullPath.IsPathValid(PathValidationType.CurrentOs) && (Contains(c.Root.FullPath, folder) || Contains(folder, c.Root.FullPath)))
             .Select(c => (c.DefinitionId, c.Items.Where(i => Contains(folder, i.GetFullFolderPath(c.Root).FullPath)).ToList()))];
 
+    /// <summary>Whether a tracked grab in any client resolves to the folder or inside it.</summary>
+    public static bool InUse(string folder, IEnumerable<(int DefinitionId, OsPath Root, IEnumerable<SlskdDownloadItem> Items)> clients) =>
+        ClientsHolding(folder, clients).Any(c => c.Owners.Count > 0);
+
     /// <summary>The grab still using the folder: its transfers run, or Lidarr isn't finished with it and the new grab doesn't replace it.</summary>
     public static SlskdDownloadItem? Holder(IEnumerable<SlskdDownloadItem> owners, IReadOnlyCollection<SlskdDownloadItem> replaced, Func<SlskdDownloadItem, bool> finishedInLidarr) =>
         owners.FirstOrDefault(i => i.HasLiveTransfers() || (!replaced.Contains(i) && !finishedInLidarr(i)));

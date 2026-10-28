@@ -57,6 +57,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     private readonly ISlskdApiClient _apiClient;
     private readonly IDownloadHistoryService _downloadHistoryService;
     private readonly IHistoryService _historyService;
+    private readonly IDownloadClientRepository _downloadClientRepository;
     private readonly ISlskdItemsParser _slskdItemsParser;
     private readonly IRemotePathMappingService _remotePathMappingService;
     private readonly IDiskProvider _diskProvider;
@@ -87,6 +88,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         ISlskdCorruptionHandler corruptionHandler,
         IMetadataFactory metadataFactory,
         ISlskdWatchdog watchdog,
+        IDownloadClientRepository downloadClientRepository,
         Logger logger)
     {
         _apiClient = apiClient;
@@ -101,6 +103,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         _corruptionHandler = corruptionHandler;
         _metadataFactory = metadataFactory;
         _watchdog = watchdog;
+        _downloadClientRepository = downloadClientRepository;
         _ffmpeg = new FFmpegPathResolver(logger);
         _retryHandler = new SlskdRetryHandler(apiClient, NzbDroneLogger.GetLogger(typeof(SlskdRetryHandler)));
     }
@@ -891,6 +894,10 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         _logger.Trace("[def={DefinitionId}] Unknown item {Hash}: checking history", definitionId, hash);
         DownloadHistory? history = FindGrabOwningDirectory(hash, dir);
 
+        // Two clients can poll one slskd: another client's grab is left to it, never re-attached or rebuilt as inclusive here.
+        if (history != null && !SlskdDownloadItem.IsGrabOf(history.DownloadClientId, definitionId, [.. _downloadClientRepository.All().Select(d => d.Id)]))
+            return null;
+
         // Rebuilding a removed grab restarts its retries. Only its own transfers are cancelled: a retry grab's transfers
         // can probe to the removed original before the retry is tracked. An inclusive item has no grab; its id is the hash.
         string removalId = history?.DownloadId ?? hash;
@@ -930,6 +937,14 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         // the transfer state it has accumulated.
         if (GetItem(definitionId, item.ID) != null)
             return null;
+
+        if (history != null && FinishedGrabInUsedFolder(settings, username, item, dir) is { } finished)
+        {
+            _logger.Debug("[def={DefinitionId}] Not re-attaching {DownloadId}, finished in Lidarr, into a folder a tracked grab uses", definitionId, finished.ID);
+            finished.MarkRemoved();
+            CancelLeftoverTransfers(settings, username, dir, RememberRemovedGrab(definitionId, finished.ID, finished), finished.ID);
+            return null;
+        }
 
         SubscribeStateChanges(item, definitionId);
         AddItem(definitionId, item);
@@ -1851,13 +1866,14 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         _postProcessed.TryRemove(id, out _);
     }
 
-    private void RememberRemovedGrab(int definitionId, string id, SlskdDownloadItem? item)
+    private SlskdRemovedGrab RememberRemovedGrab(int definitionId, string id, SlskdDownloadItem? item)
     {
         DateTime now = DateTime.UtcNow;
-        _removedGrabs.AddOrUpdate(new DownloadKey<int, string>(definitionId, id), _ => new SlskdRemovedGrab(item, now), (_, known) => known.RemovedAgain(item, now));
+        SlskdRemovedGrab record = _removedGrabs.AddOrUpdate(new DownloadKey<int, string>(definitionId, id), _ => new SlskdRemovedGrab(item, now), (_, known) => known.RemovedAgain(item, now));
 
         foreach (KeyValuePair<DownloadKey<int, string>, SlskdRemovedGrab> old in _removedGrabs.Where(kvp => now - kvp.Value.At > RemovedGrabMemory).ToList())
             _removedGrabs.TryRemove(old.Key, out _);
+        return record;
     }
 
     private IEnumerable<SlskdRemovedGrab> RemovedGrabsOf(int definitionId) =>
@@ -1933,7 +1949,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         List<(int DefinitionId, List<SlskdDownloadItem> Owners)> clients;
         try
         {
-            clients = SlskdLeftoverFolder.ClientsHolding(folder, _settingsCache.Select(kvp => (kvp.Key, GetRemoteDownloadPath(kvp.Value), GetItemsForDef(kvp.Key))));
+            clients = SlskdLeftoverFolder.ClientsHolding(folder, ClientFolders());
         }
         catch (Exception ex)
         {
@@ -1986,6 +2002,19 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             RememberRemovedGrab(definitionId, finished.ID, finished);
             RemoveItemFromDict(definitionId, finished.ID);
         }
+    }
+
+    private IEnumerable<(int DefinitionId, OsPath Root, IEnumerable<SlskdDownloadItem> Items)> ClientFolders() =>
+        _settingsCache.Select(kvp => (kvp.Key, GetRemoteDownloadPath(kvp.Value), GetItemsForDef(kvp.Key)));
+
+    // Lidarr removing a finished grab deletes its file names from its folder. Placed on a copy, so the adopted item's first poll still raises its file states.
+    private SlskdDownloadItem? FinishedGrabInUsedFolder(SlskdProviderSettings settings, string username, SlskdDownloadItem item, SlskdDownloadDirectory dir)
+    {
+        if (!SlskdDownloadItem.IsTerminalDownloadEvent(_downloadHistoryService.GetLatestDownloadHistoryItem(item.ID)?.EventType))
+            return null;
+
+        SlskdDownloadItem placed = new(item.ReleaseInfo) { ID = item.ID, ResolvedAlbum = item.ResolvedAlbum, Username = username, SlskdDownloadDirectory = dir };
+        return SlskdLeftoverFolder.InUse(placed.GetFullFolderPath(GetRemoteDownloadPath(settings)).FullPath, ClientFolders()) ? placed : null;
     }
 
     private HashSet<string> GetActiveUsernames(int definitionId) =>

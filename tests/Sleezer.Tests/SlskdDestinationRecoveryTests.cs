@@ -197,6 +197,25 @@ public class SlskdDestinationRecoveryTests
         Assert.False(legacy.FolderUnknown);
     }
 
+    // Two clients can poll one slskd: client 1 re-attaches its own grab, or one whose client is gone or unrecorded, never client 2's.
+    [Theory]
+    [InlineData(1, true)]
+    [InlineData(2, false)]
+    [InlineData(3, true)]
+    [InlineData(0, true)]
+    public void A_client_re_attaches_only_its_own_grab_or_one_whose_client_is_gone(int grabClientId, bool expected)
+    {
+        Assert.Equal(expected, SlskdDownloadItem.IsGrabOf(grabClientId, 1, [1, 2]));
+    }
+
+    [Fact]
+    public void A_client_list_missing_this_client_re_attaches_only_its_own_grabs()
+    {
+        Assert.True(SlskdDownloadItem.IsGrabOf(1, 1, [2]));
+        Assert.False(SlskdDownloadItem.IsGrabOf(3, 1, [2]));
+        Assert.False(SlskdDownloadItem.IsGrabOf(3, 1, []));
+    }
+
     [Fact]
     public void Without_a_batch_a_single_folder_item_resolves_to_the_peer_directory()
     {

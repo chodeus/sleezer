@@ -511,6 +511,20 @@ public sealed class SlskdLeftoverFolderTests : IDisposable
         Assert.Equal([nested], clients[2].Owners);
     }
 
+    // A finished grab re-attached into it would delete these grabs' file names when Lidarr removes it.
+    [Fact]
+    public void a_folder_is_in_use_while_a_tracked_grab_in_any_client_resolves_to_it_or_inside_it()
+    {
+        string folder = Path.Combine(_root, "Artist - Album");
+
+        Assert.True(SlskdLeftoverFolder.InUse(folder, [
+            (1, new OsPath(_root), [InFolder("Artist - Other Album")]),
+            (2, new OsPath(_root), [InFolder(Path.Combine("Artist - Album", "CD1"))])]));
+        Assert.False(SlskdLeftoverFolder.InUse(folder, [
+            (1, new OsPath(_root), [InFolder("Artist - Other Album")]),
+            (2, new OsPath(Path.Combine(_root, "other")), [InFolder("Artist - Album")])]));
+    }
+
     [Fact]
     public void a_folder_holds_itself_and_its_disc_subfolders()
     {
