@@ -1922,8 +1922,8 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }
         catch (Exception ex)
         {
-            _logger.Debug(ex, "Could not resolve '{Destination}' locally; not checking it for an earlier attempt's files", destination);
-            return null;
+            _logger.Warn(ex, "Could not resolve '{Destination}' locally to check it for an earlier attempt's files", destination);
+            throw new DownloadClientUnavailableException("The album folder could not be resolved to check it for an earlier attempt's files; the grab is retried on a later pass", ex);
         }
     }
 
@@ -1937,8 +1937,8 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }
         catch (Exception ex)
         {
-            _logger.Debug(ex, "Could not match '{Folder}' against the queue; not checking it for an earlier attempt's files", folder);
-            return;
+            _logger.Warn(ex, "Could not match '{Folder}' against the queue to check it for an earlier attempt's files", folder);
+            throw new DownloadClientUnavailableException("The album folder could not be matched against the queue to check it for an earlier attempt's files; the grab is retried on a later pass", ex);
         }
 
         // Until the first poll rebuilds the queue, a live download's folder looks like leftovers. Lidarr keeps the release pending.
