@@ -497,6 +497,11 @@ public class SlskdDownloadItem
         or DownloadHistoryEventType.DownloadIgnored
         or DownloadHistoryEventType.DownloadImported;
 
+    /// <summary>Whether a grab's client is this one, or is gone so this one takes it over.</summary>
+    public static bool IsGrabOf(int grabClientId, int definitionId, IReadOnlyCollection<int> clientIds) =>
+        // A client list without this client is a failed read, not every other client gone.
+        grabClientId == definitionId || (clientIds.Contains(definitionId) && !clientIds.Contains(grabClientId));
+
     /// <summary>
     /// How long a failed release sits out automatic searches. Escalates with
     /// the failure count so a transiently-busy source retries within the hour

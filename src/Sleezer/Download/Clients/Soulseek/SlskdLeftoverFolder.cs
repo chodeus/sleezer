@@ -25,13 +25,29 @@ public static class SlskdLeftoverFolder
         return string.Equals(candidate, key, NameComparison) || candidate.StartsWith(key + Path.DirectorySeparatorChar, NameComparison);
     }
 
+    /// <summary>Whether either folder is the other or inside it.</summary>
+    public static bool Overlaps(string a, string b) => Contains(a, b) || Contains(b, a);
+
     /// <summary>Each client whose download root holds <paramref name="folder"/> or lies inside it, with its grabs inside it; one slskd can sit behind several clients.</summary>
     public static List<(int DefinitionId, List<SlskdDownloadItem> Owners)> ClientsHolding(
         string folder,
         IEnumerable<(int DefinitionId, OsPath Root, IEnumerable<SlskdDownloadItem> Items)> clients) =>
         [.. clients
-            .Where(c => c.Root.FullPath.IsPathValid(PathValidationType.CurrentOs) && (Contains(c.Root.FullPath, folder) || Contains(folder, c.Root.FullPath)))
+            .Where(c => RootReaches(c.Root, folder))
             .Select(c => (c.DefinitionId, c.Items.Where(i => Contains(folder, i.GetFullFolderPath(c.Root).FullPath)).ToList()))];
+
+    /// <summary>The folder a grab resolves to; null while it is a guess.</summary>
+    public static string? KnownFolder(SlskdDownloadItem grab, OsPath root) => grab.FolderUnknown ? null : grab.GetFullFolderPath(root).FullPath;
+
+    /// <summary>Whether a tracked grab may use the folder: one resolves to it, inside it or above it, or its folder is a guess. Null while a client reaching it hasn't loaded slskd's transfers.</summary>
+    public static bool? InUse(string folder, IEnumerable<(int DefinitionId, OsPath Root, IEnumerable<SlskdDownloadItem> Items)> clients, Func<int, bool> loaded)
+    {
+        List<(int DefinitionId, OsPath Root, IEnumerable<SlskdDownloadItem> Items)> reaching = [.. clients.Where(c => RootReaches(c.Root, folder))];
+        if (reaching.Any(c => c.Items.Any(i => i.FolderUnknown || Overlaps(folder, i.GetFullFolderPath(c.Root).FullPath))))
+            return true;
+
+        return reaching.All(c => loaded(c.DefinitionId)) ? false : null;
+    }
 
     /// <summary>The grab still using the folder: its transfers run, or Lidarr isn't finished with it and the new grab doesn't replace it.</summary>
     public static SlskdDownloadItem? Holder(IEnumerable<SlskdDownloadItem> owners, IReadOnlyCollection<SlskdDownloadItem> replaced, Func<SlskdDownloadItem, bool> finishedInLidarr) =>
@@ -61,6 +77,9 @@ public static class SlskdLeftoverFolder
             name = name[..^(name.Length > 1 && char.IsLowSurrogate(name[^1]) ? 2 : 1)];
         return name.TrimEnd();
     }
+
+    private static bool RootReaches(OsPath root, string folder) =>
+        root.FullPath.IsPathValid(PathValidationType.CurrentOs) && Overlaps(root.FullPath, folder);
 
     private static string FullPath(string path) =>
         Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);

@@ -57,6 +57,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     private readonly ISlskdApiClient _apiClient;
     private readonly IDownloadHistoryService _downloadHistoryService;
     private readonly IHistoryService _historyService;
+    private readonly IDownloadClientRepository _downloadClientRepository;
     private readonly ISlskdItemsParser _slskdItemsParser;
     private readonly IRemotePathMappingService _remotePathMappingService;
     private readonly IDiskProvider _diskProvider;
@@ -87,6 +88,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         ISlskdCorruptionHandler corruptionHandler,
         IMetadataFactory metadataFactory,
         ISlskdWatchdog watchdog,
+        IDownloadClientRepository downloadClientRepository,
         Logger logger)
     {
         _apiClient = apiClient;
@@ -101,6 +103,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         _corruptionHandler = corruptionHandler;
         _metadataFactory = metadataFactory;
         _watchdog = watchdog;
+        _downloadClientRepository = downloadClientRepository;
         _ffmpeg = new FFmpegPathResolver(logger);
         _retryHandler = new SlskdRetryHandler(apiClient, NzbDroneLogger.GetLogger(typeof(SlskdRetryHandler)));
     }
@@ -143,7 +146,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             // generic name ("_Unknown Album") collide and interleave sources.
             // Multi-disc additionally lands pre-merged, skipping the local move.
             string? destination = item.PreferredDestinationFolderName();
-            using IDisposable? claim = ClaimDestinationFolder(settings, remoteAlbum.Release, destination, supersededAttempts);
+            using IDisposable? claim = ClaimDestinationFolder(definitionId, settings, remoteAlbum.Release, destination, supersededAttempts);
             EvictSupersededAttempts(definitionId, item.ID, supersededAttempts);
 
             SlskdEnqueueResult result = await _apiClient.EnqueueDownloadAsync(settings, username, files, externalId: item.ID, destination: destination);
@@ -891,6 +894,10 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         _logger.Trace("[def={DefinitionId}] Unknown item {Hash}: checking history", definitionId, hash);
         DownloadHistory? history = FindGrabOwningDirectory(hash, dir);
 
+        // Never re-attached or rebuilt as inclusive here.
+        if (LeftToAnotherClient(definitionId, history))
+            return null;
+
         // Rebuilding a removed grab restarts its retries. Only its own transfers are cancelled: a retry grab's transfers
         // can probe to the removed original before the retry is tracked. An inclusive item has no grab; its id is the hash.
         string removalId = history?.DownloadId ?? hash;
@@ -925,12 +932,44 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         if (item == null)
             return null;
 
+        return AdoptItem(definitionId, settings, username, dir, item, grabbed: history != null);
+    }
+
+    // Lidarr removing a finished grab deletes its file names from its folder, so one is re-attached only into a folder no tracked grab may use.
+    private SlskdDownloadItem? AdoptItem(int definitionId, SlskdProviderSettings settings, string username, SlskdDownloadDirectory dir, SlskdDownloadItem item, bool grabbed)
+    {
         // AddItem overwrites by ID, and the history probe matches on the enqueued
         // set — so a live item's own rejected file would rebuild it here and drop
         // the transfer state it has accumulated.
         if (GetItem(definitionId, item.ID) != null)
             return null;
 
+        if (!grabbed || !FinishedInLidarr(item.ID))
+            return Track(definitionId, item);
+
+        // Placed on a copy, so the tracked item's first poll still raises its file states.
+        SlskdDownloadItem placed = new(item.ReleaseInfo) { ID = item.ID, ResolvedAlbum = item.ResolvedAlbum, Username = username, SlskdDownloadDirectory = dir };
+        bool? inUse = FinishedGrabFolderInUse(definitionId, settings, placed, out IDisposable? hold);
+        using (hold)
+        {
+            if (inUse == false)
+                return Track(definitionId, item);
+        }
+
+        if (inUse == null)
+        {
+            _logger.Trace("[def={DefinitionId}] Re-attaching {DownloadId}, finished in Lidarr, waits for a later poll: whether a tracked grab may use its folder isn't known yet", definitionId, item.ID);
+            return null;
+        }
+
+        _logger.Debug("[def={DefinitionId}] Not re-attaching {DownloadId}, finished in Lidarr, into a folder a tracked grab may use", definitionId, item.ID);
+        // Claims none of the listed transfers: a retry's or another client's with the same file names can't be told apart.
+        RememberRemovedGrab(definitionId, item.ID, null);
+        return null;
+    }
+
+    private SlskdDownloadItem Track(int definitionId, SlskdDownloadItem item)
+    {
         SubscribeStateChanges(item, definitionId);
         AddItem(definitionId, item);
         return item;
@@ -1892,17 +1931,17 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     }
 
     // Held until AddItem tracks the grab, or a concurrent grab into the same folder would pass the check too.
-    private IDisposable? ClaimDestinationFolder(SlskdProviderSettings settings, ReleaseInfo release, string destination, List<SlskdDownloadItem> superseded)
+    private IDisposable? ClaimDestinationFolder(int definitionId, SlskdProviderSettings settings, ReleaseInfo release, string destination, List<SlskdDownloadItem> superseded)
     {
         string? folder = LocalDestinationFolder(settings, destination);
         if (folder == null)
             return null;
 
         IDisposable claim = _destinationClaims.TryHold(folder)
-            ?? throw new DownloadClientRejectedReleaseException(release, $"Another grab into '{folder}' is being sent to slskd; {release.Title} was not grabbed so their files don't mix");
+            ?? throw new DownloadClientRejectedReleaseException(release, $"Another grab into '{folder}', or a folder inside or above it, is being sent to slskd; {release.Title} was not grabbed so their files don't mix");
         try
         {
-            CheckDestinationFolder(release, folder, superseded);
+            CheckDestinationFolder(definitionId, release, folder, superseded);
             return claim;
         }
         catch
@@ -1928,12 +1967,12 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     }
 
     // The grab's folder must hold only its own files: a queued grab's folder refuses it, an earlier attempt's files move aside.
-    private void CheckDestinationFolder(ReleaseInfo release, string folder, List<SlskdDownloadItem> superseded)
+    private void CheckDestinationFolder(int definitionId, ReleaseInfo release, string folder, List<SlskdDownloadItem> superseded)
     {
         List<(int DefinitionId, List<SlskdDownloadItem> Owners)> clients;
         try
         {
-            clients = SlskdLeftoverFolder.ClientsHolding(folder, _settingsCache.Select(kvp => (kvp.Key, GetRemoteDownloadPath(kvp.Value), GetItemsForDef(kvp.Key))));
+            clients = SlskdLeftoverFolder.ClientsHolding(folder, ClientFolders(definitionId));
         }
         catch (Exception ex)
         {
@@ -1942,12 +1981,11 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }
 
         // Until the first poll rebuilds the queue, a live download's folder looks like leftovers. Lidarr keeps the release pending.
-        if (clients.Any(c => _lastTransferPollTimes.GetValueOrDefault(c.DefinitionId) == default))
+        if (clients.Any(c => !TransfersLoaded(c.DefinitionId)))
             throw new DownloadClientUnavailableException("slskd's transfers have not been loaded since Lidarr started; the grab is retried on a later pass");
 
         // Lidarr is finished with an imported, failed or ignored grab; any other, or one still downloading, would mix its files with this one's.
-        SlskdDownloadItem? holder = SlskdLeftoverFolder.Holder(clients.SelectMany(c => c.Owners), superseded,
-            i => SlskdDownloadItem.IsTerminalDownloadEvent(_downloadHistoryService.GetLatestDownloadHistoryItem(i.ID)?.EventType));
+        SlskdDownloadItem? holder = SlskdLeftoverFolder.Holder(clients.SelectMany(c => c.Owners), superseded, i => FinishedInLidarr(i.ID));
         if (holder != null)
             throw new DownloadClientRejectedReleaseException(release, $"'{folder}' is in use by {holder.ReleaseInfo.Title}, which is still downloading or still in Lidarr's queue; {release.Title} was not grabbed so their files don't mix");
 
@@ -1985,6 +2023,82 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             finished.MarkRemoved();
             RememberRemovedGrab(definitionId, finished.ID, finished);
             RemoveItemFromDict(definitionId, finished.ID);
+        }
+    }
+
+    // Every enabled slskd client, loaded since Lidarr started or not: one slskd can sit behind several.
+    // A list without the asking client is a failed read, so callers fail closed.
+    private List<(int DefinitionId, OsPath Root, IEnumerable<SlskdDownloadItem> Items)> ClientFolders(int definitionId)
+    {
+        List<(int DefinitionId, OsPath Root, IEnumerable<SlskdDownloadItem> Items)> clients = [];
+        foreach (DownloadClientDefinition client in _downloadClientRepository.All())
+        {
+            if (client.Enable && client.Settings is SlskdProviderSettings settings)
+                clients.Add((client.Id, GetRemoteDownloadPath(settings), GetItemsForDef(client.Id)));
+        }
+
+        return clients.Any(c => c.DefinitionId == definitionId)
+            ? clients
+            : throw new InvalidOperationException($"Download client {definitionId} is not among the enabled slskd clients");
+    }
+
+    // Until a client's first transfer poll since Lidarr started, its live downloads aren't tracked.
+    private bool TransfersLoaded(int definitionId) => _lastTransferPollTimes.GetValueOrDefault(definitionId) != default;
+
+    private bool FinishedInLidarr(string downloadId) =>
+        SlskdDownloadItem.IsTerminalDownloadEvent(_downloadHistoryService.GetLatestDownloadHistoryItem(downloadId)?.EventType);
+
+    // A free folder comes back held until the grab is tracked: a grab being sent into it is tracked only once it releases its own claim.
+    private bool? FinishedGrabFolderInUse(int definitionId, SlskdProviderSettings settings, SlskdDownloadItem placed, out IDisposable? hold)
+    {
+        hold = null;
+        // Batch recovery couldn't name the folder yet (a failed read); the next poll retries it.
+        if (placed.SlskdDownloadDirectory == null)
+            return null;
+
+        List<(int DefinitionId, OsPath Root, IEnumerable<SlskdDownloadItem> Items)> clients;
+        OsPath root;
+        try
+        {
+            // Each client's tracked grabs stay a live view, read after the claim below.
+            clients = ClientFolders(definitionId);
+            root = GetRemoteDownloadPath(settings);
+        }
+        catch (Exception ex)
+        {
+            _logger.Debug(ex, "Could not list the download clients to check finished grab {DownloadId}; the next poll retries", placed.ID);
+            return null;
+        }
+
+        try
+        {
+            if (SlskdLeftoverFolder.KnownFolder(placed, root) is not { } folder || (hold = _destinationClaims.TryHold(folder)) == null)
+                return true;
+
+            return SlskdLeftoverFolder.InUse(folder, clients, TransfersLoaded);
+        }
+        catch (Exception ex)
+        {
+            // The folder name comes from the peer; a path that can't be checked counts as shared rather than wedging this poll.
+            _logger.Debug(ex, "Could not check the folder of finished grab {DownloadId}; treating it as shared", placed.ID);
+            return true;
+        }
+    }
+
+    // Two clients can poll one slskd: another client's grab is left to it. So is one when the client list can't be read; the next poll reads it again.
+    private bool LeftToAnotherClient(int definitionId, DownloadHistory? grab)
+    {
+        if (grab == null || grab.DownloadClientId == definitionId)
+            return false;
+
+        try
+        {
+            return !SlskdDownloadItem.IsGrabOf(grab.DownloadClientId, definitionId, [.. _downloadClientRepository.All().Select(d => d.Id)]);
+        }
+        catch (Exception ex)
+        {
+            _logger.Debug(ex, "[def={DefinitionId}] Could not list the download clients; leaving grab {DownloadId} to client {ClientId}", definitionId, grab.DownloadId, grab.DownloadClientId);
+            return true;
         }
     }
 

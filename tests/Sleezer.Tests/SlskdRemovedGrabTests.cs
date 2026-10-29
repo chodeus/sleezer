@@ -334,6 +334,14 @@ public class SlskdRemovedGrabTests
         Assert.True(new SlskdRemovedGrab(null, DateTime.UtcNow).Settled);
     }
 
+    [Fact]
+    public void a_removed_grab_recorded_without_its_item_claims_no_transfers()
+    {
+        SlskdRemovedGrab removed = new(null, DateTime.UtcNow);
+
+        Assert.Empty(removed.Leftovers([Transfer("grab", "Queued, Remotely", "grab-batch"), Transfer("other", "Completed, Succeeded", null)]));
+    }
+
     private static SlskdDownloadItem Polled(params SlskdDownloadFile[] transfers)
     {
         SlskdDownloadItem item = Grab();
@@ -393,6 +401,23 @@ public class SlskdRemovedGrabTests
 
         first.Dispose();
         Assert.NotNull(claims.TryHold(folder));
+    }
+
+    [Fact]
+    public void a_folder_inside_or_above_a_held_folder_is_held_too()
+    {
+        SlskdDestinationClaims claims = new();
+        string downloads = Path.Combine(Path.GetTempPath(), "downloads");
+        string folder = Path.Combine(downloads, "Artist - Album");
+
+        IDisposable? held = claims.TryHold(folder);
+        Assert.NotNull(held);
+        Assert.Null(claims.TryHold(Path.Combine(folder, "CD1")));
+        Assert.Null(claims.TryHold(downloads));
+        Assert.NotNull(claims.TryHold(Path.Combine(downloads, "Artist - Album 2")));
+
+        held.Dispose();
+        Assert.NotNull(claims.TryHold(Path.Combine(folder, "CD1")));
     }
 
     [Fact]
@@ -509,6 +534,36 @@ public sealed class SlskdLeftoverFolderTests : IDisposable
         Assert.Empty(clients[0].Owners);
         Assert.Equal([queued, disc], clients[1].Owners);
         Assert.Equal([nested], clients[2].Owners);
+    }
+
+    // A finished grab re-attached into it would delete these grabs' file names when Lidarr removes it.
+    [Fact]
+    public void a_folder_is_in_use_while_a_tracked_grab_in_any_client_resolves_to_it_inside_it_or_above_it()
+    {
+        OsPath root = new(_root);
+        string album = Path.Combine(_root, "Artist - Album");
+
+        Assert.True(SlskdLeftoverFolder.InUse(album, [
+            (1, root, [InFolder("Artist - Other Album")]),
+            (2, root, [InFolder(Path.Combine("Artist - Album", "CD1"))])], _ => true));
+        Assert.True(SlskdLeftoverFolder.InUse(Path.Combine(album, "CD1"), [(1, root, [InFolder("Artist - Album")])], _ => true));
+        // A grab not yet placed resolves to the download root.
+        Assert.True(SlskdLeftoverFolder.InUse(album, [(1, root, [new SlskdDownloadItem(new ReleaseInfo { Source = "[]", Title = "t" })])], _ => true));
+        Assert.False(SlskdLeftoverFolder.InUse(album, [
+            (1, root, [InFolder("Artist - Other Album")]),
+            (2, new OsPath(Path.Combine(_root, "other")), [InFolder("Artist - Album")])], _ => true));
+    }
+
+    // After a restart, a client's downloads are tracked only once it has loaded slskd's transfers.
+    [Fact]
+    public void a_folder_is_unknown_until_every_client_reaching_it_has_loaded_its_transfers()
+    {
+        OsPath root = new(_root), other = new(Path.Combine(_root, "other"));
+        string album = Path.Combine(_root, "Artist - Album");
+
+        Assert.Null(SlskdLeftoverFolder.InUse(album, [(1, root, []), (2, root, [])], id => id == 1));
+        Assert.False(SlskdLeftoverFolder.InUse(album, [(1, root, []), (2, other, [])], id => id == 1));
+        Assert.True(SlskdLeftoverFolder.InUse(album, [(1, root, [InFolder("Artist - Album")]), (2, root, [])], id => id == 1));
     }
 
     [Fact]

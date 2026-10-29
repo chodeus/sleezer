@@ -123,6 +123,8 @@ public class SlskdDestinationRecoveryTests
 
         item.SlskdDownloadDirectory = new SlskdDownloadDirectory(@"@@x\media\Moonward\2016 - Glass Harbour [FLAC]", 1, [CompletedFile(PeerTrack, "batch-id")]);
         Assert.Null(item.BatchId);
+        // Not taken until recovery names the folder: a finished grab's folder check waits for it.
+        Assert.Null(item.SlskdDownloadDirectory);
 
         item.SlskdDownloadDirectory = new SlskdDownloadDirectory(@"@@x\media\Moonward\2016 - Glass Harbour [FLAC]", 1, [CompletedFile(PeerTrack, "batch-id")]);
 
@@ -195,6 +197,43 @@ public class SlskdDestinationRecoveryTests
         Assert.False(named.FolderUnknown);
         Assert.False(enqueued.FolderUnknown);
         Assert.False(legacy.FolderUnknown);
+    }
+
+    // Lidarr removing a finished grab deletes its file names from the folder slskd reports later, which a guess can't rule out.
+    [Fact]
+    public void A_guessed_folder_is_unknown_and_puts_any_folder_its_client_reaches_in_use()
+    {
+        NzbDrone.Common.Disk.OsPath root = new("/downloads");
+        SlskdDownloadItem guessed = NewItem(PeerTrack);
+        guessed.SlskdDownloadDirectory = new SlskdDownloadDirectory(@"@@x\media\Moonward\2016 - Glass Harbour [FLAC]", 1, [CompletedFile(PeerTrack, "batch-id")]);
+        SlskdDownloadItem placed = NewItem(PeerTrack);
+        placed.DerivedSubdirectory = "Moonward - Glass Harbour";
+        string folder = Path.Combine("/downloads", "Moonward - Glass Harbour");
+
+        Assert.Null(SlskdLeftoverFolder.KnownFolder(guessed, root));
+        Assert.Equal(folder, SlskdLeftoverFolder.KnownFolder(placed, root));
+        Assert.True(SlskdLeftoverFolder.InUse(folder, [(1, root, [guessed])], _ => true));
+        Assert.False(SlskdLeftoverFolder.InUse(folder, [(1, root, [])], _ => true));
+        Assert.False(SlskdLeftoverFolder.InUse(folder, [(2, new NzbDrone.Common.Disk.OsPath("/elsewhere"), [guessed])], _ => true));
+    }
+
+    // Two clients can poll one slskd: client 1 re-attaches its own grab, or one whose client is gone or unrecorded, never client 2's.
+    [Theory]
+    [InlineData(1, true)]
+    [InlineData(2, false)]
+    [InlineData(3, true)]
+    [InlineData(0, true)]
+    public void A_client_re_attaches_only_its_own_grab_or_one_whose_client_is_gone(int grabClientId, bool expected)
+    {
+        Assert.Equal(expected, SlskdDownloadItem.IsGrabOf(grabClientId, 1, [1, 2]));
+    }
+
+    [Fact]
+    public void A_client_list_missing_this_client_re_attaches_only_its_own_grabs()
+    {
+        Assert.True(SlskdDownloadItem.IsGrabOf(1, 1, [2]));
+        Assert.False(SlskdDownloadItem.IsGrabOf(3, 1, [2]));
+        Assert.False(SlskdDownloadItem.IsGrabOf(3, 1, []));
     }
 
     [Fact]
