@@ -334,6 +334,14 @@ public class SlskdRemovedGrabTests
         Assert.True(new SlskdRemovedGrab(null, DateTime.UtcNow).Settled);
     }
 
+    [Fact]
+    public void a_removed_grab_recorded_without_its_item_claims_no_transfers()
+    {
+        SlskdRemovedGrab removed = new(null, DateTime.UtcNow);
+
+        Assert.Empty(removed.Leftovers([Transfer("grab", "Queued, Remotely", "grab-batch"), Transfer("other", "Completed, Succeeded", null)]));
+    }
+
     private static SlskdDownloadItem Polled(params SlskdDownloadFile[] transfers)
     {
         SlskdDownloadItem item = Grab();

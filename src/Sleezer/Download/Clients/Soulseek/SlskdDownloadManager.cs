@@ -963,8 +963,8 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }
 
         _logger.Debug("[def={DefinitionId}] Not re-attaching {DownloadId}, finished in Lidarr, into a folder a tracked grab may use", definitionId, item.ID);
-        placed.MarkRemoved();
-        CancelLeftoverTransfers(settings, username, dir, RememberRemovedGrab(definitionId, placed.ID, placed), placed.ID);
+        // Claims none of the listed transfers: a retry's or another client's with the same file names can't be told apart.
+        RememberRemovedGrab(definitionId, item.ID, null);
         return null;
     }
 
@@ -1890,14 +1890,13 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         _postProcessed.TryRemove(id, out _);
     }
 
-    private SlskdRemovedGrab RememberRemovedGrab(int definitionId, string id, SlskdDownloadItem? item)
+    private void RememberRemovedGrab(int definitionId, string id, SlskdDownloadItem? item)
     {
         DateTime now = DateTime.UtcNow;
-        SlskdRemovedGrab record = _removedGrabs.AddOrUpdate(new DownloadKey<int, string>(definitionId, id), _ => new SlskdRemovedGrab(item, now), (_, known) => known.RemovedAgain(item, now));
+        _removedGrabs.AddOrUpdate(new DownloadKey<int, string>(definitionId, id), _ => new SlskdRemovedGrab(item, now), (_, known) => known.RemovedAgain(item, now));
 
         foreach (KeyValuePair<DownloadKey<int, string>, SlskdRemovedGrab> old in _removedGrabs.Where(kvp => now - kvp.Value.At > RemovedGrabMemory).ToList())
             _removedGrabs.TryRemove(old.Key, out _);
-        return record;
     }
 
     private IEnumerable<SlskdRemovedGrab> RemovedGrabsOf(int definitionId) =>
