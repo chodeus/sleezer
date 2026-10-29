@@ -958,7 +958,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
         if (inUse == null)
         {
-            _logger.Trace("[def={DefinitionId}] Re-attaching {DownloadId}, finished in Lidarr, waits until every client sharing its folder has loaded slskd's transfers", definitionId, item.ID);
+            _logger.Trace("[def={DefinitionId}] Re-attaching {DownloadId}, finished in Lidarr, waits for a later poll: whether a tracked grab may use its folder isn't known yet", definitionId, item.ID);
             return null;
         }
 
