@@ -396,6 +396,23 @@ public class SlskdRemovedGrabTests
     }
 
     [Fact]
+    public void a_folder_inside_or_above_a_held_folder_is_held_too()
+    {
+        SlskdDestinationClaims claims = new();
+        string downloads = Path.Combine(Path.GetTempPath(), "downloads");
+        string folder = Path.Combine(downloads, "Artist - Album");
+
+        IDisposable? held = claims.TryHold(folder);
+        Assert.NotNull(held);
+        Assert.Null(claims.TryHold(Path.Combine(folder, "CD1")));
+        Assert.Null(claims.TryHold(downloads));
+        Assert.NotNull(claims.TryHold(Path.Combine(downloads, "Artist - Album 2")));
+
+        held.Dispose();
+        Assert.NotNull(claims.TryHold(Path.Combine(folder, "CD1")));
+    }
+
+    [Fact]
     public void a_name_differing_from_the_held_folder_only_by_case_or_accent_form_is_held_too()
     {
         SlskdDestinationClaims claims = new();

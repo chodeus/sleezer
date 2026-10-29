@@ -25,6 +25,9 @@ public static class SlskdLeftoverFolder
         return string.Equals(candidate, key, NameComparison) || candidate.StartsWith(key + Path.DirectorySeparatorChar, NameComparison);
     }
 
+    /// <summary>Whether either folder is the other or inside it.</summary>
+    public static bool Overlaps(string a, string b) => Contains(a, b) || Contains(b, a);
+
     /// <summary>Each client whose download root holds <paramref name="folder"/> or lies inside it, with its grabs inside it; one slskd can sit behind several clients.</summary>
     public static List<(int DefinitionId, List<SlskdDownloadItem> Owners)> ClientsHolding(
         string folder,
@@ -77,8 +80,6 @@ public static class SlskdLeftoverFolder
 
     private static bool RootReaches(OsPath root, string folder) =>
         root.FullPath.IsPathValid(PathValidationType.CurrentOs) && Overlaps(root.FullPath, folder);
-
-    private static bool Overlaps(string a, string b) => Contains(a, b) || Contains(b, a);
 
     private static string FullPath(string path) =>
         Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);

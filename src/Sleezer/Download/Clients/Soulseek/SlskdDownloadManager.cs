@@ -146,7 +146,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             // generic name ("_Unknown Album") collide and interleave sources.
             // Multi-disc additionally lands pre-merged, skipping the local move.
             string? destination = item.PreferredDestinationFolderName();
-            using IDisposable? claim = ClaimDestinationFolder(settings, remoteAlbum.Release, destination, supersededAttempts);
+            using IDisposable? claim = ClaimDestinationFolder(definitionId, settings, remoteAlbum.Release, destination, supersededAttempts);
             EvictSupersededAttempts(definitionId, item.ID, supersededAttempts);
 
             SlskdEnqueueResult result = await _apiClient.EnqueueDownloadAsync(settings, username, files, externalId: item.ID, destination: destination);
@@ -949,7 +949,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
         // Placed on a copy, so the tracked item's first poll still raises its file states.
         SlskdDownloadItem placed = new(item.ReleaseInfo) { ID = item.ID, ResolvedAlbum = item.ResolvedAlbum, Username = username, SlskdDownloadDirectory = dir };
-        bool? inUse = FinishedGrabFolderInUse(settings, placed, out IDisposable? hold);
+        bool? inUse = FinishedGrabFolderInUse(definitionId, settings, placed, out IDisposable? hold);
         using (hold)
         {
             if (inUse == false)
@@ -1932,17 +1932,17 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     }
 
     // Held until AddItem tracks the grab, or a concurrent grab into the same folder would pass the check too.
-    private IDisposable? ClaimDestinationFolder(SlskdProviderSettings settings, ReleaseInfo release, string destination, List<SlskdDownloadItem> superseded)
+    private IDisposable? ClaimDestinationFolder(int definitionId, SlskdProviderSettings settings, ReleaseInfo release, string destination, List<SlskdDownloadItem> superseded)
     {
         string? folder = LocalDestinationFolder(settings, destination);
         if (folder == null)
             return null;
 
         IDisposable claim = _destinationClaims.TryHold(folder)
-            ?? throw new DownloadClientRejectedReleaseException(release, $"Another grab into '{folder}' is being sent to slskd; {release.Title} was not grabbed so their files don't mix");
+            ?? throw new DownloadClientRejectedReleaseException(release, $"Another grab into '{folder}', or a folder inside or above it, is being sent to slskd; {release.Title} was not grabbed so their files don't mix");
         try
         {
-            CheckDestinationFolder(release, folder, superseded);
+            CheckDestinationFolder(definitionId, release, folder, superseded);
             return claim;
         }
         catch
@@ -1968,12 +1968,12 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     }
 
     // The grab's folder must hold only its own files: a queued grab's folder refuses it, an earlier attempt's files move aside.
-    private void CheckDestinationFolder(ReleaseInfo release, string folder, List<SlskdDownloadItem> superseded)
+    private void CheckDestinationFolder(int definitionId, ReleaseInfo release, string folder, List<SlskdDownloadItem> superseded)
     {
         List<(int DefinitionId, List<SlskdDownloadItem> Owners)> clients;
         try
         {
-            clients = SlskdLeftoverFolder.ClientsHolding(folder, ClientFolders());
+            clients = SlskdLeftoverFolder.ClientsHolding(folder, ClientFolders(definitionId));
         }
         catch (Exception ex)
         {
@@ -2028,13 +2028,19 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     }
 
     // Every enabled slskd client, loaded since Lidarr started or not: one slskd can sit behind several.
-    private IEnumerable<(int DefinitionId, OsPath Root, IEnumerable<SlskdDownloadItem> Items)> ClientFolders()
+    // A list without the asking client is a failed read, so callers fail closed.
+    private List<(int DefinitionId, OsPath Root, IEnumerable<SlskdDownloadItem> Items)> ClientFolders(int definitionId)
     {
+        List<(int DefinitionId, OsPath Root, IEnumerable<SlskdDownloadItem> Items)> clients = [];
         foreach (DownloadClientDefinition client in _downloadClientRepository.All())
         {
             if (client.Enable && client.Settings is SlskdProviderSettings settings)
-                yield return (client.Id, GetRemoteDownloadPath(settings), GetItemsForDef(client.Id));
+                clients.Add((client.Id, GetRemoteDownloadPath(settings), GetItemsForDef(client.Id)));
         }
+
+        return clients.Any(c => c.DefinitionId == definitionId)
+            ? clients
+            : throw new InvalidOperationException($"Download client {definitionId} is not among the enabled slskd clients");
     }
 
     // Until a client's first transfer poll since Lidarr started, its live downloads aren't tracked.
@@ -2044,7 +2050,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         SlskdDownloadItem.IsTerminalDownloadEvent(_downloadHistoryService.GetLatestDownloadHistoryItem(downloadId)?.EventType);
 
     // A free folder comes back held until the grab is tracked: a grab being sent into it is tracked only once it releases its own claim.
-    private bool? FinishedGrabFolderInUse(SlskdProviderSettings settings, SlskdDownloadItem placed, out IDisposable? hold)
+    private bool? FinishedGrabFolderInUse(int definitionId, SlskdProviderSettings settings, SlskdDownloadItem placed, out IDisposable? hold)
     {
         hold = null;
         // Batch recovery couldn't name the folder yet (a failed read); the next poll retries it.
@@ -2056,7 +2062,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         try
         {
             // Each client's tracked grabs stay a live view, read after the claim below.
-            clients = [.. ClientFolders()];
+            clients = ClientFolders(definitionId);
             root = GetRemoteDownloadPath(settings);
         }
         catch (Exception ex)
