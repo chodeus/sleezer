@@ -85,7 +85,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         }
 
         // Enough wanted titles in the file names make the folder the album, however it is named. One title in a folder naming
-        // neither artist nor album is too weak ("Keep Dancing" in another artist's "Legs (Keep Dancing)"), unless the file names the artist.
+        // neither artist nor album is too weak ("Keep Dancing" in another artist's "Legs (Keep Dancing)"), unless the file names the artist or no artist was searched.
         private static bool ApplyTitleEvidence(FolderJudgement judgement, TrackTitleEvidence evidence, string searchArtistNorm)
         {
             if (evidence.Share < TrackEvidenceThreshold)

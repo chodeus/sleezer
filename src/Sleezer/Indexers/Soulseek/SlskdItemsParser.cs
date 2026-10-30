@@ -711,7 +711,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                     continue;
 
                 // A file the title ends beats an earlier one with words after it: "Tide" over "Tide (Reprise)";
-                // then one naming the artist beats one that doesn't, so the file order never decides it.
+                // then one naming the artist beats one that doesn't. At equal rank the earlier file stays.
                 int rank = (wordsAfter == 0 ? 0 : 2) + (namesArtist(named[i].Raw) ? 0 : 1);
                 if (rank < bestRank)
                 {
