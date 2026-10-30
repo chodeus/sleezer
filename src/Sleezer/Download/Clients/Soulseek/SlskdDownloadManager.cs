@@ -3,6 +3,7 @@ using System.IO;
 using System.Text.Json;
 using NLog;
 using NzbDrone.Common.Disk;
+using NzbDrone.Common.EnvironmentInfo;
 using NzbDrone.Common.Extensions;
 using NzbDrone.Common.Instrumentation;
 using NzbDrone.Core.Datastore;
@@ -57,6 +58,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     private readonly ISlskdApiClient _apiClient;
     private readonly IDownloadHistoryService _downloadHistoryService;
     private readonly IHistoryService _historyService;
+    private readonly SlskdTaggedFilesStore _taggedFiles;
     private readonly IDownloadClientRepository _downloadClientRepository;
     private readonly ISlskdItemsParser _slskdItemsParser;
     private readonly IRemotePathMappingService _remotePathMappingService;
@@ -89,6 +91,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         IMetadataFactory metadataFactory,
         ISlskdWatchdog watchdog,
         IDownloadClientRepository downloadClientRepository,
+        IAppFolderInfo appFolderInfo,
         Logger logger)
     {
         _apiClient = apiClient;
@@ -106,6 +109,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         _downloadClientRepository = downloadClientRepository;
         _ffmpeg = new FFmpegPathResolver(logger);
         _retryHandler = new SlskdRetryHandler(apiClient, NzbDroneLogger.GetLogger(typeof(SlskdRetryHandler)));
+        _taggedFiles = new SlskdTaggedFilesStore(Path.Combine(PluginFolder.Resolve(appFolderInfo.GetPluginPath(), PluginInfo.RepoUrl), "slskd-tagged"), logger);
     }
 
     public async Task<string> DownloadAsync(RemoteAlbum remoteAlbum, int definitionId, SlskdProviderSettings settings)
@@ -923,6 +927,9 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 ID = history.DownloadId,
                 ResolvedAlbum = GrabbedAlbum(history.DownloadId)
             };
+
+            // Files the tagger renamed before a restart are still this grab's.
+            item.RestoreTaggedFiles(_taggedFiles.Load(item.ID));
         }
         else if (settings.Inclusive)
         {
@@ -1431,6 +1438,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 {
                     string[] audioFiles = [.. _diskProvider.GetFiles(folderPath, recursive: true).Where(AudioFormatHelper.IsPostProcessAudioFile)];
                     int written = SlskdSourceTag.Write(item, downloadRoot, audioFiles, _logger, cts.Token);
+                    _taggedFiles.Save(item.ID, item.TaggedFiles);
                     _logger.Debug("[post-process] {ItemId}: SOURCE={Source} written to {Written} of {Count} audio file(s)", item.ID, SlskdSourceTag.Value, written, audioFiles.Length);
                 }
 
@@ -1469,6 +1477,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                     // Refresh ownership identities after tagging — see
                     // SlskdDownloadItem._taggedFileSizes.
                     RecordTaggedFileIdentities(item, tagResult.TaggedFiles, ownedPathsBeforeTagging);
+                    _taggedFiles.Save(item.ID, item.TaggedFiles);
                 }
             }
             catch (OperationCanceledException)
@@ -1888,6 +1897,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     {
         _downloadMappings.TryRemove(new DownloadKey<int, string>(definitionId, id), out _);
         _postProcessed.TryRemove(id, out _);
+        _taggedFiles.Delete(id);
     }
 
     private void RememberRemovedGrab(int definitionId, string id, SlskdDownloadItem? item)
