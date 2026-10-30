@@ -175,10 +175,12 @@ namespace NzbDrone.Plugin.Sleezer.Notifications.QueueCleaner
             ReleaseFormatter releaseFormatter = new(item.RemoteAlbum.Release, item.RemoteAlbum.Artist, _namingConfig.GetConfig());
             string? albumTitle = item.RemoteAlbum.Albums?.FirstOrDefault()?.Title;
 
-            // Every audio file: a short-circuiting Any stopped at the first one renamed.
-            return filesOnDisk
-                .Where(file => audioExtensions.Contains(Path.GetExtension(file.FullName)))
-                .Count(file => TryRenameFile(file, releaseFormatter, albumTitle, filesOnDisk, item.DownloadItem.DownloadId)) > 0;
+            // Every audio file: not Any, which stops at the first one renamed.
+            bool renamed = false;
+            foreach (IFileInfo file in filesOnDisk.Where(f => audioExtensions.Contains(Path.GetExtension(f.FullName))))
+                renamed |= TryRenameFile(file, releaseFormatter, albumTitle, filesOnDisk, item.DownloadItem.DownloadId);
+
+            return renamed;
         }
 
         private bool TryRenameFile(IFileInfo file, ReleaseFormatter releaseFormatter, string? albumTitle, List<IFileInfo> filesOnDisk, string downloadId)
