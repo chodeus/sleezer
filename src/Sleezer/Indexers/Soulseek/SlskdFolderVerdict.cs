@@ -53,7 +53,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             judgement.ArtistMatch = IsFuzzyArtistMatch(dirNameNorm, searchArtistNorm, strictnessOffset);
 
             AddNameReasons(judgement, albumSearched, isVolumeSearch);
-            bool titlesCarryIt = ApplyTitleEvidence(judgement, evidence);
+            bool titlesCarryIt = ApplyTitleEvidence(judgement, evidence, searchArtistNorm, strictnessOffset);
             judgement.Matched = NamesMeetSearch(judgement, searchArtistNorm, albumSearched, titlesCarryIt);
             JudgeCombinedName(judgement, dirNameNorm, searchData, strictnessOffset);
         }
@@ -79,11 +79,19 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 judgement.Reasons.Add(AlbumReason(judgement.AlbumMatch, isVolumeSearch));
         }
 
-        // Enough wanted titles in the file names make the folder the album, however it is named.
-        private static bool ApplyTitleEvidence(FolderJudgement judgement, TrackTitleEvidence evidence)
+        // Enough wanted titles in the file names make the folder the album, however it is named. One title in a folder naming
+        // neither artist nor album is too weak ("Keep Dancing" in another artist's "Legs (Keep Dancing)"), unless the file names the artist.
+        private static bool ApplyTitleEvidence(FolderJudgement judgement, TrackTitleEvidence evidence, string searchArtistNorm, int strictnessOffset)
         {
             if (evidence.Share < TrackEvidenceThreshold)
                 return false;
+
+            if (evidence.Covered < 2 && !judgement.ArtistMatch && !judgement.AlbumMatch && !string.IsNullOrEmpty(searchArtistNorm) &&
+                !evidence.Files.Any(f => IsFuzzyArtistMatch(NormalizeString(Path.GetFileNameWithoutExtension((f.Filename ?? string.Empty).Replace('\\', '/'))), searchArtistNorm, strictnessOffset)))
+            {
+                judgement.Reasons.Add("one track title, neither artist nor album named");
+                return false;
+            }
 
             judgement.AlbumMatch = true;
             judgement.Reasons.Add($"track titles {(int)Math.Round(evidence.Share * 100, MidpointRounding.AwayFromZero)}%");

@@ -133,6 +133,48 @@ public class SlskdFolderVerdictTests
         Assert.Contains("track titles 100%", v.Reasons);
     }
 
+    // A single has one wanted title; alone, in a folder naming neither artist nor album, it proves nothing.
+    [Theory]
+    [InlineData(@"Music\Salt Road\Driftwood (2024)", "02 - Harbour (Lantern Song).flac")]
+    [InlineData(@"Music\Rox Oxley\Double Trouble", "-12-Lantern Song.flac")]
+    public void one_track_title_does_not_stand_in_for_an_artist_named_nowhere(string folder, string file)
+    {
+        SlskdFolderVerdict v = Judge(folder, [file], new SlskdSearchData("Ox", "Lantern Song", false, false, 1, null, TrackCount: 1, Tracks: ["Lantern Song"]));
+
+        Assert.False(v.Matched);
+        Assert.Contains("one track title, neither artist nor album named", v.Reasons);
+    }
+
+    [Fact]
+    public void one_track_title_carries_when_its_file_names_the_artist()
+    {
+        SlskdFolderVerdict v = Judge(@"Music\Unsorted", ["Moonward - Lantern Song.flac"],
+            new SlskdSearchData("Moonward", "Glass Harbour", false, false, 1, null, TrackCount: 1, Tracks: ["Lantern Song"]));
+
+        Assert.True(v.Matched);
+        Assert.Contains("track titles 100%", v.Reasons);
+    }
+
+    [Fact]
+    public void one_track_title_carries_in_a_folder_naming_the_artist()
+    {
+        SlskdFolderVerdict v = Judge(@"Music\Moonward\Singles", ["01 Lantern Song.flac"],
+            new SlskdSearchData("Moonward", "Glass Harbour", false, false, 1, null, TrackCount: 1, Tracks: ["Lantern Song"]));
+
+        Assert.True(v.Matched);
+        Assert.Contains("track titles 100%", v.Reasons);
+    }
+
+    [Fact]
+    public void one_track_title_carries_a_search_without_an_artist()
+    {
+        SlskdFolderVerdict v = Judge(@"Music\Unsorted", ["01 Lantern Song.flac"],
+            new SlskdSearchData(null, "Glass Harbour", false, false, 1, null, TrackCount: 1, Tracks: ["Lantern Song"]));
+
+        Assert.True(v.Matched);
+        Assert.Contains("track titles 100%", v.Reasons);
+    }
+
     [Fact]
     public void a_different_remix_is_rejected_with_its_reason()
     {
