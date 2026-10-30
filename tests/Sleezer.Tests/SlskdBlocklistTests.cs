@@ -142,7 +142,7 @@ public class SlskdBlocklistTests
     public void Soulseek_block_you_add_stays_until_deleted()
     {
         FakeBlocklistRepository repo = new();
-        repo.Add(new Blocklist { ArtistId = 1, TorrentInfoHash = "36_Slskd-mine", Date = DateTime.UtcNow.AddDays(-90), Message = SoulseekBlocklist.ManualFailureMessage });
+        repo.Add(new Blocklist { ArtistId = 1, TorrentInfoHash = "36_Slskd-mine", Date = DateTime.UtcNow.AddDays(-90), Message = "Manually marked as failed" });
 
         Assert.True(new SoulseekBlocklist(repo).IsBlocklisted(1, new ReleaseInfo { Guid = "36_Slskd-mine" }));
     }
