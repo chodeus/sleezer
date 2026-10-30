@@ -59,6 +59,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     private readonly IDownloadHistoryService _downloadHistoryService;
     private readonly IHistoryService _historyService;
     private readonly SlskdTaggedFilesStore _taggedFiles;
+    private readonly SlskdRecentGrabs _recentGrabs;
     private readonly IDownloadClientRepository _downloadClientRepository;
     private readonly ISlskdItemsParser _slskdItemsParser;
     private readonly IRemotePathMappingService _remotePathMappingService;
@@ -109,6 +110,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         _downloadClientRepository = downloadClientRepository;
         _ffmpeg = new FFmpegPathResolver(logger);
         _retryHandler = new SlskdRetryHandler(apiClient, NzbDroneLogger.GetLogger(typeof(SlskdRetryHandler)));
+        _recentGrabs = new SlskdRecentGrabs(SoulseekGrabsSince, () => DateTime.UtcNow);
         _taggedFiles = new SlskdTaggedFilesStore(Path.Combine(PluginFolder.Resolve(appFolderInfo.GetPluginPath(), PluginInfo.RepoUrl), "slskd-tagged"), logger);
     }
 
@@ -1057,6 +1059,17 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }
     }
 
+    // The Soulseek grabs since a date, newest first, for SlskdRecentGrabs.
+    private IReadOnlyList<DownloadHistory> SoulseekGrabsSince(DateTime since) =>
+        [.. _historyService.Since(since, EntityHistoryEventType.Grabbed)
+            .OrderByDescending(h => h.Date)
+            .Select(h => h.DownloadId)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(id => _downloadHistoryService.GetLatestGrab(id))
+            .OfType<DownloadHistory>()
+            .Where(grab => grab.Release != null && string.Equals(grab.Protocol, nameof(SoulseekDownloadProtocol), StringComparison.OrdinalIgnoreCase))];
+
     // Restart re-attach: -rN retry and multi-disc grab ids never equal the
     // per-directory hash, so fall back to file-membership over recent grabs.
     private DownloadHistory? FindGrabOwningDirectory(string hash, SlskdDownloadDirectory dir)
@@ -1075,33 +1088,14 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         if (string.IsNullOrEmpty(probeFile))
             return null;
 
-        IEnumerable<string> recentGrabIds = _historyService.Since(DateTime.UtcNow.AddDays(-14), EntityHistoryEventType.Grabbed)
-            .OrderByDescending(h => h.Date)
-            .Select(h => h.DownloadId)
-            .Where(id => !string.IsNullOrWhiteSpace(id))
-            .Distinct(StringComparer.OrdinalIgnoreCase);
-
         DownloadHistory? poisonedFallback = null;
-        foreach (string downloadId in recentGrabIds)
+        foreach (DownloadHistory grab in _recentGrabs.Owning(probeFile))
         {
-            DownloadHistory? grab = _downloadHistoryService.GetLatestGrab(downloadId);
-            if (grab?.Release == null || !string.Equals(grab.Protocol, nameof(SoulseekDownloadProtocol), StringComparison.OrdinalIgnoreCase))
-                continue;
+            // Read live: a grab's latest event changes far more often than the grab list does.
+            if (!SlskdDownloadItem.IsPoisonedHistoryEvent(_downloadHistoryService.GetLatestDownloadHistoryItem(grab.DownloadId)?.EventType))
+                return grab;
 
-            try
-            {
-                if (!new SlskdDownloadItem(grab.Release).OwnsFile(probeFile))
-                    continue;
-
-                if (!SlskdDownloadItem.IsPoisonedHistoryEvent(_downloadHistoryService.GetLatestDownloadHistoryItem(grab.DownloadId)?.EventType))
-                    return grab;
-
-                poisonedFallback ??= grab;
-            }
-            catch (Exception ex)
-            {
-                _logger.Trace(ex, "Skipping grab {DownloadId} while probing ownership of {File}", downloadId, probeFile);
-            }
+            poisonedFallback ??= grab;
         }
 
         // Visibility beats limbo: a poisoned re-attach at least surfaces the
