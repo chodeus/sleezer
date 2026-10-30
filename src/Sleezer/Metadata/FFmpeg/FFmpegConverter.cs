@@ -376,8 +376,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
             => format + (bitrate.HasValue ? $" ({bitrate}kbps)" : "");
 
         private bool AnyRuleSet() =>
-            Settings.ConvertMP3 || Settings.ConvertAAC || Settings.ConvertFLAC || Settings.ConvertWAV || Settings.ConvertOpus || Settings.ConvertOther
-            || Settings.CustomConversion.Any();
+            Enum.GetValues<AudioFormat>().Any(IsFormatEnabledForConversion) || Settings.CustomConversion.Any();
 
         private bool IsFormatEnabledForConversion(AudioFormat format) => format switch
         {
