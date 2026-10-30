@@ -15,12 +15,16 @@ public sealed class SlskdTaggedFilesStoreTests : IDisposable
 
     private readonly string _folder = Path.Combine(Path.GetTempPath(), "sleezer-tagged-" + Guid.NewGuid().ToString("N"));
 
+    // Where an unchecked "../" id would write: next to the folder, so the test removes it if a broken build does.
+    private readonly string _escape = "escape-" + Guid.NewGuid().ToString("N");
+
     private SlskdTaggedFilesStore Store => new(_folder, LogManager.GetLogger("tests"));
 
     public void Dispose()
     {
         if (Directory.Exists(_folder))
             Directory.Delete(_folder, recursive: true);
+        File.Delete(Path.Combine(Path.GetTempPath(), _escape + ".json"));
     }
 
     private static SlskdDownloadItem NewItem(string id = "0a1b2c3d-r2")
@@ -56,10 +60,10 @@ public sealed class SlskdTaggedFilesStoreTests : IDisposable
     [Fact]
     public void a_download_id_that_could_name_another_path_is_never_used()
     {
-        Store.Save("../escape", [new SlskdTaggedFile(Renamed, 1, true)]);
+        Store.Save("../" + _escape, [new SlskdTaggedFile(Renamed, 1, true)]);
 
-        Assert.False(File.Exists(Path.Combine(_folder, "..", "escape.json")));
-        Assert.Empty(Store.Load("../escape"));
+        Assert.False(File.Exists(Path.Combine(_folder, "..", _escape + ".json")));
+        Assert.Empty(Store.Load("../" + _escape));
     }
 
     [Fact]

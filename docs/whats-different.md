@@ -51,6 +51,10 @@ Store search covers Deezer, Qobuz, Tidal and Bandcamp.
 | Soulseek: restarts, retries and shared folders lost downloads | Downloads resume, retries import, no cross-deletes |
 | Empty download folders pile up | Swept automatically |
 | No provenance | `SOURCE` tag with the store URL; `.cue` and `.log` files kept |
+| Removing a Soulseek grab after a Lidarr restart left the files the tagger had renamed | Deleted: the renamed files are remembered across restarts |
+| Queue Cleaner's Remove deleted everything in the download folder, past the recycle bin | Removes through the download client, which deletes only the download's own files |
+| Queue Cleaner's Blocklist Only failed the download, so it was removed and searched again | Blocklists only; the item stays queued for a manual import |
+| Queue Cleaner's Rename renamed only the first file | Renames every audio file, under the album's title |
 
 ## Blocklist and failures
 

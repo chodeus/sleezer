@@ -10,4 +10,7 @@ public interface ISlskdDownloadManager
     IEnumerable<DownloadClientItem> GetItems(int definitionId, SlskdProviderSettings settings, OsPath remotePath);
     void RemoveItem(DownloadClientItem clientItem, bool deleteData, int definitionId, SlskdProviderSettings settings);
     void ImportExtrasForImportedAlbum(string downloadId, IReadOnlyCollection<string> importedTrackPaths);
+
+    /// <summary>Claims a grab's file under the name something outside this client renamed it to.</summary>
+    void RecordRenamedFile(string downloadId, string originalPath, string newPath);
 }

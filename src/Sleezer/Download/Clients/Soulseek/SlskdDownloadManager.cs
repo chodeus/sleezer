@@ -315,6 +315,28 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             _ = CleanStaleDirectoriesAsync(directory, ownedFiles, settings);
     }
 
+    public void RecordRenamedFile(string downloadId, string originalPath, string newPath)
+    {
+        SlskdDownloadItem? item = _downloadMappings.Values.FirstOrDefault(i => string.Equals(i.ID, downloadId, StringComparison.OrdinalIgnoreCase));
+        if (item == null)
+            return;
+
+        try
+        {
+            // Only a file the grab owned under its old name, as the tagger's renames (OwnTaggedFiles).
+            long size = _diskProvider.GetFileSize(newPath);
+            if (!item.BuildOwnedFiles().Owns(Path.GetFileName(originalPath), size))
+                return;
+
+            item.RecordTaggedFile(newPath, size, originalPath);
+            _taggedFiles.Save(item.ID, item.TaggedFiles);
+        }
+        catch (Exception ex)
+        {
+            _logger.Debug(ex, "Could not record the rename of {Path}", newPath);
+        }
+    }
+
     /// <summary>
     /// Copies this grab's cue/log extras into the album folder Lidarr just
     /// imported into. Runs on AlbumImportedEvent, which fires before the
