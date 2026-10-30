@@ -8,6 +8,7 @@ using NzbDrone.Core.Parser.Model;
 using System.Text.Json;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Indexers.Soulseek;
+using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
 
 namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek.Models;
 
@@ -184,7 +185,22 @@ public class SlskdDownloadItem
             return;
 
         bool renamed = originalPath != null && !string.Equals(Path.GetFileName(originalPath), Path.GetFileName(path), StringComparison.OrdinalIgnoreCase);
+
+        // The file left its old path, so that entry would claim another file of the old name and size.
+        if (originalPath != null && !string.Equals(originalPath, path, StringComparison.Ordinal))
+            _taggedFileSizes.TryRemove(originalPath, out _);
+
         _taggedFileSizes.AddOrUpdate(path, (size, renamed), (_, recorded) => (size, renamed || recorded.Renamed));
+    }
+
+    /// <summary>The files RecordTaggedFile has recorded, to keep across a Lidarr restart.</summary>
+    public IReadOnlyList<SlskdTaggedFile> TaggedFiles => [.. _taggedFileSizes.Select(t => new SlskdTaggedFile(t.Key, t.Value.Size, t.Value.Renamed))];
+
+    /// <summary>Restores files recorded before a restart; one recorded since keeps its newer identity.</summary>
+    public void RestoreTaggedFiles(IEnumerable<SlskdTaggedFile> files)
+    {
+        foreach (SlskdTaggedFile file in files.Where(f => !string.IsNullOrEmpty(Path.GetFileName(f.Path))))
+            _taggedFileSizes.TryAdd(file.Path, (file.Size, file.Renamed));
     }
 
     /// <summary>

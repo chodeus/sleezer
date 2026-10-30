@@ -40,13 +40,20 @@ namespace NzbDrone.Plugin.Sleezer.Notifications.QueueCleaner
 
         public void Handle(AlbumImportIncompleteEvent message)
         {
+            // A download Lidarr couldn't match to an artist has nothing to clean against; not a notification failure.
+            if (message.TrackedDownload.RemoteAlbum?.Artist is not { } artist)
+            {
+                _logger.Debug("Queue Cleaner skips {Title}: no artist matched", message.TrackedDownload.DownloadItem?.Title);
+                return;
+            }
+
             foreach (INotification? notification in _notificationFactory.OnImportFailureEnabled())
             {
                 if (notification is not QueueCleaner queue)
                     continue;
                 try
                 {
-                    if (ShouldHandleArtist(notification.Definition, message.TrackedDownload.RemoteAlbum.Artist))
+                    if (ShouldHandleArtist(notification.Definition, artist))
                     {
                         queue.CleanImport(message);
                         _notificationStatusService.RecordSuccess(notification.Definition.Id);

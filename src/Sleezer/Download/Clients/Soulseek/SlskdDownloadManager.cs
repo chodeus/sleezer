@@ -3,6 +3,7 @@ using System.IO;
 using System.Text.Json;
 using NLog;
 using NzbDrone.Common.Disk;
+using NzbDrone.Common.EnvironmentInfo;
 using NzbDrone.Common.Extensions;
 using NzbDrone.Common.Instrumentation;
 using NzbDrone.Core.Datastore;
@@ -57,6 +58,8 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     private readonly ISlskdApiClient _apiClient;
     private readonly IDownloadHistoryService _downloadHistoryService;
     private readonly IHistoryService _historyService;
+    private readonly SlskdTaggedFilesStore _taggedFiles;
+    private readonly SlskdRecentGrabs _recentGrabs;
     private readonly IDownloadClientRepository _downloadClientRepository;
     private readonly ISlskdItemsParser _slskdItemsParser;
     private readonly IRemotePathMappingService _remotePathMappingService;
@@ -89,6 +92,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         IMetadataFactory metadataFactory,
         ISlskdWatchdog watchdog,
         IDownloadClientRepository downloadClientRepository,
+        IAppFolderInfo appFolderInfo,
         Logger logger)
     {
         _apiClient = apiClient;
@@ -106,6 +110,8 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         _downloadClientRepository = downloadClientRepository;
         _ffmpeg = new FFmpegPathResolver(logger);
         _retryHandler = new SlskdRetryHandler(apiClient, NzbDroneLogger.GetLogger(typeof(SlskdRetryHandler)));
+        _recentGrabs = new SlskdRecentGrabs(SoulseekGrabsSince, () => DateTime.UtcNow, logger);
+        _taggedFiles = new SlskdTaggedFilesStore(Path.Combine(PluginFolder.Resolve(appFolderInfo.GetPluginPath(), PluginInfo.RepoUrl), "slskd-tagged"), logger);
     }
 
     public async Task<string> DownloadAsync(RemoteAlbum remoteAlbum, int definitionId, SlskdProviderSettings settings)
@@ -310,6 +316,34 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         if (settings.CleanStaleDirectories && !string.IsNullOrEmpty(directory))
             _ = CleanStaleDirectoriesAsync(directory, ownedFiles, settings);
     }
+
+    public void RecordRenamedFile(string downloadId, string originalPath, string newPath)
+    {
+        if (FindItem(downloadId) is not { } item)
+            return;
+
+        try
+        {
+            // Only a file the grab owned under its old name, as the tagger's renames (OwnTaggedFiles).
+            long size = _diskProvider.GetFileSize(newPath);
+            if (!item.BuildOwnedFiles().Owns(Path.GetFileName(originalPath), size))
+                return;
+
+            item.RecordTaggedFile(newPath, size, originalPath);
+            _taggedFiles.Save(item.ID, item.TaggedFiles);
+        }
+        catch (Exception ex)
+        {
+            _logger.Debug(ex, "Could not record the rename of {Path}", newPath);
+        }
+    }
+
+    public bool? OwnsLocalFile(string downloadId, string path) =>
+        FindItem(downloadId) is { } item ? IsConclusivelyOwned(path, item.BuildOwnedFiles()) : null;
+
+    // By download id alone, as Lidarr tracks downloads.
+    private SlskdDownloadItem? FindItem(string downloadId) =>
+        _downloadMappings.Values.FirstOrDefault(i => string.Equals(i.ID, downloadId, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
     /// Copies this grab's cue/log extras into the album folder Lidarr just
@@ -923,6 +957,9 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 ID = history.DownloadId,
                 ResolvedAlbum = GrabbedAlbum(history.DownloadId)
             };
+
+            // Files the tagger renamed before a restart are still this grab's.
+            item.RestoreTaggedFiles(_taggedFiles.Load(item.ID));
         }
         else if (settings.Inclusive)
         {
@@ -1028,6 +1065,17 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }
     }
 
+    // The Soulseek grabs since a date, newest first, for SlskdRecentGrabs.
+    private IReadOnlyList<DownloadHistory> SoulseekGrabsSince(DateTime since) =>
+        [.. _historyService.Since(since, EntityHistoryEventType.Grabbed)
+            .OrderByDescending(h => h.Date)
+            .Select(h => h.DownloadId)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(id => _downloadHistoryService.GetLatestGrab(id))
+            .OfType<DownloadHistory>()
+            .Where(grab => grab.Release != null && string.Equals(grab.Protocol, nameof(SoulseekDownloadProtocol), StringComparison.OrdinalIgnoreCase))];
+
     // Restart re-attach: -rN retry and multi-disc grab ids never equal the
     // per-directory hash, so fall back to file-membership over recent grabs.
     private DownloadHistory? FindGrabOwningDirectory(string hash, SlskdDownloadDirectory dir)
@@ -1046,33 +1094,14 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         if (string.IsNullOrEmpty(probeFile))
             return null;
 
-        IEnumerable<string> recentGrabIds = _historyService.Since(DateTime.UtcNow.AddDays(-14), EntityHistoryEventType.Grabbed)
-            .OrderByDescending(h => h.Date)
-            .Select(h => h.DownloadId)
-            .Where(id => !string.IsNullOrWhiteSpace(id))
-            .Distinct(StringComparer.OrdinalIgnoreCase);
-
         DownloadHistory? poisonedFallback = null;
-        foreach (string downloadId in recentGrabIds)
+        foreach (DownloadHistory grab in _recentGrabs.Owning(probeFile))
         {
-            DownloadHistory? grab = _downloadHistoryService.GetLatestGrab(downloadId);
-            if (grab?.Release == null || !string.Equals(grab.Protocol, nameof(SoulseekDownloadProtocol), StringComparison.OrdinalIgnoreCase))
-                continue;
+            // Read live: a grab's latest event changes far more often than the grab list does.
+            if (!SlskdDownloadItem.IsPoisonedHistoryEvent(_downloadHistoryService.GetLatestDownloadHistoryItem(grab.DownloadId)?.EventType))
+                return grab;
 
-            try
-            {
-                if (!new SlskdDownloadItem(grab.Release).OwnsFile(probeFile))
-                    continue;
-
-                if (!SlskdDownloadItem.IsPoisonedHistoryEvent(_downloadHistoryService.GetLatestDownloadHistoryItem(grab.DownloadId)?.EventType))
-                    return grab;
-
-                poisonedFallback ??= grab;
-            }
-            catch (Exception ex)
-            {
-                _logger.Trace(ex, "Skipping grab {DownloadId} while probing ownership of {File}", downloadId, probeFile);
-            }
+            poisonedFallback ??= grab;
         }
 
         // Visibility beats limbo: a poisoned re-attach at least surfaces the
@@ -1431,6 +1460,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 {
                     string[] audioFiles = [.. _diskProvider.GetFiles(folderPath, recursive: true).Where(AudioFormatHelper.IsPostProcessAudioFile)];
                     int written = SlskdSourceTag.Write(item, downloadRoot, audioFiles, _logger, cts.Token);
+                    _taggedFiles.Save(item.ID, item.TaggedFiles);
                     _logger.Debug("[post-process] {ItemId}: SOURCE={Source} written to {Written} of {Count} audio file(s)", item.ID, SlskdSourceTag.Value, written, audioFiles.Length);
                 }
 
@@ -1469,6 +1499,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                     // Refresh ownership identities after tagging — see
                     // SlskdDownloadItem._taggedFileSizes.
                     RecordTaggedFileIdentities(item, tagResult.TaggedFiles, ownedPathsBeforeTagging);
+                    _taggedFiles.Save(item.ID, item.TaggedFiles);
                 }
             }
             catch (OperationCanceledException)
@@ -1742,6 +1773,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             return;
         }
 
+        SlskdOwnedFiles ownedFiles = item.BuildOwnedFiles();
         await Task.WhenAll(files.Select(async file =>
         {
             if (SlskdFileState.GetStatus(file.State) != DownloadItemStatus.Completed)
@@ -1770,14 +1802,19 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                             .FullPath,
                         fileName);
 
-                    if (_diskProvider.FileExists(localFilePath))
+                    if (!_diskProvider.FileExists(localFilePath))
                     {
-                        _diskProvider.DeleteFile(localFilePath);
-                        _logger.Debug("Deleted local file: {Path}", localFilePath);
+                        _logger.Trace("Local file not found or path not accessible, skipping deletion: {Filename}", Path.GetFileName(file.Filename));
+                    }
+                    // Basename and size, as the folder delete: a same-named file of another grab in a shared folder stays.
+                    else if (!IsConclusivelyOwned(localFilePath, ownedFiles))
+                    {
+                        _logger.Debug("Keeping local file {Path}: not conclusively this download's", localFilePath);
                     }
                     else
                     {
-                        _logger.Trace("Local file not found or path not accessible, skipping deletion: {Filename}", Path.GetFileName(file.Filename));
+                        _diskProvider.DeleteFile(localFilePath);
+                        _logger.Debug("Deleted local file: {Path}", localFilePath);
                     }
                 }
             }
@@ -1888,6 +1925,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     {
         _downloadMappings.TryRemove(new DownloadKey<int, string>(definitionId, id), out _);
         _postProcessed.TryRemove(id, out _);
+        _taggedFiles.Delete(id);
     }
 
     private void RememberRemovedGrab(int definitionId, string id, SlskdDownloadItem? item)

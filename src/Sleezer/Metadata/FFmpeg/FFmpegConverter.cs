@@ -66,6 +66,11 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
         {
             if (trackFile == null)
                 return null!;
+
+            // Lidarr also calls this for every file at each artist scan; only an import, not yet saved, is converted.
+            if (trackFile.Id != 0)
+                return null!;
+
             string path = trackFile.Path ?? string.Empty;
             if (string.IsNullOrEmpty(path))
                 return null!;
@@ -286,6 +291,10 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
                 return false;
             }
 
+            // No rule could match, so the file isn't probed.
+            if (artistRule == null && !AnyRuleSet())
+                return false;
+
             AudioFormat trackFormat = await GetTrackAudioFormatAsync(trackFile.Path);
             if (trackFormat == AudioFormat.Unknown)
                 return false;
@@ -365,6 +374,9 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
 
         private static string FormatDescriptionWithBitrate(AudioFormat format, int? bitrate)
             => format + (bitrate.HasValue ? $" ({bitrate}kbps)" : "");
+
+        private bool AnyRuleSet() =>
+            Enum.GetValues<AudioFormat>().Any(IsFormatEnabledForConversion) || Settings.CustomConversion.Any();
 
         private bool IsFormatEnabledForConversion(AudioFormat format) => format switch
         {

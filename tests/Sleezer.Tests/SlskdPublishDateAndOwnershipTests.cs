@@ -262,6 +262,22 @@ public class SlskdOwnershipOverlayTests
         Assert.False(item.BuildOwnedFiles().Owns("track.flac", 100));
     }
 
+    [Fact]
+    public void A_file_renamed_twice_is_recorded_under_its_latest_name_only()
+    {
+        SlskdDownloadItem item = NewItem((@"@@x\Glass Harbour\4. Lantern Song.flac", 100));
+
+        item.RecordTaggedFile("/downloads/Glass Harbour/4. Lantern Song.flac", 120);
+        item.RecordTaggedFile("/downloads/Glass Harbour/02 - Lantern Song.flac", 130, "/downloads/Glass Harbour/4. Lantern Song.flac");
+        item.RecordTaggedFile("/downloads/Glass Harbour/02 - Glass Harbour - Lantern Song.flac", 130, "/downloads/Glass Harbour/02 - Lantern Song.flac");
+        SlskdOwnedFiles owned = item.BuildOwnedFiles();
+
+        Assert.Equal(["/downloads/Glass Harbour/02 - Glass Harbour - Lantern Song.flac"], item.TaggedFiles.Select(f => f.Path));
+        Assert.Empty(owned.SizesOf("02 - Lantern Song.flac"));
+        Assert.Equal([100], owned.SizesOf("4. Lantern Song.flac"));
+        Assert.True(owned.Owns("02 - Glass Harbour - Lantern Song.flac", 130));
+    }
+
     // Per-disc artwork must not raise the folder-recovery bar: the majority rule counts audio files.
     [Fact]
     public void The_folder_majority_counts_audio_files_only()

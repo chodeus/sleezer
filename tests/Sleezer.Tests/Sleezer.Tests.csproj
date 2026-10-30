@@ -395,6 +395,12 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Download\Clients\Soulseek\Models\SlskdOwnedFiles.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Download\Clients\Soulseek\SlskdTaggedFilesStore.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Download\Clients\Soulseek\SlskdRecentGrabs.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Indexers\Soulseek\SlskdApiKey.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Download\Clients\Soulseek\Models\SlskdDownloadDirectory.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Download\Clients\Soulseek\SlskdPathResolver.cs"
@@ -432,6 +438,12 @@
     <Compile Include="..\..\src\Sleezer\Notifications\QueueCleaner\ImportRejections.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Notifications\QueueCleaner\QueueCleanerSettings.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Notifications\QueueCleaner\QueueCleaner.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Notifications\QueueCleaner\DownloadFileRenamedEvent.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Notifications\QueueCleaner\IDownloadFileOwnership.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Model\PlaylistItem.cs"
              LinkBase="SourceUnderTest" />

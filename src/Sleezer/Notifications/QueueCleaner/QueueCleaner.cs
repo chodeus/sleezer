@@ -1,6 +1,7 @@
 ﻿using FluentValidation.Results;
 using NLog;
 using NzbDrone.Common.Disk;
+using NzbDrone.Core.Blocklisting;
 using NzbDrone.Core.Download;
 using NzbDrone.Core.Download.TrackedDownloads;
 using NzbDrone.Core.History;
@@ -28,6 +29,11 @@ namespace NzbDrone.Plugin.Sleezer.Notifications.QueueCleaner
         private readonly IEventAggregator _eventAggregator;
         private readonly INamingConfigService _namingConfig;
         private readonly IIndexerFactory _indexerFactory;
+        private readonly IProvideDownloadClient _downloadClientProvider;
+        private readonly IBlocklistRepository _blocklistRepository;
+        private readonly List<IBlocklistForProtocol> _protocolBlocklists;
+        private readonly List<IDownloadFileOwnership> _fileOwnership;
+        private static readonly HashSet<string> AudioExtensions = MediaFileExtensions.Extensions;
 
         public override string Name => "Queue Cleaner";
 
@@ -35,8 +41,14 @@ namespace NzbDrone.Plugin.Sleezer.Notifications.QueueCleaner
 
         public override ProviderMessage Message => new("Queue Cleaner automatically processes items that failed to import. It can rename, blocklist, or remove items based on your settings.", ProviderMessageType.Info);
 
-        public QueueCleaner(IDiskProvider diskProvider, IHistoryService historyService, INamingConfigService namingConfig, IEventAggregator eventAggregator, IIndexerFactory indexerFactory, ICompletedDownloadService completedDownloadService, Logger logger)
+        public QueueCleaner(IDiskProvider diskProvider, IHistoryService historyService, INamingConfigService namingConfig, IEventAggregator eventAggregator, IIndexerFactory indexerFactory, ICompletedDownloadService completedDownloadService,
+            IProvideDownloadClient downloadClientProvider, IBlocklistRepository blocklistRepository, IEnumerable<IBlocklistForProtocol> protocolBlocklists,
+            IEnumerable<IDownloadFileOwnership> fileOwnership, Logger logger)
         {
+            _fileOwnership = [.. fileOwnership];
+            _downloadClientProvider = downloadClientProvider;
+            _blocklistRepository = blocklistRepository;
+            _protocolBlocklists = [.. protocolBlocklists];
             _logger = logger;
             _indexerFactory = indexerFactory;
             _diskProvider = diskProvider;
@@ -106,29 +118,39 @@ namespace NzbDrone.Plugin.Sleezer.Notifications.QueueCleaner
                 return;
             }
 
-            if (Settings.BlocklistOption == (int)BlocklistOptions.RemoveAndBlocklist || Settings.BlocklistOption == (int)BlocklistOptions.BlocklistOnly)
-                Blocklist(trackedDownload);
-
-            if (Settings.BlocklistOption == (int)BlocklistOptions.RemoveAndBlocklist || Settings.BlocklistOption == (int)BlocklistOptions.RemoveOnly)
-                Remove(trackedDownload);
+            switch ((BlocklistOptions)Settings.BlocklistOption)
+            {
+                // Removed first, so Lidarr's own removal on the failed event below is skipped.
+                case BlocklistOptions.RemoveAndBlocklist:
+                    Remove(trackedDownload);
+                    Blocklist(trackedDownload);
+                    break;
+                case BlocklistOptions.BlocklistOnly:
+                    BlocklistOnly(trackedDownload);
+                    break;
+                case BlocklistOptions.RemoveOnly:
+                    Remove(trackedDownload);
+                    break;
+            }
         }
 
-        private void Remove(TrackedDownload item)
+        private void Remove(TrackedDownload item) => RemoveThroughClient(item, _downloadClientProvider, _logger);
+
+        // Through the download client, which deletes only the download's own files, whatever its "Remove Completed" says.
+        internal static void RemoveThroughClient(TrackedDownload item, IProvideDownloadClient downloadClientProvider, Logger logger)
         {
-            if (!item.DownloadItem.CanBeRemoved)
+            if (!item.DownloadItem.CanBeRemoved || item.DownloadItem.Removed)
                 return;
 
-            string downloadPath = item.DownloadItem.OutputPath.FullPath;
-            if (!_diskProvider.FolderExists(downloadPath))
+            try
             {
-                _logger.Debug("Skipping file cleanup: Download directory no longer exists: {0}", downloadPath);
-                _eventAggregator.PublishEvent(new DownloadCanBeRemovedEvent(item));
-                return;
+                downloadClientProvider.Get(item.DownloadClient).RemoveItem(item.DownloadItem, true);
+                item.DownloadItem.Removed = true;
             }
-
-            foreach (IFileInfo file in (List<IFileInfo>)_diskProvider.GetFileInfos(downloadPath, true))
-                _diskProvider.DeleteFile(file.FullName);
-            _eventAggregator.PublishEvent(new DownloadCanBeRemovedEvent(item));
+            catch (Exception ex)
+            {
+                logger.Warn(ex, "QueueCleaner: could not remove {Title} from its download client", item.DownloadItem.Title);
+            }
         }
 
         private bool Rename(TrackedDownload item)
@@ -146,18 +168,35 @@ namespace NzbDrone.Plugin.Sleezer.Notifications.QueueCleaner
                 return false;
             }
 
-            List<IFileInfo> filesOnDisk = [.. _diskProvider.GetFileInfos(downloadPath, true)];
-            HashSet<string> audioExtensions = new(MediaFileExtensions.Extensions, StringComparer.OrdinalIgnoreCase);
-            ReleaseFormatter releaseFormatter = new(item.RemoteAlbum.Release, item.RemoteAlbum.Artist, _namingConfig.GetConfig());
+            if (item.RemoteAlbum == null)
+            {
+                _logger.Debug("Skipping rename: no album for {0}", item.DownloadItem.Title);
+                return false;
+            }
 
-            return filesOnDisk.Any(file => TryRenameFile(file, audioExtensions, releaseFormatter, filesOnDisk));
+            // Only this download's: a Soulseek folder can also hold another grab's files.
+            string downloadId = item.DownloadItem.DownloadId;
+            List<IFileInfo> filesOnDisk = [.. _diskProvider.GetFileInfos(downloadPath, true).Where(f => IsDownloadsFile(_fileOwnership, downloadId, f.FullName))];
+            ReleaseFormatter releaseFormatter = new(item.RemoteAlbum.Release, item.RemoteAlbum.Artist, _namingConfig.GetConfig());
+            string? albumTitle = item.RemoteAlbum.Albums?.FirstOrDefault()?.Title;
+
+            // A loop, not Any: Any would stop at the first file renamed.
+            bool renamed = false;
+            foreach (IFileInfo file in filesOnDisk.Where(f => AudioExtensions.Contains(Path.GetExtension(f.FullName))))
+                renamed |= TryRenameFile(file, releaseFormatter, albumTitle, filesOnDisk, downloadId);
+
+            return renamed;
         }
 
-        private bool TryRenameFile(IFileInfo file, HashSet<string> audioExtensions, ReleaseFormatter releaseFormatter, List<IFileInfo> filesOnDisk)
+        // The client that knows the download decides; a download no client claims owns every file in its folder.
+        internal static bool IsDownloadsFile(IEnumerable<IDownloadFileOwnership> ownership, string downloadId, string path) =>
+            ownership.Select(o => o.Owns(downloadId, path)).FirstOrDefault(owned => owned != null) ?? true;
+
+        private bool TryRenameFile(IFileInfo file, ReleaseFormatter releaseFormatter, string? albumTitle, List<IFileInfo> filesOnDisk, string downloadId)
         {
             string filePath = file.FullName;
             string? directory = Path.GetDirectoryName(filePath);
-            if (directory == null || !audioExtensions.Contains(Path.GetExtension(filePath)))
+            if (directory == null)
             {
                 _logger.Warn($"Unable to determine directory for file: {filePath}");
                 return false;
@@ -175,15 +214,19 @@ namespace NzbDrone.Plugin.Sleezer.Notifications.QueueCleaner
                     Title = title,
                     TrackNumber = trackNumber,
                     Artist = new Artist { Name = artistName }
-                }, new Album { Title = title });
+                }, new Album { Title = albumTitle ?? title });
 
                 string newFileName = $"{newFileNameWithoutExtension}{Path.GetExtension(filePath)}";
                 string newFilePath = Path.Combine(directory, newFileName);
 
                 if (!newFilePath.Equals(filePath, StringComparison.OrdinalIgnoreCase) && MoveFile(filePath, newFilePath))
                 {
+                    // A download client that tracks its files by name (Soulseek) must learn the new one, or removal leaves it.
+                    _eventAggregator.PublishEvent(new DownloadFileRenamedEvent(downloadId, filePath, newFilePath));
                     string oldBaseName = Path.GetFileNameWithoutExtension(filePath);
-                    filesOnDisk.Where(f => !Path.GetExtension(f.FullName).Equals(Path.GetExtension(filePath), StringComparison.OrdinalIgnoreCase) &&
+                    // Not audio: each audio file is renamed, and its new name announced, by its own pass. Same folder: another disc's "01.lrc" stays.
+                    filesOnDisk.Where(f => !AudioExtensions.Contains(Path.GetExtension(f.FullName)) &&
+                                          string.Equals(Path.GetDirectoryName(f.FullName), directory, StringComparison.Ordinal) &&
                                           Path.GetFileNameWithoutExtension(f.FullName).Equals(oldBaseName, StringComparison.OrdinalIgnoreCase)).ToList()
                               .ForEach(associatedFile => MoveFile(associatedFile.FullName, Path.Combine(directory, $"{newFileNameWithoutExtension}{Path.GetExtension(associatedFile.FullName)}")));
                     return true;
@@ -215,21 +258,48 @@ namespace NzbDrone.Plugin.Sleezer.Notifications.QueueCleaner
         {
             item.State = TrackedDownloadState.DownloadFailed;
 
-            List<EntityHistory> grabbedItems = [.. _historyService.Find(item.DownloadItem.DownloadId, EntityHistoryEventType.Grabbed)];
-            if (grabbedItems.Count == 0)
+            if (FailedEvent([.. _historyService.Find(item.DownloadItem.DownloadId, EntityHistoryEventType.Grabbed)], "Import failed: Item removed by Queue Cleaner.") is not { } failed)
             {
-                // No grab history for this download — nothing to blocklist against.
-                // Without a guard, grabbedItems[^1] would throw IndexOutOfRange and
-                // crash the queue-cleaner loop. Bail out and let the cleaner remove
-                // the queue item without recording a blocklist entry.
                 _logger.Warn("QueueCleaner: no grab history for download {DownloadId}; skipping blocklist record", item.DownloadItem.DownloadId);
                 return;
             }
-            EntityHistory historyItem = grabbedItems[^1];
 
+            failed.TrackedDownload = item;
+            failed.SkipRedownload = !Settings.RetryFindingRelease;
+            _eventAggregator.PublishEvent(failed);
+        }
+
+        private void BlocklistOnly(TrackedDownload item) =>
+            WriteBlocklistRow(item, [.. _historyService.Find(item.DownloadItem.DownloadId, EntityHistoryEventType.Grabbed)], _protocolBlocklists, _blocklistRepository, _logger);
+
+        // The row only: the download isn't failed, so it stays queued for a manual import and nothing is searched again.
+        internal static void WriteBlocklistRow(TrackedDownload item, IReadOnlyList<EntityHistory> grabs, IEnumerable<IBlocklistForProtocol> protocolBlocklists, IBlocklistRepository blocklist, Logger logger)
+        {
+            if (FailedEvent(grabs, "Import failed: blocklisted by Queue Cleaner.") is not { } failed)
+            {
+                logger.Warn("QueueCleaner: no grab history for download {DownloadId}; skipping blocklist record", item.DownloadItem.DownloadId);
+                return;
+            }
+
+            if (BlocklistRow(failed, protocolBlocklists) is not { } row)
+            {
+                logger.Warn("QueueCleaner: no blocklist for protocol {Protocol}; {Title} was not blocklisted", failed.Data.GetValueOrDefault("protocol"), item.DownloadItem.Title);
+                return;
+            }
+
+            blocklist.Insert(row);
+        }
+
+        // The failed-download event for a grab, from its grab history; null without one.
+        private static DownloadFailedEvent? FailedEvent(IReadOnlyList<EntityHistory> grabbedItems, string message)
+        {
+            if (grabbedItems.Count == 0)
+                return null;
+
+            EntityHistory historyItem = grabbedItems[^1];
             _ = Enum.TryParse(historyItem.Data.GetValueOrDefault(EntityHistory.RELEASE_SOURCE, nameof(ReleaseSourceType.Unknown)), out ReleaseSourceType releaseSource);
 
-            DownloadFailedEvent downloadFailedEvent = new()
+            return new DownloadFailedEvent
             {
                 ArtistId = historyItem.ArtistId,
                 AlbumIds = grabbedItems.Select(h => h.AlbumId).Distinct().ToList(),
@@ -242,13 +312,22 @@ namespace NzbDrone.Plugin.Sleezer.Notifications.QueueCleaner
                 // actual stored key.
                 DownloadClient = new Dictionary<string, string>(historyItem.Data, StringComparer.OrdinalIgnoreCase).GetValueOrDefault("DownloadClient"),
                 DownloadId = historyItem.DownloadId,
-                Message = "Import failed: Item removed by Queue Cleaner.",
+                Message = message,
                 Data = historyItem.Data,
-                TrackedDownload = item,
-                SkipRedownload = !Settings.RetryFindingRelease,
                 ReleaseSource = releaseSource
             };
-            _eventAggregator.PublishEvent(downloadFailedEvent);
+        }
+
+        // The row Lidarr's BlocklistService writes for a failed download (BlocklistService.Handle(DownloadFailedEvent)).
+        private static Blocklist? BlocklistRow(DownloadFailedEvent failed, IEnumerable<IBlocklistForProtocol> protocolBlocklists)
+        {
+            if (protocolBlocklists.FirstOrDefault(x => x.Protocol == failed.Data.GetValueOrDefault("protocol")) is not { } protocolBlocklist)
+                return null;
+
+            Blocklist row = protocolBlocklist.GetBlocklist(failed);
+            if (Enum.TryParse(failed.Data.GetValueOrDefault("indexerFlags"), true, out IndexerFlags flags))
+                row.IndexerFlags = flags;
+            return row;
         }
 
         private void Retry(TrackedDownload item)

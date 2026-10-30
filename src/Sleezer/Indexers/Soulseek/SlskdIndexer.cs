@@ -81,7 +81,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             try
             {
                 HttpRequest request = new HttpRequestBuilder($"{Settings.BaseUrl}/api/v0/application")
-                    .SetHeader("X-API-KEY", Settings.ApiKey).Build();
+                    .WithApiKey(Settings.ApiKey).Build();
                 request.AllowAutoRedirect = true;
                 request.RequestTimeout = TimeSpan.FromSeconds(30);
                 HttpResponse response = await _httpClient.ExecuteAsync(request);
@@ -106,6 +106,10 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                     return PermissionTester.TestReadWritePermissions(Path.GetDirectoryName(Settings.IgnoreListPath)!, _logger)!;
                 }
                 return null!;
+            }
+            catch (HttpException ex) when (SlskdApiKey.Refused(ex.Response.StatusCode, Settings.ApiKey) is { } refused)
+            {
+                return refused;
             }
             catch (HttpException ex)
             {
