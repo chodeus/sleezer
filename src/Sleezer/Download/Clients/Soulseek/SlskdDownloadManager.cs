@@ -110,7 +110,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         _downloadClientRepository = downloadClientRepository;
         _ffmpeg = new FFmpegPathResolver(logger);
         _retryHandler = new SlskdRetryHandler(apiClient, NzbDroneLogger.GetLogger(typeof(SlskdRetryHandler)));
-        _recentGrabs = new SlskdRecentGrabs(SoulseekGrabsSince, () => DateTime.UtcNow);
+        _recentGrabs = new SlskdRecentGrabs(SoulseekGrabsSince, () => DateTime.UtcNow, logger);
         _taggedFiles = new SlskdTaggedFilesStore(Path.Combine(PluginFolder.Resolve(appFolderInfo.GetPluginPath(), PluginInfo.RepoUrl), "slskd-tagged"), logger);
     }
 
@@ -1767,6 +1767,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             return;
         }
 
+        SlskdOwnedFiles ownedFiles = item.BuildOwnedFiles();
         await Task.WhenAll(files.Select(async file =>
         {
             if (SlskdFileState.GetStatus(file.State) != DownloadItemStatus.Completed)
@@ -1795,14 +1796,19 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                             .FullPath,
                         fileName);
 
-                    if (_diskProvider.FileExists(localFilePath))
+                    if (!_diskProvider.FileExists(localFilePath))
                     {
-                        _diskProvider.DeleteFile(localFilePath);
-                        _logger.Debug("Deleted local file: {Path}", localFilePath);
+                        _logger.Trace("Local file not found or path not accessible, skipping deletion: {Filename}", Path.GetFileName(file.Filename));
+                    }
+                    // Basename and size, as the folder delete: a same-named file of another grab in a shared folder stays.
+                    else if (!IsConclusivelyOwned(localFilePath, ownedFiles))
+                    {
+                        _logger.Debug("Keeping local file {Path}: not conclusively this download's", localFilePath);
                     }
                     else
                     {
-                        _logger.Trace("Local file not found or path not accessible, skipping deletion: {Filename}", Path.GetFileName(file.Filename));
+                        _diskProvider.DeleteFile(localFilePath);
+                        _logger.Debug("Deleted local file: {Path}", localFilePath);
                     }
                 }
             }

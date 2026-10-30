@@ -6,7 +6,6 @@ using Xunit;
 
 namespace Sleezer.Tests;
 
-// slskd with authentication turned off needs no API key.
 public class SlskdApiKeyTests
 {
     [Fact]

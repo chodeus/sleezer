@@ -13,7 +13,6 @@ using Xunit;
 
 namespace Sleezer.Tests;
 
-// Queue Cleaner removes through the download client, and "Blocklist Only" writes Lidarr's row without failing the download.
 public class QueueCleanerTests
 {
     private static readonly Logger Log = LogManager.GetLogger("tests");
@@ -31,23 +30,39 @@ public class QueueCleanerTests
     [Fact]
     public void blocklist_only_writes_the_row_lidarr_would_write_for_the_grab()
     {
-        DownloadFailedEvent failed = QueueCleaner.FailedEvent([Grab(10), Grab(11), Grab(10)], "Import failed: blocklisted by Queue Cleaner.")!;
-        Blocklist? row = QueueCleaner.BlocklistRow(failed, [new SoulseekBlocklist(new FakeBlocklistRepository())]);
+        FakeBlocklistRepository blocklist = new();
+        TrackedDownload download = Download();
+        download.State = TrackedDownloadState.ImportFailed;
 
-        Assert.NotNull(row);
-        Assert.Equal("36_Slskd-peer-folder", row!.TorrentInfoHash);
+        QueueCleaner.WriteBlocklistRow(download, [Grab(10), Grab(11), Grab(10)], [new SoulseekBlocklist(blocklist)], blocklist, Log);
+
+        Blocklist row = Assert.Single(blocklist.All());
+        Assert.Equal("36_Slskd-peer-folder", row.TorrentInfoHash);
         Assert.Equal([10, 11], row.AlbumIds);
         Assert.Equal(IndexerFlags.Freeleech, row.IndexerFlags);
         Assert.Equal("Import failed: blocklisted by Queue Cleaner.", row.Message);
+        Assert.Equal(TrackedDownloadState.ImportFailed, download.State);
     }
 
     [Fact]
-    public void a_download_with_no_grab_in_history_has_nothing_to_blocklist() =>
-        Assert.Null(QueueCleaner.FailedEvent([], "Import failed: blocklisted by Queue Cleaner."));
+    public void a_download_with_no_grab_in_history_has_nothing_to_blocklist()
+    {
+        FakeBlocklistRepository blocklist = new();
+
+        QueueCleaner.WriteBlocklistRow(Download(), [], [new SoulseekBlocklist(blocklist)], blocklist, Log);
+
+        Assert.Empty(blocklist.All());
+    }
 
     [Fact]
-    public void a_protocol_without_a_blocklist_gets_no_row() =>
-        Assert.Null(QueueCleaner.BlocklistRow(QueueCleaner.FailedEvent([Grab(10)], "x")!, []));
+    public void a_grab_whose_protocol_has_no_blocklist_gets_no_row()
+    {
+        FakeBlocklistRepository blocklist = new();
+
+        QueueCleaner.WriteBlocklistRow(Download(), [Grab(10)], [new QobuzBlocklist(blocklist)], blocklist, Log);
+
+        Assert.Empty(blocklist.All());
+    }
 
     [Fact]
     public void remove_goes_through_the_download_client_and_deletes_its_data()

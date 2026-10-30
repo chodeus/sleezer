@@ -1,3 +1,4 @@
+using NLog;
 using NzbDrone.Core.Download.History;
 using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek.Models;
 
@@ -7,7 +8,7 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
 /// The Soulseek grabs of the last 14 days, newest first, with their files read once: a folder no grab owns is probed
 /// on every poll, so the whole window is read once a minute and each call reads only the grabs written since.
 /// </summary>
-public sealed class SlskdRecentGrabs(Func<DateTime, IReadOnlyList<DownloadHistory>> grabsSince, Func<DateTime> now)
+public sealed class SlskdRecentGrabs(Func<DateTime, IReadOnlyList<DownloadHistory>> grabsSince, Func<DateTime> now, Logger logger)
 {
     private static readonly TimeSpan Window = TimeSpan.FromDays(14);
     private static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(1);
@@ -44,7 +45,7 @@ public sealed class SlskdRecentGrabs(Func<DateTime, IReadOnlyList<DownloadHistor
         }
     }
 
-    private static List<(DownloadHistory Grab, SlskdDownloadItem Files)> WithFiles(IReadOnlyList<DownloadHistory> history)
+    private List<(DownloadHistory Grab, SlskdDownloadItem Files)> WithFiles(IReadOnlyList<DownloadHistory> history)
     {
         List<(DownloadHistory Grab, SlskdDownloadItem Files)> grabs = [];
         foreach (DownloadHistory grab in history)
@@ -53,9 +54,9 @@ public sealed class SlskdRecentGrabs(Func<DateTime, IReadOnlyList<DownloadHistor
             {
                 grabs.Add((grab, new SlskdDownloadItem(grab.Release)));
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                // A release whose file list can't be read owns no folder.
+                logger.Trace(ex, "Grab {DownloadId}'s file list can't be read, so it owns no folder", grab.DownloadId);
             }
         }
 

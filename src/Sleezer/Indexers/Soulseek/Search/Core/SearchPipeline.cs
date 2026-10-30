@@ -103,9 +103,9 @@ public sealed class SearchPipeline : ISlskdSearchChain
             var searchQuery = SearchQuery.FromContext(context) with { SearchText = query };
             return searchExecutor(searchQuery).ToList();
         }
-        catch (RequestLimitReachedException)
+        catch (Exception ex) when (ex is RequestLimitReachedException or ApiKeyException)
         {
-            // slskd is disconnected / temporarily banned — let Lidarr's indexer
+            // slskd is disconnected / temporarily banned, or refuses the API key — let Lidarr's indexer
             // backoff handler see it so the indexer gets disabled once, instead
             // of us swallowing it and logging a stack per strategy tier.
             throw;

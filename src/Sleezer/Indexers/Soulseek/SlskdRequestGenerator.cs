@@ -153,7 +153,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                     _logger.Trace("GetRequestsAsync returned null for search: {SearchText}", searchText);
                 }
             }
-            catch (RequestLimitReachedException)
+            catch (Exception ex) when (ex is RequestLimitReachedException or ApiKeyException)
             {
                 throw;
             }
@@ -198,6 +198,11 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 // nothing found" — swallowing it here made a transient slskd
                 // hiccup indistinguishable from "album does not exist".
                 throw;
+            }
+            catch (HttpException ex) when (SlskdApiKey.Refused(ex.Response.StatusCode, Settings.ApiKey) is { } refused)
+            {
+                // A failure, not "nothing found": an slskd whose authentication was turned on after setup refuses every search.
+                throw new ApiKeyException(refused.ErrorMessage);
             }
             catch (Exception ex)
             {

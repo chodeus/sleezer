@@ -7,7 +7,6 @@ using Xunit;
 
 namespace Sleezer.Tests;
 
-// A grab's tagged and renamed files survive a Lidarr restart: the item rebuilt afterwards reads them back and still owns them.
 public sealed class SlskdTaggedFilesStoreTests : IDisposable
 {
     private const string Renamed = "/downloads/Glass Harbour/02 - Lantern Song.flac";

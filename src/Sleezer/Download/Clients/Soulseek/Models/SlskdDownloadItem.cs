@@ -185,6 +185,11 @@ public class SlskdDownloadItem
             return;
 
         bool renamed = originalPath != null && !string.Equals(Path.GetFileName(originalPath), Path.GetFileName(path), StringComparison.OrdinalIgnoreCase);
+
+        // The file left its old path, so that entry would claim another file of the old name and size.
+        if (originalPath != null && !string.Equals(originalPath, path, StringComparison.Ordinal))
+            _taggedFileSizes.TryRemove(originalPath, out _);
+
         _taggedFileSizes.AddOrUpdate(path, (size, renamed), (_, recorded) => (size, renamed || recorded.Renamed));
     }
 

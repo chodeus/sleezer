@@ -1,4 +1,5 @@
 using System.Text.Json;
+using NLog;
 using NzbDrone.Core.Download.History;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
@@ -6,7 +7,6 @@ using Xunit;
 
 namespace Sleezer.Tests;
 
-// The recent grabs a folder is matched against are read in full once a minute; each call adds only the grabs written since.
 public class SlskdRecentGrabsTests
 {
     private const string Lantern = @"@@x\Glass Harbour\01 Lantern Song.flac";
@@ -29,7 +29,7 @@ public class SlskdRecentGrabsTests
         {
             Reads.Add(since);
             return [.. Rows.Where(r => r.Date >= since).OrderByDescending(r => r.Date)];
-        }, () => Now);
+        }, () => Now, LogManager.GetLogger("tests"));
     }
 
     [Fact]
