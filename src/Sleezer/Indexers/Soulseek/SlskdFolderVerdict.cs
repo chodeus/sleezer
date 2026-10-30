@@ -53,7 +53,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             judgement.ArtistMatch = IsFuzzyArtistMatch(dirNameNorm, searchArtistNorm, strictnessOffset);
 
             AddNameReasons(judgement, albumSearched, isVolumeSearch);
-            bool titlesCarryIt = ApplyTitleEvidence(judgement, evidence, searchArtistNorm, strictnessOffset);
+            bool titlesCarryIt = ApplyTitleEvidence(judgement, evidence, searchArtistNorm, searchData.Tracks, strictnessOffset);
             judgement.Matched = NamesMeetSearch(judgement, searchArtistNorm, albumSearched, titlesCarryIt);
             JudgeCombinedName(judgement, dirNameNorm, searchData, strictnessOffset);
         }
@@ -81,13 +81,13 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
         // Enough wanted titles in the file names make the folder the album, however it is named. One title in a folder naming
         // neither artist nor album is too weak ("Keep Dancing" in another artist's "Legs (Keep Dancing)"), unless the file names the artist.
-        private static bool ApplyTitleEvidence(FolderJudgement judgement, TrackTitleEvidence evidence, string searchArtistNorm, int strictnessOffset)
+        private static bool ApplyTitleEvidence(FolderJudgement judgement, TrackTitleEvidence evidence, string searchArtistNorm, List<string>? wantedTitles, int strictnessOffset)
         {
             if (evidence.Share < TrackEvidenceThreshold)
                 return false;
 
             if (evidence.Covered < 2 && !judgement.ArtistMatch && !judgement.AlbumMatch && !string.IsNullOrEmpty(searchArtistNorm) &&
-                !evidence.Files.Any(f => IsFuzzyArtistMatch(NormalizeString(Path.GetFileNameWithoutExtension((f.Filename ?? string.Empty).Replace('\\', '/'))), searchArtistNorm, strictnessOffset)))
+                !evidence.Files.Any(f => IsFuzzyArtistMatch(NameWithoutTitles(f, wantedTitles), searchArtistNorm, strictnessOffset)))
             {
                 judgement.Reasons.Add("one track title, neither artist nor album named");
                 return false;
@@ -96,6 +96,15 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             judgement.AlbumMatch = true;
             judgement.Reasons.Add($"track titles {(int)Math.Round(evidence.Share * 100, MidpointRounding.AwayFromZero)}%");
             return true;
+        }
+
+        // The file's name without the wanted titles, so a title word ("Ox" in "Ox Lantern Song") can't stand for the artist.
+        private static string NameWithoutTitles(SlskdFileData file, List<string>? wantedTitles)
+        {
+            string name = $" {NormalizeString(Path.GetFileNameWithoutExtension((file.Filename ?? string.Empty).Replace('\\', '/')))} ";
+            foreach (string title in (wantedTitles ?? []).Select(NormalizeString).Where(t => t.Length > 0).OrderByDescending(t => t.Length))
+                name = name.Replace($" {title} ", " ", StringComparison.Ordinal);
+            return name.Trim();
         }
 
         private static bool NamesMeetSearch(FolderJudgement judgement, string searchArtistNorm, string searchAlbumNorm, bool titlesCarryIt) =>

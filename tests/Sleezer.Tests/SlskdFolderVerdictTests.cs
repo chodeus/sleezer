@@ -145,6 +145,17 @@ public class SlskdFolderVerdictTests
         Assert.Contains("one track title, neither artist nor album named", v.Reasons);
     }
 
+    // The artist's name inside the wanted title is the title, not the artist.
+    [Fact]
+    public void a_title_word_is_not_the_artist_named_in_the_file()
+    {
+        SlskdFolderVerdict v = Judge(@"Music\Salt Road\Driftwood", ["01 Ox Lantern Song.flac"],
+            new SlskdSearchData("Ox", "Glass Harbour", false, false, 1, null, TrackCount: 1, Tracks: ["Ox Lantern Song"]));
+
+        Assert.False(v.Matched);
+        Assert.Contains("one track title, neither artist nor album named", v.Reasons);
+    }
+
     [Fact]
     public void one_track_title_carries_when_its_file_names_the_artist()
     {
