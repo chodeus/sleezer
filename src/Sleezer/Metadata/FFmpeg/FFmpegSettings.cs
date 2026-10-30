@@ -114,6 +114,8 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
     {
         private static readonly FFmpegSettingsValidator Validator = new();
 
+        private IEnumerable<KeyValuePair<string, string>> _customConversion = [];
+
         [FieldDefinition(0, Label = "FFmpeg Path", Type = FieldType.Path, Section = MetadataSectionType.Metadata, Placeholder = "/downloads/FFmpeg", HelpText = "Required. Where Sleezer keeps ffmpeg for conversion, the corrupt scan's decode check and Tidal's M4A handling. Saving installs ffmpeg here if it is missing (from chodeus/ffmpeg-static, checked for updates daily). A newer ffmpeg on the host PATH is preferred over the downloaded copy.", HelpTextWarning = "Enable only switches on conversion, and conversion runs on EVERY track Lidarr imports, torrent and Usenet included. The corrupt scan runs whether or not this entry is enabled.")]
         public string FFmpegPath { get; set; } = string.Empty;
 
@@ -138,8 +140,13 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
         [FieldDefinition(8, Label = "Target Format", Type = FieldType.Select, SelectOptions = typeof(TargetAudioFormat), Section = MetadataSectionType.Metadata, HelpText = "Select the target format to convert audio files into.")]
         public int TargetFormat { get; set; } = (int)TargetAudioFormat.Opus;
 
+        // Never null: an API save can send null, and the converter reads this on every import.
         [FieldDefinition(9, Label = "Custom Conversion Rules", Type = FieldType.KeyValueList, Section = MetadataSectionType.Metadata, HelpText = "Custom conversion rules. Examples: 'flac -> mp3:320:cbr' (FLAC to CBR MP3), 'mp3:320 -> mp3:128' (downsample), 'flac:24 -> flac:16' (reduce bit depth). Add ':cbr' for constant bitrate encoding. Upsampling is blocked automatically.")]
-        public IEnumerable<KeyValuePair<string, string>> CustomConversion { get; set; } = [];
+        public IEnumerable<KeyValuePair<string, string>> CustomConversion
+        {
+            get => _customConversion;
+            set => _customConversion = value ?? [];
+        }
 
         [FieldDefinition(10, Label = "Run Corrupt Scan On", Type = FieldType.TagSelect, SelectOptions = typeof(PostProcessClient), Section = MetadataSectionType.Metadata, Placeholder = "Type to add a client", HelpText = "After download, scan audio files for corruption on the selected Sleezer downloaders: size, TagLib parse and, when ffmpeg can be found, a decode. One corrupt file fails the whole download: its folder is deleted and the release is re-searched. Empty = scan disabled. Runs whether or not this entry is enabled; not on torrent or Usenet downloads.")]
         public IEnumerable<int> CorruptionScanClients { get; set; } = Array.Empty<int>();
