@@ -267,8 +267,13 @@ namespace NzbDrone.Plugin.Sleezer.Notifications.QueueCleaner
                 return;
             }
 
-            if (BlocklistRow(failed, _protocolBlocklists) is { } row)
-                _blocklistRepository.Insert(row);
+            if (BlocklistRow(failed, _protocolBlocklists) is not { } row)
+            {
+                _logger.Warn("QueueCleaner: no blocklist for protocol {Protocol}; {Title} was not blocklisted", failed.Data.GetValueOrDefault("protocol"), item.DownloadItem.Title);
+                return;
+            }
+
+            _blocklistRepository.Insert(row);
         }
 
         // The failed-download event for a grab, from its grab history; null without one.
