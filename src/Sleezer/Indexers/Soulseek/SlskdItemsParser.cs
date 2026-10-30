@@ -622,14 +622,15 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         /// Maps wanted track titles onto the folder's files. Returns the files
         /// in whose (track-number-stripped) filename a wanted title stands alone, the
         /// number of DISTINCT wanted tracks covered, and the number of wanted
-        /// titles long enough to match on (the track-evidence denominator).
+        /// titles long enough to match on (the track-evidence denominator), and whether a matched file names the artist
+        /// outside its title and track number.
         /// </summary>
-        private static (List<SlskdFileData> MatchedFiles, int CoveredTracks, int WantedTitles) MatchWantedTrackFiles(
-            IEnumerable<SlskdFileData> files, List<string>? expectedTracks, IReadOnlyCollection<string>? targetVariantTypes = null)
+        private static (List<SlskdFileData> MatchedFiles, int CoveredTracks, int WantedTitles, bool ArtistNamed) MatchWantedTrackFiles(
+            IEnumerable<SlskdFileData> files, List<string>? expectedTracks, IReadOnlyCollection<string>? targetVariantTypes = null, string? artistNorm = null, int strictnessOffset = 0)
         {
             List<SlskdFileData> matched = [];
             if (expectedTracks == null || expectedTracks.Count == 0)
-                return (matched, 0, 0);
+                return (matched, 0, 0, false);
 
             // Raw title kept alongside the normalized one: normalization strips the
             // brackets a variant qualifier lives in ("(Radio Edit)").
@@ -639,7 +640,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 .Where(t => t.Norm.Length >= 3)
                 .ToList();
             if (titles.Count == 0)
-                return (matched, 0, 0);
+                return (matched, 0, 0, false);
 
             // Audio files only (a same-named .cue/.nfo must not outrank the track);
             // basename after normalizing backslashes (Path.* won't split them on Linux).
@@ -653,34 +654,49 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 .Where(x => x.Tokens.Count > 1)
                 .ToList();
             if (named.Count == 0)
-                return (matched, 0, titles.Count);
+                return (matched, 0, titles.Count, false);
 
             // One-to-one: each title claims a DISTINCT file, longest title first,
             // so one filename can't satisfy overlapping titles ("Falling" vs
             // "Falling Slowly") and make an incomplete source look complete.
             HashSet<int> claimed = [];
             int covered = 0;
+            bool artistNamed = false;
             foreach ((string Raw, string Norm, bool Qualified, (string[] Head, string[] Qualifier) Words) title in titles.OrderByDescending(t => t.Norm.Length))
             {
-                int best = PickTitleFile(named, claimed, title.Raw, title.Qualified, title.Words, targetVariantTypes);
+                int best = PickTitleFile(named, claimed, title.Raw, title.Qualified, title.Words, targetVariantTypes, raw => NamesArtistBesideTitle(raw, title.Norm, artistNorm, strictnessOffset));
                 if (best < 0)
                     continue;
 
                 claimed.Add(best);
                 covered++;
+                artistNamed |= NamesArtistBesideTitle(named[best].Raw, title.Norm, artistNorm, strictnessOffset);
                 if (named[best].File.Filename != null)
                     matched.Add(named[best].File);
             }
 
-            return (matched, covered, titles.Count);
+            return (matched, covered, titles.Count, artistNamed);
+        }
+
+        // The artist in a file name besides its own title ("Moonward - Lantern Song"); the track number is already gone,
+        // and the title is taken out so a title word ("Ox" in "Ox Lantern Song") isn't the artist.
+        private static bool NamesArtistBesideTitle(string rawName, string titleNorm, string? artistNorm, int strictnessOffset)
+        {
+            if (string.IsNullOrEmpty(artistNorm))
+                return false;
+
+            string rest = $" {NormalizeString(rawName)} ".Replace($" {titleNorm} ", " ", StringComparison.Ordinal).Trim();
+            return IsFuzzyArtistMatch(rest, artistNorm, strictnessOffset);
         }
 
         /// <summary>The unclaimed file a wanted title stands alone in, preferring one whose name ends with it; -1 when none.</summary>
         private static int PickTitleFile(
             List<(SlskdFileData File, List<string> Tokens, string Raw, bool Qualified)> named, HashSet<int> claimed,
-            string titleRaw, bool titleQualified, (string[] Head, string[] Qualifier) titleWords, IReadOnlyCollection<string>? targetVariantTypes)
+            string titleRaw, bool titleQualified, (string[] Head, string[] Qualifier) titleWords, IReadOnlyCollection<string>? targetVariantTypes,
+            Func<string, bool> namesArtist)
         {
             int best = -1;
+            int bestRank = int.MaxValue;
             for (int i = 0; i < named.Count; i++)
             {
                 // Stands alone, not merely contained: "Tide" must not claim "Low Tide Rising".
@@ -694,12 +710,14 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                     VariantQualifiers.RemixSignaturesConflict(titleRaw, named[i].Raw, targetVariantTypes))
                     continue;
 
-                if (best < 0)
+                // A file the title ends beats an earlier one with words after it: "Tide" over "Tide (Reprise)";
+                // then one naming the artist beats one that doesn't. At equal rank the earlier file stays.
+                int rank = (wordsAfter == 0 ? 0 : 2) + (namesArtist(named[i].Raw) ? 0 : 1);
+                if (rank < bestRank)
+                {
                     best = i;
-
-                // A file the title ends beats an earlier one with words after it: "Tide" over "Tide (Reprise)".
-                if (wordsAfter == 0)
-                    return i;
+                    bestRank = rank;
+                }
             }
 
             return best;

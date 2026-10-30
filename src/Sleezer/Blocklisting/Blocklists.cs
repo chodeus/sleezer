@@ -11,10 +11,18 @@ namespace NzbDrone.Plugin.Sleezer.Blocklisting
         // an intermittently failing peer decays back to 1h instead of pinning at 24h.
         private static readonly TimeSpan EscalationWindow = TimeSpan.FromDays(30);
 
+        // Lidarr's message when you remove or fail a download yourself: that stays until you delete it, as in Lidarr.
+        // Every other row is an automatic failure and decays.
+        internal const string ManualFailureMessage = "Manually marked as failed";
+
         public override bool IsBlocklisted(int artistId, ReleaseInfo release)
         {
+            List<Blocklist> matching = MatchingRows(artistId, release);
+            if (matching.Any(r => r.Message == ManualFailureMessage))
+                return true;
+
             DateTime cutoff = DateTime.UtcNow - EscalationWindow;
-            List<Blocklist> rows = [.. MatchingRows(artistId, release).Where(r => r.Date >= cutoff)];
+            List<Blocklist> rows = [.. matching.Where(r => r.Date >= cutoff)];
             if (rows.Count == 0)
                 return false;
 

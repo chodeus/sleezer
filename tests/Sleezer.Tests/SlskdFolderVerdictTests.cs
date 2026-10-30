@@ -133,6 +133,93 @@ public class SlskdFolderVerdictTests
         Assert.Contains("track titles 100%", v.Reasons);
     }
 
+    // A single has one wanted title; alone, in a folder naming neither artist nor album, it proves nothing.
+    [Theory]
+    [InlineData(@"Music\Salt Road\Driftwood (2024)", "02 - Harbour (Lantern Song).flac")]
+    [InlineData(@"Music\Rox Oxley\Double Trouble", "-12-Lantern Song.flac")]
+    public void one_track_title_does_not_stand_in_for_an_artist_named_nowhere(string folder, string file)
+    {
+        SlskdFolderVerdict v = Judge(folder, [file], new SlskdSearchData("Ox", "Lantern Song", false, false, 1, null, TrackCount: 1, Tracks: ["Lantern Song"]));
+
+        Assert.False(v.Matched);
+        Assert.Contains("one track title, neither artist nor album named", v.Reasons);
+    }
+
+    // The artist's name inside the wanted title is the title, not the artist.
+    [Fact]
+    public void a_title_word_is_not_the_artist_named_in_the_file()
+    {
+        SlskdFolderVerdict v = Judge(@"Music\Salt Road\Driftwood", ["01 Ox Lantern Song.flac"],
+            new SlskdSearchData("Ox", "Glass Harbour", false, false, 1, null, TrackCount: 1, Tracks: ["Ox Lantern Song"]));
+
+        Assert.False(v.Matched);
+        Assert.Contains("one track title, neither artist nor album named", v.Reasons);
+    }
+
+    // The track number is not the artist either.
+    [Fact]
+    public void a_track_number_is_not_the_artist_named_in_the_file()
+    {
+        SlskdFolderVerdict v = Judge(@"Music\Salt Road\Driftwood", ["2 - Lantern Song.flac"],
+            new SlskdSearchData("2", "Glass Harbour", false, false, 1, null, TrackCount: 1, Tracks: ["Lantern Song"]));
+
+        Assert.False(v.Matched);
+        Assert.Contains("one track title, neither artist nor album named", v.Reasons);
+    }
+
+    // Two files end with the title; the one naming the artist counts, whichever comes first.
+    [Theory]
+    [InlineData("Other - Lantern Song.flac", "Moonward - Lantern Song.flac")]
+    [InlineData("Moonward - Lantern Song.flac", "Other - Lantern Song.flac")]
+    public void the_file_naming_the_artist_counts_whatever_the_order(string first, string second)
+    {
+        SlskdFolderVerdict v = Judge(@"Music\Unsorted", [first, second],
+            new SlskdSearchData("Moonward", "Glass Harbour", false, false, 1, null, TrackCount: 1, Tracks: ["Lantern Song"]));
+
+        Assert.True(v.Matched);
+    }
+
+    // Only the file's own title is taken out, so another wanted title that is the artist's name still names the artist.
+    [Fact]
+    public void a_wanted_title_equal_to_the_artist_still_leaves_the_artist_in_the_file()
+    {
+        SlskdFolderVerdict v = Judge(@"Music\Unsorted", ["Moonward - Lantern Song.flac"],
+            new SlskdSearchData("Moonward", "Glass Harbour", false, false, 1, null, TrackCount: 2, Tracks: ["Lantern Song", "Moonward"]));
+
+        Assert.True(v.Matched);
+        Assert.Contains("track titles 50%", v.Reasons);
+    }
+
+    [Fact]
+    public void one_track_title_carries_when_its_file_names_the_artist()
+    {
+        SlskdFolderVerdict v = Judge(@"Music\Unsorted", ["Moonward - Lantern Song.flac"],
+            new SlskdSearchData("Moonward", "Glass Harbour", false, false, 1, null, TrackCount: 1, Tracks: ["Lantern Song"]));
+
+        Assert.True(v.Matched);
+        Assert.Contains("track titles 100%", v.Reasons);
+    }
+
+    [Fact]
+    public void one_track_title_carries_in_a_folder_naming_the_artist()
+    {
+        SlskdFolderVerdict v = Judge(@"Music\Moonward\Singles", ["01 Lantern Song.flac"],
+            new SlskdSearchData("Moonward", "Glass Harbour", false, false, 1, null, TrackCount: 1, Tracks: ["Lantern Song"]));
+
+        Assert.True(v.Matched);
+        Assert.Contains("track titles 100%", v.Reasons);
+    }
+
+    [Fact]
+    public void one_track_title_carries_a_search_without_an_artist()
+    {
+        SlskdFolderVerdict v = Judge(@"Music\Unsorted", ["01 Lantern Song.flac"],
+            new SlskdSearchData(null, "Glass Harbour", false, false, 1, null, TrackCount: 1, Tracks: ["Lantern Song"]));
+
+        Assert.True(v.Matched);
+        Assert.Contains("track titles 100%", v.Reasons);
+    }
+
     [Fact]
     public void a_different_remix_is_rejected_with_its_reason()
     {

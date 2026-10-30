@@ -22,6 +22,7 @@ Sleezer started as a merge of the plugins listed under [Credits](../README.md#cr
 | Share ranking never reached Lidarr | Ranking applied, and users who just failed rank lower |
 | Singles stitched from several users | One source per single |
 | A Soulseek user whose download failed was tried again on the next search | That release skips automatic searches for 1 h, then 6 h, then 24 h |
+| A single matched on its one track title alone, even in another artist's folder | One title counts only when the folder names the artist or the album, the file names the artist, or the search has no artist |
 
 ## Store search and titles
 
@@ -58,6 +59,7 @@ Store search covers Deezer, Qobuz, Tidal and Bandcamp.
 | Plugin blocklist entries never matched | They block |
 | Removing a wrong store release blocked one quality | Blocks every quality of that album |
 | A Qobuz album the account can't fully stream was retried at each quality | Blocked once, with the reason |
+| A Soulseek release you removed with blocklist was back an hour later | Blocked until you delete the blocklist entry, as in Lidarr |
 
 ## FFmpeg and more
 
