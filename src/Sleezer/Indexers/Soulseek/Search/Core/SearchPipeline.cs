@@ -105,9 +105,8 @@ public sealed class SearchPipeline : ISlskdSearchChain
         }
         catch (Exception ex) when (ex is RequestLimitReachedException or ApiKeyException)
         {
-            // slskd is disconnected / temporarily banned, or refuses the API key — let Lidarr's indexer
-            // backoff handler see it so the indexer gets disabled once, instead
-            // of us swallowing it and logging a stack per strategy tier.
+            // slskd disconnected, banned or refusing the API key: Lidarr's backoff must see it,
+            // or the indexer isn't disabled and each strategy tier logs a stack.
             throw;
         }
         catch (Exception ex)
