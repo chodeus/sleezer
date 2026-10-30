@@ -489,7 +489,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 // first; if it is still InProgress, leave the record for a
                 // later pass rather than delete it in flight.
                 HttpRequest statusRequest = new HttpRequestBuilder($"{settings.BaseUrl}/api/v0/searches/{searchId}")
-                    .SetHeader("X-API-KEY", settings.ApiKey)
+                    .WithApiKey(settings.ApiKey)
                     .Build();
                 statusRequest.SuppressHttpError = true;
                 HttpResponse statusResponse = await _httpClient.ExecuteAsync(statusRequest);
@@ -508,7 +508,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 }
 
                 HttpRequest request = new HttpRequestBuilder($"{settings.BaseUrl}/api/v0/searches/{searchId}")
-                    .SetHeader("X-API-KEY", settings.ApiKey)
+                    .WithApiKey(settings.ApiKey)
                     .Build();
                 request.Method = HttpMethod.Delete;
                 await _httpClient.ExecuteAsync(request);

@@ -399,6 +399,8 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Download\Clients\Soulseek\SlskdRecentGrabs.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Indexers\Soulseek\SlskdApiKey.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Download\Clients\Soulseek\Models\SlskdDownloadDirectory.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Download\Clients\Soulseek\SlskdPathResolver.cs"

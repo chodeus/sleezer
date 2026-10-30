@@ -56,6 +56,7 @@ Store search covers Deezer, Qobuz, Tidal and Bandcamp.
 | Queue Cleaner's Blocklist Only failed the download, so it was removed and searched again | Blocklists only; the item stays queued for a manual import |
 | Queue Cleaner's Rename renamed only the first file | Renames every audio file, under the album's title |
 | FFmpeg conversion ran on every library file at each artist scan, probing each one even with no rule set | A file is converted only when Lidarr imports it into the library, not when a scan finds it there; with no rule set, no file is probed |
+| slskd needed an API key | Optional when slskd's authentication is turned off |
 
 ## Blocklist and failures
 

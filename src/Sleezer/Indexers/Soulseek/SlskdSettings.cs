@@ -22,11 +22,6 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 .Must(url => string.IsNullOrEmpty(url) || (Uri.IsWellFormedUriString(url, UriKind.Absolute) && !url.EndsWith('/')))
                 .WithMessage("External URL must be a valid URL and must not end with a slash ('/').");
 
-            // API Key validation
-            RuleFor(c => c.ApiKey)
-                .NotEmpty()
-                .WithMessage("API Key is required.");
-
             // File Limit validation
             RuleFor(c => c.FileLimit)
                 .GreaterThanOrEqualTo(1)
@@ -111,7 +106,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         [FieldDefinition(1, Label = "External URL", Type = FieldType.Url, Placeholder = "https://slskd.example.com", HelpText = "Public URL for interactive search links", Advanced = true)]
         public string? ExternalUrl { get; set; } = string.Empty;
 
-        [FieldDefinition(2, Label = "API Key", Type = FieldType.Textbox, Privacy = PrivacyLevel.ApiKey, HelpText = "The API key for your Slskd instance. You can find or set this in the Slskd's settings under 'Options'.", Placeholder = "Enter your API key")]
+        [FieldDefinition(2, Label = "API Key", Type = FieldType.Textbox, Privacy = PrivacyLevel.ApiKey, HelpText = "The API key for your Slskd instance. You can find or set this in the Slskd's settings under 'Options'. Leave it empty if slskd's authentication is turned off.", Placeholder = "Enter your API key")]
         public string ApiKey { get; set; } = string.Empty;
 
         [FieldDefinition(3, Type = FieldType.Checkbox, Label = "Audio Files Only", HelpText = "Return only audio file types")]

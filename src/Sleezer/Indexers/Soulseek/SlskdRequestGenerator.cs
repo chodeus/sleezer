@@ -222,7 +222,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         private HttpRequest CreateSearchRequest(SlskdSearchRequestBody searchData)
         {
             HttpRequest searchRequest = new HttpRequestBuilder($"{Settings.BaseUrl}/api/v0/searches")
-                .SetHeader("X-API-KEY", Settings.ApiKey)
+                .WithApiKey(Settings.ApiKey)
                 .SetHeader("Content-Type", "application/json")
                 .Post()
                 .Build();
@@ -306,7 +306,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 try
                 {
                     HttpRequest cancelRequest = new HttpRequestBuilder($"{Settings.BaseUrl}/api/v0/searches/{searchId}")
-                        .SetHeader("X-API-KEY", Settings.ApiKey)
+                        .WithApiKey(Settings.ApiKey)
                         .Build();
                     cancelRequest.Method = HttpMethod.Put;
                     await _client.ExecuteAsync(cancelRequest);
@@ -372,7 +372,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         {
             HttpRequest request = new HttpRequestBuilder($"{Settings.BaseUrl}/api/v0/searches/{searchId}")
                 .AddQueryParam("includeResponses", true)
-                .SetHeader("X-API-KEY", Settings.ApiKey)
+                .WithApiKey(Settings.ApiKey)
                 .Build();
 
             TrackCountFilterType filterType = SlskdSettings.TrackCountFilterFor(_indexer.Rules.WholeAlbumsOnly);
@@ -496,7 +496,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         private async Task<JsonNode?> GetSearchResultsAsync(string searchId)
         {
             HttpRequest searchResultsRequest = new HttpRequestBuilder($"{Settings.BaseUrl}/api/v0/searches/{searchId}")
-                     .SetHeader("X-API-KEY", Settings.ApiKey).Build();
+                     .WithApiKey(Settings.ApiKey).Build();
 
             HttpResponse response = await _client.ExecuteAsync(searchResultsRequest);
 
@@ -525,7 +525,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             try
             {
                 HttpRequest request = new HttpRequestBuilder($"{Settings.BaseUrl}/api/v0/users/{Uri.EscapeDataString(username)}/directory")
-                    .SetHeader("X-API-KEY", Settings.ApiKey)
+                    .WithApiKey(Settings.ApiKey)
                     .SetHeader("Content-Type", "application/json")
                     .Post()
                     .Build();

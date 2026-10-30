@@ -355,7 +355,7 @@ public class SlskdApiClient(IHttpClient httpClient, Logger logger) : ISlskdApiCl
         HttpMethod? method = null, string? content = null)
     {
         HttpRequestBuilder builder = new HttpRequestBuilder($"{settings.BaseUrl}{endpoint}")
-            .SetHeader("X-API-KEY", settings.ApiKey)
+            .WithApiKey(settings.ApiKey)
             .SetHeader("Accept", "application/json");
 
         if (method != null)
