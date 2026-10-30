@@ -25,7 +25,7 @@ public sealed class SlskdTaggedFilesStore(string folder, Logger logger)
         catch (Exception ex)
         {
             // Unsaved: a restart forgets these files and removal keeps them, as before.
-            logger.Debug(ex, "Could not save the tagged files of {DownloadId}", downloadId);
+            logger.Warn(ex, "Could not save the tagged files of {DownloadId}; after a restart, removing it may leave renamed files", downloadId);
         }
     }
 
@@ -41,7 +41,7 @@ public sealed class SlskdTaggedFilesStore(string folder, Logger logger)
         catch (Exception ex)
         {
             // Unreadable: no file is claimed from it, so removal keeps them.
-            logger.Debug(ex, "Could not read the tagged files of {DownloadId}", downloadId);
+            logger.Warn(ex, "Could not read the tagged files of {DownloadId}; removing it may leave renamed files", downloadId);
             return [];
         }
     }
