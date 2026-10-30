@@ -136,4 +136,24 @@ public class SlskdBlocklistTests
         repo.Add(new Blocklist { ArtistId = 1, TorrentInfoHash = "36_Slskd-old", Date = DateTime.UtcNow.AddHours(-2) });
         Assert.False(bl.IsBlocklisted(1, release));
     }
+
+    // As in Lidarr: a release you blocklist stays blocked until you delete the entry.
+    [Fact]
+    public void Soulseek_block_you_add_stays_until_deleted()
+    {
+        FakeBlocklistRepository repo = new();
+        repo.Add(new Blocklist { ArtistId = 1, TorrentInfoHash = "36_Slskd-mine", Date = DateTime.UtcNow.AddDays(-90), Message = SoulseekBlocklist.ManualFailureMessage });
+
+        Assert.True(new SoulseekBlocklist(repo).IsBlocklisted(1, new ReleaseInfo { Guid = "36_Slskd-mine" }));
+    }
+
+    // An automatic block, Queue Cleaner's included, decays like a transfer failure.
+    [Fact]
+    public void Soulseek_block_from_queue_cleaner_still_decays()
+    {
+        FakeBlocklistRepository repo = new();
+        repo.Add(new Blocklist { ArtistId = 1, TorrentInfoHash = "36_Slskd-qc", Date = DateTime.UtcNow.AddHours(-2), Message = "Import failed: Item removed by Queue Cleaner." });
+
+        Assert.False(new SoulseekBlocklist(repo).IsBlocklisted(1, new ReleaseInfo { Guid = "36_Slskd-qc" }));
+    }
 }

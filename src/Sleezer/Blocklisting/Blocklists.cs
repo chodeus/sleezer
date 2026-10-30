@@ -11,16 +11,14 @@ namespace NzbDrone.Plugin.Sleezer.Blocklisting
         // an intermittently failing peer decays back to 1h instead of pinning at 24h.
         private static readonly TimeSpan EscalationWindow = TimeSpan.FromDays(30);
 
-        // Lidarr's message when you remove or fail a download yourself, and any failed import's (ours, Queue Cleaner's):
-        // neither is a peer that may come back, so neither decays like a transfer failure does.
+        // Lidarr's message when you remove or fail a download yourself: that stays until you delete it, as in Lidarr.
+        // Every other row is an automatic failure and decays.
         internal const string ManualFailureMessage = "Manually marked as failed";
-        internal const string ImportFailedMessage = "Import failed: grabbing the same files again would fail the same way";
-        private const string ImportFailedPrefix = "Import failed";
 
         public override bool IsBlocklisted(int artistId, ReleaseInfo release)
         {
             List<Blocklist> matching = MatchingRows(artistId, release);
-            if (matching.Any(IsPermanent))
+            if (matching.Any(r => r.Message == ManualFailureMessage))
                 return true;
 
             DateTime cutoff = DateTime.UtcNow - EscalationWindow;
@@ -31,27 +29,6 @@ namespace NzbDrone.Plugin.Sleezer.Blocklisting
             DateTime newest = rows.Max(r => r.Date);
             return DateTime.UtcNow - newest < SlskdDownloadItem.RetryBackoffWindow(rows.Count);
         }
-
-        internal bool IsPermanentlyBlocklisted(int artistId, ReleaseInfo release) => MatchingRows(artistId, release).Any(IsPermanent);
-
-        private static bool IsPermanent(Blocklist row) =>
-            row.Message == ManualFailureMessage || row.Message?.StartsWith(ImportFailedPrefix, StringComparison.Ordinal) == true;
-
-        // GetBlocklist's row, keyed on the guid as every Soulseek row is; Lidarr's own Block() leaves the key empty for non-torrents.
-        internal static Blocklist ImportFailed(RemoteAlbum remoteAlbum) => new()
-        {
-            ArtistId = remoteAlbum.Artist.Id,
-            AlbumIds = [.. remoteAlbum.Albums.Select(a => a.Id)],
-            SourceTitle = remoteAlbum.Release.Title,
-            Quality = remoteAlbum.ParsedAlbumInfo?.Quality,
-            Date = DateTime.UtcNow,
-            PublishedDate = remoteAlbum.Release.PublishDate,
-            Size = remoteAlbum.Release.Size,
-            Indexer = remoteAlbum.Release.Indexer,
-            Protocol = nameof(SoulseekDownloadProtocol),
-            Message = ImportFailedMessage,
-            TorrentInfoHash = remoteAlbum.Release.Guid
-        };
     }
 
     public class QobuzBlocklist(IBlocklistRepository blocklistRepository) : BaseBlocklist<QobuzDownloadProtocol>(blocklistRepository)
