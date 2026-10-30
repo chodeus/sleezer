@@ -10,12 +10,12 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         public static HttpRequestBuilder WithApiKey(this HttpRequestBuilder builder, string? apiKey) =>
             string.IsNullOrWhiteSpace(apiKey) ? builder : builder.SetHeader("X-API-KEY", apiKey);
 
-        /// <summary>The API key error for a request slskd refused; null for any other status.</summary>
+        /// <summary>The API key error for a refused request (401 or 403), which a proxy in front of slskd can also send; null for any other status.</summary>
         public static ValidationFailure? Refused(HttpStatusCode status, string? apiKey) =>
             status is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden
                 ? new ValidationFailure(nameof(SlskdSettings.ApiKey), string.IsNullOrWhiteSpace(apiKey)
-                    ? "slskd's authentication is turned on, so it needs an API key."
-                    : "slskd refused the API key.")
+                    ? $"The request was refused ({(int)status} {status}). If slskd's authentication is on, set its API key; otherwise check any proxy in front of slskd."
+                    : $"The request was refused ({(int)status} {status}). Check the API key, and any proxy in front of slskd.")
                 : null;
     }
 }

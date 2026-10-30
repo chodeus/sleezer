@@ -32,6 +32,7 @@ namespace NzbDrone.Plugin.Sleezer.Notifications.QueueCleaner
         private readonly IProvideDownloadClient _downloadClientProvider;
         private readonly IBlocklistRepository _blocklistRepository;
         private readonly List<IBlocklistForProtocol> _protocolBlocklists;
+        private readonly List<IDownloadFileOwnership> _fileOwnership;
         private static readonly HashSet<string> AudioExtensions = MediaFileExtensions.Extensions;
 
         public override string Name => "Queue Cleaner";
@@ -41,8 +42,10 @@ namespace NzbDrone.Plugin.Sleezer.Notifications.QueueCleaner
         public override ProviderMessage Message => new("Queue Cleaner automatically processes items that failed to import. It can rename, blocklist, or remove items based on your settings.", ProviderMessageType.Info);
 
         public QueueCleaner(IDiskProvider diskProvider, IHistoryService historyService, INamingConfigService namingConfig, IEventAggregator eventAggregator, IIndexerFactory indexerFactory, ICompletedDownloadService completedDownloadService,
-            IProvideDownloadClient downloadClientProvider, IBlocklistRepository blocklistRepository, IEnumerable<IBlocklistForProtocol> protocolBlocklists, Logger logger)
+            IProvideDownloadClient downloadClientProvider, IBlocklistRepository blocklistRepository, IEnumerable<IBlocklistForProtocol> protocolBlocklists,
+            IEnumerable<IDownloadFileOwnership> fileOwnership, Logger logger)
         {
+            _fileOwnership = [.. fileOwnership];
             _downloadClientProvider = downloadClientProvider;
             _blocklistRepository = blocklistRepository;
             _protocolBlocklists = [.. protocolBlocklists];
@@ -171,17 +174,23 @@ namespace NzbDrone.Plugin.Sleezer.Notifications.QueueCleaner
                 return false;
             }
 
-            List<IFileInfo> filesOnDisk = [.. _diskProvider.GetFileInfos(downloadPath, true)];
+            // Only this download's: a Soulseek folder can also hold another grab's files.
+            string downloadId = item.DownloadItem.DownloadId;
+            List<IFileInfo> filesOnDisk = [.. _diskProvider.GetFileInfos(downloadPath, true).Where(f => IsDownloadsFile(_fileOwnership, downloadId, f.FullName))];
             ReleaseFormatter releaseFormatter = new(item.RemoteAlbum.Release, item.RemoteAlbum.Artist, _namingConfig.GetConfig());
             string? albumTitle = item.RemoteAlbum.Albums?.FirstOrDefault()?.Title;
 
             // A loop, not Any: Any would stop at the first file renamed.
             bool renamed = false;
             foreach (IFileInfo file in filesOnDisk.Where(f => AudioExtensions.Contains(Path.GetExtension(f.FullName))))
-                renamed |= TryRenameFile(file, releaseFormatter, albumTitle, filesOnDisk, item.DownloadItem.DownloadId);
+                renamed |= TryRenameFile(file, releaseFormatter, albumTitle, filesOnDisk, downloadId);
 
             return renamed;
         }
+
+        // The client that knows the download decides; a download no client claims owns every file in its folder.
+        internal static bool IsDownloadsFile(IEnumerable<IDownloadFileOwnership> ownership, string downloadId, string path) =>
+            ownership.Select(o => o.Owns(downloadId, path)).FirstOrDefault(owned => owned != null) ?? true;
 
         private bool TryRenameFile(IFileInfo file, ReleaseFormatter releaseFormatter, string? albumTitle, List<IFileInfo> filesOnDisk, string downloadId)
         {

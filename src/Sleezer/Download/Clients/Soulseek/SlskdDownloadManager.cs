@@ -319,8 +319,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
     public void RecordRenamedFile(string downloadId, string originalPath, string newPath)
     {
-        SlskdDownloadItem? item = _downloadMappings.Values.FirstOrDefault(i => string.Equals(i.ID, downloadId, StringComparison.OrdinalIgnoreCase));
-        if (item == null)
+        if (FindItem(downloadId) is not { } item)
             return;
 
         try
@@ -338,6 +337,13 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             _logger.Debug(ex, "Could not record the rename of {Path}", newPath);
         }
     }
+
+    public bool? OwnsLocalFile(string downloadId, string path) =>
+        FindItem(downloadId) is { } item ? IsConclusivelyOwned(path, item.BuildOwnedFiles()) : null;
+
+    // By download id alone, as Lidarr tracks downloads.
+    private SlskdDownloadItem? FindItem(string downloadId) =>
+        _downloadMappings.Values.FirstOrDefault(i => string.Equals(i.ID, downloadId, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
     /// Copies this grab's cue/log extras into the album folder Lidarr just

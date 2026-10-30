@@ -202,6 +202,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             catch (HttpException ex) when (SlskdApiKey.Refused(ex.Response.StatusCode, Settings.ApiKey) is { } refused)
             {
                 // A failure, not "nothing found": an slskd whose authentication was turned on after setup refuses every search.
+                _logger.Warn(ex, "The search for {SearchText} was refused: {Reason}", searchText, refused.ErrorMessage);
                 throw new ApiKeyException(refused.ErrorMessage);
             }
             catch (Exception ex)

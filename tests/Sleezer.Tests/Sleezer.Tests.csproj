@@ -443,6 +443,8 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Notifications\QueueCleaner\DownloadFileRenamedEvent.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Notifications\QueueCleaner\IDownloadFileOwnership.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Model\PlaylistItem.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Notifications\PlaylistExport\PlaylistSnapshots.cs"

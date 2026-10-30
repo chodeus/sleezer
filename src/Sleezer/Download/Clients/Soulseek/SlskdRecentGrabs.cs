@@ -4,10 +4,7 @@ using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek.Models;
 
 namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
 
-/// <summary>
-/// The Soulseek grabs of the last 14 days, newest first, with their files read once: a folder no grab owns is probed
-/// on every poll, so the whole window is read once a minute and each call reads only the grabs written since.
-/// </summary>
+/// <summary>The Soulseek grabs of the last 14 days with their file lists, newest first: read in full once a minute, then topped up on each call with the grabs written since the last, a minute's overlap included.</summary>
 public sealed class SlskdRecentGrabs(Func<DateTime, IReadOnlyList<DownloadHistory>> grabsSince, Func<DateTime> now, Logger logger)
 {
     private static readonly TimeSpan Window = TimeSpan.FromDays(14);

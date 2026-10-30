@@ -36,8 +36,9 @@ public class SlskdApiKeyTests
     }
 
     [Theory]
-    [InlineData(HttpStatusCode.Unauthorized, "", "slskd's authentication is turned on, so it needs an API key.")]
-    [InlineData(HttpStatusCode.Forbidden, "stale", "slskd refused the API key.")]
+    [InlineData(HttpStatusCode.Unauthorized, "", "The request was refused (401 Unauthorized). If slskd's authentication is on, set its API key; otherwise check any proxy in front of slskd.")]
+    [InlineData(HttpStatusCode.Forbidden, "", "The request was refused (403 Forbidden). If slskd's authentication is on, set its API key; otherwise check any proxy in front of slskd.")]
+    [InlineData(HttpStatusCode.Forbidden, "stale", "The request was refused (403 Forbidden). Check the API key, and any proxy in front of slskd.")]
     public void a_refused_request_points_at_the_api_key(HttpStatusCode status, string key, string message)
     {
         ValidationFailure? failure = SlskdApiKey.Refused(status, key);

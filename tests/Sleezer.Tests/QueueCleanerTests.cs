@@ -64,6 +64,16 @@ public class QueueCleanerTests
         Assert.Empty(blocklist.All());
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void the_client_that_holds_the_download_says_whether_rename_may_touch_a_file(bool owned) =>
+        Assert.Equal(owned, QueueCleaner.IsDownloadsFile([new Ownership("dl-other", !owned), new Ownership("dl-1", owned)], "dl-1", "/downloads/Glass Harbour/01.flac"));
+
+    [Fact]
+    public void a_download_no_client_holds_owns_every_file_in_its_folder() =>
+        Assert.True(QueueCleaner.IsDownloadsFile([new Ownership("dl-other", false)], "dl-1", "/downloads/Glass Harbour/01.flac"));
+
     [Fact]
     public void remove_goes_through_the_download_client_and_deletes_its_data()
     {
@@ -105,6 +115,11 @@ public class QueueCleanerTests
         DownloadClient = 7,
         DownloadItem = new DownloadClientItem { DownloadId = "dl-1", Title = "Moonward - Glass Harbour", CanBeRemoved = canBeRemoved, Removed = removed },
     };
+
+    private sealed class Ownership(string downloadId, bool owns) : IDownloadFileOwnership
+    {
+        public bool? Owns(string id, string path) => id == downloadId ? owns : null;
+    }
 
     private sealed class Clients(IDownloadClient client) : IProvideDownloadClient
     {
