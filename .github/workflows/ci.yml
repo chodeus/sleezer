@@ -32,7 +32,7 @@ env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
   # renovate: datasource=dotnet-version depName=dotnet-sdk
-  DOTNET_VERSION: '8.0.404'
+  DOTNET_VERSION: '8.0.427'
   PLUGIN_NAME: 'Sleezer'
 
 jobs:
