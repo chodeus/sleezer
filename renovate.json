@@ -6,6 +6,13 @@
   },
   "packageRules": [
     {
+      "description": "Build with the .NET 8 SDK while Lidarr develop does (its global.json pins 8.0.x). Move to the .NET 10 SDK together with Lidarr; a net10.0 target would stop the plugin loading in Lidarr's net8.0 host.",
+      "matchPackageNames": [
+        "dotnet-sdk"
+      ],
+      "allowedVersions": "<9.0.0"
+    },
+    {
       "description": "Hard pin: System.Text.Json / System.IO.Pipelines must stay on 8.x while TargetFramework=net8.0. 9+ brings runtime assemblies Lidarr's host does not ship, and the plugin silently fails to load (DryIoc FileNotFoundException). See PR #20.",
       "matchPackageNames": [
         "System.Text.Json",
