@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text;
 using NLog;
 using NzbDrone.Common.Disk;
@@ -32,6 +33,9 @@ public interface IPreImportTagger
 public class PreImportTagger : IPreImportTagger
 {
     private const double FingerprintScoreThreshold = 0.5;
+
+    // One pass per folder at a time: two items post-processing one folder would each roll back the other's writes.
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> FolderPasses = new(StringComparer.OrdinalIgnoreCase);
 
     private readonly IIdentificationService _identificationService;
     private readonly IAudioTagService _audioTagService;
@@ -158,6 +162,31 @@ public class PreImportTagger : IPreImportTagger
         bool verifyAllWithFingerprint = false,
         bool fingerprintTitleFallback = false,
         bool preferDigitalMedia = false)
+    {
+        SemaphoreSlim folderPass = FolderPasses.GetOrAdd(Path.TrimEndingDirectorySeparator(Path.GetFullPath(completedFolderPath)), _ => new SemaphoreSlim(1, 1));
+        await folderPass.WaitAsync(ct);
+        try
+        {
+            return await TagFolderAsync(album, artist, albumRelease, sourceId, completedFolderPath, confidenceThreshold, stripFeaturedArtists, verifyAllWithFingerprint, fingerprintTitleFallback, preferDigitalMedia, ct);
+        }
+        finally
+        {
+            folderPass.Release();
+        }
+    }
+
+    private async Task<TaggingResult> TagFolderAsync(
+        Album album,
+        Artist artist,
+        AlbumRelease? albumRelease,
+        string sourceId,
+        string completedFolderPath,
+        double confidenceThreshold,
+        bool stripFeaturedArtists,
+        bool verifyAllWithFingerprint,
+        bool fingerprintTitleFallback,
+        bool preferDigitalMedia,
+        CancellationToken ct)
     {
         try
         {
@@ -499,7 +528,10 @@ public class PreImportTagger : IPreImportTagger
             return (0, 0);
 
         List<TaggedFile> written = WriteTargets(plan.Targets, album, stripFeaturedArtists, artistName);
-        if (written.Count == plan.Targets.Count && ReadsAsOneAlbum(written.Select(w => w.FinalPath)))
+        string? failure = written.Count < plan.Targets.Count
+            ? $"the tag write for {Path.GetFileName(plan.Targets[written.Count].File.Path)} failed"
+            : ReadBackFailure(written, plan.Targets[0].Release?.ForeignReleaseId);
+        if (failure == null)
         {
             backups.Discard();
             taggedFiles.AddRange(written);
@@ -507,8 +539,7 @@ public class PreImportTagger : IPreImportTagger
         }
 
         backups.Restore(written.Where(w => w.FinalPath != w.OriginalPath).Select(w => w.FinalPath));
-        _logger.Warn("Pre-import tag: {Written} of {FileCount} file(s) in {SourceId} took the tags as one album, so every file was put back as downloaded",
-            written.Count, plan.Targets.Count, sourceId);
+        _logger.Warn("Pre-import tag: {Failure} in {SourceId}, so every file was put back as downloaded", failure, sourceId);
         return (0, written.Count < plan.Targets.Count ? 1 : 0);
     }
 
@@ -528,17 +559,22 @@ public class PreImportTagger : IPreImportTagger
         return written;
     }
 
-    // Lidarr groups a download by album tag and release id (TrackGroupingService), so files that disagree import as two albums.
-    private bool ReadsAsOneAlbum(IEnumerable<string> paths)
+    // Lidarr groups a download by album tag and release id (TrackGroupingService), and its writer swallows a failed save,
+    // so the files must read back as one album carrying the planned release.
+    private string? ReadBackFailure(IReadOnlyList<TaggedFile> written, string? plannedReleaseId)
     {
         try
         {
-            return paths.Select(AlbumIdentity).Distinct().Count() <= 1;
+            HashSet<(string? Album, string? ReleaseId)> identities = [.. written.Select(w => AlbumIdentity(w.FinalPath))];
+            if (identities.Count > 1)
+                return "the written files read back as more than one album";
+
+            return plannedReleaseId != null && identities.Single().ReleaseId != plannedReleaseId ? "the written files do not carry the planned release" : null;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.Debug(ex, "Pre-import tag: could not read back the tags just written");
-            return false;
+            return "the written files could not be read back";
         }
     }
 

@@ -17,6 +17,8 @@ namespace Sleezer.Tests;
 // The real tagger on real FLAC files; only Lidarr's services are faked.
 public class PreImportTaggerWholeDownloadTests : IDisposable
 {
+    private const string WantedReleaseId = "wanted-release";
+
     private readonly string _root = Path.Combine(Path.GetTempPath(), "whole-download-" + Guid.NewGuid().ToString("N"));
     private readonly string _dir;
 
@@ -43,20 +45,19 @@ public class PreImportTaggerWholeDownloadTests : IDisposable
         protected override object? Invoke(MethodInfo? method, object?[]? args) => _handler(method!, args);
     }
 
-    private string[] Files(params string[] titles) =>
-    [
-        .. titles.Select((title, i) =>
-        {
-            string path = Path.Combine(_dir, $"{i + 1:00}.flac");
-            File.Copy(Path.Combine(AppContext.BaseDirectory, "Fixtures", "silence.flac"), path);
-            using TagLib.File file = TagLib.File.Create(path);
-            file.Tag.Title = title;
-            file.Tag.Album = "Store Album";
-            file.Tag.Performers = ["Artist"];
-            file.Save();
-            return path;
-        })
-    ];
+    private string NewFile(string name, string title)
+    {
+        string path = Path.Combine(_dir, name);
+        File.Copy(Path.Combine(AppContext.BaseDirectory, "Fixtures", "silence.flac"), path);
+        using TagLib.File file = TagLib.File.Create(path);
+        file.Tag.Title = title;
+        file.Tag.Album = "Store Album";
+        file.Tag.Performers = ["Artist"];
+        file.Save();
+        return path;
+    }
+
+    private string[] Files(params string[] titles) => [.. titles.Select((title, i) => NewFile($"{i + 1:00}.flac", title))];
 
     private static string AlbumTag(string path)
     {
@@ -64,10 +65,12 @@ public class PreImportTaggerWholeDownloadTests : IDisposable
         return file.Tag.Album;
     }
 
+    // As Lidarr's writer: the album title and the release id are the keys it groups a download by.
     private static void TagAsWanted(TrackFile trackFile)
     {
         using TagLib.File file = TagLib.File.Create(trackFile.Path);
         file.Tag.Album = "Wanted Album";
+        file.Tag.MusicBrainzReleaseId = WantedReleaseId;
         file.Save();
     }
 
@@ -78,14 +81,17 @@ public class PreImportTaggerWholeDownloadTests : IDisposable
         return distance;
     }
 
-    private static (Album Album, Artist Artist, AlbumRelease Release) Target(string type, params string[] titles)
+    private static (Album Album, Artist Artist, AlbumRelease Release) Target(string type, params (string Title, int Number)[] tracks)
     {
-        List<Track> tracks = [.. titles.Select((t, i) => new Track { Title = t, AbsoluteTrackNumber = i + 1 })];
-        AlbumRelease release = new() { Title = "Wanted Album", TrackCount = tracks.Count, Monitored = true, Media = [new Medium { Number = 1, Format = "Digital Media" }], Tracks = new LazyLoaded<List<Track>>(tracks) };
+        List<Track> list = [.. tracks.Select(t => new Track { Title = t.Title, AbsoluteTrackNumber = t.Number })];
+        AlbumRelease release = new() { Title = "Wanted Album", ForeignReleaseId = WantedReleaseId, TrackCount = list.Count, Monitored = true, Media = [new Medium { Number = 1, Format = "Digital Media" }], Tracks = new LazyLoaded<List<Track>>(list) };
         Artist artist = new() { Metadata = new LazyLoaded<ArtistMetadata>(new ArtistMetadata { Name = "Artist" }) };
         Album album = new() { Title = "Wanted Album", AlbumType = type, AnyReleaseOk = true, AlbumReleases = new LazyLoaded<List<AlbumRelease>>([release]), Artist = new LazyLoaded<Artist>(artist), SecondaryTypes = [] };
         return (album, artist, release);
     }
+
+    private static (Album Album, Artist Artist, AlbumRelease Release) Target(string type, params string[] titles) =>
+        Target(type, [.. titles.Select((t, i) => (t, i + 1))]);
 
     private static List<LocalAlbumRelease> AllMapped(List<LocalTrack> files, AlbumRelease release, double distance)
     {
@@ -126,10 +132,10 @@ public class PreImportTaggerWholeDownloadTests : IDisposable
             disk, Fake.Of<IMusicBrainzLookups>((_, _) => null), LogManager.GetLogger(nameof(PreImportTaggerWholeDownloadTests)));
     }
 
-    private Task<PreImportTagger.TaggingResult> Tag(PreImportTagger tagger, Album album, Artist artist, CancellationToken ct) =>
-        tagger.TagCompletedDownloadAsync(album, artist, null, "download", _dir, 0.15, false, ct);
+    private Task<PreImportTagger.TaggingResult> Tag(PreImportTagger tagger, Album album, Artist artist, CancellationToken ct, bool strip = false) =>
+        tagger.TagCompletedDownloadAsync(album, artist, null, "download", _dir, 0.15, strip, ct);
 
-    private string[] FolderNames() => [.. Directory.GetFiles(_dir).Select(Path.GetFileName).Order()!];
+    private string[] FolderNames() => [.. Directory.GetFiles(_dir).Select(Path.GetFileName).Order(StringComparer.Ordinal)!];
 
     [Fact]
     public async Task Tags_every_file_and_leaves_no_backup()
@@ -183,6 +189,19 @@ public class PreImportTaggerWholeDownloadTests : IDisposable
         Assert.Equal(["01.flac", "02.flac", "03.flac"], FolderNames());
     }
 
+    // Untouched files still agree with each other, so only the planned release id shows nothing was written.
+    [Fact]
+    public async Task Counts_nothing_as_tagged_when_no_write_took()
+    {
+        string[] paths = Files("One", "Two");
+        (Album album, Artist artist, AlbumRelease release) = Target("Album", "One", "Two");
+
+        PreImportTagger.TaggingResult result = await Tag(Tagger(release, 0.0, _ => { }), album, artist, CancellationToken.None);
+
+        Assert.Equal(0, result.Tagged);
+        Assert.All(paths, p => Assert.Equal("Store Album", AlbumTag(p)));
+    }
+
     [Fact]
     public async Task Finishes_the_pass_when_cancelled_while_writing()
     {
@@ -209,5 +228,60 @@ public class PreImportTaggerWholeDownloadTests : IDisposable
         PreImportTagger.TaggingResult result = await Tag(Tagger(release, 0.40, _ => { }), album, artist, CancellationToken.None);
 
         Assert.Equal((0, 2, 0), (result.Tagged, result.SkippedWeakMatch, result.TagWriteFailed));
+    }
+
+    // The feat-strip rename puts zz.flac at "01 - Beta.flac", the case-only twin of 01 - beta.flac's freed name.
+    [Fact]
+    public async Task Rolls_back_a_rename_onto_a_name_that_differs_from_an_original_only_by_case()
+    {
+        NewFile("01 - beta.flac", "q1");
+        NewFile("zz.flac", "q2");
+        NewFile("zzz.flac", "q3");
+        (Album album, Artist artist, AlbumRelease release) = Target("Album", ("Alpha", 2), ("Beta", 1), ("Gamma", 3));
+        PreImportTagger tagger = Tagger(release, 0.0, tf =>
+        {
+            if (tf.Path.EndsWith("zzz.flac", StringComparison.Ordinal))
+                throw new IOException("file is locked");
+            TagAsWanted(tf);
+        });
+
+        PreImportTagger.TaggingResult result = await Tag(tagger, album, artist, CancellationToken.None, strip: true);
+
+        Assert.Equal(0, result.Tagged);
+        Assert.Equal(["01 - beta.flac", "zz.flac", "zzz.flac"], FolderNames());
+        Assert.All(FolderNames(), name => Assert.Equal("Store Album", AlbumTag(Path.Combine(_dir, name))));
+    }
+
+    [Fact]
+    public async Task Waits_for_another_pass_on_the_same_folder()
+    {
+        string[] paths = Files("One", "Two", "Three");
+        (Album album, Artist artist, AlbumRelease release) = Target("Album", "One", "Two", "Three");
+        TaskCompletionSource firstWrote = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource firstMayFinish = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource secondWrote = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        PreImportTagger first = Tagger(release, 0.0, tf =>
+        {
+            TagAsWanted(tf);
+            firstWrote.TrySetResult();
+            firstMayFinish.Task.Wait(TimeSpan.FromSeconds(10));
+        });
+        PreImportTagger second = Tagger(release, 0.0, tf =>
+        {
+            secondWrote.TrySetResult();
+            if (tf.Path.EndsWith("02.flac", StringComparison.Ordinal))
+                throw new IOException("file is locked");
+            TagAsWanted(tf);
+        });
+
+        Task<PreImportTagger.TaggingResult> one = Task.Run(() => Tag(first, album, artist, CancellationToken.None));
+        await firstWrote.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        Task<PreImportTagger.TaggingResult> two = Task.Run(() => Tag(second, album, artist, CancellationToken.None));
+        bool secondWroteMeanwhile = await Task.WhenAny(secondWrote.Task, Task.Delay(500)) == secondWrote.Task;
+        firstMayFinish.SetResult();
+        await Task.WhenAll(one, two).WaitAsync(TimeSpan.FromSeconds(30));
+
+        Assert.False(secondWroteMeanwhile);
+        Assert.Single(paths.Select(AlbumTag).Distinct());
     }
 }

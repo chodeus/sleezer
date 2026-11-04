@@ -51,8 +51,15 @@ public static class WholeDownloadTags
         return Whole(targets, files.Count, $"match a track title of '{release.Title}'");
     }
 
-    private static Plan Whole(List<Target> targets, int fileCount, string matched) =>
-        targets.Count == fileCount ? new Plan(targets, null) : Plan.Refuse($"{targets.Count} of {fileCount} file(s) {matched}");
+    private static Plan Whole(List<Target> targets, int fileCount, string matched)
+    {
+        if (targets.Count != fileCount)
+            return Plan.Refuse($"{targets.Count} of {fileCount} file(s) {matched}");
+
+        // Two releases' tags read as two albums to Lidarr.
+        int releases = targets.Select(t => t.Release?.ForeignReleaseId ?? (object?)t.Release).Distinct().Count();
+        return releases > 1 ? Plan.Refuse($"the files map to {releases} releases") : new Plan(targets, null);
+    }
 
     private static string? Refusal(LocalAlbumRelease release, double maxDistance, bool preferDigitalMedia)
     {

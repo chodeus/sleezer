@@ -23,8 +23,9 @@ public sealed class TagBackups : IDisposable
         {
             foreach (string path in paths)
             {
-                string copy = Path.Combine(Path.GetDirectoryName(path) ?? string.Empty, "." + Path.GetFileName(path) + Suffix);
-                File.Copy(path, copy, overwrite: true);
+                // A short name of its own: a long track name plus a suffix can pass the filesystem's limit.
+                string copy = Path.Combine(Path.GetDirectoryName(path) ?? string.Empty, "." + Guid.NewGuid().ToString("N") + Suffix);
+                File.Copy(path, copy);
                 backups._copies[path] = copy;
             }
 
@@ -57,25 +58,26 @@ public sealed class TagBackups : IDisposable
         _copies.Clear();
     }
 
-    /// <summary>Puts every original back, then removes the files a rename left under new names.</summary>
+    /// <summary>Removes the tagged files a rename left under new names, then puts every original back.</summary>
+    // Renamed files go first: one can sit at a name that differs from an original's only by case. The tagger's rename
+    // never takes a name in use, so each path still holds only that tagged copy.
     public void Restore(IEnumerable<string> renamedPaths)
     {
-        HashSet<string> originals = new(_copies.Keys, StringComparer.Ordinal);
+        foreach (string renamed in renamedPaths.Where(File.Exists))
+            File.Delete(renamed);
+
         foreach ((string original, string copy) in _copies.ToList())
         {
             File.Move(copy, original, overwrite: true);
             _copies.Remove(original);
         }
-
-        // Only now: until every original is back, a renamed file may be the only copy of its audio.
-        foreach (string renamed in renamedPaths.Where(p => !originals.Contains(p) && File.Exists(p)))
-            File.Delete(renamed);
     }
 
     // Never deletes: a copy still held here is what a failed restore left, and may be the only original.
     public void Dispose()
     {
         if (_copies.Count > 0)
-            _logger.Warn("Pre-import tag: kept {Count} backup(s) of the files as downloaded after a failed restore: {Copies}", _copies.Count, string.Join(", ", _copies.Values));
+            _logger.Warn("Pre-import tag: kept {Count} backup(s) of the files as downloaded after a failed restore: {Copies}",
+                _copies.Count, string.Join(", ", _copies.Select(c => $"{c.Value} = {c.Key}")));
     }
 }

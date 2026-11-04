@@ -32,7 +32,7 @@ public class WholeDownloadTagsTests
         {
             Distance = Dist(albumDistance),
             TrackMapping = mapping,
-            AlbumRelease = new AlbumRelease { Title = title, TrackCount = trackCount, Media = [new Medium { Number = 1, Format = "Digital Media" }] }
+            AlbumRelease = new AlbumRelease { Title = title, ForeignReleaseId = title, TrackCount = trackCount, Media = [new Medium { Number = 1, Format = "Digital Media" }] }
         };
     }
 
@@ -83,6 +83,19 @@ public class WholeDownloadTagsTests
 
         Assert.Empty(plan.Targets);
         Assert.Equal("album match distance 0.400 exceeds max 0.150", plan.Refusal);
+    }
+
+    // Each release's tags are an album of their own to Lidarr.
+    [Fact]
+    public void Refuses_when_the_files_map_to_two_releases()
+    {
+        LocalAlbumRelease lycka = Release("Lycka", 0.05, [File(1)], 1, 1);
+        LocalAlbumRelease fat = Release("F.A.T", 0.05, [File(2)], 1, 1);
+
+        WholeDownloadTags.Plan plan = WholeDownloadTags.FromReleases([lycka, fat], 2, Limit, false, SameRecording);
+
+        Assert.Empty(plan.Targets);
+        Assert.Equal("the files map to 2 releases", plan.Refusal);
     }
 
     [Fact]
