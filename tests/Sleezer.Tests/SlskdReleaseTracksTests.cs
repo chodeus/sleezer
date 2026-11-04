@@ -27,6 +27,113 @@ public class SlskdReleaseTracksTests
         Assert.Equal("3 audio file(s) for 2 track(s)", reason);
     }
 
+    private static SlskdFileData Sized(string path, long size, int seconds) =>
+        new(path, null, 16, size, seconds, Path.GetExtension(path), 44100, 0, false);
+
+    [Fact]
+    public void the_same_lossless_file_twice_is_not_the_release()
+    {
+        string? reason = SlskdReleaseTracks.Mismatch(
+            [Sized($@"{Folder}\01 Lantern Song (Harbour Remix).flac", 25_695_594, 181), Sized($@"{Folder}\02 Lantern Song.flac", 25_695_594, 181)], 2, 2, 2, [180_000, 187_000]);
+
+        Assert.Equal("02 Lantern Song.flac is in the folder twice", reason);
+    }
+
+    [Fact]
+    public void lossless_copies_that_differ_only_by_tags_are_not_the_release()
+    {
+        string? reason = SlskdReleaseTracks.Mismatch(
+            [Sized($@"{Folder}\01 Lantern Song.flac", 25_593_342, 211), Sized($@"{Folder}\02 Lantern Song (Night Version).flac", 25_593_376, 211)], 2, 2, 2, [210_000, 211_000]);
+
+        Assert.Equal("02 Lantern Song (Night Version).flac is in the folder twice", reason);
+    }
+
+    [Fact]
+    public void one_song_in_two_formats_is_not_the_release()
+    {
+        string? reason = SlskdReleaseTracks.Mismatch(
+            [Sized($@"{Folder}\Lantern Song.flac", 15_856_283, 121), Sized($@"{Folder}\Lantern Song.mp3", 5_738_349, 121)], 2, 2, 2, [121_000, 123_000]);
+
+        Assert.Equal("Lantern Song.mp3 is in the folder twice", reason);
+    }
+
+    [Fact]
+    public void lossy_tracks_of_one_length_and_size_can_still_be_the_release()
+    {
+        Assert.Null(SlskdReleaseTracks.Mismatch(
+            [Sized($@"{Folder}\01 Lantern Song.mp3", 9_600_000, 240), Sized($@"{Folder}\02 Tidewater.mp3", 9_600_000, 240)], 2, 2, 2, [240_000, 240_000]));
+    }
+
+    // An uncompressed track's size follows from its length alone.
+    [Theory]
+    [InlineData(".wav")]
+    [InlineData(".aiff")]
+    public void uncompressed_tracks_of_one_length_can_still_be_the_release(string extension)
+    {
+        Assert.Null(SlskdReleaseTracks.Mismatch(
+            [Sized($@"{Folder}\01 Lantern Song{extension}", 37_044_044, 210), Sized($@"{Folder}\02 Tidewater{extension}", 37_046_396, 210)], 2, 2, 2, [210_000, 210_000]));
+    }
+
+    [Fact]
+    public void one_song_in_two_formats_is_found_whatever_unicode_form_its_names_use()
+    {
+        string? reason = SlskdReleaseTracks.Mismatch(
+            [Sized(Folder + "\\Caf\u00E9 Tide.flac", 15_856_283, 121), Sized(Folder + "\\Cafe\u0301 Tide.mp3", 5_738_349, 121)], 2, 2, 2, [121_000, 123_000]);
+
+        Assert.NotNull(reason);
+    }
+
+    [Theory]
+    [InlineData("02 Silence", "03 Silence")]
+    [InlineData("Moonward - Glass Harbour - 02 - Silence", "Moonward - Glass Harbour - 03 - Silence")]
+    public void a_release_that_repeats_a_track_can_still_be_the_release(string first, string second)
+    {
+        Assert.Null(SlskdReleaseTracks.Mismatch(
+            [Sized($@"{Folder}\01 Lantern Song.flac", 25_000_000, 211), Sized($@"{Folder}\{first}.flac", 401_234, 4), Sized($@"{Folder}\{second}.flac", 401_234, 4)], 3, 3, 3, [211_000, 4_000, 4_000]));
+    }
+
+    // Through the parser: each title finds a file, so only the copy rule refuses it; far sizes are two recordings.
+    [Theory]
+    [InlineData(25_593_376, false)]
+    [InlineData(27_000_000, true)]
+    public void on_one_recording_under_two_titles_does_not_match(long secondSize, bool matched)
+    {
+        Assert.Equal(matched, MatchedRelease(
+            ["Lantern Song", "Tidewater"], [211_000, 211_000],
+            [Sized($@"{Folder}\01 Lantern Song.flac", 25_593_342, 211), Sized($@"{Folder}\02 Tidewater.flac", secondSize, 211)]));
+    }
+
+    // The title check, not the copy rule, refuses a song twice under its own title.
+    [Fact]
+    public void on_a_song_twice_under_its_own_title_does_not_match()
+    {
+        Assert.False(MatchedRelease(
+            ["Lantern Song", "Tidewater"], [211_000, 211_000],
+            [Sized($@"{Folder}\01 Lantern Song.flac", 25_593_342, 211), Sized($@"{Folder}\02 Lantern Song.flac", 25_593_342, 211)]));
+    }
+
+    [Fact]
+    public void on_a_release_that_repeats_a_track_matches()
+    {
+        Assert.True(MatchedRelease(
+            ["Lantern Song", "Silence", "Silence"], [211_000, 4_000, 4_000],
+            [Sized($@"{Folder}\01 Lantern Song.flac", 25_000_000, 211), Sized($@"{Folder}\02 Silence.flac", 401_234, 4), Sized($@"{Folder}\03 Silence.flac", 401_234, 4)]));
+    }
+
+    [Fact]
+    public void same_named_files_on_two_discs_can_still_be_the_release()
+    {
+        Assert.Null(SlskdReleaseTracks.Mismatch(
+            [Sized($@"{Folder}\CD1\01 Intro.flac", 9_000_000, 60), Sized($@"{Folder}\CD2\01 Intro.flac", 9_400_000, 60)], 2, 2, 2, [60_000, 60_000]));
+    }
+
+    [Fact]
+    public void lossless_tracks_of_one_length_but_other_sizes_can_still_be_the_release()
+    {
+        Assert.Null(SlskdReleaseTracks.Mismatch(
+            [Sized($@"{Folder}\01 Lantern Song.flac", 25_000_000, 211), Sized($@"{Folder}\02 Tidewater.flac", 26_000_000, 211)], 2, 2, 2, [211_000, 211_000]));
+    }
+
     [Fact]
     public void a_folder_missing_a_track_is_not_the_release()
     {
@@ -144,6 +251,14 @@ public class SlskdReleaseTracksTests
             FolderData(),
             new SlskdSettings { MatchReleaseTracks = matchReleaseTracks },
             expectedTrackCount: 2).MatchedSearchCriteria;
+
+    private static bool MatchedRelease(string[] tracks, int[] durationsMs, List<SlskdFileData> files) =>
+        Parser.CreateAlbumData(
+            Group(files),
+            new SlskdSearchData("Moonward", "Glass Harbour", false, false, 1, null, TrackCount: tracks.Length, Tracks: [.. tracks], AlbumType: "Album", TrackDurations: [.. durationsMs]),
+            FolderData(),
+            new SlskdSettings { MatchReleaseTracks = true },
+            expectedTrackCount: tracks.Length).MatchedSearchCriteria;
 
     private static IGrouping<string, SlskdFileData> Group(List<SlskdFileData> files) =>
         files.GroupBy(f => SlskdTextProcessor.GetMergedDirectoryKey(f.Filename)).Single();

@@ -13,7 +13,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         internal static List<string> Tokens(string fileTitle)
         {
             // Underscores stand for spaces only in a name that has none; otherwise they separate fields.
-            string text = ComparableText.JoinWords(fileTitle);
+            string text = ComparableText.JoinWords(TrackField(fileTitle));
             text = text.Contains(' ') ? text.Replace('_', '-') : text.Replace('_', ' ');
             List<string> tokens = [Separator];
             foreach (string piece in SeparatorRegex().Split(text))
@@ -28,6 +28,10 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
             return tokens;
         }
+
+        /// <summary>The track's own field: what follows "Artist - Album - 04 - ", or the whole title.</summary>
+        internal static string TrackField(string fileTitle) =>
+            TrackFieldRegex().Match(fileTitle) is { Success: true } field ? fileTitle[(field.Index + field.Length)..] : fileTitle;
 
         /// <summary>A wanted title's words, split at its first bracket into the head and the qualifier.</summary>
         internal static (string[] Head, string[] Qualifier) TitleWords(string wantedTitle)
@@ -115,6 +119,10 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
         // As NormalizeString: a title made only of stop words ("With") keeps them.
         private static bool OnlyStopWords(string text) => Words(text, keepStopWords: true).All(SlskdItemsParser.IsStopWord);
+
+        // Dashes with spaces either side only: "[24-96]" and "(12-05-99)" are not fields.
+        [GeneratedRegex(@"^.+?\s[-–—]\s+\d{1,3}\s+[-–—]\s+(?=\S)")]
+        private static partial Regex TrackFieldRegex();
 
         // The captured "feat" stays as a piece of its own: a stop word between separators, so a title "Featuring" can match it.
         [GeneratedRegex(@"\s+[-–—]\s+|[-–—()\[\]{},.;:!?/\\~〜·・（）［］｛｝～【】「」『』〈〉《》]|\b(feat|ft|featuring)\b", RegexOptions.IgnoreCase)]
