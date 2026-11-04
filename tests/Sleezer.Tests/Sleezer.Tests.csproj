@@ -67,6 +67,11 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\PostProcessing\WholeDownloadTags.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Core\PostProcessing\TagBackups.cs"
+             LinkBase="SourceUnderTest" />
+    <!-- The real tagger, driven with fake Lidarr services and real files on disk. -->
+    <Compile Include="..\..\src\Sleezer\Core\PostProcessing\PreImportTagger.cs"
+             LinkBase="SourceUnderTest" />
     <!-- Which download clients are storefronts, and so can only deliver a digital
          release. Enum + classifier only; the settings class stays out. -->
     <Compile Include="..\..\src\Sleezer\Metadata\FFmpeg\PostProcessClient.cs"
