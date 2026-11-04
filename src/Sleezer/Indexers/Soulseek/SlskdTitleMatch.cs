@@ -12,6 +12,10 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         /// <summary>The file title's words, with a separator token wherever a separator stood and at both ends.</summary>
         internal static List<string> Tokens(string fileTitle)
         {
+            // "Artist - Album - 04 - Track": only the field after the track number is the track's own title.
+            if (TrackFieldRegex().Match(fileTitle) is { Success: true } field)
+                fileTitle = fileTitle[(field.Index + field.Length)..];
+
             // Underscores stand for spaces only in a name that has none; otherwise they separate fields.
             string text = ComparableText.JoinWords(fileTitle);
             text = text.Contains(' ') ? text.Replace('_', '-') : text.Replace('_', ' ');
@@ -56,7 +60,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                     continue;
 
                 int end = TitleEnd(seen, i, title);
-                if (end < 0 || IsAlbumField(seen, end))
+                if (end < 0)
                     continue;
 
                 int after = seen.Skip(end).Count(t => t != Separator);
@@ -83,12 +87,6 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
             return end == tokens.Count || IsEdge(tokens[end]) ? end : -1;
         }
-
-        // "Artist - Album - 04 - Track": a title followed by its own field, a track number, then more is the album's name.
-        private static bool IsAlbumField(IReadOnlyList<string> tokens, int end) =>
-            end + 3 < tokens.Count && tokens[end] == Separator && IsTrackNumber(tokens[end + 1]) && tokens[end + 2] == Separator && tokens[end + 3] != Separator;
-
-        private static bool IsTrackNumber(string token) => token.Length <= 3 && token.All(char.IsDigit);
 
         // Any number, such as a track number or a year ("Title 2021 Remaster"), bounds a title like a separator does.
         private static bool IsEdge(string token) => token == Separator || token.All(char.IsDigit);
@@ -121,6 +119,10 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
         // As NormalizeString: a title made only of stop words ("With") keeps them.
         private static bool OnlyStopWords(string text) => Words(text, keepStopWords: true).All(SlskdItemsParser.IsStopWord);
+
+        // Dashes with spaces either side only: "[24-96]" and "(12-05-99)" are not fields.
+        [GeneratedRegex(@"^.+?\s[-–—]\s+\d{1,3}\s+[-–—]\s+(?=\S)")]
+        private static partial Regex TrackFieldRegex();
 
         // The captured "feat" stays as a piece of its own: a stop word between separators, so a title "Featuring" can match it.
         [GeneratedRegex(@"\s+[-–—]\s+|[-–—()\[\]{},.;:!?/\\~〜·・（）［］｛｝～【】「」『』〈〉《》]|\b(feat|ft|featuring)\b", RegexOptions.IgnoreCase)]

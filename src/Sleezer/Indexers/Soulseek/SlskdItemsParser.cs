@@ -918,7 +918,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         private static partial Regex JunkTokenRegex();
 
         [GeneratedRegex(@"^\s*[a-dA-D]?\d{1,3}\s*[-._) ]+\s*", RegexOptions.Compiled)]
-        private static partial Regex TrackNumberPrefixRegex();
+        internal static partial Regex TrackNumberPrefixRegex();
 
         [GeneratedRegex(@"^\s*(\d{1,3})\b", RegexOptions.Compiled)]
         private static partial Regex TrackNumberPrefixCaptureRegex();

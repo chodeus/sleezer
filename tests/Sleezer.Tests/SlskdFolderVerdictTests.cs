@@ -28,6 +28,16 @@ public class SlskdFolderVerdictTests
     }
 
     [Fact]
+    public void a_hires_album_whose_names_carry_its_format_is_the_release()
+    {
+        SlskdFolderVerdict v = Judge(@"Music\Moonward\Glass Harbour", ["01 Lantern Song [24-96].flac", "02 Tidewater [24-96].flac"],
+            new SlskdSearchData("Moonward", "Glass Harbour", false, false, 1, null, TrackCount: 2, Tracks: ["Lantern Song", "Tidewater"]),
+            new SlskdSettings { MatchReleaseTracks = true }, expected: 2);
+
+        Assert.True(v.Matched);
+    }
+
+    [Fact]
     public void a_folder_naming_the_artist_and_album_matches_and_says_so()
     {
         SlskdFolderVerdict v = Judge(@"Music\Moonward\Glass Harbour", ["01 Lantern Song.flac"], new SlskdSearchData("Moonward", "Glass Harbour", false, false, 1, null));

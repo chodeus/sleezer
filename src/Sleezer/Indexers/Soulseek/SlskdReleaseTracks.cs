@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 {
     /// <summary>Compares a peer folder's audio files with the searched release's tracks.</summary>
@@ -31,10 +33,11 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         // A tagger's padding block: copies of one lossless file that differ only by their tags are this close in size.
         private const long SameAudioSizeBytes = 8192;
 
-        private static readonly HashSet<string> LosslessExtensions = new(StringComparer.OrdinalIgnoreCase) { ".flac", ".wav", ".aiff", ".aif", ".ape", ".wv" };
+        // Compressed only: an uncompressed track's size follows from its length, so two WAVs of one length are near one size anyway.
+        private static readonly HashSet<string> LosslessExtensions = new(StringComparer.OrdinalIgnoreCase) { ".flac", ".ape", ".wv" };
 
         /// <summary>A file that holds the same song as another in the folder, or null.</summary>
-        // In two formats, or a lossless copy under another title; lossy files of one length are near one size anyway.
+        // In two formats, or a compressed lossless copy under another title; lossy files of one length are near one size anyway.
         internal static string? Duplicate(IReadOnlyCollection<SlskdFileData> audioFiles)
         {
             List<SlskdFileData> files = [.. audioFiles];
@@ -50,12 +53,19 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
         private static bool SameSong(SlskdFileData a, SlskdFileData b) =>
             string.Equals(Path.ChangeExtension(Normalised(a), null), Path.ChangeExtension(Normalised(b), null), StringComparison.OrdinalIgnoreCase) ||
-            (IsLossless(a) && IsLossless(b) && a.Length is > 0 && a.Length == b.Length && Math.Abs(a.Size - b.Size) <= SameAudioSizeBytes);
+            (SizeTwins(a, b) && !string.Equals(Title(a), Title(b), StringComparison.OrdinalIgnoreCase));
+
+        private static bool SizeTwins(SlskdFileData a, SlskdFileData b) =>
+            IsLossless(a) && IsLossless(b) && a.Length is > 0 && a.Length == b.Length && Math.Abs(a.Size - b.Size) <= SameAudioSizeBytes;
+
+        // A release can repeat a track ("03 Silence", "04 Silence"); a copy under its own title leaves another title uncovered.
+        private static string Title(SlskdFileData file) =>
+            SlskdItemsParser.TrackNumberPrefixRegex().Replace(Path.GetFileNameWithoutExtension(Normalised(file)), string.Empty);
 
         private static bool IsLossless(SlskdFileData file) => LosslessExtensions.Contains(Path.GetExtension(Normalised(file)));
 
-        // Peers send Windows paths, which Path won't split on Linux.
-        private static string Normalised(SlskdFileData file) => (file.Filename ?? string.Empty).Replace('\\', '/');
+        // Peers send Windows paths, which Path won't split on Linux, and either Unicode form of a name.
+        private static string Normalised(SlskdFileData file) => (file.Filename ?? string.Empty).Replace('\\', '/').Normalize(NormalizationForm.FormC);
 
         /// <summary>The release's known track lengths in whole seconds, ascending.</summary>
         internal static List<int> ReleaseSeconds(IEnumerable<int> trackDurationsMs) =>

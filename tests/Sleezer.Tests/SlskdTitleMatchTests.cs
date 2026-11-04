@@ -61,6 +61,26 @@ public class SlskdTitleMatchTests
         Assert.False(StandsAlone(fileTitle, wantedTitle));
     }
 
+    // Numbers inside brackets are not a track-number field.
+    [Theory]
+    [InlineData("Moonward - Lantern Song [24-96]", "Lantern Song")]
+    [InlineData("Lantern Song (12-05-99)", "Lantern Song")]
+    [InlineData("Moonward - Lantern Song [320] (WEB)", "Lantern Song")]
+    public void a_title_followed_by_bracketed_numbers_still_matches(string fileTitle, string wantedTitle)
+    {
+        Assert.True(StandsAlone(fileTitle, wantedTitle));
+    }
+
+    // Only "- 04 -" marks a track field: a number that opens or closes a field is as often the title's or version's own.
+    [Theory]
+    [InlineData("Moonward - Lantern Song - 12 Inch Version", "Lantern Song")]
+    [InlineData("Moonward - Summer Of 69 - Remastered 2008", "Summer of 69")]
+    [InlineData("Moonward - Lantern Song - 808 State Remix", "Lantern Song (808 State Remix)")]
+    public void a_number_at_the_edge_of_a_field_is_not_a_track_field(string fileTitle, string wantedTitle)
+    {
+        Assert.True(StandsAlone(fileTitle, wantedTitle));
+    }
+
     [Theory]
     [InlineData("Moonward - Glass Harbour - 10 - Glass Harbour", "Glass Harbour")]
     [InlineData("Moonward - Glass Harbour - 04", "Glass Harbour")]
