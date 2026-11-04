@@ -12,12 +12,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         /// <summary>The file title's words, with a separator token wherever a separator stood and at both ends.</summary>
         internal static List<string> Tokens(string fileTitle)
         {
-            // "Artist - Album - 04 - Track": only the field after the track number is the track's own title.
-            if (TrackFieldRegex().Match(fileTitle) is { Success: true } field)
-                fileTitle = fileTitle[(field.Index + field.Length)..];
-
             // Underscores stand for spaces only in a name that has none; otherwise they separate fields.
-            string text = ComparableText.JoinWords(fileTitle);
+            string text = ComparableText.JoinWords(TrackField(fileTitle));
             text = text.Contains(' ') ? text.Replace('_', '-') : text.Replace('_', ' ');
             List<string> tokens = [Separator];
             foreach (string piece in SeparatorRegex().Split(text))
@@ -32,6 +28,10 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
             return tokens;
         }
+
+        /// <summary>The track's own field: what follows "Artist - Album - 04 - ", or the whole title.</summary>
+        internal static string TrackField(string fileTitle) =>
+            TrackFieldRegex().Match(fileTitle) is { Success: true } field ? fileTitle[(field.Index + field.Length)..] : fileTitle;
 
         /// <summary>A wanted title's words, split at its first bracket into the head and the qualifier.</summary>
         internal static (string[] Head, string[] Qualifier) TitleWords(string wantedTitle)

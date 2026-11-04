@@ -30,7 +30,6 @@ public class SlskdReleaseTracksTests
     private static SlskdFileData Sized(string path, long size, int seconds) =>
         new(path, null, 16, size, seconds, Path.GetExtension(path), 44100, 0, false);
 
-    // Live 2026-11-04: a peer's folder held the remix twice, once under the original's title.
     [Fact]
     public void the_same_lossless_file_twice_is_not_the_release()
     {
@@ -40,7 +39,6 @@ public class SlskdReleaseTracksTests
         Assert.Equal("02 Lantern Song.flac is in the folder twice", reason);
     }
 
-    // Live 2026-11-04: three copies of one recording, under three track titles, differing only by tags.
     [Fact]
     public void lossless_copies_that_differ_only_by_tags_are_not_the_release()
     {
@@ -50,7 +48,6 @@ public class SlskdReleaseTracksTests
         Assert.Equal("02 Lantern Song (Night Version).flac is in the folder twice", reason);
     }
 
-    // Live 2026-11-02: one song as FLAC and as MP3 filled a release with two same-titled tracks.
     [Fact]
     public void one_song_in_two_formats_is_not_the_release()
     {
@@ -86,11 +83,13 @@ public class SlskdReleaseTracksTests
         Assert.NotNull(reason);
     }
 
-    [Fact]
-    public void a_release_that_repeats_a_track_can_still_be_the_release()
+    [Theory]
+    [InlineData("02 Silence", "03 Silence")]
+    [InlineData("Moonward - Glass Harbour - 02 - Silence", "Moonward - Glass Harbour - 03 - Silence")]
+    public void a_release_that_repeats_a_track_can_still_be_the_release(string first, string second)
     {
         Assert.Null(SlskdReleaseTracks.Mismatch(
-            [Sized($@"{Folder}\01 Lantern Song.flac", 25_000_000, 211), Sized($@"{Folder}\02 Silence.flac", 401_234, 4), Sized($@"{Folder}\03 Silence.flac", 401_234, 4)], 3, 3, 3, [211_000, 4_000, 4_000]));
+            [Sized($@"{Folder}\01 Lantern Song.flac", 25_000_000, 211), Sized($@"{Folder}\{first}.flac", 401_234, 4), Sized($@"{Folder}\{second}.flac", 401_234, 4)], 3, 3, 3, [211_000, 4_000, 4_000]));
     }
 
     // Through the parser: each title finds a file, so only the copy rule refuses it; far sizes are two recordings.

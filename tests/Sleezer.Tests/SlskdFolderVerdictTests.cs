@@ -15,7 +15,6 @@ public class SlskdFolderVerdictTests
         return Parser.JudgeFolder(files.GroupBy(f => SlskdTextProcessor.GetMergedDirectoryKey(f.Filename)).Single(), search, settings, expected);
     }
 
-    // Live 2026-10-31: the single "All Hope Is Gone" was grabbed as the album's track 4, "Psychosocial".
     [Fact]
     public void a_single_named_like_its_album_is_not_found_in_another_track_of_that_album()
     {

@@ -60,7 +60,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
         // A release can repeat a track ("03 Silence", "04 Silence"); a copy under its own title leaves another title uncovered.
         private static string Title(SlskdFileData file) =>
-            SlskdItemsParser.TrackNumberPrefixRegex().Replace(Path.GetFileNameWithoutExtension(Normalised(file)), string.Empty);
+            SlskdTitleMatch.TrackField(SlskdItemsParser.TrackNumberPrefixRegex().Replace(Path.GetFileNameWithoutExtension(Normalised(file)), string.Empty));
 
         private static bool IsLossless(SlskdFileData file) => LosslessExtensions.Contains(Path.GetExtension(Normalised(file)));
 
