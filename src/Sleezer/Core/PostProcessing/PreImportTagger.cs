@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Text;
 using NLog;
 using NzbDrone.Common.Disk;
@@ -34,8 +33,8 @@ public class PreImportTagger : IPreImportTagger
 {
     private const double FingerprintScoreThreshold = 0.5;
 
-    // One pass per folder at a time: two items post-processing one folder would each roll back the other's writes.
-    private static readonly ConcurrentDictionary<string, SemaphoreSlim> FolderPasses = new(StringComparer.OrdinalIgnoreCase);
+    // One pass at a time: passes over one folder, or a folder and its parent, would roll back each other's writes.
+    private static readonly SemaphoreSlim TaggingPasses = new(1, 1);
 
     private readonly IIdentificationService _identificationService;
     private readonly IAudioTagService _audioTagService;
@@ -163,15 +162,14 @@ public class PreImportTagger : IPreImportTagger
         bool fingerprintTitleFallback = false,
         bool preferDigitalMedia = false)
     {
-        SemaphoreSlim folderPass = FolderPasses.GetOrAdd(Path.TrimEndingDirectorySeparator(Path.GetFullPath(completedFolderPath)), _ => new SemaphoreSlim(1, 1));
-        await folderPass.WaitAsync(ct);
+        await TaggingPasses.WaitAsync(ct);
         try
         {
             return await TagFolderAsync(album, artist, albumRelease, sourceId, completedFolderPath, confidenceThreshold, stripFeaturedArtists, verifyAllWithFingerprint, fingerprintTitleFallback, preferDigitalMedia, ct);
         }
         finally
         {
-            folderPass.Release();
+            TaggingPasses.Release();
         }
     }
 
@@ -199,10 +197,10 @@ public class PreImportTagger : IPreImportTagger
             DropSharedBracketFromUntaggedFiles(originalTitles, result.TaggedFiles, album, ct);
             return result;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException and not TagRestoreException)
         {
-            // Cancellation is not a tagging result: a timed-out pass verified nothing, so it
-            // must reach the caller's failure path rather than read as one bad tag write.
+            // Cancellation and a failed restore are not tagging results: either left files the pass
+            // didn't vouch for, so they must reach the caller's failure path, not read as one bad tag write.
             _logger.Error(ex, "Pre-import tagging failed for {SourceId}", sourceId);
             return new TaggingResult(0, 0, 1);
         }
@@ -527,32 +525,34 @@ public class PreImportTagger : IPreImportTagger
         if (backups == null)
             return (0, 0);
 
-        List<TaggedFile> written = WriteTargets(plan.Targets, album, stripFeaturedArtists, artistName);
+        List<(WholeDownloadTags.Target Target, bool Renamable)> written = WriteTargets(plan.Targets, album, stripFeaturedArtists, artistName);
         string? failure = written.Count < plan.Targets.Count
             ? $"the tag write for {Path.GetFileName(plan.Targets[written.Count].File.Path)} failed"
-            : ReadBackFailure(written, plan.Targets[0].Release?.ForeignReleaseId);
-        if (failure == null)
+            : ReadBackFailure(plan.Targets.Select(t => t.File.Path), plan.Targets[0].Release?.ForeignReleaseId);
+        if (failure != null)
         {
-            backups.Discard();
-            taggedFiles.AddRange(written);
-            return (written.Count, 0);
+            backups.Restore();
+            _logger.Warn("Pre-import tag: {Failure} in {SourceId}, so every file was put back as downloaded", failure, sourceId);
+            return (0, written.Count < plan.Targets.Count ? 1 : 0);
         }
 
-        backups.Restore(written.Where(w => w.FinalPath != w.OriginalPath).Select(w => w.FinalPath));
-        _logger.Warn("Pre-import tag: {Failure} in {SourceId}, so every file was put back as downloaded", failure, sourceId);
-        return (0, written.Count < plan.Targets.Count ? 1 : 0);
+        backups.Discard();
+
+        // Renamed only once the pass stands, so a rollback always finds each file under the name it was downloaded with.
+        taggedFiles.AddRange(written.Select(w => new TaggedFile(w.Target.File.Path, w.Renamable ? RenameWithoutFeatured(w.Target.File.Path, w.Target.Track) : w.Target.File.Path)));
+        return (written.Count, 0);
     }
 
     // Stops at the first failed write: the pass is rolled back either way.
-    private List<TaggedFile> WriteTargets(IReadOnlyList<WholeDownloadTags.Target> targets, Album album, bool stripFeaturedArtists, string? artistName)
+    private List<(WholeDownloadTags.Target Target, bool Renamable)> WriteTargets(IReadOnlyList<WholeDownloadTags.Target> targets, Album album, bool stripFeaturedArtists, string? artistName)
     {
-        List<TaggedFile> written = [];
+        List<(WholeDownloadTags.Target Target, bool Renamable)> written = [];
         foreach (WholeDownloadTags.Target target in targets)
         {
-            if (TryTagSingleFile(target.File, target.Track, album, target.Release, stripFeaturedArtists, artistName) is not { } finalPath)
+            if (TryTagSingleFile(target.File, target.Track, album, target.Release, stripFeaturedArtists, artistName) is not { } renamable)
                 break;
 
-            written.Add(new TaggedFile(target.File.Path, finalPath));
+            written.Add((target, renamable));
             _logger.Trace("Pre-import tag: tagged {File} → '{Title}' (track {TrackNum})", Path.GetFileName(target.File.Path), target.Track.Title, target.Track.AbsoluteTrackNumber);
         }
 
@@ -561,11 +561,11 @@ public class PreImportTagger : IPreImportTagger
 
     // Lidarr groups a download by album tag and release id (TrackGroupingService), and its writer swallows a failed save,
     // so the files must read back as one album carrying the planned release.
-    private string? ReadBackFailure(IReadOnlyList<TaggedFile> written, string? plannedReleaseId)
+    private string? ReadBackFailure(IEnumerable<string> paths, string? plannedReleaseId)
     {
         try
         {
-            HashSet<(string? Album, string? ReleaseId)> identities = [.. written.Select(w => AlbumIdentity(w.FinalPath))];
+            HashSet<(string? Album, string? ReleaseId)> identities = [.. paths.Select(AlbumIdentity)];
             if (identities.Count > 1)
                 return "the written files read back as more than one album";
 
@@ -584,9 +584,8 @@ public class PreImportTagger : IPreImportTagger
         return (file.Tag.Album, file.Tag.MusicBrainzReleaseId);
     }
 
-    /// <summary>Tags one file. Returns its final on-disk path (feat-strip may
-    /// rename), or null when the tag write failed.</summary>
-    private string? TryTagSingleFile(LocalTrack localTrack, Track track, Album album, AlbumRelease? albumRelease, bool stripFeaturedArtists, string? artistName)
+    /// <summary>Tags one file: null when the tag write failed, else whether its featured credits were stripped and it may be renamed.</summary>
+    private bool? TryTagSingleFile(LocalTrack localTrack, Track track, Album album, AlbumRelease? albumRelease, bool stripFeaturedArtists, string? artistName)
     {
         try
         {
@@ -605,11 +604,7 @@ public class PreImportTagger : IPreImportTagger
             };
 
             _audioTagService.WriteTags(transient, newDownload: true, force: true);
-
-            if (stripFeaturedArtists)
-                ApplyFeaturedArtistCleanup(transient, track, artistName);
-
-            return transient.Path;
+            return stripFeaturedArtists && StripFeaturedTags(transient.Path, artistName);
         }
         catch (Exception ex)
         {
@@ -732,40 +727,40 @@ public class PreImportTagger : IPreImportTagger
     /// <summary>
     /// After Lidarr's tag writer runs, re-open the file with TagLib and strip
     /// bracketed `(feat. X)` suffixes from Title / Performers / AlbumArtists.
-    /// Then rename the file from the cleaned title so Lidarr's importer sees
-    /// the clean basename. Best-effort: any failure is logged and swallowed
-    /// so the parent tag-write still counts as a success.
+    /// Best-effort: a failure is logged and the file keeps its name.
     /// </summary>
-    private void ApplyFeaturedArtistCleanup(TrackFile transient, Track track, string? artistName)
+    private bool StripFeaturedTags(string path, string? artistName)
     {
-        string path = transient.Path;
         try
         {
-            using (TagLib.File file = TagLib.File.Create(path))
-            {
-                file.Tag.Title = FeaturedArtistStripper.Strip(file.Tag.Title);
-                file.Tag.Performers = file.Tag.Performers
-                    .Select(p => FeaturedArtistStripper.Strip(FeaturedArtistStripper.StripGuestCredits(p, artistName)))
-                    .ToArray();
-                file.Tag.AlbumArtists = file.Tag.AlbumArtists
-                    .Select(a => FeaturedArtistStripper.Strip(FeaturedArtistStripper.StripGuestCredits(a, artistName)))
-                    .ToArray();
-                file.Save();
-            }
+            using TagLib.File file = TagLib.File.Create(path);
+            file.Tag.Title = FeaturedArtistStripper.Strip(file.Tag.Title);
+            file.Tag.Performers = file.Tag.Performers
+                .Select(p => FeaturedArtistStripper.Strip(FeaturedArtistStripper.StripGuestCredits(p, artistName)))
+                .ToArray();
+            file.Tag.AlbumArtists = file.Tag.AlbumArtists
+                .Select(a => FeaturedArtistStripper.Strip(FeaturedArtistStripper.StripGuestCredits(a, artistName)))
+                .ToArray();
+            file.Save();
+            return true;
         }
         catch (Exception ex)
         {
             _logger.Warn(ex, "Pre-import tag: feat-strip tag rewrite failed for {Path}", path);
-            return;
+            return false;
         }
+    }
 
+    /// <summary>Renames a stripped file from its cleaned title so Lidarr's importer sees the clean basename; returns its path.</summary>
+    private string RenameWithoutFeatured(string path, Track track)
+    {
         try
         {
             string? dir = Path.GetDirectoryName(path);
             string ext = Path.GetExtension(path);
             string cleanTitle = FeaturedArtistStripper.Strip(track.Title);
             if (string.IsNullOrWhiteSpace(cleanTitle) || string.IsNullOrEmpty(dir))
-                return;
+                return path;
 
             int trackNumber = track.AbsoluteTrackNumber;
             string baseName = trackNumber > 0
@@ -774,11 +769,11 @@ public class PreImportTagger : IPreImportTagger
 
             string newPath = Path.Combine(dir, baseName);
             if (string.Equals(newPath, path, StringComparison.OrdinalIgnoreCase))
-                return;
+                return path;
             if (File.Exists(newPath))
             {
                 _logger.Trace("Pre-import tag: feat-strip rename target already exists, skipping: {NewPath}", newPath);
-                return;
+                return path;
             }
 
             try
@@ -791,13 +786,15 @@ public class PreImportTagger : IPreImportTagger
                 // Safer to leave the original file in place than clobber a sibling — matches the
                 // pre-check's skip-on-collision semantics.
                 _logger.Trace(ioEx, "Pre-import tag: feat-strip rename race hit for {Path} -> {NewPath}; leaving original", path, newPath);
-                return;
+                return path;
             }
-            transient.Path = newPath;
+
+            return newPath;
         }
         catch (Exception ex)
         {
             _logger.Warn(ex, "Pre-import tag: feat-strip rename failed for {Path}", path);
+            return path;
         }
     }
 

@@ -25,65 +25,42 @@ public class TagBackupsTests : IDisposable
     private string[] Backups() => Directory.GetFiles(_dir, "*.sleezer-untagged");
 
     [Fact]
-    public void Restore_puts_every_original_back_and_removes_renamed_files()
+    public void Restore_puts_every_original_back()
     {
-        string kept = Write("01 - Song.flac", "original 1");
-        string renamed = Write("02 - Song (feat. Guest).flac", "original 2");
-
-        using (TagBackups backups = TagBackups.Of([kept, renamed], Log)!)
-        {
-            File.WriteAllText(kept, "tagged 1");
-            string newName = Path.Combine(_dir, "02 - Song.flac");
-            File.Move(renamed, newName);
-            File.WriteAllText(newName, "tagged 2");
-
-            backups.Restore([newName]);
-        }
-
-        Assert.Equal("original 1", File.ReadAllText(kept));
-        Assert.Equal("original 2", File.ReadAllText(renamed));
-        Assert.Equal(["01 - Song.flac", "02 - Song (feat. Guest).flac"], Names());
-    }
-
-    // File one is renamed away, freeing its name; file two is then renamed onto that name with other letter case.
-    [Fact]
-    public void Restore_keeps_an_original_whose_name_differs_from_a_rename_only_by_case()
-    {
-        string first = Write("01 - beta.flac", "original 1");
-        string second = Write("zz.flac", "original 2");
+        string first = Write("01 - Song.flac", "original 1");
+        string second = Write("02 - Song.flac", "original 2");
 
         using (TagBackups backups = TagBackups.Of([first, second], Log)!)
         {
-            string firstRenamed = Path.Combine(_dir, "02 - Alpha.flac");
-            string secondRenamed = Path.Combine(_dir, "01 - Beta.flac");
-            File.Move(first, firstRenamed);
-            File.Move(second, secondRenamed);
+            File.WriteAllText(first, "tagged 1");
+            File.WriteAllText(second, "tagged 2");
 
-            backups.Restore([firstRenamed, secondRenamed]);
+            backups.Restore();
         }
 
-        Assert.Equal(["01 - beta.flac", "zz.flac"], Names());
         Assert.Equal("original 1", File.ReadAllText(first));
         Assert.Equal("original 2", File.ReadAllText(second));
+        Assert.Equal(["01 - Song.flac", "02 - Song.flac"], Names());
     }
 
-    // When a file can't go back, its copy is the only original left.
+    // A file that can't go back keeps its copy, the only original left of it, and the rest still go back.
     [Fact]
-    public void A_restore_that_cannot_put_a_file_back_keeps_its_copy()
+    public void A_restore_that_cannot_put_a_file_back_keeps_its_copy_and_restores_the_rest()
     {
-        string original = Write("01 - Song (feat. Guest).flac", "original");
+        string stuck = Write("01 - Song.flac", "original 1");
+        string other = Write("02 - Song.flac", "original 2");
 
-        using (TagBackups backups = TagBackups.Of([original], Log)!)
+        using (TagBackups backups = TagBackups.Of([stuck, other], Log)!)
         {
-            string newName = Path.Combine(_dir, "01 - Song.flac");
-            File.Move(original, newName);
-            File.WriteAllText(newName, "tagged");
-            Directory.CreateDirectory(original);
+            File.Delete(stuck);
+            Directory.CreateDirectory(stuck);
+            File.WriteAllText(other, "tagged 2");
 
-            Assert.ThrowsAny<IOException>(() => backups.Restore([newName]));
+            Assert.Throws<TagRestoreException>(backups.Restore);
         }
 
-        Assert.Equal("original", File.ReadAllText(Assert.Single(Backups())));
+        Assert.Equal("original 2", File.ReadAllText(other));
+        Assert.Equal("original 1", File.ReadAllText(Assert.Single(Backups())));
     }
 
     [Fact]

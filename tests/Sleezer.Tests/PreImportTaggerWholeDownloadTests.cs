@@ -253,6 +253,81 @@ public class PreImportTaggerWholeDownloadTests : IDisposable
     }
 
     [Fact]
+    public async Task Renames_featured_files_only_once_the_pass_stands()
+    {
+        NewFile("01 - beta.flac", "q1");
+        NewFile("zz.flac", "q2");
+        NewFile("zzz.flac", "q3");
+        (Album album, Artist artist, AlbumRelease release) = Target("Album", ("Alpha", 2), ("Beta", 1), ("Gamma", 3));
+
+        PreImportTagger.TaggingResult result = await Tag(Tagger(release, 0.0, TagAsWanted), album, artist, CancellationToken.None, strip: true);
+
+        Assert.Equal(3, result.Tagged);
+        Assert.Equal(["01 - Beta.flac", "02 - Alpha.flac", "03 - Gamma.flac"], FolderNames());
+        Assert.Equal(["01 - Beta.flac", "02 - Alpha.flac", "03 - Gamma.flac"], result.TaggedFiles!.Select(t => Path.GetFileName(t.FinalPath)).Order(StringComparer.Ordinal));
+    }
+
+    // A rollback that leaves a file tagged must stop the import, not read as one failed write.
+    [Fact]
+    public async Task A_rollback_that_cannot_put_the_files_back_fails_the_pass()
+    {
+        string[] paths = Files("One", "Two");
+        (Album album, Artist artist, AlbumRelease release) = Target("Album", "One", "Two");
+        PreImportTagger tagger = Tagger(release, 0.0, tf =>
+        {
+            if (tf.Path.EndsWith("02.flac", StringComparison.Ordinal))
+            {
+                File.SetUnixFileMode(_dir, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+                throw new IOException("file is locked");
+            }
+
+            TagAsWanted(tf);
+        });
+
+        try
+        {
+            await Assert.ThrowsAsync<TagRestoreException>(() => Tag(tagger, album, artist, CancellationToken.None));
+        }
+        finally
+        {
+            File.SetUnixFileMode(_dir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+
+        Assert.All(paths, p => Assert.True(File.Exists(p)));
+        Assert.Equal(2, Directory.GetFiles(_dir, "*.sleezer-untagged").Length);
+    }
+
+    [Fact]
+    public async Task A_pass_on_a_parent_folder_waits_for_one_on_its_child()
+    {
+        Files("One", "Two", "Three");
+        (Album album, Artist artist, AlbumRelease release) = Target("Album", "One", "Two", "Three");
+        TaskCompletionSource childWrote = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource childMayFinish = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource parentWrote = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        PreImportTagger child = Tagger(release, 0.0, tf =>
+        {
+            TagAsWanted(tf);
+            childWrote.TrySetResult();
+            childMayFinish.Task.Wait(TimeSpan.FromSeconds(10));
+        });
+        PreImportTagger parent = Tagger(release, 0.0, tf =>
+        {
+            parentWrote.TrySetResult();
+            TagAsWanted(tf);
+        });
+
+        Task<PreImportTagger.TaggingResult> one = Task.Run(() => Tag(child, album, artist, CancellationToken.None));
+        await childWrote.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        Task<PreImportTagger.TaggingResult> two = Task.Run(() => parent.TagCompletedDownloadAsync(album, artist, null, "parent", _root, 0.15, false, CancellationToken.None));
+        bool parentWroteMeanwhile = await Task.WhenAny(parentWrote.Task, Task.Delay(500)) == parentWrote.Task;
+        childMayFinish.SetResult();
+        await Task.WhenAll(one, two).WaitAsync(TimeSpan.FromSeconds(30));
+
+        Assert.False(parentWroteMeanwhile);
+    }
+
+    [Fact]
     public async Task Waits_for_another_pass_on_the_same_folder()
     {
         string[] paths = Files("One", "Two", "Three");

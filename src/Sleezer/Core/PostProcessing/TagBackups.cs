@@ -58,22 +58,28 @@ public sealed class TagBackups : IDisposable
         _copies.Clear();
     }
 
-    /// <summary>Removes the tagged files a rename left under new names, then puts every original back.</summary>
-    // Renamed files go first: one can sit at a name that differs from an original's only by case. The tagger's rename
-    // never takes a name in use, so each path still holds only that tagged copy.
-    public void Restore(IEnumerable<string> renamedPaths)
+    /// <summary>Moves every copy back over its file, trying them all; throws when any stays tagged.</summary>
+    public void Restore()
     {
-        foreach (string renamed in renamedPaths.Where(File.Exists))
-            File.Delete(renamed);
-
+        Exception? firstFailure = null;
         foreach ((string original, string copy) in _copies.ToList())
         {
-            File.Move(copy, original, overwrite: true);
-            _copies.Remove(original);
+            try
+            {
+                File.Move(copy, original, overwrite: true);
+                _copies.Remove(original);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                firstFailure ??= ex;
+            }
         }
+
+        if (firstFailure != null)
+            throw new TagRestoreException($"Pre-import tag: {_copies.Count} file(s) could not be put back as downloaded", firstFailure);
     }
 
-    // Never deletes: a copy still held here is what a failed restore left, and may be the only original.
+    // Never deletes: a copy still held here is what a failed restore left, and is that file's only original.
     public void Dispose()
     {
         if (_copies.Count > 0)
