@@ -45,9 +45,11 @@ public class PreImportTaggerWholeDownloadTests : IDisposable
         protected override object? Invoke(MethodInfo? method, object?[]? args) => _handler(method!, args);
     }
 
-    private string NewFile(string name, string title)
+    private string NewFile(string name, string title) => NewFileIn(_dir, name, title);
+
+    private static string NewFileIn(string dir, string name, string title)
     {
-        string path = Path.Combine(_dir, name);
+        string path = Path.Combine(dir, name);
         File.Copy(Path.Combine(AppContext.BaseDirectory, "Fixtures", "silence.flac"), path);
         using TagLib.File file = TagLib.File.Create(path);
         file.Tag.Title = title;
@@ -71,6 +73,7 @@ public class PreImportTaggerWholeDownloadTests : IDisposable
         using TagLib.File file = TagLib.File.Create(trackFile.Path);
         file.Tag.Album = "Wanted Album";
         file.Tag.MusicBrainzReleaseId = WantedReleaseId;
+        file.Tag.MusicBrainzTrackId = trackFile.Tracks.Value[0].ForeignRecordingId;
         file.Save();
     }
 
@@ -83,7 +86,7 @@ public class PreImportTaggerWholeDownloadTests : IDisposable
 
     private static (Album Album, Artist Artist, AlbumRelease Release) Target(string type, params (string Title, int Number)[] tracks)
     {
-        List<Track> list = [.. tracks.Select(t => new Track { Title = t.Title, AbsoluteTrackNumber = t.Number })];
+        List<Track> list = [.. tracks.Select(t => new Track { Title = t.Title, AbsoluteTrackNumber = t.Number, ForeignRecordingId = $"rec-{t.Number}" })];
         AlbumRelease release = new() { Title = "Wanted Album", ForeignReleaseId = WantedReleaseId, TrackCount = list.Count, Monitored = true, Media = [new Medium { Number = 1, Format = "Digital Media" }], Tracks = new LazyLoaded<List<Track>>(list) };
         Artist artist = new() { Metadata = new LazyLoaded<ArtistMetadata>(new ArtistMetadata { Name = "Artist" }) };
         Album album = new() { Title = "Wanted Album", AlbumType = type, AnyReleaseOk = true, AlbumReleases = new LazyLoaded<List<AlbumRelease>>([release]), Artist = new LazyLoaded<Artist>(artist), SecondaryTypes = [] };
@@ -103,9 +106,13 @@ public class PreImportTaggerWholeDownloadTests : IDisposable
         return [new LocalAlbumRelease(ordered) { Distance = Dist(distance), TrackMapping = mapping, AlbumRelease = release }];
     }
 
-    private static PreImportTagger Tagger(AlbumRelease release, double distance, Action<TrackFile> writeTags)
+    private static PreImportTagger Tagger(AlbumRelease release, double distance, Action<TrackFile> writeTags, Action? onIdentify = null)
     {
-        IIdentificationService identify = Fake.Of<IIdentificationService>((_, a) => AllMapped((List<LocalTrack>)a![0]!, release, distance));
+        IIdentificationService identify = Fake.Of<IIdentificationService>((_, a) =>
+        {
+            onIdentify?.Invoke();
+            return AllMapped((List<LocalTrack>)a![0]!, release, distance);
+        });
         IAudioTagService tags = Fake.Of<IAudioTagService>((m, a) =>
         {
             if (m.Name == nameof(IAudioTagService.ReadTags))
@@ -200,6 +207,61 @@ public class PreImportTaggerWholeDownloadTests : IDisposable
 
         Assert.Equal(0, result.Tagged);
         Assert.All(paths, p => Assert.Equal("Store Album", AlbumTag(p)));
+    }
+
+    // A re-grab of files tagged before: album and release already match, so only the recording shows the write didn't take.
+    [Fact]
+    public async Task Rolls_back_a_silent_failure_on_a_file_that_already_carried_the_release()
+    {
+        string[] paths = Files("One", "Two", "Three");
+        using (TagLib.File stale = TagLib.File.Create(paths[1]))
+        {
+            stale.Tag.Album = "Wanted Album";
+            stale.Tag.MusicBrainzReleaseId = WantedReleaseId;
+            stale.Tag.MusicBrainzTrackId = "rec-3";
+            stale.Save();
+        }
+
+        (Album album, Artist artist, AlbumRelease release) = Target("Album", "One", "Two", "Three");
+        PreImportTagger tagger = Tagger(release, 0.0, tf =>
+        {
+            if (!tf.Path.EndsWith("02.flac", StringComparison.Ordinal))
+                TagAsWanted(tf);
+        });
+
+        PreImportTagger.TaggingResult result = await Tag(tagger, album, artist, CancellationToken.None);
+
+        Assert.Equal(0, result.Tagged);
+        Assert.Equal("Store Album", AlbumTag(paths[0]));
+        Assert.Equal("Store Album", AlbumTag(paths[2]));
+    }
+
+    // Identification can wait on AcoustID or MusicBrainz; only the file work is one at a time.
+    [Fact]
+    public async Task A_pass_still_looking_up_does_not_hold_up_another_folder()
+    {
+        string other = Path.Combine(_root, "Artist - Other Album");
+        Directory.CreateDirectory(other);
+        Files("One");
+        NewFileIn(other, "01.flac", "One");
+        (Album album, Artist artist, AlbumRelease release) = Target("Album", "One");
+        TaskCompletionSource firstLookingUp = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource firstMayFinish = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        PreImportTagger first = Tagger(release, 0.0, TagAsWanted, () =>
+        {
+            firstLookingUp.TrySetResult();
+            firstMayFinish.Task.Wait(TimeSpan.FromSeconds(10));
+        });
+
+        Task<PreImportTagger.TaggingResult> one = Task.Run(() => Tag(first, album, artist, CancellationToken.None));
+        await firstLookingUp.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        PreImportTagger.TaggingResult second = await Tagger(release, 0.0, TagAsWanted)
+            .TagCompletedDownloadAsync(album, artist, null, "other", other, 0.15, false, CancellationToken.None)
+            .WaitAsync(TimeSpan.FromSeconds(5));
+        firstMayFinish.SetResult();
+        await one.WaitAsync(TimeSpan.FromSeconds(30));
+
+        Assert.Equal(1, second.Tagged);
     }
 
     [Fact]

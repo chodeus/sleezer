@@ -33,8 +33,8 @@ public class PreImportTagger : IPreImportTagger
 {
     private const double FingerprintScoreThreshold = 0.5;
 
-    // One pass at a time: passes over one folder, or a folder and its parent, would roll back each other's writes.
-    private static readonly SemaphoreSlim TaggingPasses = new(1, 1);
+    // One write phase at a time: passes over one folder, or a folder and its parent, would roll back each other's writes.
+    private static readonly SemaphoreSlim TaggingWrites = new(1, 1);
 
     private readonly IIdentificationService _identificationService;
     private readonly IAudioTagService _audioTagService;
@@ -161,30 +161,6 @@ public class PreImportTagger : IPreImportTagger
         bool verifyAllWithFingerprint = false,
         bool fingerprintTitleFallback = false,
         bool preferDigitalMedia = false)
-    {
-        await TaggingPasses.WaitAsync(ct);
-        try
-        {
-            return await TagFolderAsync(album, artist, albumRelease, sourceId, completedFolderPath, confidenceThreshold, stripFeaturedArtists, verifyAllWithFingerprint, fingerprintTitleFallback, preferDigitalMedia, ct);
-        }
-        finally
-        {
-            TaggingPasses.Release();
-        }
-    }
-
-    private async Task<TaggingResult> TagFolderAsync(
-        Album album,
-        Artist artist,
-        AlbumRelease? albumRelease,
-        string sourceId,
-        string completedFolderPath,
-        double confidenceThreshold,
-        bool stripFeaturedArtists,
-        bool verifyAllWithFingerprint,
-        bool fingerprintTitleFallback,
-        bool preferDigitalMedia,
-        CancellationToken ct)
     {
         try
         {
@@ -357,7 +333,7 @@ public class PreImportTagger : IPreImportTagger
         WholeDownloadTags.Plan plan = WholeDownloadTags.FromReleases(releases, localTracks.Count, confidenceThreshold, preferDigitalMedia,
             (file, track) => verifyAllWithFingerprint && VerifyRecording(file, track, credited, knownRecordings) == FingerprintVerdict.Mismatch);
         List<TaggedFile> taggedFiles = [];
-        (int tagged, int errored) = WritePlan(plan, album, stripFeaturedArtists, artist.Name, sourceId, taggedFiles, ct);
+        (int tagged, int errored) = await WritePlanAsync(plan, album, stripFeaturedArtists, artist.Name, sourceId, taggedFiles, ct);
 
         // Album-level identification cannot pass for a single/EP pulled out of
         // an album share — the file's album tag names the share's album. When
@@ -508,11 +484,10 @@ public class PreImportTagger : IPreImportTagger
         // only a definite different recording refuses. Trusted API sources (Deezer/Tidal) skip it.
         WholeDownloadTags.Plan plan = WholeDownloadTags.FromTitles(localTracks, mapping, tracks, release,
             (file, track) => fingerprintVerify && VerifyRecording(file, track, credited, knownRecordings) == FingerprintVerdict.Mismatch);
-        return WritePlan(plan, album, stripFeaturedArtists, artist.Name, sourceId, taggedFiles, ct);
+        return await WritePlanAsync(plan, album, stripFeaturedArtists, artist.Name, sourceId, taggedFiles, ct);
     }
 
-    // No cancellation once writing starts: a pass that stops halfway is the split this plan exists to prevent.
-    private (int Tagged, int Errored) WritePlan(WholeDownloadTags.Plan plan, Album album, bool stripFeaturedArtists, string? artistName, string sourceId, List<TaggedFile> taggedFiles, CancellationToken ct)
+    private async Task<(int Tagged, int Errored)> WritePlanAsync(WholeDownloadTags.Plan plan, Album album, bool stripFeaturedArtists, string? artistName, string sourceId, List<TaggedFile> taggedFiles, CancellationToken ct)
     {
         if (plan.Refusal != null)
         {
@@ -520,7 +495,21 @@ public class PreImportTagger : IPreImportTagger
             return (0, 0);
         }
 
-        ct.ThrowIfCancellationRequested();
+        // Held for the file work only: the lookups before it may wait on the network.
+        await TaggingWrites.WaitAsync(ct);
+        try
+        {
+            return WriteWhole(plan, album, stripFeaturedArtists, artistName, sourceId, taggedFiles);
+        }
+        finally
+        {
+            TaggingWrites.Release();
+        }
+    }
+
+    // No cancellation once writing starts: a pass that stops halfway is the split this plan exists to prevent.
+    private (int Tagged, int Errored) WriteWhole(WholeDownloadTags.Plan plan, Album album, bool stripFeaturedArtists, string? artistName, string sourceId, List<TaggedFile> taggedFiles)
+    {
         using TagBackups? backups = TagBackups.Of(plan.Targets.Select(t => t.File.Path), _logger);
         if (backups == null)
             return (0, 0);
@@ -528,7 +517,7 @@ public class PreImportTagger : IPreImportTagger
         List<(WholeDownloadTags.Target Target, bool Renamable)> written = WriteTargets(plan.Targets, album, stripFeaturedArtists, artistName);
         string? failure = written.Count < plan.Targets.Count
             ? $"the tag write for {Path.GetFileName(plan.Targets[written.Count].File.Path)} failed"
-            : ReadBackFailure(plan.Targets.Select(t => t.File.Path), plan.Targets[0].Release?.ForeignReleaseId);
+            : ReadBackFailure(plan.Targets);
         if (failure != null)
         {
             backups.Restore();
@@ -560,16 +549,20 @@ public class PreImportTagger : IPreImportTagger
     }
 
     // Lidarr groups a download by album tag and release id (TrackGroupingService), and its writer swallows a failed save,
-    // so the files must read back as one album carrying the planned release.
-    private string? ReadBackFailure(IEnumerable<string> paths, string? plannedReleaseId)
+    // so every file must read back as one album of the planned release, each with its own recording.
+    private string? ReadBackFailure(IReadOnlyList<WholeDownloadTags.Target> targets)
     {
         try
         {
-            HashSet<(string? Album, string? ReleaseId)> identities = [.. paths.Select(AlbumIdentity)];
-            if (identities.Count > 1)
+            List<(string? Album, string? ReleaseId, string? RecordingId)> read = [.. targets.Select(t => WrittenIdentity(t.File.Path))];
+            if (read.Select(r => (r.Album, r.ReleaseId)).Distinct().Count() > 1)
                 return "the written files read back as more than one album";
 
-            return plannedReleaseId != null && identities.Single().ReleaseId != plannedReleaseId ? "the written files do not carry the planned release" : null;
+            if (targets[0].Release?.ForeignReleaseId is { } releaseId && read[0].ReleaseId != releaseId)
+                return "the written files do not carry the planned release";
+
+            int stale = targets.Zip(read).Count(p => !string.IsNullOrEmpty(p.First.Track.ForeignRecordingId) && p.Second.RecordingId != p.First.Track.ForeignRecordingId);
+            return stale > 0 ? $"{stale} written file(s) do not carry their planned recording" : null;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -578,10 +571,11 @@ public class PreImportTagger : IPreImportTagger
         }
     }
 
-    private static (string? Album, string? ReleaseId) AlbumIdentity(string path)
+    // Lidarr writes the recording id as the MusicBrainz track id (AudioTagService.GetTrackMetadata).
+    private static (string? Album, string? ReleaseId, string? RecordingId) WrittenIdentity(string path)
     {
         using TagLib.File file = TagLib.File.Create(path);
-        return (file.Tag.Album, file.Tag.MusicBrainzReleaseId);
+        return (file.Tag.Album, file.Tag.MusicBrainzReleaseId, file.Tag.MusicBrainzTrackId);
     }
 
     /// <summary>Tags one file: null when the tag write failed, else whether its featured credits were stripped and it may be renamed.</summary>
