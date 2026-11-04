@@ -324,74 +324,13 @@ public class PreImportTagger : IPreImportTagger
             knownRecordings = GetRecordingTracks(localTracks);
         }
 
-        int tagged = 0;
-        int skipped = 0;
-        int errored = 0;
-        List<TaggedFile> taggedFiles = [];
-
         foreach (LocalAlbumRelease release in releases)
-        {
-            double albumDistance = Confidence(release);
-            if (albumDistance > confidenceThreshold || release.TrackMapping == null)
-            {
-                skipped += release.LocalTracks.Count;
-                _logger.Info("Pre-import tag: album match distance {Distance:F3} exceeds max {Threshold:F3} — match too weak, skipping tagging for {FileCount} files in {SourceId}",
-                    albumDistance, confidenceThreshold, release.LocalTracks.Count, sourceId);
-                continue;
-            }
-
             release.AlbumRelease ??= albumRelease;
 
-            // A storefront download is complete, so a length mismatch is the wrong edition —
-            // stamping it hands every other release the album_id penalty at import.
-            if (preferDigitalMedia && release.AlbumRelease is { } chosen && !DigitalReleaseSelector.FitsDownload(chosen, release.LocalTracks.Count))
-            {
-                skipped += release.LocalTracks.Count;
-                _logger.Info("Pre-import tag: '{Release}' has {ReleaseTracks} track(s) but {SourceId} has {LocalTracks} — different edition, leaving the store tags for Lidarr",
-                    chosen.Title, chosen.TrackCount, sourceId, release.LocalTracks.Count);
-                continue;
-            }
-
-            // Tagging only some files splits the download into two albums in Lidarr, and both halves then miss tracks.
-            int weakTracks = TrackMatchGate.WeakTracks(release.TrackMapping, confidenceThreshold);
-            if (weakTracks > 0)
-            {
-                skipped += release.TrackMapping.Mapping.Count;
-                _logger.Info("Pre-import tag: {Weak}/{TrackCount} track(s) of '{Release}' match too weakly for {SourceId} — tagging none",
-                    weakTracks, release.TrackMapping.Mapping.Count, release.AlbumRelease?.Title ?? "<unknown>", sourceId);
-                continue;
-            }
-
-            _logger.Debug("Pre-import tag: matched release '{Release}' for {SourceId} with album distance {Distance:F3}; tagging {TrackCount} track(s)",
-                release.AlbumRelease?.Title ?? "<unknown>", sourceId, albumDistance, release.TrackMapping.Mapping.Count);
-
-            foreach (KeyValuePair<LocalTrack, Tuple<Track, Distance>> entry in release.TrackMapping.Mapping)
-            {
-                ct.ThrowIfCancellationRequested();
-
-                LocalTrack localTrack = entry.Key;
-                Track track = entry.Value.Item1;
-                double trackDistance = entry.Value.Item2?.NormalizedDistance() ?? 1.0;
-
-                if (verifyAllWithFingerprint && VerifyRecording(localTrack, track, credited, knownRecordings) == FingerprintVerdict.Mismatch)
-                {
-                    skipped++;
-                    _logger.Info("Pre-import tag: fingerprint says {File} is a different recording than '{Title}' — skipping (verify-all imports)",
-                        Path.GetFileName(localTrack.Path), track.Title);
-                    continue;
-                }
-
-                if (TryTagSingleFile(localTrack, track, album, release.AlbumRelease, stripFeaturedArtists, artist.Name) is { } finalPath)
-                {
-                    tagged++;
-                    taggedFiles.Add(new TaggedFile(localTrack.Path, finalPath));
-                    _logger.Trace("Pre-import tag: tagged {File} → '{Title}' (track {TrackNum}, distance {Distance:F3})",
-                        Path.GetFileName(localTrack.Path), track.Title, track.AbsoluteTrackNumber, trackDistance);
-                }
-                else
-                    errored++;
-            }
-        }
+        WholeDownloadTags.Plan plan = WholeDownloadTags.FromReleases(releases, localTracks.Count, confidenceThreshold, preferDigitalMedia,
+            (file, track) => verifyAllWithFingerprint && VerifyRecording(file, track, credited, knownRecordings) == FingerprintVerdict.Mismatch);
+        List<TaggedFile> taggedFiles = [];
+        (int tagged, int errored, int skipped) = WritePlan(plan, album, stripFeaturedArtists, artist.Name, localTracks.Count, sourceId, taggedFiles, ct);
 
         // Album-level identification cannot pass for a single/EP pulled out of
         // an album share — the file's album tag names the share's album. When
@@ -537,36 +476,37 @@ public class PreImportTagger : IPreImportTagger
             knownRecordings = GetRecordingTracks(mapped);
         }
 
+        // Title-only matching is the highest-risk laundering path, so untrusted sources (slskd) fingerprint-gate it:
+        // only a definite different recording refuses. Trusted API sources (Deezer/Tidal) skip it.
+        WholeDownloadTags.Plan plan = WholeDownloadTags.FromTitles(localTracks, mapping, tracks, release,
+            (file, track) => fingerprintVerify && VerifyRecording(file, track, credited, knownRecordings) == FingerprintVerdict.Mismatch);
+        return WritePlan(plan, album, stripFeaturedArtists, artist.Name, localTracks.Count, sourceId, taggedFiles, ct);
+    }
+
+    private (int Tagged, int Errored, int Skipped) WritePlan(WholeDownloadTags.Plan plan, Album album, bool stripFeaturedArtists, string? artistName, int fileCount, string sourceId, List<TaggedFile> taggedFiles, CancellationToken ct)
+    {
+        if (plan.Refusal != null)
+        {
+            _logger.Info("Pre-import tag: {Refusal}, so none of the {FileCount} file(s) in {SourceId} are tagged", plan.Refusal, fileCount, sourceId);
+            return (0, 0, fileCount);
+        }
+
         int tagged = 0;
         int errored = 0;
-        int skipped = 0;
-        foreach ((int localIndex, int wantedIndex) in mapping)
+        foreach (WholeDownloadTags.Target target in plan.Targets)
         {
             ct.ThrowIfCancellationRequested();
-
-            Track wantedTrack = tracks[wantedIndex];
-
-            // Title-only matching is the highest-risk laundering path, so untrusted
-            // sources (slskd) fingerprint-gate it — reject only a definite
-            // different-recording. Trusted API sources (Deezer/Tidal) skip it.
-            if (fingerprintVerify && VerifyRecording(localTracks[localIndex], wantedTrack, credited, knownRecordings) == FingerprintVerdict.Mismatch)
-            {
-                skipped++;
-                _logger.Info("Pre-import tag: fingerprint says {File} is a different recording than '{Title}' — refusing title match for {SourceId}",
-                    Path.GetFileName(localTracks[localIndex].Path), wantedTrack.Title, sourceId);
-                continue;
-            }
-
-            if (TryTagSingleFile(localTracks[localIndex], wantedTrack, album, release, stripFeaturedArtists, artist.Name) is { } finalPath)
+            if (TryTagSingleFile(target.File, target.Track, album, target.Release, stripFeaturedArtists, artistName) is { } finalPath)
             {
                 tagged++;
-                taggedFiles.Add(new TaggedFile(localTracks[localIndex].Path, finalPath));
+                taggedFiles.Add(new TaggedFile(target.File.Path, finalPath));
+                _logger.Trace("Pre-import tag: tagged {File} → '{Title}' (track {TrackNum})", Path.GetFileName(target.File.Path), target.Track.Title, target.Track.AbsoluteTrackNumber);
             }
             else
                 errored++;
         }
 
-        return (tagged, errored, skipped);
+        return (tagged, errored, 0);
     }
 
     /// <summary>Tags one file. Returns its final on-disk path (feat-strip may

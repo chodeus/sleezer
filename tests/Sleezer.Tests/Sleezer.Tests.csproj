@@ -65,6 +65,8 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\PostProcessing\TrackMatchGate.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Core\PostProcessing\WholeDownloadTags.cs"
+             LinkBase="SourceUnderTest" />
     <!-- Which download clients are storefronts, and so can only deliver a digital
          release. Enum + classifier only; the settings class stays out. -->
     <Compile Include="..\..\src\Sleezer\Metadata\FFmpeg\PostProcessClient.cs"
