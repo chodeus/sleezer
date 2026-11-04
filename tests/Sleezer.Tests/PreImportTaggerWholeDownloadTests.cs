@@ -276,9 +276,10 @@ public class PreImportTaggerWholeDownloadTests : IDisposable
             cts.Cancel();
         });
 
-        await Record.ExceptionAsync(() => Tag(tagger, album, artist, cts.Token));
+        PreImportTagger.TaggingResult result = await Tag(tagger, album, artist, cts.Token);
 
-        Assert.Single(paths.Select(AlbumTag).Distinct());
+        Assert.Equal(3, result.Tagged);
+        Assert.All(paths, p => Assert.Equal("Wanted Album", AlbumTag(p)));
     }
 
     [Fact]
@@ -333,6 +334,7 @@ public class PreImportTaggerWholeDownloadTests : IDisposable
     [Fact]
     public async Task A_rollback_that_cannot_put_the_files_back_fails_the_pass()
     {
+        Assert.SkipWhen(OperatingSystem.IsWindows() || Environment.IsPrivilegedProcess, "A read-only folder blocks a move only for an unprivileged POSIX user.");
         string[] paths = Files("One", "Two");
         (Album album, Artist artist, AlbumRelease release) = Target("Album", "One", "Two");
         PreImportTagger tagger = Tagger(release, 0.0, tf =>
