@@ -15,6 +15,18 @@ public class SlskdFolderVerdictTests
         return Parser.JudgeFolder(files.GroupBy(f => SlskdTextProcessor.GetMergedDirectoryKey(f.Filename)).Single(), search, settings, expected);
     }
 
+    // Live 2026-10-31: the single "All Hope Is Gone" was grabbed as the album's track 4, "Psychosocial".
+    [Fact]
+    public void a_single_named_like_its_album_is_not_found_in_another_track_of_that_album()
+    {
+        SlskdFolderVerdict v = Judge(@"Music\Moonward\Glass Harbour", ["Moonward - Glass Harbour - 04 - Lantern Song.flac"],
+            new SlskdSearchData("Moonward", "Glass Harbour", false, false, 1, null, TrackCount: 1, Tracks: ["Glass Harbour"]),
+            new SlskdSettings { MatchReleaseTracks = true }, expected: 1);
+
+        Assert.False(v.Matched);
+        Assert.Contains("holds none of the wanted tracks", v.Reasons);
+    }
+
     [Fact]
     public void a_folder_naming_the_artist_and_album_matches_and_says_so()
     {

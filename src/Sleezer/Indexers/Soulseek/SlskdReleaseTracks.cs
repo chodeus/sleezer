@@ -15,6 +15,9 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             if (audioFiles.Count != trackCount)
                 return $"{audioFiles.Count} audio file(s) for {trackCount} track(s)";
 
+            if (Duplicate(audioFiles) is { } twice)
+                return $"{twice} is in the folder twice";
+
             if (coveredTitles < wantedTitles)
                 return $"{coveredTitles} of {wantedTitles} track titles found in the file names";
 
@@ -24,6 +27,35 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 ? $"{paired} of {expected.Count} track lengths within {LengthToleranceSeconds}s of a file"
                 : null;
         }
+
+        // A tagger's padding block: copies of one lossless file that differ only by their tags are this close in size.
+        private const long SameAudioSizeBytes = 8192;
+
+        private static readonly HashSet<string> LosslessExtensions = new(StringComparer.OrdinalIgnoreCase) { ".flac", ".wav", ".aiff", ".aif", ".ape", ".wv" };
+
+        /// <summary>A file that holds the same song as another in the folder, or null.</summary>
+        // In two formats, or a lossless copy under another title; lossy files of one length are near one size anyway.
+        internal static string? Duplicate(IReadOnlyCollection<SlskdFileData> audioFiles)
+        {
+            List<SlskdFileData> files = [.. audioFiles];
+            for (int i = 0; i < files.Count; i++)
+            {
+                SlskdFileData? twin = files.Skip(i + 1).FirstOrDefault(other => SameSong(files[i], other));
+                if (twin != null)
+                    return Path.GetFileName(Normalised(twin));
+            }
+
+            return null;
+        }
+
+        private static bool SameSong(SlskdFileData a, SlskdFileData b) =>
+            string.Equals(Path.ChangeExtension(Normalised(a), null), Path.ChangeExtension(Normalised(b), null), StringComparison.OrdinalIgnoreCase) ||
+            (IsLossless(a) && IsLossless(b) && a.Length is > 0 && a.Length == b.Length && Math.Abs(a.Size - b.Size) <= SameAudioSizeBytes);
+
+        private static bool IsLossless(SlskdFileData file) => LosslessExtensions.Contains(Path.GetExtension(Normalised(file)));
+
+        // Peers send Windows paths, which Path won't split on Linux.
+        private static string Normalised(SlskdFileData file) => (file.Filename ?? string.Empty).Replace('\\', '/');
 
         /// <summary>The release's known track lengths in whole seconds, ascending.</summary>
         internal static List<int> ReleaseSeconds(IEnumerable<int> trackDurationsMs) =>

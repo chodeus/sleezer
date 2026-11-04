@@ -56,7 +56,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                     continue;
 
                 int end = TitleEnd(seen, i, title);
-                if (end < 0)
+                if (end < 0 || IsAlbumField(seen, end))
                     continue;
 
                 int after = seen.Skip(end).Count(t => t != Separator);
@@ -83,6 +83,12 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
             return end == tokens.Count || IsEdge(tokens[end]) ? end : -1;
         }
+
+        // "Artist - Album - 04 - Track": a title followed by its own field, a track number, then more is the album's name.
+        private static bool IsAlbumField(IReadOnlyList<string> tokens, int end) =>
+            end + 3 < tokens.Count && tokens[end] == Separator && IsTrackNumber(tokens[end + 1]) && tokens[end + 2] == Separator && tokens[end + 3] != Separator;
+
+        private static bool IsTrackNumber(string token) => token.Length <= 3 && token.All(char.IsDigit);
 
         // Any number, such as a track number or a year ("Title 2021 Remaster"), bounds a title like a separator does.
         private static bool IsEdge(string token) => token == Separator || token.All(char.IsDigit);

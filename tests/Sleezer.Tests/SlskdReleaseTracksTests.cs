@@ -27,6 +27,60 @@ public class SlskdReleaseTracksTests
         Assert.Equal("3 audio file(s) for 2 track(s)", reason);
     }
 
+    private static SlskdFileData Sized(string path, long size, int seconds) =>
+        new(path, null, 16, size, seconds, Path.GetExtension(path), 44100, 0, false);
+
+    // Live 2026-11-04: a peer's folder held the remix twice, once under the original's title.
+    [Fact]
+    public void the_same_lossless_file_twice_is_not_the_release()
+    {
+        string? reason = SlskdReleaseTracks.Mismatch(
+            [Sized($@"{Folder}\01 Lantern Song (Harbour Remix).flac", 25_695_594, 181), Sized($@"{Folder}\02 Lantern Song.flac", 25_695_594, 181)], 2, 2, 2, [180_000, 187_000]);
+
+        Assert.Equal("02 Lantern Song.flac is in the folder twice", reason);
+    }
+
+    // Live 2026-11-04: three copies of one recording, under three track titles, differing only by tags.
+    [Fact]
+    public void lossless_copies_that_differ_only_by_tags_are_not_the_release()
+    {
+        string? reason = SlskdReleaseTracks.Mismatch(
+            [Sized($@"{Folder}\01 Lantern Song.flac", 25_593_342, 211), Sized($@"{Folder}\02 Lantern Song (Night Version).flac", 25_593_376, 211)], 2, 2, 2, [210_000, 211_000]);
+
+        Assert.Equal("02 Lantern Song (Night Version).flac is in the folder twice", reason);
+    }
+
+    // Live 2026-11-02: one song as FLAC and as MP3 filled a release with two same-titled tracks.
+    [Fact]
+    public void one_song_in_two_formats_is_not_the_release()
+    {
+        string? reason = SlskdReleaseTracks.Mismatch(
+            [Sized($@"{Folder}\Lantern Song.flac", 15_856_283, 121), Sized($@"{Folder}\Lantern Song.mp3", 5_738_349, 121)], 2, 2, 2, [121_000, 123_000]);
+
+        Assert.Equal("Lantern Song.mp3 is in the folder twice", reason);
+    }
+
+    [Fact]
+    public void lossy_tracks_of_one_length_and_size_can_still_be_the_release()
+    {
+        Assert.Null(SlskdReleaseTracks.Mismatch(
+            [Sized($@"{Folder}\01 Lantern Song.mp3", 9_600_000, 240), Sized($@"{Folder}\02 Tidewater.mp3", 9_600_000, 240)], 2, 2, 2, [240_000, 240_000]));
+    }
+
+    [Fact]
+    public void same_named_files_on_two_discs_can_still_be_the_release()
+    {
+        Assert.Null(SlskdReleaseTracks.Mismatch(
+            [Sized($@"{Folder}\CD1\01 Intro.flac", 9_000_000, 60), Sized($@"{Folder}\CD2\01 Intro.flac", 9_400_000, 60)], 2, 2, 2, [60_000, 60_000]));
+    }
+
+    [Fact]
+    public void lossless_tracks_of_one_length_but_other_sizes_can_still_be_the_release()
+    {
+        Assert.Null(SlskdReleaseTracks.Mismatch(
+            [Sized($@"{Folder}\01 Lantern Song.flac", 25_000_000, 211), Sized($@"{Folder}\02 Tidewater.flac", 26_000_000, 211)], 2, 2, 2, [211_000, 211_000]));
+    }
+
     [Fact]
     public void a_folder_missing_a_track_is_not_the_release()
     {

@@ -52,6 +52,24 @@ public class SlskdTitleMatchTests
         Assert.True(StandsAlone(fileTitle, wantedTitle));
     }
 
+    // Live 2026-10-31: a grab for the single "All Hope Is Gone" took track 4 of the album of that name.
+    [Theory]
+    [InlineData("Moonward - Glass Harbour - 04 - Lantern Song", "Glass Harbour")]
+    [InlineData("Moonward - Glass Harbour - 4 - Lantern Song (Extended Mix)", "Glass Harbour")]
+    public void an_album_name_before_a_track_number_is_not_the_track(string fileTitle, string wantedTitle)
+    {
+        Assert.False(StandsAlone(fileTitle, wantedTitle));
+    }
+
+    [Theory]
+    [InlineData("Moonward - Glass Harbour - 10 - Glass Harbour", "Glass Harbour")]
+    [InlineData("Moonward - Glass Harbour - 04", "Glass Harbour")]
+    [InlineData("Glass Harbour - 2021 - Remaster", "Glass Harbour")]
+    public void a_title_track_or_a_trailing_number_still_matches(string fileTitle, string wantedTitle)
+    {
+        Assert.True(StandsAlone(fileTitle, wantedTitle));
+    }
+
     [Theory]
     [InlineData("Moonward - Glass Harbour - Low Tide Rising", "Tide")]
     [InlineData("Tidewater", "Tide")]
