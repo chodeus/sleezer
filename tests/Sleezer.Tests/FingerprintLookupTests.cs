@@ -113,12 +113,12 @@ public class FingerprintLookupTests
         Assert.Empty(acoustId.Batches);
     }
 
-    // Scaled down: a "timeout" here is a lookup slower than 100 ms, and the pause before asking again is 10 ms.
+    // Scaled down: Lidarr "gave up" on a lookup slower than 100 ms, and the pause before asking again is 10 ms.
     private static Task RunScaled(FakeAcoustId acoustId, List<LocalTrack> tracks, CancellationToken ct = default, int pauseMs = 10) =>
         FingerprintLookup.RunAsync(acoustId, tracks, 0.5, Log, TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(pauseMs), ct);
 
     [Fact]
-    public async Task A_batch_that_timed_out_is_asked_once_more()
+    public async Task A_batch_Lidarr_gave_up_on_is_asked_again()
     {
         List<LocalTrack> tracks = Files(10);
         FakeAcoustId acoustId = new() { OnBatch = i => { if (i == 0) Thread.Sleep(150); }, Answers = i => i > 0 };
@@ -150,14 +150,26 @@ public class FingerprintLookupTests
     }
 
     [Fact]
-    public async Task A_batch_is_asked_again_only_once()
+    public async Task A_batch_answered_on_a_later_retry_gets_its_results()
+    {
+        List<LocalTrack> tracks = Files(10);
+        FakeAcoustId acoustId = new() { OnBatch = i => { if (i < 2) Thread.Sleep(150); }, Answers = i => i == 2 };
+
+        await RunScaled(acoustId, tracks, ct: TestContext.Current.CancellationToken);
+
+        Assert.Equal([10, 10, 10], acoustId.Batches);
+        Assert.All(tracks, t => Assert.NotNull(t.AcoustIdResults));
+    }
+
+    [Fact]
+    public async Task A_batch_is_asked_again_at_most_three_times()
     {
         List<LocalTrack> tracks = Files(10);
         FakeAcoustId acoustId = new() { OnBatch = _ => Thread.Sleep(150), Answers = _ => false };
 
         await RunScaled(acoustId, tracks, ct: TestContext.Current.CancellationToken);
 
-        Assert.Equal([10, 10], acoustId.Batches);
+        Assert.Equal([10, 10, 10, 10], acoustId.Batches);
         Assert.All(tracks, t => Assert.Null(t.AcoustIdResults));
     }
 
@@ -175,13 +187,13 @@ public class FingerprintLookupTests
     }
 
     [Fact]
-    public async Task AcoustID_still_down_after_a_retry_gets_no_more_retries()
+    public async Task AcoustID_still_down_after_its_retries_gets_no_more()
     {
         FakeAcoustId acoustId = new() { OnBatch = _ => Thread.Sleep(150), Answers = _ => false };
 
         await RunScaled(acoustId, Files(30), ct: TestContext.Current.CancellationToken);
 
-        Assert.Equal([10, 10, 10, 10], acoustId.Batches);
+        Assert.Equal([10, 10, 10, 10, 10, 10], acoustId.Batches);
     }
 
     [Fact]
