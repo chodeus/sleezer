@@ -190,7 +190,7 @@ namespace NzbDrone.Core.Indexers.Qobuz
         }
 
         private static List<string> MainArtistsOf(Album album) =>
-            QobuzAlbumArtists.Main(album.Artists?.Where(a => a != null).Select(a => (a.Name, (IReadOnlyCollection<string>?)a.Roles)) ?? []);
+            QobuzAlbumArtists.Main(album.Artists?.Where(a => a != null).Select(a => ((string?)a.Name, (IReadOnlyCollection<string>?)a.Roles)) ?? []);
 
         private static ReleaseInfo ToReleaseInfo(Album x, AudioQuality bitrate, string? releaseType, QobuzAPI api)
         {

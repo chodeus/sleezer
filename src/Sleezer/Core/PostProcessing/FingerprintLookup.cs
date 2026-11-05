@@ -11,20 +11,24 @@ public static class FingerprintLookup
     // AcoustID took 20 fingerprints in one request and refused 30 ("request too large"), gzipped as Lidarr sends them.
     public const int BatchSize = 10;
 
-    /// <summary>Lidarr's AcoustID request timeout; it drops a timed-out answer with only a warning.</summary>
-    internal static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
+    /// <summary>A batch still all empty after this long counts as given up (Lidarr: 3 s of refusal retries, 5 s timeout).</summary>
+    // Times the whole Lookup call, so a first try slowed by fpcalc can count too; a retry reuses Lidarr's cached fingerprints.
+    internal static readonly TimeSpan GaveUpAfter = TimeSpan.FromSeconds(2.5);
 
-    private static readonly TimeSpan RetryPause = TimeSpan.FromSeconds(10);
+    // Lidarr's shared AcoustID key is refused in runs of several requests.
+    internal const int MaxRetries = 3;
+
+    private static readonly TimeSpan RetryPause = TimeSpan.FromSeconds(5);
 
     /// <summary>
     /// Fills each LocalTrack.AcoustIdResults in place, a batch per request rather than one per file
     /// (AcoustID allows about 3 requests a second). A failed batch leaves its files unverifiable.
     /// </summary>
     public static Task RunAsync(IFingerprintingService fingerprinting, IReadOnlyList<LocalTrack> tracks, double threshold, Logger logger, CancellationToken ct) =>
-        RunAsync(fingerprinting, tracks, threshold, logger, RequestTimeout, RetryPause, ct);
+        RunAsync(fingerprinting, tracks, threshold, logger, GaveUpAfter, RetryPause, ct);
 
-    /// <summary>As above; a batch that came back empty only after <paramref name="timedOut"/> is asked once more after <paramref name="retryPause"/>.</summary>
-    internal static async Task RunAsync(IFingerprintingService fingerprinting, IReadOnlyList<LocalTrack> tracks, double threshold, Logger logger, TimeSpan timedOut, TimeSpan retryPause, CancellationToken ct)
+    /// <summary>As above; a batch that came back empty only after <paramref name="gaveUp"/> is asked again, up to <see cref="MaxRetries"/> times <paramref name="retryPause"/> apart.</summary>
+    internal static async Task RunAsync(IFingerprintingService fingerprinting, IReadOnlyList<LocalTrack> tracks, double threshold, Logger logger, TimeSpan gaveUp, TimeSpan retryPause, CancellationToken ct)
     {
         if (tracks.Count == 0 || !fingerprinting.IsSetup())
             return;
@@ -34,21 +38,25 @@ public static class FingerprintLookup
         {
             ct.ThrowIfCancellationRequested();
 
-            // An answer comes back sooner; only a timeout leaves every file empty this late.
-            if (!TimedOut(await LookupAsync(fingerprinting, batch, threshold, logger, ct), timedOut, batch) || !retry)
-                continue;
+            TimeSpan took = await LookupAsync(fingerprinting, batch, threshold, logger, ct);
+            bool failed = GaveUp(took, gaveUp, batch);
+            for (int attempt = 1; failed && retry && attempt <= MaxRetries; attempt++)
+            {
+                logger.Info("Pre-import tag: no AcoustID results for {Count} file(s) after {Took:F1}s, as long as a refusal or timeout takes; asking again in {Pause:F0}s ({Attempt} of {Max})",
+                    batch.Length, took.TotalSeconds, retryPause.TotalSeconds, attempt, MaxRetries);
+                await Task.Delay(retryPause, ct);
+                took = await LookupAsync(fingerprinting, batch, threshold, logger, ct);
+                failed = GaveUp(took, gaveUp, batch);
+            }
 
-            logger.Info("Pre-import tag: AcoustID gave nothing for {Count} file(s) after a timeout; asking once more in {Pause:F0}s",
-                batch.Length, retryPause.TotalSeconds);
-            await Task.Delay(retryPause, ct);
-
-            // AcoustID still down: the download's later batches don't wait out a retry each.
-            retry = !TimedOut(await LookupAsync(fingerprinting, batch, threshold, logger, ct), timedOut, batch);
+            // Lidarr gave up on the last try too: the download's later batches get no retries.
+            if (failed)
+                retry = false;
         }
     }
 
-    private static bool TimedOut(TimeSpan took, TimeSpan timedOut, LocalTrack[] batch) =>
-        took >= timedOut && batch.All(t => t.AcoustIdResults == null);
+    private static bool GaveUp(TimeSpan took, TimeSpan gaveUp, LocalTrack[] batch) =>
+        took >= gaveUp && batch.All(t => t.AcoustIdResults == null);
 
     private static async Task<TimeSpan> LookupAsync(IFingerprintingService fingerprinting, LocalTrack[] batch, double threshold, Logger logger, CancellationToken ct)
     {
@@ -57,6 +65,9 @@ public static class FingerprintLookup
         {
             // Lookup is synchronous with no CancellationToken (Lidarr core): off-thread, the wait stays cancellable.
             await Task.Run(() => fingerprinting.Lookup([.. batch], threshold)).WaitAsync(ct);
+
+            // WaitAsync returns a lookup that finished first even when ct was cancelled during it.
+            ct.ThrowIfCancellationRequested();
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

@@ -100,6 +100,19 @@ public class FingerprintLookupTests
         Assert.Single(acoustId.Batches);
     }
 
+    // A lookup that finished as it was cancelled went unnoticed about 3 times in 1,000; repeated so a regression shows.
+    [Fact]
+    public async Task A_lookup_cancelled_as_it_finishes_still_surfaces_the_cancellation()
+    {
+        for (int i = 0; i < 2000; i++)
+        {
+            using CancellationTokenSource cts = new();
+            FakeAcoustId acoustId = new() { OnBatch = _ => cts.Cancel() };
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => FingerprintLookup.RunAsync(acoustId, Files(1), 0.5, Log, cts.Token));
+        }
+    }
+
     [Fact]
     public async Task An_already_cancelled_lookup_starts_none()
     {
@@ -113,12 +126,12 @@ public class FingerprintLookupTests
         Assert.Empty(acoustId.Batches);
     }
 
-    // Scaled down: a "timeout" here is a lookup slower than 100 ms, and the pause before asking again is 10 ms.
+    // Scaled down: Lidarr "gave up" on a lookup slower than 100 ms, and the pause before asking again is 10 ms.
     private static Task RunScaled(FakeAcoustId acoustId, List<LocalTrack> tracks, CancellationToken ct = default, int pauseMs = 10) =>
         FingerprintLookup.RunAsync(acoustId, tracks, 0.5, Log, TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(pauseMs), ct);
 
     [Fact]
-    public async Task A_batch_that_timed_out_is_asked_once_more()
+    public async Task A_batch_Lidarr_gave_up_on_is_asked_again()
     {
         List<LocalTrack> tracks = Files(10);
         FakeAcoustId acoustId = new() { OnBatch = i => { if (i == 0) Thread.Sleep(150); }, Answers = i => i > 0 };
@@ -150,14 +163,37 @@ public class FingerprintLookupTests
     }
 
     [Fact]
-    public async Task A_batch_is_asked_again_only_once()
+    public async Task A_batch_answered_on_a_later_retry_gets_its_results()
+    {
+        List<LocalTrack> tracks = Files(10);
+        FakeAcoustId acoustId = new() { OnBatch = i => { if (i < 2) Thread.Sleep(150); }, Answers = i => i == 2 };
+
+        await RunScaled(acoustId, tracks, ct: TestContext.Current.CancellationToken);
+
+        Assert.Equal([10, 10, 10], acoustId.Batches);
+        Assert.All(tracks, t => Assert.NotNull(t.AcoustIdResults));
+    }
+
+    // fpcalc runs inside the first lookup only; Lidarr caches the fingerprints, so a retry is timed on the request alone.
+    [Fact]
+    public async Task A_slow_first_try_then_a_quick_empty_answer_is_asked_once()
+    {
+        FakeAcoustId acoustId = new() { OnBatch = i => { if (i == 0) Thread.Sleep(150); }, Answers = _ => false };
+
+        await RunScaled(acoustId, Files(10), ct: TestContext.Current.CancellationToken);
+
+        Assert.Equal([10, 10], acoustId.Batches);
+    }
+
+    [Fact]
+    public async Task A_batch_is_asked_again_at_most_three_times()
     {
         List<LocalTrack> tracks = Files(10);
         FakeAcoustId acoustId = new() { OnBatch = _ => Thread.Sleep(150), Answers = _ => false };
 
         await RunScaled(acoustId, tracks, ct: TestContext.Current.CancellationToken);
 
-        Assert.Equal([10, 10], acoustId.Batches);
+        Assert.Equal([10, 10, 10, 10], acoustId.Batches);
         Assert.All(tracks, t => Assert.Null(t.AcoustIdResults));
     }
 
@@ -175,13 +211,13 @@ public class FingerprintLookupTests
     }
 
     [Fact]
-    public async Task AcoustID_still_down_after_a_retry_gets_no_more_retries()
+    public async Task A_batch_still_empty_after_its_retries_stops_retries_for_later_batches()
     {
         FakeAcoustId acoustId = new() { OnBatch = _ => Thread.Sleep(150), Answers = _ => false };
 
         await RunScaled(acoustId, Files(30), ct: TestContext.Current.CancellationToken);
 
-        Assert.Equal([10, 10, 10, 10], acoustId.Batches);
+        Assert.Equal([10, 10, 10, 10, 10, 10], acoustId.Batches);
     }
 
     [Fact]
