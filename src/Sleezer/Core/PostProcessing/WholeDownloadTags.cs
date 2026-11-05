@@ -92,8 +92,8 @@ public static class WholeDownloadTags
         return weak > 0 && !heardWhole.Value ? $"{weak}/{release.TrackMapping.Mapping.Count} track(s) of '{release.AlbumRelease?.Title ?? "<unknown>"}' match too weakly" : null;
     }
 
-    // The fingerprint names every file's exact recording and every track of the release has its file: the tags' distance no longer decides.
-    private static bool HeardWhole(TrackMapping? mapping, Func<LocalTrack, Track, FingerprintVerdict> verdictOf) =>
+    /// <summary>The fingerprint names every file's exact recording and every track of the release has its file: the tags' distance no longer decides.</summary>
+    public static bool HeardWhole(TrackMapping? mapping, Func<LocalTrack, Track, FingerprintVerdict> verdictOf) =>
         mapping is { Mapping.Count: > 0, LocalExtra.Count: 0, MBExtra.Count: 0 } &&
         mapping.Mapping.All(m => verdictOf(m.Key, m.Value.Item1) == FingerprintVerdict.Verified);
 

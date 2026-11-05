@@ -292,6 +292,19 @@ public class PreImportTagger : IPreImportTagger
 
         List<LocalAlbumRelease> releases = _identificationService.Identify(localTracks, overrides, config);
 
+        IEnumerable<string?> credited = guests.Prepend(artist.Name);
+        IReadOnlyDictionary<string, IReadOnlyList<KnownTrack>> knownRecordings = new Dictionary<string, IReadOnlyList<KnownTrack>>();
+
+        // AcoustID up front, a request per batch of files rather than one per file.
+        if (verifyAllWithFingerprint)
+        {
+            await PrefetchFingerprintsAsync(localTracks, ct);
+            knownRecordings = GetRecordingTracks(localTracks);
+        }
+
+        FingerprintVerdict VerdictOf(LocalTrack file, Track track) =>
+            verifyAllWithFingerprint ? VerifyRecording(file, track, credited, knownRecordings) : FingerprintVerdict.Unverifiable;
+
         // Before the fallback, not after: the fallback forces a release unconditionally, and
         // assigning one here would skip the remaining ranked digital candidates.
         if (preferDigitalMedia && albumRelease == null)
@@ -303,8 +316,9 @@ public class PreImportTagger : IPreImportTagger
         // preserves the pre-fix behaviour for the edge case where track-count
         // matching can't disambiguate, while still letting the common case
         // benefit from CandidateService's track-count ranking.
+        // A release the fingerprint hears whole is a match whatever its distance.
         if (albumRelease == null && !releases.Any(r =>
-                Confidence(r) <= confidenceThreshold && r.TrackMapping != null))
+                (Confidence(r) <= confidenceThreshold && r.TrackMapping != null) || WholeDownloadTags.HeardWhole(r.TrackMapping, VerdictOf)))
         {
             // A digital source can only have produced a digital release, so it steers the
             // fallback too — the monitored release is usually the CD the album is wrong on.
@@ -323,16 +337,6 @@ public class PreImportTagger : IPreImportTagger
             }
         }
 
-        IEnumerable<string?> credited = guests.Prepend(artist.Name);
-        IReadOnlyDictionary<string, IReadOnlyList<KnownTrack>> knownRecordings = new Dictionary<string, IReadOnlyList<KnownTrack>>();
-
-        // AcoustID up front, a request per batch of files rather than one per file.
-        if (verifyAllWithFingerprint)
-        {
-            await PrefetchFingerprintsAsync(localTracks, ct);
-            knownRecordings = GetRecordingTracks(localTracks);
-        }
-
         foreach (LocalAlbumRelease release in releases)
         {
             release.AlbumRelease ??= albumRelease;
@@ -341,8 +345,7 @@ public class PreImportTagger : IPreImportTagger
             release.NewDownload = true;
         }
 
-        WholeDownloadTags.Plan plan = WholeDownloadTags.FromReleases(releases, localTracks.Count, confidenceThreshold, preferDigitalMedia,
-            (file, track) => verifyAllWithFingerprint ? VerifyRecording(file, track, credited, knownRecordings) : FingerprintVerdict.Unverifiable);
+        WholeDownloadTags.Plan plan = WholeDownloadTags.FromReleases(releases, localTracks.Count, confidenceThreshold, preferDigitalMedia, VerdictOf);
         List<TaggedFile> taggedFiles = [];
         (int tagged, int errored) = await WritePlanAsync(plan, album, stripFeaturedArtists, artist.Name, sourceId, taggedFiles, wrongRecordings, ct);
 

@@ -66,7 +66,7 @@ public static partial class RecordingVerdict
         bool fitsWanted = fileDuration > TimeSpan.Zero && wanted.DurationMs > 0 &&
                           Math.Abs(fileDuration.TotalMilliseconds - wanted.DurationMs) <= FitsWantedMs;
         // A clean, explicit or dirty edit keeps the album cut's length; the file may still be a rip off its track length.
-        bool cleanCut = UnheardCutRegex().Matches(ComparableText.MapPunctuation(wanted.Title ?? string.Empty)).Any(m => !m.Value.Contains("instrumental", StringComparison.OrdinalIgnoreCase));
+        bool cleanCut = NamesCleanCut(wanted.Title);
         bool sawDifferentTitle = false;
         bool differentTitleHeard = false;
 
@@ -79,7 +79,7 @@ public static partial class RecordingVerdict
             (SongTitles.Same(t.Title, wanted.Title, Key) && !OtherVersion(t)) ||
             (fitsWanted && Within(t.DurationMs, (int)fileDuration.TotalMilliseconds, FitsWantedMs) && SongTitles.Reissue(t.Title, wanted.Title, Key)) ||
             (fitsWanted && SongTitles.PlainForRemix(t.Title, wanted.Title, Key) && Within(t.DurationMs, wanted.DurationMs, FitsWantedMs)) ||
-            (cleanCut && Key(WithoutUnheardCut(t.Title)) == wantedSong && Within(t.DurationMs, wanted.DurationMs, FitsWantedMs) &&
+            (cleanCut && Key(WithoutCleanCut(t.Title)) == wantedSong && Within(t.DurationMs, wanted.DurationMs, FitsWantedMs) &&
              Within((int)fileDuration.TotalMilliseconds, wanted.DurationMs, OtherVersionMs));
 
         // One song, two cuts: the named recording is the file's length, the wanted track is not.
@@ -154,6 +154,18 @@ public static partial class RecordingVerdict
         !MixDescriptionRegex().IsMatch(name) && !VariantQualifiers.HasVariantQualifier($"({name})");
 
     private static string WithoutUnheardCut(string? title) => UnheardCutRegex().Replace(ComparableText.MapPunctuation(title ?? string.Empty), " ");
+
+    // An instrumental mark anywhere keeps the title out: an instrumental is no album cut.
+    private static bool NamesCleanCut(string? title)
+    {
+        string[] cuts = [.. UnheardCutRegex().Matches(ComparableText.MapPunctuation(title ?? string.Empty)).Select(m => m.Value)];
+        return cuts.Length > 0 && !cuts.Any(IsInstrumental);
+    }
+
+    private static string WithoutCleanCut(string? title) =>
+        UnheardCutRegex().Replace(ComparableText.MapPunctuation(title ?? string.Empty), m => IsInstrumental(m.Value) ? m.Value : " ");
+
+    private static bool IsInstrumental(string cut) => cut.Contains("instrumental", StringComparison.OrdinalIgnoreCase);
 
     private static bool Within(int aMs, int bMs, int toleranceMs) => aMs > 0 && bMs > 0 && Math.Abs(aMs - bMs) <= toleranceMs;
 
