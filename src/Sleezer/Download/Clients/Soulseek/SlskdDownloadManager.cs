@@ -166,14 +166,20 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             if (refused.Count > 0)
             {
                 if (result.BatchId != null && result.Enqueued.Count > 0)
+                {
+                    // Remembered as removed, so a poll cancels what this cancel misses.
+                    item.Username = username;
+                    item.BatchId = result.BatchId;
+                    RememberRemovedGrab(definitionId, item.ID, item);
                     await SlskdBatchCanceller.CancelAsync(_apiClient, settings, username, new HashSet<string> { result.BatchId }, null, _logger);
+                }
 
                 throw new DownloadClientException(
                     $"{refused.Count} of {files.Count} files failed to enqueue: {string.Join("; ", refused.Select(f => $"{Path.GetFileName(f.Filename)}: {f.Message}"))}");
             }
 
             if (takenOver.Count > 0)
-                _logger.Info("Taking over {Count} file(s) still queued from {Username} under a superseded attempt", takenOver.Count, username);
+                _logger.Info("Taking over {Count} file(s) still queued from {Username} under a superseded attempt", takenOver.Select(t => t.Filename).Distinct().Count(), username);
 
             item.BatchId = result.BatchId;
             if (destination != null && result.BatchId != null)

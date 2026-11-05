@@ -289,7 +289,7 @@ public class SlskdDownloadItem
         HashSet<string> transferred = new(_previousFileStates.Keys, StringComparer.OrdinalIgnoreCase);
         return [.. FileData.Where(f => f.Filename is { Length: > 0 } filename &&
             OwnsAcceptedFile(filename) &&
-            AudioFormatHelper.IsAudioFilename(filename) &&
+            AudioFormatHelper.IsPostProcessAudioFile(filename) &&
             !transferred.Contains(filename))];
     }
 
@@ -303,7 +303,7 @@ public class SlskdDownloadItem
     /// </summary>
     public static bool IsAbandonedExtra(SlskdFileState state) =>
         state.GetStatus() == DownloadItemStatus.Failed &&
-        !AudioFormatHelper.IsAudioFilename(state.File.Filename);
+        !AudioFormatHelper.IsPostProcessAudioFile(state.File.Filename);
 
     /// <summary>A transfer of its own, as last polled, has yet to finish.</summary>
     public bool HasLiveTransfers() =>
@@ -349,7 +349,7 @@ public class SlskdDownloadItem
         FileData
             .Where(f => f.Filename is { Length: > 0 } filename &&
                 OwnsAcceptedFile(filename) &&
-                !AudioFormatHelper.IsAudioFilename(filename))
+                !AudioFormatHelper.IsPostProcessAudioFile(filename))
             .Select(f => Path.GetFileName(f.Filename!.Replace('\\', '/')))
             .Where(n => !string.IsNullOrEmpty(n))
             .Distinct(StringComparer.OrdinalIgnoreCase)

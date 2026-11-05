@@ -70,6 +70,17 @@ public class SlskdWholeAlbumTests
         Assert.Equal(expected, Resolve(item).Status);
     }
 
+    [Theory]
+    [InlineData("02.wv")]
+    [InlineData("02.dsf")]
+    [InlineData("02.dff")]
+    public void A_lossless_track_the_codec_map_does_not_name_still_holds_the_album(string missing)
+    {
+        SlskdDownloadItem item = Polled(Album(Now, "01.flac", missing), Transfer("01.flac", "Completed, Succeeded"));
+
+        Assert.Equal(DownloadItemStatus.Queued, Resolve(item).Status);
+    }
+
     [Fact]
     public void An_extra_with_no_transfer_never_holds_the_album()
     {
@@ -126,6 +137,45 @@ public class SlskdWholeAlbumTests
 
         Assert.Equal([(stale, Dir + @"\01.flac")], takenOver);
         Assert.Equal([Dir + @"\02.flac"], refused.Select(f => f.Filename));
+    }
+
+    [Fact]
+    public void A_file_that_failed_to_start_is_not_taken_over()
+    {
+        SlskdDownloadItem stale = Polled(Album(Now, "01.flac", "02.flac"), Transfer("02.flac", "Queued, Remotely"));
+
+        (List<(SlskdDownloadItem Holder, string Filename)> takenOver, List<SlskdEnqueueFailure> refused) =
+            SlskdEnqueueRefusals.Split([Refusal("02.flac", "Error: peer offline")], [stale], "peer", Folder);
+
+        Assert.Empty(takenOver);
+        Assert.Single(refused);
+    }
+
+    // Its removal already took its snapshot of transfers and would cancel the one handed over.
+    [Fact]
+    public void An_attempt_already_being_removed_hands_nothing_over()
+    {
+        SlskdDownloadItem stale = Polled(Album(Now, "01.flac", "02.flac"), Transfer("02.flac", "Queued, Remotely"));
+        stale.MarkRemoved();
+
+        (List<(SlskdDownloadItem Holder, string Filename)> takenOver, List<SlskdEnqueueFailure> refused) =
+            SlskdEnqueueRefusals.Split([Refusal("02.flac")], [stale], "peer", Folder);
+
+        Assert.Empty(takenOver);
+        Assert.Single(refused);
+    }
+
+    [Fact]
+    public void Every_attempt_holding_the_transfer_hands_it_over()
+    {
+        SlskdDownloadItem first = Polled(Album(Now, "01.flac", "02.flac"), Transfer("02.flac", "Queued, Remotely"));
+        SlskdDownloadItem second = Polled(Album(Now, "01.flac", "02.flac"), Transfer("02.flac", "Queued, Remotely"));
+
+        (List<(SlskdDownloadItem Holder, string Filename)> takenOver, List<SlskdEnqueueFailure> refused) =
+            SlskdEnqueueRefusals.Split([Refusal("02.flac")], [first, second], "peer", Folder);
+
+        Assert.Equal([(first, Dir + @"\02.flac"), (second, Dir + @"\02.flac")], takenOver);
+        Assert.Empty(refused);
     }
 
     [Fact]

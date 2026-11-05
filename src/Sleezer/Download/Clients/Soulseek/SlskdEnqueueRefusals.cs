@@ -6,7 +6,10 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
 /// <summary>Sorts the files slskd refused to queue for a grab into those it can take over and those that refuse the grab.</summary>
 public static class SlskdEnqueueRefusals
 {
-    /// <summary>A refused file is taken over when a superseded attempt, from the same peer into the same folder, still holds its live transfer.</summary>
+    /// <summary>
+    /// A file slskd skipped is taken over from every superseded attempt, from the same peer into the same folder and not
+    /// already being removed, that still holds its live transfer.
+    /// </summary>
     public static (List<(SlskdDownloadItem Holder, string Filename)> TakenOver, List<SlskdEnqueueFailure> Refused) Split(
         IEnumerable<SlskdEnqueueFailure> failed,
         IReadOnlyCollection<SlskdDownloadItem> superseded,
@@ -17,12 +20,14 @@ public static class SlskdEnqueueRefusals
         List<SlskdEnqueueFailure> refused = [];
         foreach (SlskdEnqueueFailure failure in failed)
         {
-            SlskdDownloadItem? holder = destination == null ? null : superseded.FirstOrDefault(s =>
-                s.Username == username && s.EnqueueDestination == destination && s.HoldsLiveTransfer(failure.Filename));
-            if (holder == null)
+            // slskd skips a file only while another transfer of it is live; "Error:" means it failed to start.
+            List<SlskdDownloadItem> holders = destination == null || failure.Message?.StartsWith("Skipped:", StringComparison.OrdinalIgnoreCase) != true
+                ? []
+                : [.. superseded.Where(s => !s.Removed && s.Username == username && s.EnqueueDestination == destination && s.HoldsLiveTransfer(failure.Filename))];
+            if (holders.Count == 0)
                 refused.Add(failure);
             else
-                takenOver.Add((holder, failure.Filename));
+                takenOver.AddRange(holders.Select(h => (h, failure.Filename)));
         }
 
         return (takenOver, refused);
