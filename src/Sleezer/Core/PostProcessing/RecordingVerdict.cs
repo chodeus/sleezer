@@ -31,6 +31,9 @@ public static partial class RecordingVerdict
     private const int FitsWantedMs = 3000;
     private const int SameAudioMs = 10000;
 
+    // Sleezer's grab check pairs a file with a track within 8 s; further off is another cut.
+    private const int OtherVersionMs = 8000;
+
     /// <param name="musicBrainzOnly">Recordings AcoustID named that Lidarr holds nowhere, as MusicBrainz files them; they can only defer. Read once, up to the first match.</param>
     public static FingerprintVerdict Resolve(
         IReadOnlyList<string>? acoustIdRecordingIds,
@@ -65,10 +68,19 @@ public static partial class RecordingVerdict
         bool sawDifferentTitle = false;
         bool differentTitleHeard = false;
 
+        string Key(string? title) => Comparable(title, wanted.CreditedArtists);
+
         // AcoustID hears an instrumental, clean, explicit or dirty cut as the same audio as the others.
         bool NamesWanted(KnownTrack t) =>
-            Comparable(t.Title, wanted.CreditedArtists) == wantedTitle ||
-            (fitsWanted && Comparable(WithoutUnheardCut(t.Title), wanted.CreditedArtists) == wantedSong);
+            Key(t.Title) == wantedTitle ||
+            (fitsWanted && Key(WithoutUnheardCut(t.Title)) == wantedSong) ||
+            (SongTitles.Same(t.Title, wanted.Title, Key) && !OtherVersion(t)) ||
+            (fitsWanted && SongTitles.PlainForRemix(t.Title, wanted.Title, Key) && Within(t.DurationMs, wanted.DurationMs, FitsWantedMs));
+
+        // One song, two cuts: the named recording is the file's length, the wanted track is not.
+        bool OtherVersion(KnownTrack t) =>
+            Within(t.DurationMs, (int)fileDuration.TotalMilliseconds, FitsWantedMs) && wanted.DurationMs > 0 &&
+            Math.Abs(fileDuration.TotalMilliseconds - wanted.DurationMs) > OtherVersionMs;
 
         foreach (string id in acoustIdRecordingIds)
         {
@@ -137,6 +149,8 @@ public static partial class RecordingVerdict
         !MixDescriptionRegex().IsMatch(name) && !VariantQualifiers.HasVariantQualifier($"({name})");
 
     private static string WithoutUnheardCut(string? title) => UnheardCutRegex().Replace(ComparableText.MapPunctuation(title ?? string.Empty), " ");
+
+    private static bool Within(int aMs, int bMs, int toleranceMs) => aMs > 0 && bMs > 0 && Math.Abs(aMs - bMs) <= toleranceMs;
 
     [GeneratedRegex(@"[\(\[\{（［｛][^\(\)\[\]\{\}（）［］｛｝]*[\)\]\}）］｝]")]
     internal static partial Regex QualifierBracketRegex();

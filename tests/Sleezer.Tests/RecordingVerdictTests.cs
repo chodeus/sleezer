@@ -278,4 +278,50 @@ public class RecordingVerdictTests
         Assert.Equal("no recordings", RecordingVerdict.DescribeMatches(null, Known()));
         Assert.Equal("no recordings", RecordingVerdict.DescribeMatches(Array.Empty<string>(), null));
     }
+
+    // Forms of one song that live refusals turned down (2026-11-05: about two thirds of 55 logged refusals).
+    [Theory]
+    [InlineData("Ember Gate (from “Glass Harbour”)", "Ember Gate - From “Glass Harbour” Soundtrack")]
+    [InlineData("Ember Gate (Moonward remix)", "Ember Gate (Moonward remix) - From “Glass Harbour” Soundtrack")]
+    [InlineData("Ember Gate", "Ember Gate (From \"Glass Harbour\" Soundtrack)")]
+    [InlineData("Lantern Song", "Moonward, Fern: Lantern Song")]
+    [InlineData("Salt Road (from “Quiet Hours”)", "Quiet Hours: Salt Road")]
+    [InlineData("Give the Po'Lantern a Break", "Give the Po' Lantern a Break")]
+    [InlineData("Going Out My Lantern", "Going Out of My Lantern")]
+    [InlineData("We Were Lanterns", "We Were Lanterms")]
+    [InlineData("Lantern Song (Live in Moonward / 2005)", "Lantern Song (live)")]
+    [InlineData("Lantern Song (Acoustic Version)", "Lantern Song (acoustic)")]
+    [InlineData("Lantern Song (UK radio edit)", "Lantern Song (UK edit)")]
+    [InlineData("Lantern Song (2022 Moonward remix)", "Lantern Song (2022 remix)")]
+    [InlineData("Lantern Song (666 Moonward Re-mix)", "Lantern Song (666 Moonward remix)")]
+    [InlineData("Salt And Lantern", "The Salt and the Lantern (Be Still Now)")]
+    [InlineData("Lantern Song (Unreleased Take from The Harbour Tapes)", "Lantern Song")]
+    public void A_form_of_the_wanted_song_defers(string wantedTitle, string knownTitle)
+    {
+        Assert.Equal(FingerprintVerdict.Unverifiable,
+            Resolve(new[] { OtherId }, Wanted(wantedTitle, seconds: 200), Timed((OtherId, knownTitle, 201)), fileSeconds: 200));
+    }
+
+    // AcoustID files a remix under its original, so equal lengths cannot tell them apart (a remix proven distinct by its audio).
+    [Fact]
+    public void A_plain_title_of_the_wanted_remixs_length_defers()
+    {
+        Assert.Equal(FingerprintVerdict.Unverifiable,
+            Resolve(new[] { OtherId }, Wanted("Lantern Song (Fern remix)", seconds: 205), Timed((OtherId, "Lantern Song", 205)), fileSeconds: 205));
+    }
+
+    [Theory]
+    [InlineData("Salt Road", 189, "Ember Gate", 190, 189)]
+    [InlineData("Lantern Song", 155, "Lantern Song Two", 153, 156)]
+    [InlineData("Lantern Song", 170, "Lantern Song (Fern remix)", 172, 173)]
+    [InlineData("Lantern Song (extended mix)", 238, "Lantern Song (Fern remix)", 243, 238)]
+    [InlineData("Lantern Song (Fern remix)", 258, "Lantern Song", 266, 267)]
+    [InlineData("Lantern Song (radio edit)", 238, "Lantern Song (UK radio edit)", 222, 222)]
+    [InlineData("Lantern Song", 200, "Lantern Song (Fern)", 201, 200)]
+    [InlineData("Lap Song", 200, "Map Song", 200, 200)]
+    public void Another_song_or_another_cut_of_it_is_still_a_mismatch(string wantedTitle, int wantedSeconds, string knownTitle, int knownSeconds, int fileSeconds)
+    {
+        Assert.Equal(FingerprintVerdict.Mismatch,
+            Resolve(new[] { OtherId }, Wanted(wantedTitle, seconds: wantedSeconds), Timed((OtherId, knownTitle, knownSeconds)), fileSeconds));
+    }
 }
