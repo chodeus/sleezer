@@ -49,7 +49,7 @@ public static class FingerprintLookup
                 failed = GaveUp(took, gaveUp, batch);
             }
 
-            // Still empty after every retry: the download's later batches get no retries.
+            // Lidarr gave up on the last try too: the download's later batches get no retries.
             if (failed)
                 retry = false;
         }
