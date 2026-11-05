@@ -21,19 +21,23 @@ public static class WholeDownloadTags
     /// <summary>A target for every file across the identified releases, or why none may be written.</summary>
     public static Plan FromReleases(IReadOnlyList<LocalAlbumRelease> releases, int fileCount, double maxDistance, bool preferDigitalMedia, Func<LocalTrack, Track, bool> differentRecording)
     {
+        // Before the distance gates: Lidarr imports looser matches than they allow, so a wrong file there must still be named.
+        foreach (LocalAlbumRelease release in releases.Where(r => r.TrackMapping != null))
+        {
+            foreach ((LocalTrack file, Tuple<Track, Distance> match) in release.TrackMapping.Mapping)
+            {
+                if (differentRecording(file, match.Item1))
+                    return WrongRecording(file, match.Item1);
+            }
+        }
+
         List<Target> targets = [];
         foreach (LocalAlbumRelease release in releases)
         {
             if (Refusal(release, maxDistance, preferDigitalMedia) is { } refusal)
                 return Plan.Refuse(refusal);
 
-            foreach ((LocalTrack file, Tuple<Track, Distance> match) in release.TrackMapping.Mapping)
-            {
-                if (differentRecording(file, match.Item1))
-                    return WrongRecording(file, match.Item1);
-
-                targets.Add(new Target(file, match.Item1, release.AlbumRelease));
-            }
+            targets.AddRange(release.TrackMapping.Mapping.Select(m => new Target(m.Key, m.Value.Item1, release.AlbumRelease)));
         }
 
         return Whole(targets, fileCount, "map to a release track");

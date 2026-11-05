@@ -55,12 +55,17 @@ public sealed class ImportHolds : IImportHolds
     {
         if (_held.TryGetValue(downloadId, out string? held))
             return held;
-        if (PathFor(downloadId) is not { } path || !File.Exists(path))
+        if (PathFor(downloadId) is not { } path)
             return null;
 
+        // Not File.Exists: it answers false for a folder that can't be listed, and that hold must still hold.
         try
         {
             return File.ReadAllText(path);
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return null;
         }
         catch (Exception ex)
         {

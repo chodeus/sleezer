@@ -87,6 +87,35 @@ public class ImportHoldsTests : IDisposable
         Assert.NotNull(NewHolds().ReasonFor("abc-123"));
     }
 
+    [Fact]
+    public void A_hold_in_a_folder_that_cannot_be_listed_still_holds()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "no Unix file mode");
+        NewHolds().Hold("abc-123", "reason");
+        string folder = HoldsFolder;
+        File.SetUnixFileMode(folder, UnixFileMode.None);
+        try
+        {
+            Assert.NotNull(NewHolds().ReasonFor("abc-123"));
+        }
+        finally
+        {
+            File.SetUnixFileMode(folder, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+    }
+
+    // A retry's id carries "-r2"; the check must refuse it through the real store, and only it.
+    [Fact]
+    public void A_retry_ids_hold_refuses_only_that_retry()
+    {
+        ImportHolds holds = NewHolds();
+        holds.Hold("0123abcdef-r2", "fingerprint says 01.flac is a different recording than 'Lantern Song'");
+        ImportHoldSpecification spec = new(holds);
+
+        Assert.False(spec.IsSatisfiedBy(new LocalAlbumRelease([]), new DownloadClientItem { DownloadId = "0123abcdef-r2" }).Accepted);
+        Assert.True(spec.IsSatisfiedBy(new LocalAlbumRelease([]), new DownloadClientItem { DownloadId = "0123abcdef" }).Accepted);
+    }
+
     private sealed class FakeHolds(string id, string reason) : IImportHolds
     {
         public void Hold(string downloadId, string why) => throw new NotSupportedException();
