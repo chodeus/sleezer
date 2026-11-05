@@ -12,13 +12,15 @@ public class SlskdPostProcessClaimTests
 {
     private const string Dir = @"@@u\Artist\Album";
 
-    private static SlskdDownloadItem Finished()
+    private static SlskdDownloadItem Finished() => WithTransfer("Completed, Succeeded");
+
+    private static SlskdDownloadItem WithTransfer(string state)
     {
         string source = $"[{{\"Filename\":{JsonSerializer.Serialize(Dir + "\\01.flac")},\"Size\":1000}}]";
         SlskdDownloadItem item = new(new ReleaseInfo { Source = source, Title = "t", DownloadUrl = "u" });
         SlskdDownloadFile file = new(
             Id: "01", Username: "peer", Direction: "Download", Filename: Dir + "\\01.flac",
-            Size: 1000, StartOffset: 0, State: "Completed, Succeeded",
+            Size: 1000, StartOffset: 0, State: state,
             RequestedAt: DateTime.UtcNow, EnqueuedAt: DateTime.UtcNow, StartedAt: DateTime.UtcNow,
             BytesTransferred: 1000, AverageSpeed: 0, BytesRemaining: 0,
             ElapsedTime: TimeSpan.Zero, PercentComplete: 100, RemainingTime: TimeSpan.Zero, EndedAt: null);
@@ -28,6 +30,9 @@ public class SlskdPostProcessClaimTests
 
     private static DownloadItemStatus Status(SlskdDownloadItem item) =>
         SlskdStatusResolver.Resolve(item, TimeSpan.FromMinutes(30), DateTime.UtcNow).Status;
+
+    private static DownloadItemStatus StatusClaiming(SlskdDownloadItem item, Action claimPass) =>
+        SlskdStatusResolver.ResolveClaimingPass(item, TimeSpan.FromMinutes(30), DateTime.UtcNow, claimPass).Status;
 
     [Fact]
     public async Task A_pass_reads_as_running_from_its_claim_before_its_task_exists()
@@ -61,6 +66,61 @@ public class SlskdPostProcessClaimTests
         work.SetResult();
         await item.PostProcess!.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
         Assert.Equal(DownloadItemStatus.Completed, Status(item));
+        Assert.Null(item.PostProcessFailure);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task A_pass_whose_task_faults_or_is_cancelled_ends_with_a_failure(bool faults)
+    {
+        SlskdDownloadItem item = Finished();
+        Task run = faults ? Task.FromException(new IOException("disk gone")) : Task.FromCanceled(new CancellationToken(canceled: true));
+
+        Assert.True(item.TryRunPostProcess(() => run));
+        await item.PostProcess!.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        Assert.Equal("Post-processing failed before the files were verified", item.PostProcessFailure);
+    }
+
+    // A refresh on another thread can publish the finished files before it claims their pass.
+    [Fact]
+    public void A_finished_download_with_no_pass_has_one_claimed_before_it_reads_as_finished()
+    {
+        SlskdDownloadItem item = Finished();
+        TaskCompletionSource work = new();
+        int claims = 0;
+
+        DownloadItemStatus status = StatusClaiming(item, () =>
+        {
+            claims++;
+            item.TryRunPostProcess(() => work.Task);
+        });
+
+        Assert.Equal(1, claims);
+        Assert.Equal(DownloadItemStatus.Downloading, status);
+        work.SetResult();
+    }
+
+    [Fact]
+    public void A_download_whose_pass_is_claimed_is_not_claimed_again()
+    {
+        SlskdDownloadItem item = Finished();
+        Assert.True(item.TryRunPostProcess(() => null));
+        int claims = 0;
+
+        Assert.Equal(DownloadItemStatus.Completed, StatusClaiming(item, () => claims++));
+        Assert.Equal(0, claims);
+    }
+
+    [Fact]
+    public void A_download_still_transferring_is_not_claimed()
+    {
+        SlskdDownloadItem item = WithTransfer("InProgress");
+        int claims = 0;
+
+        Assert.NotEqual(DownloadItemStatus.Completed, StatusClaiming(item, () => claims++));
+        Assert.Equal(0, claims);
     }
 
     [Fact]

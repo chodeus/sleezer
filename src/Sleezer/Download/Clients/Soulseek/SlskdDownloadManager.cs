@@ -258,7 +258,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             DownloadClientItem clientItem;
             try
             {
-                SlskdStatusResolver.DownloadStatus resolved = SlskdStatusResolver.Resolve(item, timeout, now);
+                SlskdStatusResolver.DownloadStatus resolved = SlskdStatusResolver.ResolveClaimingPass(item, timeout, now, () => EnqueuePostProcess(item, settings));
                 if (resolved.Status == DownloadItemStatus.Completed)
                     resolved = FailWhenCompletedFilesVanished(item, settings, resolved, now);
                 if (resolved.Status == DownloadItemStatus.Completed && item.PostProcessFailure is { } postProcessFailure)
@@ -1041,14 +1041,6 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 item.BatchId,
                 item.BatchId != null ? item.ID : null);
         }
-
-        // Fallback trigger for post-process: if the transfer poll sees all
-        // files completed before the event poll has caught up with the matching
-        // DownloadDirectoryComplete event, enqueue here. Without this, Lidarr
-        // can see status=Completed and start importing before the scan runs.
-        // The item's post-process claim dedupes against the event-path trigger.
-        if (item.AllAcceptedFilesCompleted())
-            EnqueuePostProcess(item, settings);
     }
 
     // The album the grab resolved, so a rebuilt item derives the same destination.
@@ -1349,7 +1341,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
     private void EnqueuePostProcess(SlskdDownloadItem item, SlskdProviderSettings settings)
     {
-        // slskd can emit both DownloadDirectoryComplete and a refresh-triggered completion: the item's claim runs one pass, the id's keeps a replaced item from a second.
+        // Both DownloadDirectoryComplete and GetItems claim: the item's claim runs one pass, the id's keeps a replaced item from a second.
         try
         {
             item.TryRunPostProcess(() => _postProcessed.TryAdd(item.ID, 0) ? StartPostProcess(item, settings) : null);
@@ -1406,10 +1398,10 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
         return Task.Run(async () =>
         {
-            using CancellationTokenSource cts = new(TimeSpan.FromMinutes(settings.PostProcessingTimeoutMinutes));
-
             try
             {
+                using CancellationTokenSource cts = new(TimeSpan.FromMinutes(settings.PostProcessingTimeoutMinutes));
+
                 // Sanity delay: slskd reports DownloadDirectoryComplete before it
                 // finishes moving files out of the incomplete dir. Give it a moment.
                 await Task.Delay(TimeSpan.FromSeconds(5), cts.Token);

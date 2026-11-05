@@ -498,7 +498,13 @@ public class SlskdDownloadItem
             if (run == null)
                 claimed.SetResult();
             else
-                _ = run.ContinueWith(_ => claimed.SetResult(), CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+                _ = run.ContinueWith(t =>
+                {
+                    // Reading Exception observes it; a pass that faulted or was cancelled vouched for nothing.
+                    if (t.Exception != null || t.IsCanceled)
+                        PostProcessFailure = "Post-processing failed before the files were verified";
+                    claimed.SetResult();
+                }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
         }
 
         return true;
