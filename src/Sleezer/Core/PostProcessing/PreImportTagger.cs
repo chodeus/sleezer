@@ -241,7 +241,8 @@ public class PreImportTagger : IPreImportTagger
         string plainTitle = PinnedRelease.TitleOf(pinned) is { } pinnedTitle && !string.IsNullOrWhiteSpace(pinnedTitle) ? pinnedTitle : album.Title;
         string wantedTitle = VariantQualifiers.VariantTitleOf(album, plainTitle) ?? plainTitle;
         string folderLeaf = Path.GetFileName(folderPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-        if (VariantQualifiers.RemixSignaturesConflict(wantedTitle, folderLeaf, VariantQualifiers.ForgivenVariants(album)))
+        string[] fileStems = [.. audioFiles.Select(Path.GetFileNameWithoutExtension).OfType<string>()];
+        if (VariantQualifiers.DownloadConflicts(wantedTitle, folderLeaf, fileStems, VariantQualifiers.ForgivenVariants(album)))
         {
             _logger.Info("Pre-import tag: remix qualifier mismatch between album '{Album}' and folder '{Folder}' — skipping tagging for {FileCount} files in \"{SourceId}\"",
                 wantedTitle, folderLeaf, audioFiles.Count, sourceId);
@@ -341,7 +342,7 @@ public class PreImportTagger : IPreImportTagger
         }
 
         WholeDownloadTags.Plan plan = WholeDownloadTags.FromReleases(releases, localTracks.Count, confidenceThreshold, preferDigitalMedia,
-            (file, track) => verifyAllWithFingerprint && VerifyRecording(file, track, credited, knownRecordings) == FingerprintVerdict.Mismatch);
+            (file, track) => verifyAllWithFingerprint ? VerifyRecording(file, track, credited, knownRecordings) : FingerprintVerdict.Unverifiable);
         List<TaggedFile> taggedFiles = [];
         (int tagged, int errored) = await WritePlanAsync(plan, album, stripFeaturedArtists, artist.Name, sourceId, taggedFiles, wrongRecordings, ct);
 
@@ -495,7 +496,7 @@ public class PreImportTagger : IPreImportTagger
         // Title-only matching is the highest-risk laundering path, so untrusted sources (slskd) fingerprint-gate it:
         // only a definite different recording refuses. Trusted API sources (Deezer/Tidal) skip it.
         WholeDownloadTags.Plan plan = WholeDownloadTags.FromTitles(localTracks, mapping, tracks, release,
-            (file, track) => fingerprintVerify && VerifyRecording(file, track, credited, knownRecordings) == FingerprintVerdict.Mismatch);
+            (file, track) => fingerprintVerify ? VerifyRecording(file, track, credited, knownRecordings) : FingerprintVerdict.Unverifiable);
         return await WritePlanAsync(plan, album, stripFeaturedArtists, artist.Name, sourceId, taggedFiles, wrongRecordings, ct);
     }
 

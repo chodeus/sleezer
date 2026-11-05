@@ -200,6 +200,24 @@ public class RecordingVerdictTests
         Assert.Equal(expected, verdict);
     }
 
+    // Live 2026-11-06: a pool's "(PO Clean Edit)" with no AcoustID data of its own; AcoustID named the album cut (220 s), the rip was 216 s.
+    [Theory]
+    [InlineData("Lantern Song (PO Clean Edit)", "Lantern Song", 220, 216, FingerprintVerdict.Unverifiable)]
+    [InlineData("Lantern Song (clean edit)", "Lantern Song (explicit)", 220, 216, FingerprintVerdict.Unverifiable)]
+    [InlineData("Lantern Song (clean)", "Lantern Song", 220, 216, FingerprintVerdict.Unverifiable)]
+    [InlineData("Lantern Song - Dirty Edit", "Lantern Song", 223, 229, FingerprintVerdict.Unverifiable)]
+    [InlineData("Lantern Song (radio edit)", "Lantern Song", 220, 216, FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song (instrumental)", "Lantern Song", 220, 216, FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song (clean)", "Lantern Song", 210, 216, FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song (clean)", "Lantern Song", 220, 200, FingerprintVerdict.Mismatch)]
+    [InlineData("Quiet Hours (clean edit)", "Lantern Song", 220, 216, FingerprintVerdict.Mismatch)]
+    public void A_clean_edit_defers_to_the_album_cut_of_its_length(string wantedTitle, string knownTitle, int knownSeconds, int fileSeconds, FingerprintVerdict expected)
+    {
+        FingerprintVerdict verdict = Resolve(new[] { OtherId }, Wanted(wantedTitle, seconds: 222), Timed((OtherId, knownTitle, knownSeconds)), fileSeconds);
+
+        Assert.Equal(expected, verdict);
+    }
+
     [Fact]
     public void The_mismatch_log_names_each_recording_by_its_titles_and_lengths()
     {

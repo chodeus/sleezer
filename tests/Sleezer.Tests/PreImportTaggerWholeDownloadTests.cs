@@ -113,7 +113,7 @@ public class PreImportTaggerWholeDownloadTests : IDisposable
 
     // AcoustID naming one recording for every file; Lidarr holds it under the title given.
     private static PreImportTagger Fingerprinted(AlbumRelease release, Func<LocalTrack, string> recordingOf, string recordingTitle,
-        string? alsoHeard = null, IMusicBrainzLookups? musicBrainz = null)
+        string? alsoHeard = null, IMusicBrainzLookups? musicBrainz = null, double distance = 0.0)
     {
         IFingerprintingService acoustId = Fake.Of<IFingerprintingService>((m, a) =>
         {
@@ -129,7 +129,7 @@ public class PreImportTaggerWholeDownloadTests : IDisposable
         ITrackService tracks = Fake.Of<ITrackService>((_, _) => release.Tracks.Value
             .Select(t => new Track { Title = t.Title, ForeignRecordingId = t.ForeignRecordingId, Duration = t.Duration })
             .Append(new Track { Title = recordingTitle, ForeignRecordingId = "rec-heard", Duration = 201_000 }).ToList());
-        return Tagger(release, 0.0, TagAsWanted, acoustId: acoustId, releases: releases, tracks: tracks, musicBrainz: musicBrainz);
+        return Tagger(release, distance, TagAsWanted, acoustId: acoustId, releases: releases, tracks: tracks, musicBrainz: musicBrainz);
     }
 
     private static PreImportTagger Tagger(AlbumRelease release, double distance, Action<TrackFile> writeTags, Action? onIdentify = null,
@@ -258,6 +258,88 @@ public class PreImportTaggerWholeDownloadTests : IDisposable
         Assert.Equal(2, result.Tagged);
         Assert.Null(result.WrongRecording);
         Assert.All(paths, p => Assert.Equal("Wanted Album", AlbumTag(p)));
+    }
+
+    private static string OwnRecording(LocalTrack file) => $"rec-{Path.GetFileNameWithoutExtension(file.Path).TrimStart('0')}";
+
+    // Live 2026-11-06: a 12-track album at 0.158 whose files AcoustID named track by track stayed untagged, and Lidarr matched another release.
+    [Fact]
+    public async Task An_album_past_the_limit_is_tagged_when_the_fingerprint_names_every_track()
+    {
+        (Album album, Artist artist, AlbumRelease release) = Target("Album", "Lantern Song", "Salt Road");
+        string[] paths = Files("Lantern Song", "Salt Road");
+
+        PreImportTagger.TaggingResult result = await TagVerified(Fingerprinted(release, OwnRecording, "Ember Gate", distance: 0.158), album, artist);
+
+        Assert.Equal(2, result.Tagged);
+        Assert.All(paths, p => Assert.Equal("Wanted Album", AlbumTag(p)));
+    }
+
+    [Fact]
+    public async Task An_album_past_the_limit_stays_untagged_when_one_track_is_unverifiable()
+    {
+        (Album album, Artist artist, AlbumRelease release) = Target("Album", "Lantern Song", "Salt Road");
+        string[] paths = Files("Lantern Song", "Salt Road");
+
+        PreImportTagger.TaggingResult result = await TagVerified(
+            Fingerprinted(release, f => Path.GetFileName(f.Path) == "02.flac" ? "rec-heard" : "rec-1", "Salt Road", distance: 0.158), album, artist);
+
+        Assert.Equal(0, result.Tagged);
+        Assert.Null(result.WrongRecording);
+        Assert.All(paths, p => Assert.Equal("Store Album", AlbumTag(p)));
+    }
+
+    // Without the fingerprint pass there is no word on the recordings, so the limit holds.
+    [Fact]
+    public async Task An_album_past_the_limit_stays_untagged_without_the_fingerprint_pass()
+    {
+        (Album album, Artist artist, AlbumRelease release) = Target("Album", "Lantern Song", "Salt Road");
+        string[] paths = Files("Lantern Song", "Salt Road");
+
+        PreImportTagger.TaggingResult result = await Tag(Tagger(release, 0.158, TagAsWanted), album, artist, CancellationToken.None);
+
+        Assert.Equal(0, result.Tagged);
+        Assert.All(paths, p => Assert.Equal("Store Album", AlbumTag(p)));
+    }
+
+    // Live 2026-11-06: the peer's folder dropped "(Extended Mix)" that its file names carry.
+    [Fact]
+    public async Task A_qualifier_every_file_names_stands_in_for_the_folder()
+    {
+        (Album album, Artist artist, AlbumRelease release) = Target("Single", "Lantern Song (Extended Mix)");
+        album.Title = "Lantern Song (Extended Mix)";
+        string path = NewFile("01 - Artist - Lantern Song (Extended Mix).flac", "Lantern Song (Extended Mix)");
+
+        PreImportTagger.TaggingResult result = await Tag(Tagger(release, 0.0, TagAsWanted), album, artist, CancellationToken.None);
+
+        Assert.Equal(1, result.Tagged);
+        Assert.Equal("Wanted Album", AlbumTag(path));
+    }
+
+    [Fact]
+    public async Task A_qualifier_only_some_files_name_still_refuses_the_download()
+    {
+        (Album album, Artist artist, AlbumRelease release) = Target("EP", "Lantern Song (Extended Mix)", "Salt Road (Extended Mix)");
+        album.Title = "Lantern Song (Extended Mix)";
+        string[] paths = [NewFile("01 - Lantern Song (Extended Mix).flac", "Lantern Song (Extended Mix)"), NewFile("02 - Salt Road.flac", "Salt Road")];
+
+        PreImportTagger.TaggingResult result = await Tag(Tagger(release, 0.0, TagAsWanted), album, artist, CancellationToken.None);
+
+        Assert.Equal(0, result.Tagged);
+        Assert.All(paths, p => Assert.Equal("Store Album", AlbumTag(p)));
+    }
+
+    [Fact]
+    public async Task Plain_files_in_a_plain_folder_still_refuse_an_extended_target()
+    {
+        (Album album, Artist artist, AlbumRelease release) = Target("Single", "Lantern Song (Extended Mix)");
+        album.Title = "Lantern Song (Extended Mix)";
+        string path = NewFile("01 - Artist - Lantern Song.flac", "Lantern Song");
+
+        PreImportTagger.TaggingResult result = await Tag(Tagger(release, 0.0, TagAsWanted), album, artist, CancellationToken.None);
+
+        Assert.Equal(0, result.Tagged);
+        Assert.Equal("Store Album", AlbumTag(path));
     }
 
     private Task<PreImportTagger.TaggingResult> Tag(PreImportTagger tagger, Album album, Artist artist, CancellationToken ct, bool strip = false) =>

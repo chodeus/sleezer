@@ -65,6 +65,8 @@ public static partial class RecordingVerdict
         string wantedSong = Comparable(WithoutUnheardCut(wanted.Title), wanted.CreditedArtists);
         bool fitsWanted = fileDuration > TimeSpan.Zero && wanted.DurationMs > 0 &&
                           Math.Abs(fileDuration.TotalMilliseconds - wanted.DurationMs) <= FitsWantedMs;
+        // A clean, explicit or dirty edit keeps the album cut's length; the file may still be a rip off its track length.
+        bool cleanCut = UnheardCutRegex().Matches(ComparableText.MapPunctuation(wanted.Title ?? string.Empty)).Any(m => !m.Value.Contains("instrumental", StringComparison.OrdinalIgnoreCase));
         bool sawDifferentTitle = false;
         bool differentTitleHeard = false;
 
@@ -76,7 +78,9 @@ public static partial class RecordingVerdict
             (fitsWanted && Key(WithoutUnheardCut(t.Title)) == wantedSong) ||
             (SongTitles.Same(t.Title, wanted.Title, Key) && !OtherVersion(t)) ||
             (fitsWanted && Within(t.DurationMs, (int)fileDuration.TotalMilliseconds, FitsWantedMs) && SongTitles.Reissue(t.Title, wanted.Title, Key)) ||
-            (fitsWanted && SongTitles.PlainForRemix(t.Title, wanted.Title, Key) && Within(t.DurationMs, wanted.DurationMs, FitsWantedMs));
+            (fitsWanted && SongTitles.PlainForRemix(t.Title, wanted.Title, Key) && Within(t.DurationMs, wanted.DurationMs, FitsWantedMs)) ||
+            (cleanCut && Key(WithoutUnheardCut(t.Title)) == wantedSong && Within(t.DurationMs, wanted.DurationMs, FitsWantedMs) &&
+             Within((int)fileDuration.TotalMilliseconds, wanted.DurationMs, OtherVersionMs));
 
         // One song, two cuts: the named recording is the file's length, the wanted track is not.
         bool OtherVersion(KnownTrack t) =>
@@ -163,6 +167,7 @@ public static partial class RecordingVerdict
     [GeneratedRegex(@"\b(?:radio|club|original|vocal|version|album|single|main|short|long|full|dance|video|alternate|alternative|bonus|the)\b", RegexOptions.IgnoreCase)]
     private static partial Regex MixDescriptionRegex();
 
-    [GeneratedRegex(@"\s*(?:[\(\[\{（［｛]\s*(?:instrumental|clean|explicit|dirty)(?:\s+version)?\s*[\)\]\}）］｝]|\s-\s(?:instrumental|clean|explicit|dirty)(?:\s+version)?\s*$)", RegexOptions.IgnoreCase)]
+    // "PO" is the Promo Only pool's prefix: "(PO Clean Edit)".
+    [GeneratedRegex(@"\s*(?:[\(\[\{（［｛]\s*(?:po\s+)?(?:instrumental|clean|explicit|dirty)(?:\s+(?:version|edit))?\s*[\)\]\}）］｝]|\s-\s(?:po\s+)?(?:instrumental|clean|explicit|dirty)(?:\s+(?:version|edit))?\s*$)", RegexOptions.IgnoreCase)]
     private static partial Regex UnheardCutRegex();
 }
