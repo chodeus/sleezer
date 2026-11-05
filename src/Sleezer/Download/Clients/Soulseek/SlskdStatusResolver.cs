@@ -131,7 +131,7 @@ public static class SlskdStatusResolver
         }
         else if (totalFileCount > 0 && completedCount == totalFileCount)
         {
-            status = item.PostProcessTasks.Any(t => !t.IsCompleted)
+            status = item.PostProcess is { IsCompleted: false }
                 ? DownloadItemStatus.Downloading
                 : DownloadItemStatus.Completed;
             if (abandonedExtras > 0)

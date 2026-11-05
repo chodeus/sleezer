@@ -40,7 +40,11 @@ public class SlskdDownloadItem
     private readonly HashSet<string> _enqueueFailedFilenames = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, SlskdFileState> _previousFileStates = [];
 
-    public List<Task> PostProcessTasks { get; } = [];
+    private Task? _postProcess;
+
+    /// <summary>This item's one post-processing pass, from its claim until it ends; GetItems reports Downloading meanwhile.</summary>
+    public Task? PostProcess => Volatile.Read(ref _postProcess);
+
     public DownloadItemStatus? LastReportedStatus { get; set; }
     public bool DiscFoldersMerged { get; set; }
 
@@ -469,6 +473,35 @@ public class SlskdDownloadItem
         string combined = string.Join("|", filenames.Order());
         byte[] bytes = System.Text.Encoding.UTF8.GetBytes(combined);
         return BitConverter.ToString(System.Security.Cryptography.MD5.HashData(bytes)).Replace("-", "").ToLowerInvariant();
+    }
+
+    /// <summary>Claims this item's one post-processing pass, then starts it (null: nothing to run); false when already claimed.</summary>
+    // Claimed before start runs: a status read on another thread sees the pass from here, not from the task's creation.
+    public bool TryRunPostProcess(Func<Task?> start)
+    {
+        TaskCompletionSource claimed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (Interlocked.CompareExchange(ref _postProcess, claimed.Task, null) != null)
+            return false;
+
+        Task? run = null;
+        try
+        {
+            run = start();
+        }
+        catch
+        {
+            PostProcessFailure = "Post-processing could not start";
+            throw;
+        }
+        finally
+        {
+            if (run == null)
+                claimed.SetResult();
+            else
+                _ = run.ContinueWith(_ => claimed.SetResult(), CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+        }
+
+        return true;
     }
 
     /// <summary>

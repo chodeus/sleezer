@@ -1046,7 +1046,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         // files completed before the event poll has caught up with the matching
         // DownloadDirectoryComplete event, enqueue here. Without this, Lidarr
         // can see status=Completed and start importing before the scan runs.
-        // _postProcessed.TryAdd dedupes against the event-path trigger.
+        // The item's post-process claim dedupes against the event-path trigger.
         if (item.AllAcceptedFilesCompleted())
             EnqueuePostProcess(item, settings);
     }
@@ -1349,18 +1349,27 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
     private void EnqueuePostProcess(SlskdDownloadItem item, SlskdProviderSettings settings)
     {
-        // Guard against duplicate post-process tasks: slskd can emit both
-        // DownloadDirectoryComplete and a synthetic refresh-triggered completion.
-        if (!_postProcessed.TryAdd(item.ID, 0))
-            return;
+        // slskd can emit both DownloadDirectoryComplete and a refresh-triggered completion: the item's claim runs one pass, the id's keeps a replaced item from a second.
+        try
+        {
+            item.TryRunPostProcess(() => _postProcessed.TryAdd(item.ID, 0) ? StartPostProcess(item, settings) : null);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "[post-process] {ItemId}: could not start; failing the item rather than importing it unverified", item.ID);
+        }
+    }
 
+    // Null when no pass needs to run.
+    private Task? StartPostProcess(SlskdDownloadItem item, SlskdProviderSettings settings)
+    {
         // Terminal rehydrated ghosts (slskd retains transfers ~24h) have nothing
         // left to scan or tag — their folders are legitimately gone.
         DownloadHistoryEventType? latest = _downloadHistoryService.GetLatestDownloadHistoryItem(item.ID)?.EventType;
         if (SlskdDownloadItem.IsTerminalDownloadEvent(latest))
         {
             _logger.Debug("[post-process] Skipping {ItemId}: download history is terminal ({Event})", item.ID, latest);
-            return;
+            return null;
         }
 
         FFmpegSettings? sharedSettings;
@@ -1376,7 +1385,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             // off", so a transient read imported an album that was never scanned.
             item.PostProcessFailure = "Post-processing settings could not be read";
             _logger.Error(ex, "[post-process] {ItemId}: settings unreadable; failing the item rather than importing it unscanned", item.ID);
-            return;
+            return null;
         }
 
         if (sharedSettings == null || rules == null)
@@ -1384,7 +1393,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             item.PostProcessFailure = "Post-processing settings are missing";
             _logger.Error("[post-process] {ItemId}: no {Entry} metadata definition found; failing the item rather than importing it unverified",
                 item.ID, sharedSettings == null ? "FFmpeg" : "Sleezer Download Rules");
-            return;
+            return null;
         }
 
         bool scanEnabled = sharedSettings.CorruptionScanClients?.Contains((int)PostProcessClient.Slskd) ?? false;
@@ -1393,9 +1402,9 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         bool mergeNeeded = item.IsMultiDirectory && !item.DiscFoldersMerged;
 
         if (!scanEnabled && !tagEnabled && !sourceTagEnabled && !mergeNeeded)
-            return;
+            return null;
 
-        Task task = Task.Run(async () =>
+        return Task.Run(async () =>
         {
             using CancellationTokenSource cts = new(TimeSpan.FromMinutes(settings.PostProcessingTimeoutMinutes));
 
@@ -1528,8 +1537,6 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 _logger.Error(ex, "[post-process] Unexpected failure for {ItemId}", item.ID);
             }
         });
-
-        item.PostProcessTasks.Add(task);
     }
 
     // Unlistable folder = no file provably owned = every tagged file kept.
