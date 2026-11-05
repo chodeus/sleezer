@@ -11,10 +11,8 @@ public static class FingerprintLookup
     // AcoustID took 20 fingerprints in one request and refused 30 ("request too large"), gzipped as Lidarr sends them.
     public const int BatchSize = 10;
 
-    /// <summary>
-    /// Lidarr gives up on a refused request (HTTP 429) after three retries 1 s apart, and on a slow one at its 5 s
-    /// request timeout, in both cases with only a log line. An answer, even an empty one, comes back sooner.
-    /// </summary>
+    /// <summary>A batch still all empty after this long counts as given up (Lidarr: 3 s of refusal retries, 5 s timeout).</summary>
+    // Times the whole Lookup call, so a first try slowed by fpcalc can count too; a retry reuses Lidarr's cached fingerprints.
     internal static readonly TimeSpan GaveUpAfter = TimeSpan.FromSeconds(2.5);
 
     // Lidarr's shared AcoustID key is refused in runs of several requests.

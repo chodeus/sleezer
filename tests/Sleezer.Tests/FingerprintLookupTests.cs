@@ -161,6 +161,17 @@ public class FingerprintLookupTests
         Assert.All(tracks, t => Assert.NotNull(t.AcoustIdResults));
     }
 
+    // fpcalc runs inside the first lookup only; Lidarr caches the fingerprints, so a retry is timed on the request alone.
+    [Fact]
+    public async Task A_slow_first_try_then_a_quick_empty_answer_is_asked_once()
+    {
+        FakeAcoustId acoustId = new() { OnBatch = i => { if (i == 0) Thread.Sleep(150); }, Answers = _ => false };
+
+        await RunScaled(acoustId, Files(10), ct: TestContext.Current.CancellationToken);
+
+        Assert.Equal([10, 10], acoustId.Batches);
+    }
+
     [Fact]
     public async Task A_batch_is_asked_again_at_most_three_times()
     {
