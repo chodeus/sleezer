@@ -244,7 +244,7 @@ public class PreImportTagger : IPreImportTagger
         string[] fileStems = [.. audioFiles.Select(Path.GetFileNameWithoutExtension).OfType<string>()];
         if (VariantQualifiers.DownloadConflicts(wantedTitle, folderLeaf, fileStems, VariantQualifiers.ForgivenVariants(album)))
         {
-            _logger.Info("Pre-import tag: remix qualifier mismatch between album '{Album}' and folder '{Folder}' — skipping tagging for {FileCount} files in \"{SourceId}\"",
+            _logger.Info("Pre-import tag: remix qualifier mismatch between album '{Album}' and folder '{Folder}' with its file names — skipping tagging for {FileCount} files in \"{SourceId}\"",
                 wantedTitle, folderLeaf, audioFiles.Count, sourceId);
             return new TaggingResult(0, audioFiles.Count, 0);
         }
