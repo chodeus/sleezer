@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text.Json;
 using NLog;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
 namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
 
@@ -17,10 +18,7 @@ public sealed class SlskdTaggedFilesStore(string folder, Logger logger)
 
         try
         {
-            Directory.CreateDirectory(folder);
-            string temp = path + ".tmp";
-            File.WriteAllText(temp, JsonSerializer.Serialize(files));
-            File.Move(temp, path, overwrite: true);
+            DownloadIdFile.Write(path, JsonSerializer.Serialize(files));
         }
         catch (Exception ex)
         {
@@ -61,9 +59,5 @@ public sealed class SlskdTaggedFilesStore(string folder, Logger logger)
         }
     }
 
-    // The download id names the file; anything beyond letters, digits and dashes could point it elsewhere.
-    private string? PathFor(string downloadId) =>
-        downloadId.Length > 0 && downloadId.All(c => char.IsAsciiLetterOrDigit(c) || c == '-')
-            ? System.IO.Path.Combine(folder, downloadId + ".json")
-            : null;
+    private string? PathFor(string downloadId) => DownloadIdFile.PathFor(folder, downloadId, ".json");
 }

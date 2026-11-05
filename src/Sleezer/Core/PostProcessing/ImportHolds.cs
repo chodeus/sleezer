@@ -42,10 +42,7 @@ public sealed class ImportHolds : IImportHolds
 
         try
         {
-            Directory.CreateDirectory(_folder);
-            string temp = path + ".tmp";
-            File.WriteAllText(temp, reason);
-            File.Move(temp, path, overwrite: true);
+            DownloadIdFile.Write(path, reason);
         }
         catch (Exception ex)
         {
@@ -89,9 +86,5 @@ public sealed class ImportHolds : IImportHolds
         }
     }
 
-    // The download id names the file; anything beyond letters, digits and dashes could point it elsewhere.
-    private string? PathFor(string downloadId) =>
-        downloadId.Length > 0 && downloadId.All(c => char.IsAsciiLetterOrDigit(c) || c == '-')
-            ? Path.Combine(_folder, downloadId + ".txt")
-            : null;
+    private string? PathFor(string downloadId) => DownloadIdFile.PathFor(_folder, downloadId, ".txt");
 }
