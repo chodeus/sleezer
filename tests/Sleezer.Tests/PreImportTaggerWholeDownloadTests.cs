@@ -107,14 +107,15 @@ public class PreImportTaggerWholeDownloadTests : IDisposable
     }
 
     // AcoustID naming one recording for every file; Lidarr holds it under the title given.
-    private static PreImportTagger Fingerprinted(AlbumRelease release, Func<LocalTrack, string> recordingOf, string recordingTitle)
+    private static PreImportTagger Fingerprinted(AlbumRelease release, Func<LocalTrack, string> recordingOf, string recordingTitle,
+        string? alsoHeard = null, IMusicBrainzLookups? musicBrainz = null)
     {
         IFingerprintingService acoustId = Fake.Of<IFingerprintingService>((m, a) =>
         {
             if (m.Name == nameof(IFingerprintingService.Lookup))
             {
                 foreach (LocalTrack track in (List<LocalTrack>)a![0]!)
-                    track.AcoustIdResults = [recordingOf(track)];
+                    track.AcoustIdResults = alsoHeard == null ? [recordingOf(track)] : [recordingOf(track), alsoHeard];
             }
 
             return m.Name == nameof(IFingerprintingService.IsSetup) ? true : null;
@@ -123,11 +124,11 @@ public class PreImportTaggerWholeDownloadTests : IDisposable
         ITrackService tracks = Fake.Of<ITrackService>((_, _) => release.Tracks.Value
             .Select(t => new Track { Title = t.Title, ForeignRecordingId = t.ForeignRecordingId, Duration = t.Duration })
             .Append(new Track { Title = recordingTitle, ForeignRecordingId = "rec-heard", Duration = 201_000 }).ToList());
-        return Tagger(release, 0.0, TagAsWanted, acoustId: acoustId, releases: releases, tracks: tracks);
+        return Tagger(release, 0.0, TagAsWanted, acoustId: acoustId, releases: releases, tracks: tracks, musicBrainz: musicBrainz);
     }
 
     private static PreImportTagger Tagger(AlbumRelease release, double distance, Action<TrackFile> writeTags, Action? onIdentify = null,
-        IFingerprintingService? acoustId = null, IReleaseService? releases = null, ITrackService? tracks = null)
+        IFingerprintingService? acoustId = null, IReleaseService? releases = null, ITrackService? tracks = null, IMusicBrainzLookups? musicBrainz = null)
     {
         IIdentificationService identify = Fake.Of<IIdentificationService>((_, a) =>
         {
@@ -157,7 +158,7 @@ public class PreImportTaggerWholeDownloadTests : IDisposable
         return new PreImportTagger(identify, tags, acoustId ?? Fake.Of<IFingerprintingService>((m, _) => throw new NotSupportedException(m.Name)),
             tracks ?? Fake.Of<ITrackService>((m, _) => throw new NotSupportedException(m.Name)),
             releases ?? Fake.Of<IReleaseService>((m, _) => throw new NotSupportedException(m.Name)),
-            disk, Fake.Of<IMusicBrainzLookups>((_, _) => null), LogManager.GetLogger(nameof(PreImportTaggerWholeDownloadTests)));
+            disk, musicBrainz ?? Fake.Of<IMusicBrainzLookups>((_, _) => null), LogManager.GetLogger(nameof(PreImportTaggerWholeDownloadTests)));
     }
 
     // As the Soulseek client runs it: every file fingerprinted, and the title fallback checked too.
@@ -177,6 +178,24 @@ public class PreImportTaggerWholeDownloadTests : IDisposable
         Assert.Equal("fingerprint says 01.flac is a different recording than 'Lantern Song'", result.WrongRecording);
         Assert.Equal(paths[0], result.WrongRecordingFile);
         Assert.All(paths, p => Assert.Equal("Store Album", AlbumTag(p)));
+    }
+
+    // An unexpected error in the title pass (here its MusicBrainz lookup) must not lose the first pass's refusal.
+    [Fact]
+    public async Task A_refusal_outlives_a_title_pass_that_throws()
+    {
+        (Album album, Artist artist, AlbumRelease release) = Target("EP", "Lantern Song", "Salt Road");
+        string[] paths = Files("Lantern Song", "Salt Road");
+        int lookups = 0;
+        IMusicBrainzLookups musicBrainz = Fake.Of<IMusicBrainzLookups>((_, _) => ++lookups > 1 ? throw new InvalidOperationException("unexpected") : null);
+
+        PreImportTagger.TaggingResult result = await TagVerified(
+            Fingerprinted(release, _ => "rec-heard", "Ember Gate", alsoHeard: "rec-unknown", musicBrainz: musicBrainz), album, artist);
+
+        Assert.Equal(2, lookups);
+        Assert.Equal(1, result.TagWriteFailed);
+        Assert.Equal("fingerprint says 01.flac is a different recording than 'Lantern Song'", result.WrongRecording);
+        Assert.Equal(paths[0], result.WrongRecordingFile);
     }
 
     // Lidarr mapped the files crosswise: held, so a manual import can map them right.

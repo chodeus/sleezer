@@ -163,13 +163,14 @@ public class PreImportTagger : IPreImportTagger
         bool fingerprintTitleFallback = false,
         bool preferDigitalMedia = false)
     {
-        TaggingResult? result = null;
+        // Out here, so a refusal outlives a later step's failure.
+        List<(string File, string Reason)> wrongRecordings = [];
         try
         {
             // Tagging rewrites titles, so the shared bracket is judged on every file's original title.
             IReadOnlyDictionary<string, string> originalTitles = ReadTitles(completedFolderPath, ct);
             IEnumerable<string> guests = MusicBrainzGuests(album, artist);
-            result = await TagInternalAsync(album, artist, albumRelease, sourceId, completedFolderPath, confidenceThreshold, stripFeaturedArtists, verifyAllWithFingerprint, fingerprintTitleFallback, preferDigitalMedia, guests, ct);
+            TaggingResult result = await TagInternalAsync(album, artist, albumRelease, sourceId, completedFolderPath, confidenceThreshold, stripFeaturedArtists, verifyAllWithFingerprint, fingerprintTitleFallback, preferDigitalMedia, guests, wrongRecordings, ct);
             if (stripFeaturedArtists)
                 StripCreditsFromUntaggedFiles(completedFolderPath, result.TaggedFiles, artist.Name, guests, ct);
             DropSharedBracketFromUntaggedFiles(originalTitles, result.TaggedFiles, album, ct);
@@ -179,9 +180,9 @@ public class PreImportTagger : IPreImportTagger
         {
             // Cancellation and a failed restore are not tagging results: either left files the pass
             // didn't vouch for, so they must reach the caller's failure path, not read as one bad tag write.
-            // A verdict already reached outlives a later step's failure.
             _logger.Error(ex, "Pre-import tagging failed for {SourceId}", sourceId);
-            return new TaggingResult(0, 0, 1, WrongRecording: result?.WrongRecording, WrongRecordingFile: result?.WrongRecordingFile);
+            (string? File, string? Reason) wrong = wrongRecordings.FirstOrDefault();
+            return new TaggingResult(0, 0, 1, WrongRecording: wrong.Reason, WrongRecordingFile: wrong.File);
         }
     }
 
@@ -197,6 +198,7 @@ public class PreImportTagger : IPreImportTagger
         bool fingerprintTitleFallback,
         bool preferDigitalMedia,
         IEnumerable<string> guests,
+        List<(string File, string Reason)> wrongRecordings,
         CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
@@ -336,7 +338,6 @@ public class PreImportTagger : IPreImportTagger
         WholeDownloadTags.Plan plan = WholeDownloadTags.FromReleases(releases, localTracks.Count, confidenceThreshold, preferDigitalMedia,
             (file, track) => verifyAllWithFingerprint && VerifyRecording(file, track, credited, knownRecordings) == FingerprintVerdict.Mismatch);
         List<TaggedFile> taggedFiles = [];
-        List<(string File, string Reason)> wrongRecordings = [];
         (int tagged, int errored) = await WritePlanAsync(plan, album, stripFeaturedArtists, artist.Name, sourceId, taggedFiles, wrongRecordings, ct);
 
         // Album-level identification cannot pass for a single/EP pulled out of
