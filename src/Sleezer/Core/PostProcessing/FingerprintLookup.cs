@@ -63,6 +63,9 @@ public static class FingerprintLookup
         {
             // Lookup is synchronous with no CancellationToken (Lidarr core): off-thread, the wait stays cancellable.
             await Task.Run(() => fingerprinting.Lookup([.. batch], threshold)).WaitAsync(ct);
+
+            // WaitAsync returns a lookup that finished first even when ct was cancelled during it.
+            ct.ThrowIfCancellationRequested();
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

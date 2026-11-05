@@ -100,6 +100,19 @@ public class FingerprintLookupTests
         Assert.Single(acoustId.Batches);
     }
 
+    // A lookup that finished as it was cancelled went unnoticed about 3 times in 1,000; repeated so a regression shows.
+    [Fact]
+    public async Task A_lookup_cancelled_as_it_finishes_still_surfaces_the_cancellation()
+    {
+        for (int i = 0; i < 2000; i++)
+        {
+            using CancellationTokenSource cts = new();
+            FakeAcoustId acoustId = new() { OnBatch = _ => cts.Cancel() };
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => FingerprintLookup.RunAsync(acoustId, Files(1), 0.5, Log, cts.Token));
+        }
+    }
+
     [Fact]
     public async Task An_already_cancelled_lookup_starts_none()
     {
