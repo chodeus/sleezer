@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using NLog;
 using NzbDrone.Common.EnvironmentInfo;
 using NzbDrone.Common.Extensions;
@@ -18,6 +19,7 @@ public interface IImportHolds
 /// <summary>Keeps each hold on disk, so a Lidarr restart doesn't import a held download.</summary>
 public sealed class ImportHolds : IImportHolds
 {
+    private readonly ConcurrentDictionary<string, string> _held = new(StringComparer.Ordinal);
     private readonly string _folder;
     private readonly Logger _logger;
 
@@ -34,6 +36,7 @@ public sealed class ImportHolds : IImportHolds
 
     public void Hold(string downloadId, string reason)
     {
+        _held[downloadId] = reason;
         if (PathFor(downloadId) is not { } path)
             return;
 
@@ -53,6 +56,8 @@ public sealed class ImportHolds : IImportHolds
 
     public string? ReasonFor(string downloadId)
     {
+        if (_held.TryGetValue(downloadId, out string? held))
+            return held;
         if (PathFor(downloadId) is not { } path || !File.Exists(path))
             return null;
 
@@ -70,6 +75,7 @@ public sealed class ImportHolds : IImportHolds
 
     public void Release(string downloadId)
     {
+        _held.TryRemove(downloadId, out _);
         if (PathFor(downloadId) is not { } path)
             return;
 

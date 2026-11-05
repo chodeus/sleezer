@@ -2,7 +2,9 @@ using NLog;
 using NzbDrone.Common.EnvironmentInfo;
 using NzbDrone.Core.Download;
 using NzbDrone.Core.Parser.Model;
+using NzbDrone.Plugin.Sleezer;
 using NzbDrone.Plugin.Sleezer.Core.PostProcessing;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using Xunit;
 
 namespace Sleezer.Tests;
@@ -42,17 +44,35 @@ public class ImportHoldsTests : IDisposable
         Assert.Null(NewHolds().ReasonFor("abc-123"));
     }
 
+    // Held, but never written: the id would name a file elsewhere.
     [Theory]
     [InlineData("")]
     [InlineData("../escape")]
     [InlineData("a/b")]
-    public void An_id_that_could_name_another_path_is_never_held(string downloadId)
+    public void An_id_that_could_name_another_path_is_held_in_memory_only(string downloadId)
     {
         ImportHolds holds = NewHolds();
         holds.Hold(downloadId, "reason");
 
-        Assert.Null(holds.ReasonFor(downloadId));
+        Assert.Equal("reason", holds.ReasonFor(downloadId));
+        Assert.Null(NewHolds().ReasonFor(downloadId));
         Assert.False(Directory.Exists(_appData) && Directory.EnumerateFiles(_appData, "*", SearchOption.AllDirectories).Any());
+    }
+
+    [Fact]
+    public void A_hold_that_cannot_be_saved_still_holds_until_a_restart()
+    {
+        string folder = Path.Combine(PluginFolder.Resolve(Path.Combine(_appData, "plugins"), PluginInfo.RepoUrl), "import-holds");
+        Directory.CreateDirectory(Path.GetDirectoryName(folder)!);
+        File.WriteAllText(folder, "a file where the folder should be");
+        ImportHolds holds = NewHolds();
+
+        holds.Hold("abc-123", "reason");
+
+        Assert.Equal("reason", holds.ReasonFor("abc-123"));
+        Assert.Null(NewHolds().ReasonFor("abc-123"));
+        holds.Release("abc-123");
+        Assert.Null(holds.ReasonFor("abc-123"));
     }
 
     // A permission problem is the real shape of it; Windows has no file mode to take away.
@@ -64,7 +84,7 @@ public class ImportHoldsTests : IDisposable
         holds.Hold("abc-123", "reason");
         File.SetUnixFileMode(Path.Combine(HoldsFolder, "abc-123.txt"), UnixFileMode.None);
 
-        Assert.NotNull(holds.ReasonFor("abc-123"));
+        Assert.NotNull(NewHolds().ReasonFor("abc-123"));
     }
 
     private sealed class FakeHolds(string id, string reason) : IImportHolds
