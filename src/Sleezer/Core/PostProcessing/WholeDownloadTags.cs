@@ -1,4 +1,6 @@
+using NLog;
 using NzbDrone.Core.MediaFiles.TrackImport.Identification;
+using NzbDrone.Core.MediaFiles.TrackImport.Specifications;
 using NzbDrone.Core.Music;
 using NzbDrone.Core.Parser.Model;
 
@@ -8,29 +10,38 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing;
 // Lidarr groups a download by album tag, so a half-tagged folder imports as two albums that each miss tracks.
 public static class WholeDownloadTags
 {
+    private static readonly CloseAlbumMatchSpecification LidarrCloseMatch = new(LogManager.CreateNullLogger());
+
     public sealed record Target(LocalTrack File, Track Track, AlbumRelease? Release);
 
-    public sealed record Plan(IReadOnlyList<Target> Targets, string? Refusal)
+    /// <param name="WrongRecordingFile">Set when the plan was refused on the fingerprint's word about this file.</param>
+    public sealed record Plan(IReadOnlyList<Target> Targets, string? Refusal, string? WrongRecordingFile = null)
     {
+        public bool WrongRecording => WrongRecordingFile != null;
+
         public static Plan Refuse(string reason) => new([], reason);
     }
 
     /// <summary>A target for every file across the identified releases, or why none may be written.</summary>
     public static Plan FromReleases(IReadOnlyList<LocalAlbumRelease> releases, int fileCount, double maxDistance, bool preferDigitalMedia, Func<LocalTrack, Track, bool> differentRecording)
     {
+        // Before sleezer's distance gates, on every release Lidarr's own looser rule would import.
+        foreach (LocalAlbumRelease release in releases.Where(LidarrWouldImport))
+        {
+            foreach ((LocalTrack file, Tuple<Track, Distance> match) in release.TrackMapping.Mapping)
+            {
+                if (differentRecording(file, match.Item1))
+                    return WrongRecording(file, match.Item1);
+            }
+        }
+
         List<Target> targets = [];
         foreach (LocalAlbumRelease release in releases)
         {
             if (Refusal(release, maxDistance, preferDigitalMedia) is { } refusal)
                 return Plan.Refuse(refusal);
 
-            foreach ((LocalTrack file, Tuple<Track, Distance> match) in release.TrackMapping.Mapping)
-            {
-                if (differentRecording(file, match.Item1))
-                    return Plan.Refuse(DifferentRecording(file, match.Item1));
-
-                targets.Add(new Target(file, match.Item1, release.AlbumRelease));
-            }
+            targets.AddRange(release.TrackMapping.Mapping.Select(m => new Target(m.Key, m.Value.Item1, release.AlbumRelease)));
         }
 
         return Whole(targets, fileCount, "map to a release track");
@@ -43,13 +54,18 @@ public static class WholeDownloadTags
         foreach ((int fileIndex, int trackIndex) in mapping)
         {
             if (differentRecording(files[fileIndex], tracks[trackIndex]))
-                return Plan.Refuse(DifferentRecording(files[fileIndex], tracks[trackIndex]));
+                return WrongRecording(files[fileIndex], tracks[trackIndex]);
 
             targets.Add(new Target(files[fileIndex], tracks[trackIndex], release));
         }
 
         return Whole(targets, files.Count, $"match a track title of '{release.Title}'");
     }
+
+    private static bool LidarrWouldImport(LocalAlbumRelease release) =>
+        release.TrackMapping != null && release.Distance != null && LidarrCloseMatch.IsSatisfiedBy(release, null).Accepted;
+
+    private static Plan WrongRecording(LocalTrack file, Track track) => new([], DifferentRecording(file, track), file.Path);
 
     private static Plan Whole(List<Target> targets, int fileCount, string matched)
     {

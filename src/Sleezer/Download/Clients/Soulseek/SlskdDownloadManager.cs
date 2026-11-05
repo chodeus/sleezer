@@ -59,6 +59,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     private readonly IDownloadHistoryService _downloadHistoryService;
     private readonly IHistoryService _historyService;
     private readonly SlskdTaggedFilesStore _taggedFiles;
+    private readonly IImportHolds _importHolds;
     private readonly SlskdRecentGrabs _recentGrabs;
     private readonly IDownloadClientRepository _downloadClientRepository;
     private readonly ISlskdItemsParser _slskdItemsParser;
@@ -93,9 +94,11 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         ISlskdWatchdog watchdog,
         IDownloadClientRepository downloadClientRepository,
         IAppFolderInfo appFolderInfo,
+        IImportHolds importHolds,
         Logger logger)
     {
         _apiClient = apiClient;
+        _importHolds = importHolds;
         _downloadHistoryService = downloadHistoryService;
         _historyService = historyService;
         _slskdItemsParser = slskdItemsParser;
@@ -202,13 +205,13 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         return probeFile == null ? [] : [.. GetItemsForDef(definitionId).Where(i => i.ID != retry.ID && i.OwnsFile(probeFile))];
     }
 
-    // A stale attempt's per-directory hash matches first and would starve this retry. Its files go only after a successful enqueue.
+    // A stale attempt's per-directory hash matches first and would starve this retry. Its files and saved state go only after a successful enqueue.
     private void EvictSupersededAttempts(int definitionId, string retryId, List<SlskdDownloadItem> superseded)
     {
         foreach (SlskdDownloadItem stale in superseded)
         {
             _logger.Debug("Evicting stale tracked attempt {StaleId} superseded by {RetryId}", stale.ID, retryId);
-            RemoveItemFromDict(definitionId, stale.ID);
+            Untrack(definitionId, stale.ID);
         }
     }
 
@@ -218,9 +221,12 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         if (superseded.Count == 0)
             return;
 
-        // Only now: had the enqueue failed, a superseded attempt would stay adoptable.
+        // Only now: had the enqueue failed, a superseded attempt would stay adoptable, with its hold and tagged files.
         foreach (SlskdDownloadItem stale in superseded)
+        {
             RememberRemovedGrab(definitionId, stale.ID, stale);
+            ForgetSavedState(stale.ID);
+        }
 
         HashSet<string> retryBasenames = retry.FileData
             .Select(f => Path.GetFileName((f.Filename ?? string.Empty).Replace('\\', '/')))
@@ -1500,6 +1506,13 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                     // SlskdDownloadItem._taggedFileSizes.
                     RecordTaggedFileIdentities(item, tagResult.TaggedFiles, ownedPathsBeforeTagging);
                     _taggedFiles.Save(item.ID, item.TaggedFiles);
+
+                    // Untagged, Lidarr would still import it by its names; held, it waits in the queue for a manual import.
+                    if (ImportHolds.ReasonToHold(tagResult, settings.VerifyImportsWithFingerprint, ownedPathsBeforeTagging) is { } holdReason)
+                    {
+                        _importHolds.Hold(item.ID, holdReason);
+                        _logger.Warn("[post-process] {ItemId}: holding it for a manual import — {Reason}", item.ID, holdReason);
+                    }
                 }
             }
             catch (OperationCanceledException)
@@ -1923,9 +1936,21 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
     private void RemoveItemFromDict(int definitionId, string id)
     {
+        Untrack(definitionId, id);
+        ForgetSavedState(id);
+    }
+
+    private void Untrack(int definitionId, string id)
+    {
         _downloadMappings.TryRemove(new DownloadKey<int, string>(definitionId, id), out _);
         _postProcessed.TryRemove(id, out _);
+    }
+
+    // Only once the attempt is gone for good: an adopted attempt restores its tagged files, and its hold keeps refusing the import.
+    private void ForgetSavedState(string id)
+    {
         _taggedFiles.Delete(id);
+        _importHolds.Release(id);
     }
 
     private void RememberRemovedGrab(int definitionId, string id, SlskdDownloadItem? item)

@@ -26,7 +26,7 @@ public class WholeDownloadTagsTests
     {
         TrackMapping mapping = new() { LocalExtra = [.. files.Skip(mapped)], MBExtra = [] };
         for (int i = 0; i < mapped; i++)
-            mapping.Mapping.Add(files[i], Tuple.Create(new Track { Title = $"{title} {i + 1}", AbsoluteTrackNumber = i + 1 }, Dist(trackDistances.Length > i ? trackDistances[i] : 0.0)));
+            mapping.Mapping.Add(files[i], Tuple.Create(new Track { Title = $"{title} {i + 1}", AbsoluteTrackNumber = i + 1, ForeignRecordingId = $"rec-{i + 1}" }, Dist(trackDistances.Length > i ? trackDistances[i] : 0.0)));
 
         return new LocalAlbumRelease([.. files])
         {
@@ -57,6 +57,7 @@ public class WholeDownloadTagsTests
 
         Assert.Empty(plan.Targets);
         Assert.Equal("1 of 3 file(s) map to a release track", plan.Refusal);
+        Assert.False(plan.WrongRecording);
     }
 
     // Fatboy Slim: three files matched the release, the fourth was a different recording.
@@ -70,6 +71,7 @@ public class WholeDownloadTagsTests
 
         Assert.Empty(plan.Targets);
         Assert.Equal("fingerprint says 04.flac is a different recording than 'The Beat Burger 4'", plan.Refusal);
+        Assert.Equal(files[3].Path, plan.WrongRecordingFile);
     }
 
     // Lidarr grouped the files by album tag into two releases; only one of them matched.
@@ -83,6 +85,7 @@ public class WholeDownloadTagsTests
 
         Assert.Empty(plan.Targets);
         Assert.Equal("album match distance 0.400 exceeds max 0.150", plan.Refusal);
+        Assert.False(plan.WrongRecording);
     }
 
     // Each release's tags are an album of their own to Lidarr.
@@ -96,6 +99,7 @@ public class WholeDownloadTagsTests
 
         Assert.Empty(plan.Targets);
         Assert.Equal("the files map to 2 releases", plan.Refusal);
+        Assert.False(plan.WrongRecording);
     }
 
     [Fact]
@@ -107,6 +111,7 @@ public class WholeDownloadTagsTests
 
         Assert.Empty(plan.Targets);
         Assert.Equal("1/2 track(s) of 'Jungle Jam / What You Do' match too weakly", plan.Refusal);
+        Assert.False(plan.WrongRecording);
     }
 
     [Fact]
@@ -118,6 +123,7 @@ public class WholeDownloadTagsTests
 
         Assert.Empty(plan.Targets);
         Assert.Equal("'Heartbreak Anthem' has 3 track(s) but the download has 2, a different edition", plan.Refusal);
+        Assert.False(plan.WrongRecording);
     }
 
     [Fact]
@@ -126,6 +132,7 @@ public class WholeDownloadTagsTests
         WholeDownloadTags.Plan plan = WholeDownloadTags.FromReleases([], 2, Limit, false, SameRecording);
 
         Assert.Equal("0 of 2 file(s) map to a release track", plan.Refusal);
+        Assert.False(plan.WrongRecording);
     }
 
     [Fact]
@@ -153,6 +160,7 @@ public class WholeDownloadTagsTests
 
         Assert.Empty(plan.Targets);
         Assert.Equal("1 of 2 file(s) match a track title of 'LYCKA / F.A.T'", plan.Refusal);
+        Assert.False(plan.WrongRecording);
     }
 
     [Fact]
@@ -166,5 +174,6 @@ public class WholeDownloadTagsTests
 
         Assert.Empty(plan.Targets);
         Assert.Equal("fingerprint says 02.flac is a different recording than 'Gam Gam (extended mix)'", plan.Refusal);
+        Assert.Equal(files[1].Path, plan.WrongRecordingFile);
     }
 }
