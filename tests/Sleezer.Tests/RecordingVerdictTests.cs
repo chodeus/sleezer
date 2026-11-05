@@ -311,17 +311,51 @@ public class RecordingVerdictTests
     }
 
     [Theory]
-    [InlineData("Salt Road", 189, "Ember Gate", 190, 189)]
-    [InlineData("Lantern Song", 155, "Lantern Song Two", 153, 156)]
-    [InlineData("Lantern Song", 170, "Lantern Song (Fern remix)", 172, 173)]
-    [InlineData("Lantern Song (extended mix)", 238, "Lantern Song (Fern remix)", 243, 238)]
-    [InlineData("Lantern Song (Fern remix)", 258, "Lantern Song", 266, 267)]
-    [InlineData("Lantern Song (radio edit)", 238, "Lantern Song (UK radio edit)", 222, 222)]
-    [InlineData("Lantern Song", 200, "Lantern Song (Fern)", 201, 200)]
-    [InlineData("Lap Song", 200, "Map Song", 200, 200)]
-    public void Another_song_or_another_cut_of_it_is_still_a_mismatch(string wantedTitle, int wantedSeconds, string knownTitle, int knownSeconds, int fileSeconds)
+    [InlineData("Salt Road", 189, "Ember Gate", 190, 189, FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song (Fern remix)", 258, "Lantern Song", 266, 267, FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song (radio edit)", 238, "Lantern Song (UK radio edit)", 222, 222, FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song", 155, "Lantern Song Two", 153, 156, FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song", 170, "Lantern Song (Fern remix)", 172, 173, FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song (extended mix)", 238, "Lantern Song (Fern remix)", 243, 238, FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song", 200, "Lantern Song (Fern)", 201, 200, FingerprintVerdict.Mismatch)]
+    [InlineData("Lap Song", 200, "Map Song", 200, 200, FingerprintVerdict.Mismatch)]
+    [InlineData("Moonward", 200, "Moonwrd", 201, 200, FingerprintVerdict.Mismatch)]
+    public void Another_song_or_another_cut_of_it_is_still_a_mismatch(string wantedTitle, int wantedSeconds, string knownTitle, int knownSeconds, int fileSeconds, FingerprintVerdict expected)
     {
-        Assert.Equal(FingerprintVerdict.Mismatch,
+        Assert.Equal(expected,
             Resolve(new[] { OtherId }, Wanted(wantedTitle, seconds: wantedSeconds), Timed((OtherId, knownTitle, knownSeconds)), fileSeconds));
+    }
+
+    // A reissue's title on a file of the wanted length is the wanted take.
+    [Theory]
+    [InlineData("Lantern Song", "Lantern Song - 2011 Remaster")]
+    [InlineData("Lantern Song", "Lantern Song (Remastered 2011)")]
+    [InlineData("Lantern Song", "Lantern Song (Album Version)")]
+    [InlineData("Lantern Song", "Lantern Song (Single Version)")]
+    [InlineData("Lantern Song", "Lantern Song (Original Mix)")]
+    [InlineData("Lantern Song", "Lantern Song (Mono)")]
+    [InlineData("Lantern Song (Remastered)", "Lantern Song (Remastered 2011)")]
+    public void A_reissue_title_of_the_wanted_length_defers(string wantedTitle, string knownTitle)
+    {
+        Assert.Equal(FingerprintVerdict.Unverifiable,
+            Resolve(new[] { OtherId }, Wanted(wantedTitle, seconds: 200), Timed((OtherId, knownTitle, 201)), fileSeconds: 200));
+    }
+
+    // Titles one letter, one number or one place apart that are other tracks: never read as the wanted song.
+    [Theory]
+    [InlineData("Moonward, Part 1", "Moonward, Part 2", FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song No. 1", "Lantern Song No. 2", FingerprintVerdict.Mismatch)]
+    [InlineData("Burning Lanterns", "Turning Lanterns", FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song", "Lantern Song (Part 2)", FingerprintVerdict.Mismatch)]
+    [InlineData("Moonward Suite: Overture", "Ember Suite: Overture", FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song (Live in Moonward 1990)", "Lantern Song (Live in Fern 2005)", FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song (Moonward Remix)", "Lantern Song (Remix)", FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song", "Lantern Song (Movement 2)", FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song", "Lantern Song (Part Two)", FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song", "Moonward: Lantern Song", FingerprintVerdict.Mismatch)]
+    public void Another_track_with_a_near_title_does_not_defer(string wantedTitle, string knownTitle, FingerprintVerdict expected)
+    {
+        Assert.Equal(expected,
+            Resolve(new[] { OtherId }, Wanted(wantedTitle, seconds: 200), Timed((OtherId, knownTitle, 201)), fileSeconds: 200));
     }
 }

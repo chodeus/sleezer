@@ -75,6 +75,7 @@ public static partial class RecordingVerdict
             Key(t.Title) == wantedTitle ||
             (fitsWanted && Key(WithoutUnheardCut(t.Title)) == wantedSong) ||
             (SongTitles.Same(t.Title, wanted.Title, Key) && !OtherVersion(t)) ||
+            (fitsWanted && Within(t.DurationMs, (int)fileDuration.TotalMilliseconds, FitsWantedMs) && SongTitles.Reissue(t.Title, wanted.Title, Key)) ||
             (fitsWanted && SongTitles.PlainForRemix(t.Title, wanted.Title, Key) && Within(t.DurationMs, wanted.DurationMs, FitsWantedMs));
 
         // One song, two cuts: the named recording is the file's length, the wanted track is not.

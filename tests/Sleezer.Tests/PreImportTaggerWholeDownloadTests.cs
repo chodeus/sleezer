@@ -86,7 +86,7 @@ public class PreImportTaggerWholeDownloadTests : IDisposable
 
     private static (Album Album, Artist Artist, AlbumRelease Release) Target(string type, params (string Title, int Number)[] tracks)
     {
-        List<Track> list = [.. tracks.Select(t => new Track { Title = t.Title, AbsoluteTrackNumber = t.Number, ForeignRecordingId = $"rec-{t.Number}" })];
+        List<Track> list = [.. tracks.Select(t => new Track { Title = t.Title, AbsoluteTrackNumber = t.Number, ForeignRecordingId = $"rec-{t.Number}", Duration = 200_000 })];
         AlbumRelease release = new() { Title = "Wanted Album", ForeignReleaseId = WantedReleaseId, TrackCount = list.Count, Monitored = true, Media = [new Medium { Number = 1, Format = "Digital Media" }], Tracks = new LazyLoaded<List<Track>>(list) };
         Artist artist = new() { Metadata = new LazyLoaded<ArtistMetadata>(new ArtistMetadata { Name = "Artist" }) };
         Album album = new() { Title = "Wanted Album", AlbumType = type, AnyReleaseOk = true, AlbumReleases = new LazyLoaded<List<AlbumRelease>>([release]), Artist = new LazyLoaded<Artist>(artist), SecondaryTypes = [] };
@@ -106,7 +106,28 @@ public class PreImportTaggerWholeDownloadTests : IDisposable
         return [new LocalAlbumRelease(ordered) { Distance = Dist(distance), TrackMapping = mapping, AlbumRelease = release }];
     }
 
-    private static PreImportTagger Tagger(AlbumRelease release, double distance, Action<TrackFile> writeTags, Action? onIdentify = null)
+    // AcoustID naming one recording for every file; Lidarr holds it under the title given.
+    private static PreImportTagger Fingerprinted(AlbumRelease release, Func<LocalTrack, string> recordingOf, string recordingTitle)
+    {
+        IFingerprintingService acoustId = Fake.Of<IFingerprintingService>((m, a) =>
+        {
+            if (m.Name == nameof(IFingerprintingService.Lookup))
+            {
+                foreach (LocalTrack track in (List<LocalTrack>)a![0]!)
+                    track.AcoustIdResults = [recordingOf(track)];
+            }
+
+            return m.Name == nameof(IFingerprintingService.IsSetup) ? true : null;
+        });
+        IReleaseService releases = Fake.Of<IReleaseService>((_, _) => new List<AlbumRelease> { new() { Id = 99 } });
+        ITrackService tracks = Fake.Of<ITrackService>((_, _) => release.Tracks.Value
+            .Select(t => new Track { Title = t.Title, ForeignRecordingId = t.ForeignRecordingId, Duration = t.Duration })
+            .Append(new Track { Title = recordingTitle, ForeignRecordingId = "rec-heard", Duration = 201_000 }).ToList());
+        return Tagger(release, 0.0, TagAsWanted, acoustId: acoustId, releases: releases, tracks: tracks);
+    }
+
+    private static PreImportTagger Tagger(AlbumRelease release, double distance, Action<TrackFile> writeTags, Action? onIdentify = null,
+        IFingerprintingService? acoustId = null, IReleaseService? releases = null, ITrackService? tracks = null)
     {
         IIdentificationService identify = Fake.Of<IIdentificationService>((_, a) =>
         {
@@ -118,7 +139,7 @@ public class PreImportTaggerWholeDownloadTests : IDisposable
             if (m.Name == nameof(IAudioTagService.ReadTags))
             {
                 using TagLib.File file = TagLib.File.Create((string)a![0]!);
-                return new ParsedTrackInfo { Title = file.Tag.Title, AlbumTitle = file.Tag.Album, ArtistTitle = "Artist", TrackNumbers = [0] };
+                return new ParsedTrackInfo { Title = file.Tag.Title, AlbumTitle = file.Tag.Album, ArtistTitle = "Artist", TrackNumbers = [0], Duration = TimeSpan.FromSeconds(200) };
             }
 
             if (m.Name == nameof(IAudioTagService.WriteTags))
@@ -133,10 +154,86 @@ public class PreImportTaggerWholeDownloadTests : IDisposable
             _ => throw new NotSupportedException(m.Name)
         });
 
-        return new PreImportTagger(identify, tags, Fake.Of<IFingerprintingService>((m, _) => throw new NotSupportedException(m.Name)),
-            Fake.Of<ITrackService>((m, _) => throw new NotSupportedException(m.Name)),
-            Fake.Of<IReleaseService>((m, _) => throw new NotSupportedException(m.Name)),
+        return new PreImportTagger(identify, tags, acoustId ?? Fake.Of<IFingerprintingService>((m, _) => throw new NotSupportedException(m.Name)),
+            tracks ?? Fake.Of<ITrackService>((m, _) => throw new NotSupportedException(m.Name)),
+            releases ?? Fake.Of<IReleaseService>((m, _) => throw new NotSupportedException(m.Name)),
             disk, Fake.Of<IMusicBrainzLookups>((_, _) => null), LogManager.GetLogger(nameof(PreImportTaggerWholeDownloadTests)));
+    }
+
+    // As the Soulseek client runs it: every file fingerprinted, and the title fallback checked too.
+    private Task<PreImportTagger.TaggingResult> TagVerified(PreImportTagger tagger, Album album, Artist artist) =>
+        tagger.TagCompletedDownloadAsync(album, artist, null, "download", _dir, 0.15, false, CancellationToken.None,
+            verifyAllWithFingerprint: true, fingerprintTitleFallback: true);
+
+    [Fact]
+    public async Task A_download_the_fingerprint_hears_as_another_song_is_tagged_nowhere_and_says_so()
+    {
+        (Album album, Artist artist, AlbumRelease release) = Target("Album", "Lantern Song", "Salt Road");
+        string[] paths = Files("Lantern Song", "Salt Road");
+
+        PreImportTagger.TaggingResult result = await TagVerified(Fingerprinted(release, _ => "rec-heard", "Ember Gate"), album, artist);
+
+        Assert.Equal(0, result.Tagged);
+        Assert.Equal("fingerprint says 01.flac is a different recording than 'Lantern Song'", result.WrongRecording);
+        Assert.Equal(paths[0], result.WrongRecordingFile);
+        Assert.All(paths, p => Assert.Equal("Store Album", AlbumTag(p)));
+    }
+
+    // Lidarr mapped the files crosswise: held, so a manual import can map them right.
+    [Fact]
+    public async Task An_album_mapped_crosswise_is_held_for_a_manual_import()
+    {
+        (Album album, Artist artist, AlbumRelease release) = Target("Album", "Lantern Song", "Salt Road");
+        string[] paths = Files("Salt Road", "Lantern Song");
+
+        PreImportTagger.TaggingResult result = await TagVerified(
+            Fingerprinted(release, f => Path.GetFileName(f.Path) == "01.flac" ? "rec-2" : "rec-1", "Ember Gate"), album, artist);
+
+        Assert.Equal(0, result.Tagged);
+        Assert.Equal("fingerprint says 01.flac is a different recording than 'Lantern Song'", result.WrongRecording);
+        Assert.Equal(paths[0], result.WrongRecordingFile);
+    }
+
+    [Fact]
+    public async Task A_reissue_title_of_the_wanted_song_holds_nothing()
+    {
+        (Album album, Artist artist, AlbumRelease release) = Target("Album", "Lantern Song", "Salt Road");
+        Files("Lantern Song", "Salt Road");
+
+        PreImportTagger.TaggingResult result = await TagVerified(
+            Fingerprinted(release, f => Path.GetFileName(f.Path) == "01.flac" ? "rec-heard" : "rec-2", "Lantern Song - 2011 Remaster"), album, artist);
+
+        Assert.Null(result.WrongRecording);
+    }
+
+    // Lidarr's mapping pairs each file with the other's track; the names, and the fingerprint, say otherwise.
+    // Only a single or EP gets the title pass: a crosswise album still fails, and is searched again.
+    [Fact]
+    public async Task A_single_mapped_crosswise_but_named_right_is_tagged_by_its_names()
+    {
+        (Album album, Artist artist, AlbumRelease release) = Target("Single", "Lantern Song", "Salt Road");
+        string[] paths = Files("Salt Road", "Lantern Song");
+
+        PreImportTagger.TaggingResult result = await TagVerified(
+            Fingerprinted(release, f => Path.GetFileName(f.Path) == "01.flac" ? "rec-2" : "rec-1", "Ember Gate"), album, artist);
+
+        Assert.Equal(2, result.Tagged);
+        Assert.Null(result.WrongRecording);
+        Assert.All(paths, p => Assert.Equal("Wanted Album", AlbumTag(p)));
+    }
+
+    [Fact]
+    public async Task A_download_the_fingerprint_hears_as_the_wanted_songs_is_tagged()
+    {
+        (Album album, Artist artist, AlbumRelease release) = Target("Album", "Lantern Song", "Salt Road");
+        string[] paths = Files("Lantern Song", "Salt Road");
+
+        PreImportTagger.TaggingResult result = await TagVerified(
+            Fingerprinted(release, f => $"rec-{Path.GetFileNameWithoutExtension(f.Path).TrimStart('0')}", "Ember Gate"), album, artist);
+
+        Assert.Equal(2, result.Tagged);
+        Assert.Null(result.WrongRecording);
+        Assert.All(paths, p => Assert.Equal("Wanted Album", AlbumTag(p)));
     }
 
     private Task<PreImportTagger.TaggingResult> Tag(PreImportTagger tagger, Album album, Artist artist, CancellationToken ct, bool strip = false) =>
@@ -291,6 +388,7 @@ public class PreImportTaggerWholeDownloadTests : IDisposable
         PreImportTagger.TaggingResult result = await Tag(Tagger(release, 0.40, _ => { }), album, artist, CancellationToken.None);
 
         Assert.Equal((0, 2, 0), (result.Tagged, result.SkippedWeakMatch, result.TagWriteFailed));
+        Assert.Null(result.WrongRecording);
     }
 
     // The feat-strip rename puts zz.flac at "01 - Beta.flac", the case-only twin of 01 - beta.flac's freed name.

@@ -10,8 +10,11 @@ public static class WholeDownloadTags
 {
     public sealed record Target(LocalTrack File, Track Track, AlbumRelease? Release);
 
-    public sealed record Plan(IReadOnlyList<Target> Targets, string? Refusal)
+    /// <param name="WrongRecordingFile">Set when the plan was refused on the fingerprint's word about this file.</param>
+    public sealed record Plan(IReadOnlyList<Target> Targets, string? Refusal, string? WrongRecordingFile = null)
     {
+        public bool WrongRecording => WrongRecordingFile != null;
+
         public static Plan Refuse(string reason) => new([], reason);
     }
 
@@ -27,7 +30,7 @@ public static class WholeDownloadTags
             foreach ((LocalTrack file, Tuple<Track, Distance> match) in release.TrackMapping.Mapping)
             {
                 if (differentRecording(file, match.Item1))
-                    return Plan.Refuse(DifferentRecording(file, match.Item1));
+                    return WrongRecording(file, match.Item1);
 
                 targets.Add(new Target(file, match.Item1, release.AlbumRelease));
             }
@@ -43,13 +46,15 @@ public static class WholeDownloadTags
         foreach ((int fileIndex, int trackIndex) in mapping)
         {
             if (differentRecording(files[fileIndex], tracks[trackIndex]))
-                return Plan.Refuse(DifferentRecording(files[fileIndex], tracks[trackIndex]));
+                return WrongRecording(files[fileIndex], tracks[trackIndex]);
 
             targets.Add(new Target(files[fileIndex], tracks[trackIndex], release));
         }
 
         return Whole(targets, files.Count, $"match a track title of '{release.Title}'");
     }
+
+    private static Plan WrongRecording(LocalTrack file, Track track) => new([], DifferentRecording(file, track), file.Path);
 
     private static Plan Whole(List<Target> targets, int fileCount, string matched)
     {

@@ -59,6 +59,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     private readonly IDownloadHistoryService _downloadHistoryService;
     private readonly IHistoryService _historyService;
     private readonly SlskdTaggedFilesStore _taggedFiles;
+    private readonly IImportHolds _importHolds;
     private readonly SlskdRecentGrabs _recentGrabs;
     private readonly IDownloadClientRepository _downloadClientRepository;
     private readonly ISlskdItemsParser _slskdItemsParser;
@@ -93,9 +94,11 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         ISlskdWatchdog watchdog,
         IDownloadClientRepository downloadClientRepository,
         IAppFolderInfo appFolderInfo,
+        IImportHolds importHolds,
         Logger logger)
     {
         _apiClient = apiClient;
+        _importHolds = importHolds;
         _downloadHistoryService = downloadHistoryService;
         _historyService = historyService;
         _slskdItemsParser = slskdItemsParser;
@@ -1500,6 +1503,13 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                     // SlskdDownloadItem._taggedFileSizes.
                     RecordTaggedFileIdentities(item, tagResult.TaggedFiles, ownedPathsBeforeTagging);
                     _taggedFiles.Save(item.ID, item.TaggedFiles);
+
+                    // Untagged, Lidarr would still import it by its names; held, it waits in the queue for a manual import.
+                    if (ImportHolds.ReasonToHold(tagResult, settings.VerifyImportsWithFingerprint, ownedPathsBeforeTagging) is { } holdReason)
+                    {
+                        _importHolds.Hold(item.ID, holdReason);
+                        _logger.Warn("[post-process] {ItemId}: holding it for a manual import — {Reason}", item.ID, holdReason);
+                    }
                 }
             }
             catch (OperationCanceledException)
@@ -1926,6 +1936,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         _downloadMappings.TryRemove(new DownloadKey<int, string>(definitionId, id), out _);
         _postProcessed.TryRemove(id, out _);
         _taggedFiles.Delete(id);
+        _importHolds.Release(id);
     }
 
     private void RememberRemovedGrab(int definitionId, string id, SlskdDownloadItem? item)

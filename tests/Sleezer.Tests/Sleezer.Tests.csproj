@@ -52,6 +52,10 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\PostProcessing\SongTitles.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Core\PostProcessing\ImportHolds.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Core\PostProcessing\ImportHoldSpecification.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\PostProcessing\FingerprintLookup.cs"
              LinkBase="SourceUnderTest" />
     <!-- Claim-vs-reality comparison for issue #85. The TagLib read path is IO;
