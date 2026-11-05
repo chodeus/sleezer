@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Runtime.Versioning;
 using NLog;
 using NzbDrone.Common.Disk;
 using NzbDrone.Core.Datastore;
@@ -453,6 +454,7 @@ public class PreImportTaggerWholeDownloadTests : IDisposable
 
     // A rollback that leaves a file tagged must stop the import, not read as one failed write.
     [Fact]
+    [UnsupportedOSPlatform("windows")]
     public async Task A_rollback_that_cannot_put_the_files_back_fails_the_pass()
     {
         Assert.SkipWhen(OperatingSystem.IsWindows() || Environment.IsPrivilegedProcess, "A read-only folder blocks a move only for an unprivileged POSIX user.");

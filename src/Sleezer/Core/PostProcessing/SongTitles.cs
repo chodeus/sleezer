@@ -158,7 +158,8 @@ public static partial class SongTitles
     [GeneratedRegex(@"\bre-mix\b", RegexOptions.IgnoreCase)]
     private static partial Regex ReMixRegex();
 
-    [GeneratedRegex(@"\s*[\(\[\{（［｛][^\(\)\[\]\{\}（）［］｛｝]*\bfrom\b[^\(\)\[\]\{\}（）［］｛｝]*[\)\]\}）］｝]", RegexOptions.IgnoreCase)]
+    // A bracket naming "live" is a show, not a source: "(Live from X)" stays in the title.
+    [GeneratedRegex(@"\s*[\(\[\{（［｛](?![^\(\)\[\]\{\}（）［］｛｝]*\blive\b)[^\(\)\[\]\{\}（）［］｛｝]*\bfrom\b[^\(\)\[\]\{\}（）［］｛｝]*[\)\]\}）］｝]", RegexOptions.IgnoreCase)]
     private static partial Regex FramingBracketRegex();
 
     [GeneratedRegex(@"\s+[-–—]\s+from\b.*$", RegexOptions.IgnoreCase)]

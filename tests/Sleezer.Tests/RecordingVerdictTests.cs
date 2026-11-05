@@ -296,6 +296,7 @@ public class RecordingVerdictTests
     [InlineData("Lantern Song (666 Moonward Re-mix)", "Lantern Song (666 Moonward remix)")]
     [InlineData("Salt And Lantern", "The Salt and the Lantern (Be Still Now)")]
     [InlineData("Lantern Song (Unreleased Take from The Harbour Tapes)", "Lantern Song")]
+    [InlineData("Lantern Song (live)", "Lantern Song (Live from Moonward)")]
     public void A_form_of_the_wanted_song_defers(string wantedTitle, string knownTitle)
     {
         Assert.Equal(FingerprintVerdict.Unverifiable,
@@ -349,6 +350,9 @@ public class RecordingVerdictTests
     [InlineData("Lantern Song", "Lantern Song (Part 2)", FingerprintVerdict.Mismatch)]
     [InlineData("Moonward Suite: Overture", "Ember Suite: Overture", FingerprintVerdict.Mismatch)]
     [InlineData("Lantern Song (Live in Moonward 1990)", "Lantern Song (Live in Fern 2005)", FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song", "Lantern Song (Live from Moonward)", FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song", "Lantern Song (Recorded Live from Moonward)", FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song (Live from Fern)", "Lantern Song (Live from Moonward)", FingerprintVerdict.Mismatch)]
     [InlineData("Lantern Song (Moonward Remix)", "Lantern Song (Remix)", FingerprintVerdict.Mismatch)]
     [InlineData("Lantern Song", "Lantern Song (Movement 2)", FingerprintVerdict.Mismatch)]
     [InlineData("Lantern Song", "Lantern Song (Part Two)", FingerprintVerdict.Mismatch)]

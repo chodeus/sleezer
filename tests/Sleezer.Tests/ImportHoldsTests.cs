@@ -1,3 +1,4 @@
+using System.Runtime.Versioning;
 using NLog;
 using NzbDrone.Common.EnvironmentInfo;
 using NzbDrone.Core.Download;
@@ -77,9 +78,10 @@ public class ImportHoldsTests : IDisposable
 
     // A permission problem is the real shape of it; Windows has no file mode to take away.
     [Fact]
+    [UnsupportedOSPlatform("windows")]
     public void A_hold_that_cannot_be_read_still_holds()
     {
-        Assert.SkipWhen(OperatingSystem.IsWindows(), "no Unix file mode");
+        Assert.SkipWhen(OperatingSystem.IsWindows() || Environment.IsPrivilegedProcess, "A file mode blocks access only for an unprivileged POSIX user.");
         ImportHolds holds = NewHolds();
         holds.Hold("abc-123", "reason");
         File.SetUnixFileMode(Path.Combine(HoldsFolder, "abc-123.txt"), UnixFileMode.None);
@@ -88,9 +90,10 @@ public class ImportHoldsTests : IDisposable
     }
 
     [Fact]
+    [UnsupportedOSPlatform("windows")]
     public void A_hold_in_a_folder_that_cannot_be_listed_still_holds()
     {
-        Assert.SkipWhen(OperatingSystem.IsWindows(), "no Unix file mode");
+        Assert.SkipWhen(OperatingSystem.IsWindows() || Environment.IsPrivilegedProcess, "A file mode blocks access only for an unprivileged POSIX user.");
         NewHolds().Hold("abc-123", "reason");
         string folder = HoldsFolder;
         File.SetUnixFileMode(folder, UnixFileMode.None);
