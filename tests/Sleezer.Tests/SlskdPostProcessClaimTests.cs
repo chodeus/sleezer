@@ -14,9 +14,10 @@ public class SlskdPostProcessClaimTests
 
     private static SlskdDownloadItem Finished() => WithTransfer("Completed, Succeeded");
 
-    private static SlskdDownloadItem WithTransfer(string state)
+    private static SlskdDownloadItem WithTransfer(string state, params string[] untransferred)
     {
-        string source = $"[{{\"Filename\":{JsonSerializer.Serialize(Dir + "\\01.flac")},\"Size\":1000}}]";
+        string source = "[" + string.Join(",", untransferred.Prepend("01.flac").Select(name =>
+            $"{{\"Filename\":{JsonSerializer.Serialize(Dir + "\\" + name)},\"Size\":1000}}")) + "]";
         SlskdDownloadItem item = new(new ReleaseInfo { Source = source, Title = "t", DownloadUrl = "u" });
         SlskdDownloadFile file = new(
             Id: "01", Username: "peer", Direction: "Download", Filename: Dir + "\\01.flac",
@@ -111,6 +112,23 @@ public class SlskdPostProcessClaimTests
 
         Assert.Equal(DownloadItemStatus.Completed, StatusClaiming(item, () => claims++));
         Assert.Equal(0, claims);
+    }
+
+    // A rebuilt item has lost its grab's enqueue failures: waiting for every release file would leave it Downloading forever.
+    [Fact]
+    public void A_download_with_a_file_slskd_never_queued_is_still_processed_and_completed()
+    {
+        SlskdDownloadItem item = WithTransfer("Completed, Succeeded", "02.flac");
+        int claims = 0;
+
+        DownloadItemStatus status = StatusClaiming(item, () =>
+        {
+            claims++;
+            item.TryRunPostProcess(() => null);
+        });
+
+        Assert.Equal(1, claims);
+        Assert.Equal(DownloadItemStatus.Completed, status);
     }
 
     [Fact]
