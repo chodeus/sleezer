@@ -211,7 +211,7 @@ public class FingerprintLookupTests
     }
 
     [Fact]
-    public async Task AcoustID_still_down_after_its_retries_gets_no_more()
+    public async Task A_batch_still_empty_after_its_retries_stops_retries_for_later_batches()
     {
         FakeAcoustId acoustId = new() { OnBatch = _ => Thread.Sleep(150), Answers = _ => false };
 

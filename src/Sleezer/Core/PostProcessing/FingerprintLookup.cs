@@ -38,16 +38,18 @@ public static class FingerprintLookup
         {
             ct.ThrowIfCancellationRequested();
 
-            bool failed = GaveUp(await LookupAsync(fingerprinting, batch, threshold, logger, ct), gaveUp, batch);
+            TimeSpan took = await LookupAsync(fingerprinting, batch, threshold, logger, ct);
+            bool failed = GaveUp(took, gaveUp, batch);
             for (int attempt = 1; failed && retry && attempt <= MaxRetries; attempt++)
             {
-                logger.Info("Pre-import tag: AcoustID refused or timed out on {Count} file(s); asking again in {Pause:F0}s ({Attempt} of {Max})",
-                    batch.Length, retryPause.TotalSeconds, attempt, MaxRetries);
+                logger.Info("Pre-import tag: no AcoustID results for {Count} file(s) after {Took:F1}s, as long as a refusal or timeout takes; asking again in {Pause:F0}s ({Attempt} of {Max})",
+                    batch.Length, took.TotalSeconds, retryPause.TotalSeconds, attempt, MaxRetries);
                 await Task.Delay(retryPause, ct);
-                failed = GaveUp(await LookupAsync(fingerprinting, batch, threshold, logger, ct), gaveUp, batch);
+                took = await LookupAsync(fingerprinting, batch, threshold, logger, ct);
+                failed = GaveUp(took, gaveUp, batch);
             }
 
-            // AcoustID still down: the download's later batches don't wait out retries each.
+            // Still empty after every retry: the download's later batches get no retries.
             if (failed)
                 retry = false;
         }
