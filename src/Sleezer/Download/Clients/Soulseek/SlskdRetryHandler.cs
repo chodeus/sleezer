@@ -74,7 +74,7 @@ public class SlskdRetryHandler(ISlskdApiClient apiClient, Logger logger)
             {
                 fileState.MarkRetriesExhausted();
                 // Only log for the drop — the resolver skips abandoned extras silently.
-                if (!AudioFormatHelper.IsAudioFilename(fileState.File.Filename))
+                if (!AudioFormatHelper.IsPostProcessAudioFile(fileState.File.Filename))
                     _logger.Warn("Extra file {Filename} failed permanently; the album will complete without it", Path.GetFileName(fileState.File.Filename));
             }
         }

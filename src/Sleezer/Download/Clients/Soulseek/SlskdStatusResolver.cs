@@ -1,5 +1,6 @@
 using NzbDrone.Core.Download;
 using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek.Models;
+using NzbDrone.Plugin.Sleezer.Indexers.Soulseek;
 
 namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
 
@@ -89,6 +90,16 @@ public static class SlskdStatusResolver
 
         bool allStuckInRemoteQueue = anyIncomplete && allIncompleteRemoteQueued;
 
+        // Nothing will queue a file slskd no longer lists: it holds the album, idle since tracking began, until the timeout fails it.
+        List<SlskdFileData> untransferred = item.FilesWithoutTransfer();
+        if (untransferred.Count > 0)
+        {
+            anyIncomplete = true;
+            totalSize += untransferred.Sum(f => f.Size);
+            remainingSize += untransferred.Sum(f => f.Size);
+            if (item.TrackedSinceUtc > lastActivity) lastActivity = item.TrackedSinceUtc;
+        }
+
         int totalFileCount = 0, failedCount = 0, completedCount = 0, abandonedExtras = 0;
         bool anyWarning = false, anyPaused = false, anyDownloadingState = false;
         List<string> failedFileNames = [];
@@ -141,6 +152,8 @@ public static class SlskdStatusResolver
             status = timeout.HasValue && (utcNow - lastActivity) > timeout.Value * 2
                 ? DownloadItemStatus.Failed
                 : DownloadItemStatus.Queued;
+            if (untransferred.Count > 0)
+                message = $"No slskd transfer for {untransferred.Count} file(s): {string.Join(", ", untransferred.Select(f => Path.GetFileName(f.Filename!.Replace('\\', '/'))))}";
         }
         else if (totalFileCount > 0 && completedCount == totalFileCount)
         {

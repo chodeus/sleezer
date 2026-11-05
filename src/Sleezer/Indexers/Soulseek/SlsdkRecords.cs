@@ -178,10 +178,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         [property: JsonPropertyName("message")] string Message
     );
 
-    public record SlskdEnqueueResult(string? BatchId, List<string> Enqueued, List<SlskdEnqueueFailure> Failed)
-    {
-        public bool AllFailed => Enqueued.Count == 0 && Failed.Count > 0;
-    }
+    public record SlskdEnqueueResult(string? BatchId, List<string> Enqueued, List<SlskdEnqueueFailure> Failed);
 
     /// <summary>
     /// slskd's download destination settings: the downloads directory plus the

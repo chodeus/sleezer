@@ -102,18 +102,17 @@ public class SlskdWatchdogTests
         Assert.Equal(["owned-id"], api.Deleted);
     }
 
-    // slskd creates no transfer for a file it rejected, so one under that name
-    // is another item's — cancelling it would kill a live download.
+    // A file handed to a re-grab is that grab's transfer now: cancelling it would kill a live download.
     [Fact]
-    public async Task Watchdog_leaves_a_transfer_slskd_rejected_for_this_item_alone()
+    public async Task Watchdog_leaves_a_transfer_handed_to_a_regrab_alone()
     {
         SlskdDownloadItem item = NewItem(OwnedFile, ForeignFile);
-        item.MarkEnqueueFailed([ForeignFile]);
+        item.HandOver([ForeignFile]);
 
         item.SlskdDownloadDirectory = new SlskdDownloadDirectory(
             @"@@peer\Artist\Album",
             2,
-            [StuckFile("owned-id", OwnedFile), StuckFile("rejected-id", ForeignFile)]);
+            [StuckFile("owned-id", OwnedFile), StuckFile("handed-over-id", ForeignFile)]);
 
         RecordingApiClient api = new();
         SlskdProviderSettings settings = new() { MaxQueuePositionBeforeCancel = 500 };

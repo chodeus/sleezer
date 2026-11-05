@@ -181,11 +181,11 @@ public class SlskdSourceTagTests : IDisposable
     }
 
     [Fact]
-    public void a_file_slskd_rejected_at_enqueue_is_not_touched()
+    public void a_file_handed_to_a_regrab_is_not_touched()
     {
         string path = Flac("01 Lantern Song.flac", peerSource: "https://www.deezer.com/album/9");
         SlskdDownloadItem item = Owning(path);
-        item.MarkEnqueueFailed([@"@@u\Artist\Album\01 Lantern Song.flac"]);
+        item.HandOver([@"@@u\Artist\Album\01 Lantern Song.flac"]);
 
         Assert.Equal(0, SlskdSourceTag.Write(item, _dir, [path], Log, CancellationToken.None));
         Assert.Equal("https://www.deezer.com/album/9", ReadSource(path));

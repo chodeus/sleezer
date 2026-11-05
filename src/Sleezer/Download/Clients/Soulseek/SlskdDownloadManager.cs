@@ -160,20 +160,26 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
             SlskdEnqueueResult result = await _apiClient.EnqueueDownloadAsync(settings, username, files, externalId: item.ID, destination: destination);
 
-            if (result.AllFailed)
-                throw new DownloadClientException(
-                    $"All {result.Failed.Count} files failed to enqueue: {string.Join("; ", result.Failed.Select(f => $"{Path.GetFileName(f.Filename)}: {f.Message}"))}");
-
-            if (result.Failed.Count > 0)
+            // A refused file this grab can't take over would leave the album short: Lidarr grabs its next release instead.
+            (List<(SlskdDownloadItem Holder, string Filename)> takenOver, List<SlskdEnqueueFailure> refused) =
+                SlskdEnqueueRefusals.Split(result.Failed, supersededAttempts, username, destination);
+            if (refused.Count > 0)
             {
-                _logger.Warn("{Failed} of {Total} files failed to enqueue for {Username}: {Messages}",
-                    result.Failed.Count, files.Count, username, string.Join("; ", result.Failed.Select(f => f.Message).Distinct()));
+                if (result.BatchId != null && result.Enqueued.Count > 0)
+                {
+                    // Remembered as removed, so a poll cancels what this cancel misses.
+                    item.Username = username;
+                    item.BatchId = result.BatchId;
+                    RememberRemovedGrab(definitionId, item.ID, item);
+                    await SlskdBatchCanceller.CancelAsync(_apiClient, settings, username, new HashSet<string> { result.BatchId }, null, _logger);
+                }
 
-                // Rejected files never produce a transfer — exclude them from
-                // completion tracking so the item can still finish, import its
-                // partial content, and let Lidarr re-search for the gaps.
-                item.MarkEnqueueFailed(result.Failed.Select(f => f.Filename));
+                throw new DownloadClientException(
+                    $"{refused.Count} of {files.Count} files failed to enqueue: {string.Join("; ", refused.Select(f => $"{Path.GetFileName(f.Filename)}: {f.Message}"))}");
             }
+
+            if (takenOver.Count > 0)
+                _logger.Info("Taking over {Count} file(s) still queued from {Username} under a superseded attempt", takenOver.Select(t => t.Filename).Distinct().Count(), username);
 
             item.BatchId = result.BatchId;
             if (destination != null && result.BatchId != null)
@@ -188,6 +194,9 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             SubscribeStateChanges(item, definitionId);
             AddItem(definitionId, item);
             _removedGrabs.TryRemove(new DownloadKey<int, string>(definitionId, item.ID), out _);
+            // Before retiring: cancelling a superseded attempt's transfers must leave the ones this grab took over.
+            foreach ((SlskdDownloadItem holder, string filename) in takenOver)
+                holder.HandOver([filename]);
             RetireSupersededAttempts(definitionId, settings, item, supersededAttempts);
 
             return item.ID;
@@ -1770,7 +1779,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
         // The snapshot is the last poll's: a retry enqueued since, or a grab removed before its first poll, is missing
         // from it. Before the snapshot, whose deletes can throw.
-        int late = await SlskdBatchCanceller.CancelAsync(_apiClient, settings, item.Username, batches, files.Select(f => f.Id).ToHashSet(), _logger);
+        int late = await SlskdBatchCanceller.CancelUnpolledAsync(_apiClient, settings, item, item.Username, batches, files.Select(f => f.Id).ToHashSet(), _logger);
         if (late > 0)
             _logger.Debug("Removed {Count} transfer(s) of {ItemId} that its last poll had not seen", late, item.ID);
 

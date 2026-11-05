@@ -68,20 +68,24 @@ public class SlskdStatusResolverAbandonTests
         Assert.Equal(DownloadItemStatus.Completed, Resolve(item).Status);
     }
 
-    [Fact]
-    public void A_terminally_failed_audio_file_still_fails_the_album()
+    // WavPack and DSD are library audio the codec map doesn't name: a failed one is a track, never an extra.
+    [Theory]
+    [InlineData("02.flac")]
+    [InlineData("02.wv")]
+    [InlineData("02.dsf")]
+    public void A_terminally_failed_audio_file_still_fails_the_album(string track)
     {
-        SlskdDownloadItem item = NewItem(("01.flac", 1000), ("02.flac", 1000), ("rip.cue", 2000));
+        SlskdDownloadItem item = NewItem(("01.flac", 1000), (track, 1000), ("rip.cue", 2000));
         Transfers(item,
             Transfer("01.flac", "Completed, Succeeded", 1000),
-            Transfer("02.flac", "Completed, Errored", 1000),
+            Transfer(track, "Completed, Errored", 1000),
             Transfer("rip.cue", "Completed, Succeeded", 2000));
-        State(item, "02.flac").MarkRetriesExhausted();
+        State(item, track).MarkRetriesExhausted();
 
         SlskdStatusResolver.DownloadStatus resolved = Resolve(item);
 
         Assert.Equal(DownloadItemStatus.Failed, resolved.Status);
-        Assert.Contains("02.flac", resolved.Message);
+        Assert.Contains(track, resolved.Message);
     }
 
     [Fact]
@@ -189,13 +193,12 @@ public class SlskdStatusResolverAbandonTests
         Assert.Equal(DownloadItemStatus.Completed, Resolve(item).Status);
     }
 
-    // A file slskd rejected for THIS item produces no transfer of ours, so any
-    // transfer under that name belongs to another item sharing the peer folder.
+    // A file handed to a re-grab is that grab's transfer now, so its state is not this album's.
     [Fact]
-    public void A_rejected_files_transfer_cannot_fail_the_album()
+    public void A_handed_over_files_transfer_cannot_fail_the_album()
     {
         SlskdDownloadItem item = NewItem(("01.flac", 1000), ("02.flac", 1000));
-        item.MarkEnqueueFailed([Dir + @"\02.flac"]);
+        item.HandOver([Dir + @"\02.flac"]);
         Transfers(item,
             Transfer("01.flac", "Completed, Succeeded", 1000),
             Transfer("02.flac", "Completed, Errored", 1000));
@@ -208,10 +211,10 @@ public class SlskdStatusResolverAbandonTests
     }
 
     [Fact]
-    public void AllAcceptedFilesCompleted_does_not_wait_on_an_enqueue_rejected_file()
+    public void AllAcceptedFilesCompleted_does_not_wait_on_a_handed_over_file()
     {
         SlskdDownloadItem item = NewItem(("01.flac", 1000), ("02.flac", 1000));
-        item.MarkEnqueueFailed([Dir + @"\02.flac"]);
+        item.HandOver([Dir + @"\02.flac"]);
         Transfers(item, Transfer("01.flac", "Completed, Succeeded", 1000));
 
         Assert.True(item.AllAcceptedFilesCompleted());
@@ -249,6 +252,14 @@ public class SlskdNonAudioBasenamesTests
     }
 
     [Fact]
+    public void A_wavpack_or_dsd_track_is_not_an_extra()
+    {
+        SlskdDownloadItem item = NewItem(@"@@u\A\B\01.wv", @"@@u\A\B\02.dsf", @"@@u\A\B\rip.cue");
+
+        Assert.Equal(new[] { "rip.cue" }, item.NonAudioBasenames());
+    }
+
+    [Fact]
     public void A_pure_audio_grab_has_no_extras()
     {
         SlskdDownloadItem item = NewItem(@"@@u\A\B\01.flac", @"@@u\A\B\02.mp3", @"@@u\A\B\03.m4a");
@@ -257,10 +268,10 @@ public class SlskdNonAudioBasenamesTests
     }
 
     [Fact]
-    public void An_enqueue_rejected_extra_is_not_an_extra_to_import()
+    public void A_handed_over_extra_is_not_an_extra_to_import()
     {
         SlskdDownloadItem item = NewItem(@"@@u\A\B\01.flac", @"@@u\A\B\rip.cue");
-        item.MarkEnqueueFailed([@"@@u\A\B\rip.cue"]);
+        item.HandOver([@"@@u\A\B\rip.cue"]);
 
         Assert.Empty(item.NonAudioBasenames());
     }
