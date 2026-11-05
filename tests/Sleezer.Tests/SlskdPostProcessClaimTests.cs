@@ -114,21 +114,15 @@ public class SlskdPostProcessClaimTests
         Assert.Equal(0, claims);
     }
 
-    // A rebuilt item has lost its grab's enqueue failures: waiting for every release file would leave it Downloading forever.
+    // A file slskd lists no transfer for never arrives: its siblings finishing must not import the album without it.
     [Fact]
-    public void A_download_with_a_file_slskd_never_queued_is_still_processed_and_completed()
+    public void A_download_missing_a_files_transfer_is_neither_finished_nor_processed()
     {
         SlskdDownloadItem item = WithTransfer("Completed, Succeeded", "02.flac");
         int claims = 0;
 
-        DownloadItemStatus status = StatusClaiming(item, () =>
-        {
-            claims++;
-            item.TryRunPostProcess(() => null);
-        });
-
-        Assert.Equal(1, claims);
-        Assert.Equal(DownloadItemStatus.Completed, status);
+        Assert.Equal(DownloadItemStatus.Queued, StatusClaiming(item, () => claims++));
+        Assert.Equal(0, claims);
     }
 
     [Fact]

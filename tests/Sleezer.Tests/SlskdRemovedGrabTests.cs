@@ -17,6 +17,7 @@ namespace Sleezer.Tests;
 public class SlskdRemovedGrabTests
 {
     private const string Track = @"@@peer\Artist\Album\01.flac";
+    private const string TakenTrack = @"@@peer\Artist\Album\02.flac";
 
     private sealed class FakeSlskd : ISlskdApiClient
     {
@@ -76,11 +77,11 @@ public class SlskdRemovedGrabTests
             Task.FromResult((new List<SlskdEventRecord>(), 0));
     }
 
-    private static SlskdDownloadFile Transfer(string id, string state, string? batchId) => new(
+    private static SlskdDownloadFile Transfer(string id, string state, string? batchId, string filename = Track) => new(
         Id: id,
         Username: "peer",
         Direction: "Download",
-        Filename: Track,
+        Filename: filename,
         Size: 1000,
         StartOffset: 0,
         State: state,
@@ -96,9 +97,9 @@ public class SlskdRemovedGrabTests
         EndedAt: null,
         BatchId: batchId);
 
-    private static SlskdDownloadItem Grab() => new(new ReleaseInfo
+    private static SlskdDownloadItem Grab(params string[] tracks) => new(new ReleaseInfo
     {
-        Source = $"[{{\"Filename\":{System.Text.Json.JsonSerializer.Serialize(Track)},\"Size\":1000}}]",
+        Source = "[" + string.Join(",", (tracks.Length > 0 ? tracks : [Track]).Select(t => $"{{\"Filename\":{System.Text.Json.JsonSerializer.Serialize(t)},\"Size\":1000}}")) + "]",
         Title = "t",
         DownloadUrl = "u"
     })
@@ -183,10 +184,38 @@ public class SlskdRemovedGrabTests
         api.Transfers.Add(Transfer("unbatched", "InProgress", null));
         api.Transfers.Add(Transfer("another-grab", "InProgress", "other-batch"));
 
-        int count = await SlskdBatchCanceller.CancelAsync(api, new SlskdProviderSettings(), "peer", new HashSet<string> { "grab-batch" }, new HashSet<string> { "polled" }, LogManager.CreateNullLogger());
+        int count = await SlskdBatchCanceller.CancelAsync(api, new SlskdProviderSettings(), "peer", new HashSet<string> { "grab-batch" }, f => f.Id == "polled", LogManager.CreateNullLogger());
 
         Assert.Equal(2, count);
         Assert.Equal([("live", false), ("live", true), ("finished", true)], api.Deletes);
+    }
+
+    // A re-grab took that file's live transfer over: retiring the attempt it superseded must leave it running.
+    [Fact]
+    public async Task retiring_an_attempt_leaves_the_transfer_it_handed_to_a_regrab()
+    {
+        FakeSlskd api = new();
+        api.Transfers.Add(Transfer("unpolled", "InProgress", "grab-batch"));
+        api.Transfers.Add(Transfer("polled", "InProgress", "grab-batch"));
+        api.Transfers.Add(Transfer("taken", "Queued, Remotely", "grab-batch", TakenTrack));
+        SlskdDownloadItem stale = Grab(Track, TakenTrack);
+        stale.HandOver([TakenTrack]);
+
+        await SlskdBatchCanceller.CancelUnpolledAsync(api, new SlskdProviderSettings(), stale, "peer", new HashSet<string> { "grab-batch" }, new HashSet<string> { "polled" }, LogManager.CreateNullLogger());
+
+        Assert.Equal([("unpolled", false), ("unpolled", true)], api.Deletes);
+    }
+
+    [Fact]
+    public void a_transfer_handed_to_a_regrab_is_no_leftover_of_the_removed_attempt()
+    {
+        SlskdDownloadItem stale = Grab(Track, TakenTrack);
+        stale.HandOver([TakenTrack]);
+
+        List<SlskdDownloadFile> leftovers = new SlskdRemovedGrab(stale, DateTime.UtcNow)
+            .Leftovers([Transfer("own", "InProgress", "grab-batch"), Transfer("taken", "Queued, Remotely", "grab-batch", TakenTrack)]);
+
+        Assert.Equal(["own"], leftovers.Select(f => f.Id));
     }
 
     private static (Logger Logger, MemoryTarget Logs) CapturingLogger()

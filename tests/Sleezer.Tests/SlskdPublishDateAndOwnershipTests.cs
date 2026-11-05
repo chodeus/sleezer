@@ -189,11 +189,11 @@ public class SlskdOwnershipOverlayTests
     }
 
     [Fact]
-    public void A_file_slskd_rejected_at_enqueue_is_not_owned()
+    public void A_file_handed_to_a_regrab_is_not_owned()
     {
         SlskdDownloadItem item = NewItem((@"@@x\d\01 track.flac", 100), (@"@@x\d\02 track.flac", 200));
 
-        item.MarkEnqueueFailed([@"@@x\d\02 track.flac"]);
+        item.HandOver([@"@@x\d\02 track.flac"]);
         SlskdOwnedFiles owned = item.BuildOwnedFiles();
 
         Assert.True(owned.Owns("01 track.flac", 100));

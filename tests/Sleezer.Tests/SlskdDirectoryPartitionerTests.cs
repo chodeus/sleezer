@@ -84,10 +84,10 @@ public class SlskdDirectoryPartitionerTests
     }
 
     [Fact]
-    public void An_enqueue_rejected_file_is_not_this_items_transfer()
+    public void A_file_handed_to_a_regrab_is_not_this_items_transfer()
     {
         SlskdDownloadItem item = Item("01.flac", "02.flac");
-        item.MarkEnqueueFailed([Dir + @"\02.flac"]);
+        item.HandOver([Dir + @"\02.flac"]);
 
         SlskdDirectoryPartition partition = SlskdDirectoryPartitioner.Partition(Group("01.flac", "02.flac"), [item], Peer);
 

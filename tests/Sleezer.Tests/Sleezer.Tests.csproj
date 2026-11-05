@@ -436,6 +436,8 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Download\Clients\Soulseek\SlskdBatchCanceller.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Download\Clients\Soulseek\SlskdEnqueueRefusals.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Download\Clients\Soulseek\SlskdLeftoverFolder.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Download\Clients\Soulseek\SlskdRemovedGrab.cs"

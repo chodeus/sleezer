@@ -12,13 +12,13 @@ public static class SlskdBatchCanceller
     // As RemoveItem has always waited: slskd removes a transfer only once the cancel has ended it.
     private static readonly TimeSpan CancelSettle = TimeSpan.FromSeconds(1);
 
-    /// <summary>Lists the peer's transfers and cancels those in <paramref name="batchIds"/>; returns how many slskd removed.</summary>
+    /// <summary>Lists the peer's transfers and cancels those in <paramref name="batchIds"/> that <paramref name="leave"/> doesn't keep; returns how many slskd removed.</summary>
     public static async Task<int> CancelAsync(
         ISlskdApiClient apiClient,
         SlskdProviderSettings settings,
         string username,
         IReadOnlySet<string> batchIds,
-        IReadOnlySet<string>? skipTransferIds,
+        Func<SlskdDownloadFile, bool>? leave,
         Logger logger)
     {
         if (batchIds.Count == 0)
@@ -35,12 +35,23 @@ public static class SlskdBatchCanceller
             return 0;
         }
 
-        return await CancelFilesAsync(apiClient, settings, username, InBatches((transfers?.Directories ?? []).SelectMany(d => d.Files ?? []), batchIds, skipTransferIds), logger);
+        return await CancelFilesAsync(apiClient, settings, username, InBatches((transfers?.Directories ?? []).SelectMany(d => d.Files ?? []), batchIds, leave), logger);
     }
 
+    /// <summary>Cancels the item's batch transfers its last poll had not seen; one it handed to a re-grab stays.</summary>
+    public static Task<int> CancelUnpolledAsync(
+        ISlskdApiClient apiClient,
+        SlskdProviderSettings settings,
+        SlskdDownloadItem item,
+        string username,
+        IReadOnlySet<string> batchIds,
+        IReadOnlySet<string> polledIds,
+        Logger logger) =>
+        CancelAsync(apiClient, settings, username, batchIds, f => polledIds.Contains(f.Id) || !item.OwnsAcceptedFile(f.Filename), logger);
+
     /// <summary>The transfers enqueued in one of <paramref name="batchIds"/>; a transfer without a batch id is never one.</summary>
-    public static List<SlskdDownloadFile> InBatches(IEnumerable<SlskdDownloadFile> files, IReadOnlySet<string> batchIds, IReadOnlySet<string>? skipTransferIds) =>
-        [.. files.Where(f => f.BatchId != null && batchIds.Contains(f.BatchId) && skipTransferIds?.Contains(f.Id) != true)];
+    public static List<SlskdDownloadFile> InBatches(IEnumerable<SlskdDownloadFile> files, IReadOnlySet<string> batchIds, Func<SlskdDownloadFile, bool>? leave) =>
+        [.. files.Where(f => f.BatchId != null && batchIds.Contains(f.BatchId) && leave?.Invoke(f) != true)];
 
     /// <summary>Cancels the live transfers, then removes them all; returns how many slskd removed.</summary>
     public static async Task<int> CancelFilesAsync(ISlskdApiClient apiClient, SlskdProviderSettings settings, string username, List<SlskdDownloadFile> files, Logger logger)

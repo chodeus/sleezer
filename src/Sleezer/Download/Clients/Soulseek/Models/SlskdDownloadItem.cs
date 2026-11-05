@@ -37,7 +37,7 @@ public class SlskdDownloadItem
     // aggregates them and exposes a merged view through SlskdDownloadDirectory.
     private readonly Dictionary<string, SlskdDownloadDirectory> _remoteDirectories = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _enqueuedFilenames;
-    private readonly HashSet<string> _enqueueFailedFilenames = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _handedOverFilenames = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, SlskdFileState> _previousFileStates = [];
 
     private Task? _postProcess;
@@ -263,26 +263,39 @@ public class SlskdDownloadItem
     public bool OwnsFile(string? remoteFilename) =>
         !string.IsNullOrEmpty(remoteFilename) && _enqueuedFilenames.Contains(remoteFilename);
 
-    /// <summary>
-    /// True when this item enqueued the file AND slskd accepted it — the
-    /// ownership test for anything reading transfer state, since a rejected
-    /// file's only possible transfer belongs to another item.
-    /// </summary>
+    /// <summary>True when this item enqueued the file and still holds its transfer: the ownership test for anything reading transfer state.</summary>
     public bool OwnsAcceptedFile(string? remoteFilename) =>
-        OwnsFile(remoteFilename) && !_enqueueFailedFilenames.Contains(remoteFilename!);
+        OwnsFile(remoteFilename) && !_handedOverFilenames.Contains(remoteFilename!);
 
-    /// <summary>
-    /// Records files slskd rejected at enqueue time. They will never produce a
-    /// transfer, so completion tracking must not wait for them.
-    /// </summary>
-    public void MarkEnqueueFailed(IEnumerable<string> filenames)
+    /// <summary>Gives a re-grab of the same album these files' live transfers; cancelling or reading this item's transfers leaves them alone.</summary>
+    public void HandOver(IEnumerable<string> filenames)
     {
         foreach (string filename in filenames)
-            _enqueueFailedFilenames.Add(filename);
+            _handedOverFilenames.Add(filename);
     }
 
-    /// <summary>Files that were actually accepted by slskd.</summary>
-    public int ExpectedFileCount => Math.Max(0, FileData.Count - _enqueueFailedFilenames.Count);
+    /// <summary>When sleezer began tracking this item: the last activity of a file that has no transfer.</summary>
+    public DateTime TrackedSinceUtc { get; init; } = DateTime.UtcNow;
+
+    /// <summary>Its transfer of the file, as last polled, has yet to end; slskd refuses to queue that file from the same peer meanwhile.</summary>
+    public bool HoldsLiveTransfer(string remoteFilename) =>
+        OwnsAcceptedFile(remoteFilename) &&
+        _previousFileStates.FirstOrDefault(kvp => string.Equals(kvp.Key, remoteFilename, StringComparison.OrdinalIgnoreCase)).Value is { } state &&
+        IsLive(state.File.State);
+
+    /// <summary>Its audio files slskd lists no transfer for; extras never hold the album back.</summary>
+    public List<SlskdFileData> FilesWithoutTransfer()
+    {
+        HashSet<string> transferred = new(_previousFileStates.Keys, StringComparer.OrdinalIgnoreCase);
+        return [.. FileData.Where(f => f.Filename is { Length: > 0 } filename &&
+            OwnsAcceptedFile(filename) &&
+            AudioFormatHelper.IsAudioFilename(filename) &&
+            !transferred.Contains(filename))];
+    }
+
+    // A state slskd names that isn't parsed counts as running.
+    private static bool IsLive(string? state) =>
+        !(Enum.TryParse(state, ignoreCase: true, out TransferStates parsed) && parsed.HasFlag(TransferStates.Completed));
 
     /// <summary>
     /// A terminally-failed non-audio extra (cue/log) — skipped from status and
@@ -292,10 +305,9 @@ public class SlskdDownloadItem
         state.GetStatus() == DownloadItemStatus.Failed &&
         !AudioFormatHelper.IsAudioFilename(state.File.Filename);
 
-    /// <summary>A transfer of its own, as last polled, has yet to finish; a state slskd names that isn't parsed counts as running.</summary>
+    /// <summary>A transfer of its own, as last polled, has yet to finish.</summary>
     public bool HasLiveTransfers() =>
-        (SlskdDownloadDirectory?.Files ?? []).Any(f => OwnsAcceptedFile(f.Filename) &&
-            !(Enum.TryParse(f.State, ignoreCase: true, out TransferStates state) && state.HasFlag(TransferStates.Completed)));
+        (SlskdDownloadDirectory?.Files ?? []).Any(f => OwnsAcceptedFile(f.Filename) && IsLive(f.State));
 
     /// <summary>Every accepted file completed; abandoned extras don't block completion.</summary>
     public bool AllAcceptedFilesCompleted()

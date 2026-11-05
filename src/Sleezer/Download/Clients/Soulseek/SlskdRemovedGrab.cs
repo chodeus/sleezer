@@ -34,11 +34,12 @@ public sealed class SlskdRemovedGrab
     /// <summary>How many batches it has enqueued; read before listing its peer, for <see cref="SettleUnlessListed"/>.</summary>
     public int BatchCount => _item?.EnqueuedBatches().Count ?? 0;
 
-    /// <summary>The files enqueued in one of its batches, or seen by its last poll.</summary>
+    /// <summary>The files enqueued in one of its batches, or seen by its last poll, less any it handed to a re-grab.</summary>
     public List<SlskdDownloadFile> Leftovers(IEnumerable<SlskdDownloadFile> files)
     {
         IReadOnlySet<string> batches = _item?.EnqueuedBatches() ?? new HashSet<string>();
-        return [.. files.Where(f => (f.BatchId != null && batches.Contains(f.BatchId)) || _transferIds.Contains(f.Id))];
+        return [.. files.Where(f => ((f.BatchId != null && batches.Contains(f.BatchId)) || _transferIds.Contains(f.Id)) &&
+            _item?.OwnsAcceptedFile(f.Filename) != false)];
     }
 
     /// <summary>Settles once its peer's listing holds none of its transfers; a retry batch recorded since the count reopens it.</summary>
