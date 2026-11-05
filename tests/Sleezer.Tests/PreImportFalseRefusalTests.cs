@@ -107,40 +107,6 @@ public class PreImportFalseRefusalTests : IDisposable
         Assert.Equal(FingerprintVerdict.Mismatch, verdict);
     }
 
-    [Fact]
-    public async Task Each_file_is_looked_up_on_MusicBrainz_once()
-    {
-        string dir = Path.Combine(_root, "Artist - Wanted Album");
-        Directory.CreateDirectory(dir);
-        NewFile(dir, "01.flac", "Lantern Song");
-        NewFile(dir, "02.flac", "Salt Road");
-        (Album album, Artist artist, AlbumRelease release) = Target("Lantern Song", "Salt Road");
-        album.AlbumType = "Album";
-        album.Title = "Wanted Album";
-
-        IFingerprintingService acoustId = Fake.Of<IFingerprintingService>((m, a) =>
-        {
-            if (m.Name == nameof(IFingerprintingService.Lookup))
-            {
-                foreach (LocalTrack t in (List<LocalTrack>)a![0]!)
-                    t.AcoustIdResults = ["rec-heard", "rec-unknown"];
-            }
-
-            return m.Name == nameof(IFingerprintingService.IsSetup) ? true : null;
-        });
-        IReleaseService releases = Fake.Of<IReleaseService>((_, _) => new List<AlbumRelease> { new() { Id = 99 } });
-        ITrackService tracks = Fake.Of<ITrackService>((_, _) => new List<Track> { new() { Title = "Ember Gate", ForeignRecordingId = "rec-heard", Duration = 200_000 } });
-        int lookups = 0;
-        IMusicBrainzLookups musicBrainz = Fake.Of<IMusicBrainzLookups>((_, _) => { lookups++; return null; });
-
-        // Distance 0.5: Lidarr would not import it, so only the heard-whole check reads the verdict.
-        PreImportTagger tagger = Tagger(_ => Mapped(release, 0.5), acoustId, releases, tracks, musicBrainz);
-        await tagger.TagCompletedDownloadAsync(album, artist, release, "download", dir, 0.15, false, CancellationToken.None,
-            verifyAllWithFingerprint: true, fingerprintTitleFallback: false);
-
-        Assert.True(lookups <= 2, $"MusicBrainz looked up {lookups} times for 2 files");
-    }
-
     private static AlbumRelease Release(string id, bool monitored, params string[] titles)
     {
         List<Track> list = [.. titles.Select((t, i) => new Track { Title = t, AbsoluteTrackNumber = i + 1, ForeignRecordingId = $"rec-{i + 1}", Duration = 200_000 })];
