@@ -13,6 +13,19 @@ public static class SlskdStatusResolver
         TimeSpan? RemainingTime
     );
 
+    /// <summary>Resolve, but a download that reads as finished first has its post-processing pass claimed by <paramref name="claimPass"/>.</summary>
+    // Another refresh can publish the finished files before it claims their pass: Completed waits for a claimed pass to end.
+    public static DownloadStatus ResolveClaimingPass(SlskdDownloadItem item, TimeSpan? timeout, DateTime utcNow, Action claimPass)
+    {
+        DownloadStatus resolved = Resolve(item, timeout, utcNow);
+        if (resolved.Status != DownloadItemStatus.Completed)
+            return resolved;
+
+        if (item.PostProcess == null)
+            claimPass();
+        return Resolve(item, timeout, utcNow);
+    }
+
     public static DownloadStatus Resolve(SlskdDownloadItem item, TimeSpan? timeout, DateTime utcNow)
     {
         if (item.SlskdDownloadDirectory?.Files == null)
@@ -131,7 +144,7 @@ public static class SlskdStatusResolver
         }
         else if (totalFileCount > 0 && completedCount == totalFileCount)
         {
-            status = item.PostProcessTasks.Any(t => !t.IsCompleted)
+            status = item.PostProcess is { IsCompleted: false }
                 ? DownloadItemStatus.Downloading
                 : DownloadItemStatus.Completed;
             if (abandonedExtras > 0)
