@@ -26,6 +26,13 @@ public class PreImportFalseRefusalTests : IDisposable
     }
 
     // The file is the innermost component, so its own cut decides over its folder's.
+    [Fact]
+    public void A_file_naming_the_wanted_cut_overrules_a_folder_naming_another()
+    {
+        Assert.True(VariantQualifiers.RemixSignaturesConflict("Lantern Song (Mono)", ["Lantern Song (Stereo)"], null), "precondition: the folder alone conflicts");
+        Assert.False(VariantQualifiers.DownloadConflicts("Lantern Song (Mono)", "Lantern Song (Stereo)", ["01 Lantern Song (Mono)"], null));
+    }
+
     [Theory]
     [InlineData("Lantern Song (Extended Mix) (Mono)", "Lantern Song (Mono)", "01 Lantern Song (Extended Mix) (Stereo)")]
     public void A_file_naming_another_cut_than_its_folder_conflicts(string wanted, string folder, string stem)
@@ -49,8 +56,7 @@ public class PreImportFalseRefusalTests : IDisposable
         Assert.Equal("Store Album", AlbumTag(path));
     }
 
-    // Unconstrained, Lidarr picks the 2-track release at 0.158 that AcoustID hears track by track; constrained to the
-    // monitored 3-track edition it maps worse, and Lidarr honours a forced release.
+    // Identify returns the fingerprint-verified release at 0.158 unforced and the monitored one at 0.30 when forced.
     [Fact]
     public async Task A_release_the_fingerprint_hears_whole_survives_the_monitored_fallback()
     {

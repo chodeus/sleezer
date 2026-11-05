@@ -116,7 +116,7 @@ public class WholeDownloadTagsTests
         Assert.False(plan.WrongRecording);
     }
 
-    // Live 2026-11-06: a 12-track album at 0.158 whose every file AcoustID named as its own track was left untagged, then refused by Lidarr.
+    // 0.158 is past the 0.150 limit; the fingerprint names every file's own recording.
     [Fact]
     public void Plans_a_release_past_the_limit_when_the_fingerprint_names_every_track()
     {
@@ -139,7 +139,7 @@ public class WholeDownloadTagsTests
         Assert.Equal("album match distance 0.158 exceeds max 0.150", plan.Refusal);
     }
 
-    // A download one track short is far off by its missing track: every file heard right still makes it short.
+    // Every file heard right, but the release has a track no file maps to.
     [Fact]
     public void Refuses_past_the_limit_when_a_release_track_has_no_file()
     {

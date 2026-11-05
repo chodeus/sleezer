@@ -262,7 +262,7 @@ public class PreImportTaggerWholeDownloadTests : IDisposable
 
     private static string OwnRecording(LocalTrack file) => $"rec-{Path.GetFileNameWithoutExtension(file.Path).TrimStart('0')}";
 
-    // Live 2026-11-06: a 12-track album at 0.158 whose files AcoustID named track by track stayed untagged, and Lidarr matched another release.
+    // Past the 0.150 limit, at 0.158, with AcoustID naming each file's own recording.
     [Fact]
     public async Task An_album_past_the_limit_is_tagged_when_the_fingerprint_names_every_track()
     {
@@ -302,7 +302,7 @@ public class PreImportTaggerWholeDownloadTests : IDisposable
         Assert.All(paths, p => Assert.Equal("Store Album", AlbumTag(p)));
     }
 
-    // Live 2026-11-06: the peer's folder dropped "(Extended Mix)" that its file names carry.
+    // The folder lacks "(Extended Mix)"; the file name carries it.
     [Fact]
     public async Task A_qualifier_every_file_names_stands_in_for_the_folder()
     {

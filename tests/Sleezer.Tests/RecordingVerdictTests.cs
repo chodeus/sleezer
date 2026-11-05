@@ -200,7 +200,7 @@ public class RecordingVerdictTests
         Assert.Equal(expected, verdict);
     }
 
-    // Live 2026-11-06: a pool's "(PO Clean Edit)" with no AcoustID data of its own; AcoustID named the album cut (220 s), the rip was 216 s.
+    // A clean edit without AcoustID data of its own: a 216 s rip defers to the 220 s album cut only within these lengths.
     [Theory]
     [InlineData("Lantern Song (PO Clean Edit)", "Lantern Song", 220, 216, FingerprintVerdict.Unverifiable)]
     [InlineData("Lantern Song (clean edit)", "Lantern Song (explicit)", 220, 216, FingerprintVerdict.Unverifiable)]
