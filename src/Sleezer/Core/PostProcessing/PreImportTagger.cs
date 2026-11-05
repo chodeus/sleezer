@@ -333,7 +333,12 @@ public class PreImportTagger : IPreImportTagger
         }
 
         foreach (LocalAlbumRelease release in releases)
+        {
             release.AlbumRelease ??= albumRelease;
+
+            // Lidarr's import sets this (ImportDecisionMaker), so its close-match rule judges these as it will.
+            release.NewDownload = true;
+        }
 
         WholeDownloadTags.Plan plan = WholeDownloadTags.FromReleases(releases, localTracks.Count, confidenceThreshold, preferDigitalMedia,
             (file, track) => verifyAllWithFingerprint && VerifyRecording(file, track, credited, knownRecordings) == FingerprintVerdict.Mismatch);

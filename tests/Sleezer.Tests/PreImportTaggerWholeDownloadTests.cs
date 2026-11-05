@@ -100,8 +100,12 @@ public class PreImportTaggerWholeDownloadTests : IDisposable
     {
         TrackMapping mapping = new() { LocalExtra = [], MBExtra = [] };
         List<LocalTrack> ordered = [.. files.OrderBy(f => f.Path, StringComparer.Ordinal)];
+        // Each file carries its own match distance, as Lidarr's identification sets it (LocalAlbumRelease.PopulateMatch).
         for (int i = 0; i < ordered.Count; i++)
-            mapping.Mapping.Add(ordered[i], Tuple.Create(release.Tracks.Value[i], Dist(0.0)));
+        {
+            ordered[i].Distance = Dist(0.0);
+            mapping.Mapping.Add(ordered[i], Tuple.Create(release.Tracks.Value[i], ordered[i].Distance));
+        }
 
         return [new LocalAlbumRelease(ordered) { Distance = Dist(distance), TrackMapping = mapping, AlbumRelease = release }];
     }

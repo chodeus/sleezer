@@ -72,7 +72,7 @@ public class FingerprintHoldTaggingTests : IDisposable
             mapping.Mapping.Add(ordered[i], Tuple.Create(release.Tracks.Value[i], d));
         }
 
-        return [new LocalAlbumRelease(ordered) { Distance = Dist(albumDistance), TrackMapping = mapping, AlbumRelease = release, NewDownload = true }];
+        return [new LocalAlbumRelease(ordered) { Distance = Dist(albumDistance), TrackMapping = mapping, AlbumRelease = release }];
     }
 
     private static PreImportTagger Tagger(AlbumRelease release, double albumDistance, double firstTrackDistance, List<LocalAlbumRelease> seen)
@@ -152,5 +152,21 @@ public class FingerprintHoldTaggingTests : IDisposable
         Assert.True(new CloseAlbumMatchSpecification(Log).IsSatisfiedBy(seen.Single(), null!).Accepted);
         Assert.Equal(0, result.Tagged);
         Assert.NotNull(ImportHolds.ReasonToHold(result, verifying: true, new HashSet<string>(paths)));
+    }
+
+    // Lidarr won't import these (album over 0.20, or a track over 0.40), so a hold would only mislead.
+    [Theory]
+    [InlineData(0.30, 0.05)]
+    [InlineData(0.05, 0.50)]
+    public async Task A_wrong_song_in_a_match_Lidarr_rejects_is_not_held(double albumDistance, double firstTrackDistance)
+    {
+        (Album album, Artist artist, AlbumRelease release) = Target("Lantern Song", "Salt Road");
+        string[] paths = Files("Lantern Song", "Salt Road");
+        List<LocalAlbumRelease> seen = [];
+
+        PreImportTagger.TaggingResult result = await TagAsSoulseek(Tagger(release, albumDistance, firstTrackDistance, seen), album, artist);
+
+        Assert.Null(ImportHolds.ReasonToHold(result, verifying: true, new HashSet<string>(paths)));
+        Assert.False(new CloseAlbumMatchSpecification(Log).IsSatisfiedBy(seen.Single(), null!).Accepted);
     }
 }

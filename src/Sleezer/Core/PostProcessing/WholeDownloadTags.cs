@@ -1,4 +1,6 @@
+using NLog;
 using NzbDrone.Core.MediaFiles.TrackImport.Identification;
+using NzbDrone.Core.MediaFiles.TrackImport.Specifications;
 using NzbDrone.Core.Music;
 using NzbDrone.Core.Parser.Model;
 
@@ -8,6 +10,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing;
 // Lidarr groups a download by album tag, so a half-tagged folder imports as two albums that each miss tracks.
 public static class WholeDownloadTags
 {
+    private static readonly CloseAlbumMatchSpecification LidarrCloseMatch = new(LogManager.CreateNullLogger());
+
     public sealed record Target(LocalTrack File, Track Track, AlbumRelease? Release);
 
     /// <param name="WrongRecordingFile">Set when the plan was refused on the fingerprint's word about this file.</param>
@@ -21,8 +25,8 @@ public static class WholeDownloadTags
     /// <summary>A target for every file across the identified releases, or why none may be written.</summary>
     public static Plan FromReleases(IReadOnlyList<LocalAlbumRelease> releases, int fileCount, double maxDistance, bool preferDigitalMedia, Func<LocalTrack, Track, bool> differentRecording)
     {
-        // Before the distance gates: Lidarr imports looser matches than they allow, so a wrong file there must still be named.
-        foreach (LocalAlbumRelease release in releases.Where(r => r.TrackMapping != null))
+        // Before sleezer's distance gates, on every release Lidarr's own looser rule would import.
+        foreach (LocalAlbumRelease release in releases.Where(LidarrWouldImport))
         {
             foreach ((LocalTrack file, Tuple<Track, Distance> match) in release.TrackMapping.Mapping)
             {
@@ -57,6 +61,9 @@ public static class WholeDownloadTags
 
         return Whole(targets, files.Count, $"match a track title of '{release.Title}'");
     }
+
+    private static bool LidarrWouldImport(LocalAlbumRelease release) =>
+        release.TrackMapping != null && release.Distance != null && LidarrCloseMatch.IsSatisfiedBy(release, null).Accepted;
 
     private static Plan WrongRecording(LocalTrack file, Track track) => new([], DifferentRecording(file, track), file.Path);
 
