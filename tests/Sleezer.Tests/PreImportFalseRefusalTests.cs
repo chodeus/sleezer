@@ -95,7 +95,12 @@ public class PreImportFalseRefusalTests : IDisposable
             verifyAllWithFingerprint: true, fingerprintTitleFallback: false);
 
         Assert.Equal(2, result.Tagged);
-        Assert.All(paths, p => Assert.Equal("Wanted Album", AlbumTag(p)));
+        Assert.All(paths, p =>
+        {
+            using TagLib.File file = TagLib.File.Create(p);
+            Assert.Equal("Wanted Album", file.Tag.Album);
+            Assert.Equal(heard.ForeignReleaseId, file.Tag.MusicBrainzReleaseId);
+        });
     }
 
     // A wanted instrumental that also says "(Clean)" must not defer to the vocal cut 6 s off.
