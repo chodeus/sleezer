@@ -177,6 +177,11 @@ public class SlskdDownloadItem
 
     public IReadOnlyDictionary<string, SlskdFileState> FileStates => _previousFileStates;
 
+    /// <summary>Its transfer of a downloaded file, found by the file's local name.</summary>
+    public SlskdFileState? FileStateForLocalName(string localName) =>
+        _previousFileStates.Values.FirstOrDefault(fs =>
+            string.Equals(SlskdTextProcessor.GetFileNameFromFilename(fs.File.Filename), localName, StringComparison.OrdinalIgnoreCase));
+
     // Post-tag identities (local path → size, renamed): tag writes change size and
     // feat-strip renames, so the enqueued identity alone can't claim the file.
     // Ordinal: on Linux "CD1/01.flac" and "cd1/01.flac" are two files.
@@ -215,7 +220,7 @@ public class SlskdDownloadItem
     {
         List<(string Name, long Size)> accepted = [.. FileData
             .Where(f => OwnsAcceptedFile(f.Filename))
-            .Select(f => (Name: Path.GetFileName(f.Filename!.Replace('\\', '/')), f.Size))
+            .Select(f => (Name: SlskdTextProcessor.GetFileNameFromFilename(f.Filename), f.Size))
             .Where(f => f.Name.Length > 0)];
 
         Dictionary<string, HashSet<long>> sizes = accepted
@@ -350,7 +355,7 @@ public class SlskdDownloadItem
             .Where(f => f.Filename is { Length: > 0 } filename &&
                 OwnsAcceptedFile(filename) &&
                 !AudioFormatHelper.IsPostProcessAudioFile(filename))
-            .Select(f => Path.GetFileName(f.Filename!.Replace('\\', '/')))
+            .Select(f => SlskdTextProcessor.GetFileNameFromFilename(f.Filename))
             .Where(n => !string.IsNullOrEmpty(n))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -614,7 +619,7 @@ public class SlskdDownloadItem
                 fileState.UpdateFile(file);
                 if (fileState.State != previousState)
                 {
-                    _logger.Trace("State change: {Filename} | {Previous} -> {Next}", Path.GetFileName(file.Filename), previousState, fileState.State);
+                    _logger.Trace("State change: {Filename} | {Previous} -> {Next}", SlskdTextProcessor.GetFileNameFromFilename(file.Filename), previousState, fileState.State);
                     FileStateChanged?.Invoke(this, fileState);
                 }
             }
@@ -626,7 +631,7 @@ public class SlskdDownloadItem
                 DownloadItemStatus initialStatus = SlskdFileState.GetStatus(file.State);
                 if (initialStatus == DownloadItemStatus.Failed)
                 {
-                    _logger.Trace("Initial state is failed: {Filename} | {State}", Path.GetFileName(file.Filename), file.State);
+                    _logger.Trace("Initial state is failed: {Filename} | {State}", SlskdTextProcessor.GetFileNameFromFilename(file.Filename), file.State);
                     FileStateChanged?.Invoke(this, newFileState);
                 }
             }

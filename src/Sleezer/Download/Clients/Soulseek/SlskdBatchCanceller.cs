@@ -3,6 +3,7 @@ using NLog;
 using NzbDrone.Common.Http;
 using NzbDrone.Core.Download;
 using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek.Models;
+using NzbDrone.Plugin.Sleezer.Indexers.Soulseek;
 
 namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
 
@@ -74,7 +75,7 @@ public static class SlskdBatchCanceller
     }
 
     // slskd reports the peer's path, often with Windows separators.
-    private static string LocalName(SlskdDownloadFile file) => Path.GetFileName(file.Filename.Replace('\\', '/'));
+    private static string LocalName(SlskdDownloadFile file) => SlskdTextProcessor.GetFileNameFromFilename(file.Filename);
 
     // A transfer slskd already dropped answers 404; the rest of the batch must still go.
     private static async Task<bool> TryDeleteAsync(ISlskdApiClient apiClient, SlskdProviderSettings settings, string username, SlskdDownloadFile file, bool remove, Logger logger)

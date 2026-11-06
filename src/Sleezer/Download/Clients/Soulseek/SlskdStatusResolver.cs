@@ -122,7 +122,7 @@ public static class SlskdStatusResolver
                 case DownloadItemStatus.Completed: completedCount++; break;
                 case DownloadItemStatus.Failed:
                     failedCount++;
-                    failedFileNames.Add(Path.GetFileName(fs.File.Filename));
+                    failedFileNames.Add(SlskdTextProcessor.GetFileNameFromFilename(fs.File.Filename));
                     break;
                 case DownloadItemStatus.Warning: anyWarning = true; break;
                 case DownloadItemStatus.Paused: anyPaused = true; break;
@@ -153,7 +153,7 @@ public static class SlskdStatusResolver
                 ? DownloadItemStatus.Failed
                 : DownloadItemStatus.Queued;
             if (untransferred.Count > 0)
-                message = $"No slskd transfer for {untransferred.Count} file(s): {string.Join(", ", untransferred.Select(f => Path.GetFileName(f.Filename!.Replace('\\', '/'))))}";
+                message = $"No slskd transfer for {untransferred.Count} file(s): {string.Join(", ", untransferred.Select(f => SlskdTextProcessor.GetFileNameFromFilename(f.Filename)))}";
         }
         else if (totalFileCount > 0 && completedCount == totalFileCount)
         {
