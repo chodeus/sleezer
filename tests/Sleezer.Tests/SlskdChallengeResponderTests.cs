@@ -72,6 +72,7 @@ public class SlskdChallengeResponderTests
         public List<(string BaseUrl, string Username, string Message)> Sent { get; } = [];
         public List<string> Acknowledged { get; } = [];
         public Func<bool> SendResult { get; set; } = () => true;
+        public Func<bool> AckResult { get; set; } = () => true;
 
         public Task<bool> SendPrivateMessageAsync(SlskdProviderSettings settings, string username, string message)
         {
@@ -82,7 +83,7 @@ public class SlskdChallengeResponderTests
         public Task<bool> AcknowledgeConversationAsync(SlskdProviderSettings settings, string username)
         {
             Acknowledged.Add(username);
-            return Task.FromResult(true);
+            return Task.FromResult(AckResult());
         }
 
         public Task<SlskdEnqueueResult> EnqueueDownloadAsync(SlskdProviderSettings settings, string username, IEnumerable<(string Filename, long Size)> files, string? externalId = null, string? destination = null) =>
@@ -267,6 +268,20 @@ public class SlskdChallengeResponderTests
         await responder.HandleAsync(Event(), Settings(), [Grab()]);
 
         Assert.Equal(2, api.Sent.Count);
+    }
+
+    // A throwing acknowledge fails the event, and the event poll offers it again.
+    [Fact]
+    public async Task an_event_retried_after_its_acknowledge_threw_sends_no_second_answer()
+    {
+        (SlskdChallengeResponder responder, MessageRecorder api, _) = Build();
+        api.AckResult = () => throw new HttpRequestException("slskd down");
+        SlskdEventRecord check = Event();
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => responder.HandleAsync(check, Settings(), [Grab()]));
+        await responder.HandleAsync(check, Settings(), [Grab()]);
+
+        Assert.Single(api.Sent);
     }
 
     [Fact]
