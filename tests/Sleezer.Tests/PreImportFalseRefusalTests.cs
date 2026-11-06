@@ -25,6 +25,12 @@ public class PreImportFalseRefusalTests : IDisposable
             Directory.Delete(_root, true);
     }
 
+    [Fact]
+    public void A_plain_file_keeps_its_folders_cut()
+    {
+        Assert.True(VariantQualifiers.DownloadConflicts("Lantern Song", "Lantern Song (Live)", ["01 Lantern Song"], null));
+    }
+
     // The file is the innermost component, so its own cut decides over its folder's.
     [Fact]
     public void A_file_naming_the_wanted_cut_overrules_a_folder_naming_another()
@@ -35,6 +41,7 @@ public class PreImportFalseRefusalTests : IDisposable
 
     [Theory]
     [InlineData("Lantern Song (Extended Mix) (Mono)", "Lantern Song (Mono)", "01 Lantern Song (Extended Mix) (Stereo)")]
+    [InlineData("Lantern Song (Moonward Remix)", "Lantern Song (Fern Remix)", "01 Lantern Song (Moonward Instrumental)")]
     public void A_file_naming_another_cut_than_its_folder_conflicts(string wanted, string folder, string stem)
     {
         Assert.True(VariantQualifiers.RemixSignaturesConflict(wanted, [stem], null), "precondition: the file alone conflicts");
