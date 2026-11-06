@@ -241,9 +241,10 @@ public class PreImportTagger : IPreImportTagger
         string plainTitle = PinnedRelease.TitleOf(pinned) is { } pinnedTitle && !string.IsNullOrWhiteSpace(pinnedTitle) ? pinnedTitle : album.Title;
         string wantedTitle = VariantQualifiers.VariantTitleOf(album, plainTitle) ?? plainTitle;
         string folderLeaf = Path.GetFileName(folderPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-        if (VariantQualifiers.RemixSignaturesConflict(wantedTitle, folderLeaf, VariantQualifiers.ForgivenVariants(album)))
+        string[] fileStems = [.. audioFiles.Select(Path.GetFileNameWithoutExtension).OfType<string>()];
+        if (VariantQualifiers.DownloadConflicts(wantedTitle, folderLeaf, fileStems, VariantQualifiers.ForgivenVariants(album)))
         {
-            _logger.Info("Pre-import tag: remix qualifier mismatch between album '{Album}' and folder '{Folder}' — skipping tagging for {FileCount} files in \"{SourceId}\"",
+            _logger.Info("Pre-import tag: remix qualifier mismatch between album '{Album}' and folder '{Folder}' with its file names — skipping tagging for {FileCount} files in \"{SourceId}\"",
                 wantedTitle, folderLeaf, audioFiles.Count, sourceId);
             return new TaggingResult(0, audioFiles.Count, 0);
         }
@@ -291,6 +292,19 @@ public class PreImportTagger : IPreImportTagger
 
         List<LocalAlbumRelease> releases = _identificationService.Identify(localTracks, overrides, config);
 
+        IEnumerable<string?> credited = guests.Prepend(artist.Name);
+        IReadOnlyDictionary<string, IReadOnlyList<KnownTrack>> knownRecordings = new Dictionary<string, IReadOnlyList<KnownTrack>>();
+
+        // AcoustID up front, a request per batch of files rather than one per file.
+        if (verifyAllWithFingerprint)
+        {
+            await PrefetchFingerprintsAsync(localTracks, ct);
+            knownRecordings = GetRecordingTracks(localTracks);
+        }
+
+        FingerprintVerdict VerdictOf(LocalTrack file, Track track) =>
+            verifyAllWithFingerprint ? VerifyRecording(file, track, credited, knownRecordings) : FingerprintVerdict.Unverifiable;
+
         // Before the fallback, not after: the fallback forces a release unconditionally, and
         // assigning one here would skip the remaining ranked digital candidates.
         if (preferDigitalMedia && albumRelease == null)
@@ -302,8 +316,9 @@ public class PreImportTagger : IPreImportTagger
         // preserves the pre-fix behaviour for the edge case where track-count
         // matching can't disambiguate, while still letting the common case
         // benefit from CandidateService's track-count ranking.
+        // A release the fingerprint hears whole is a match whatever its distance.
         if (albumRelease == null && !releases.Any(r =>
-                Confidence(r) <= confidenceThreshold && r.TrackMapping != null))
+                (Confidence(r) <= confidenceThreshold && r.TrackMapping != null) || WholeDownloadTags.HeardWhole(r.TrackMapping, VerdictOf)))
         {
             // A digital source can only have produced a digital release, so it steers the
             // fallback too — the monitored release is usually the CD the album is wrong on.
@@ -322,16 +337,6 @@ public class PreImportTagger : IPreImportTagger
             }
         }
 
-        IEnumerable<string?> credited = guests.Prepend(artist.Name);
-        IReadOnlyDictionary<string, IReadOnlyList<KnownTrack>> knownRecordings = new Dictionary<string, IReadOnlyList<KnownTrack>>();
-
-        // AcoustID up front, a request per batch of files rather than one per file.
-        if (verifyAllWithFingerprint)
-        {
-            await PrefetchFingerprintsAsync(localTracks, ct);
-            knownRecordings = GetRecordingTracks(localTracks);
-        }
-
         foreach (LocalAlbumRelease release in releases)
         {
             release.AlbumRelease ??= albumRelease;
@@ -340,8 +345,7 @@ public class PreImportTagger : IPreImportTagger
             release.NewDownload = true;
         }
 
-        WholeDownloadTags.Plan plan = WholeDownloadTags.FromReleases(releases, localTracks.Count, confidenceThreshold, preferDigitalMedia,
-            (file, track) => verifyAllWithFingerprint && VerifyRecording(file, track, credited, knownRecordings) == FingerprintVerdict.Mismatch);
+        WholeDownloadTags.Plan plan = WholeDownloadTags.FromReleases(releases, localTracks.Count, confidenceThreshold, preferDigitalMedia, VerdictOf);
         List<TaggedFile> taggedFiles = [];
         (int tagged, int errored) = await WritePlanAsync(plan, album, stripFeaturedArtists, artist.Name, sourceId, taggedFiles, wrongRecordings, ct);
 
@@ -495,7 +499,7 @@ public class PreImportTagger : IPreImportTagger
         // Title-only matching is the highest-risk laundering path, so untrusted sources (slskd) fingerprint-gate it:
         // only a definite different recording refuses. Trusted API sources (Deezer/Tidal) skip it.
         WholeDownloadTags.Plan plan = WholeDownloadTags.FromTitles(localTracks, mapping, tracks, release,
-            (file, track) => fingerprintVerify && VerifyRecording(file, track, credited, knownRecordings) == FingerprintVerdict.Mismatch);
+            (file, track) => fingerprintVerify ? VerifyRecording(file, track, credited, knownRecordings) : FingerprintVerdict.Unverifiable);
         return await WritePlanAsync(plan, album, stripFeaturedArtists, artist.Name, sourceId, taggedFiles, wrongRecordings, ct);
     }
 

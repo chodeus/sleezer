@@ -23,14 +23,14 @@ public static class WholeDownloadTags
     }
 
     /// <summary>A target for every file across the identified releases, or why none may be written.</summary>
-    public static Plan FromReleases(IReadOnlyList<LocalAlbumRelease> releases, int fileCount, double maxDistance, bool preferDigitalMedia, Func<LocalTrack, Track, bool> differentRecording)
+    public static Plan FromReleases(IReadOnlyList<LocalAlbumRelease> releases, int fileCount, double maxDistance, bool preferDigitalMedia, Func<LocalTrack, Track, FingerprintVerdict> verdictOf)
     {
         // Before sleezer's distance gates, on every release Lidarr's own looser rule would import.
         foreach (LocalAlbumRelease release in releases.Where(LidarrWouldImport))
         {
             foreach ((LocalTrack file, Tuple<Track, Distance> match) in release.TrackMapping.Mapping)
             {
-                if (differentRecording(file, match.Item1))
+                if (verdictOf(file, match.Item1) == FingerprintVerdict.Mismatch)
                     return WrongRecording(file, match.Item1);
             }
         }
@@ -38,7 +38,7 @@ public static class WholeDownloadTags
         List<Target> targets = [];
         foreach (LocalAlbumRelease release in releases)
         {
-            if (Refusal(release, maxDistance, preferDigitalMedia) is { } refusal)
+            if (Refusal(release, maxDistance, preferDigitalMedia, verdictOf) is { } refusal)
                 return Plan.Refuse(refusal);
 
             targets.AddRange(release.TrackMapping.Mapping.Select(m => new Target(m.Key, m.Value.Item1, release.AlbumRelease)));
@@ -48,12 +48,12 @@ public static class WholeDownloadTags
     }
 
     /// <summary>A target for every file the title fallback matched to a wanted track, or why none may be written.</summary>
-    public static Plan FromTitles(IReadOnlyList<LocalTrack> files, IReadOnlyDictionary<int, int> mapping, IReadOnlyList<Track> tracks, AlbumRelease release, Func<LocalTrack, Track, bool> differentRecording)
+    public static Plan FromTitles(IReadOnlyList<LocalTrack> files, IReadOnlyDictionary<int, int> mapping, IReadOnlyList<Track> tracks, AlbumRelease release, Func<LocalTrack, Track, FingerprintVerdict> verdictOf)
     {
         List<Target> targets = [];
         foreach ((int fileIndex, int trackIndex) in mapping)
         {
-            if (differentRecording(files[fileIndex], tracks[trackIndex]))
+            if (verdictOf(files[fileIndex], tracks[trackIndex]) == FingerprintVerdict.Mismatch)
                 return WrongRecording(files[fileIndex], tracks[trackIndex]);
 
             targets.Add(new Target(files[fileIndex], tracks[trackIndex], release));
@@ -77,10 +77,11 @@ public static class WholeDownloadTags
         return releases > 1 ? Plan.Refuse($"the files map to {releases} releases") : new Plan(targets, null);
     }
 
-    private static string? Refusal(LocalAlbumRelease release, double maxDistance, bool preferDigitalMedia)
+    private static string? Refusal(LocalAlbumRelease release, double maxDistance, bool preferDigitalMedia, Func<LocalTrack, Track, FingerprintVerdict> verdictOf)
     {
         double distance = release.Distance?.NormalizedDistance() ?? 1.0;
-        if (distance > maxDistance || release.TrackMapping == null)
+        Lazy<bool> heardWhole = new(() => HeardWhole(release.TrackMapping, verdictOf));
+        if (release.TrackMapping == null || (distance > maxDistance && !heardWhole.Value))
             return $"album match distance {distance:F3} exceeds max {maxDistance:F3}";
 
         // A storefront download is complete, so a length mismatch is the wrong edition: its album_id would penalise every other release.
@@ -88,8 +89,13 @@ public static class WholeDownloadTags
             return $"'{chosen.Title}' has {chosen.TrackCount} track(s) but the download has {release.LocalTracks.Count}, a different edition";
 
         int weak = TrackMatchGate.WeakTracks(release.TrackMapping, maxDistance);
-        return weak > 0 ? $"{weak}/{release.TrackMapping.Mapping.Count} track(s) of '{release.AlbumRelease?.Title ?? "<unknown>"}' match too weakly" : null;
+        return weak > 0 && !heardWhole.Value ? $"{weak}/{release.TrackMapping.Mapping.Count} track(s) of '{release.AlbumRelease?.Title ?? "<unknown>"}' match too weakly" : null;
     }
+
+    /// <summary>The fingerprint names every file's exact recording and every track of the release has its file: the tags' distance no longer decides.</summary>
+    public static bool HeardWhole(TrackMapping? mapping, Func<LocalTrack, Track, FingerprintVerdict> verdictOf) =>
+        mapping is { Mapping.Count: > 0, LocalExtra.Count: 0, MBExtra.Count: 0 } &&
+        mapping.Mapping.All(m => verdictOf(m.Key, m.Value.Item1) == FingerprintVerdict.Verified);
 
     private static string DifferentRecording(LocalTrack file, Track track) =>
         $"fingerprint says {Path.GetFileName(file.Path)} is a different recording than '{track.Title}'";

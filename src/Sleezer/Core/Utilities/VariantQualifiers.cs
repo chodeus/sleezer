@@ -160,6 +160,15 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             return RemixLabelsConflict(searchSignature, candidateSignature, searchAlbum, candidateComponents);
         }
 
+        /// <summary>A download against the target: a qualifier its folder lacks counts once every audio file's name carries it.</summary>
+        public static bool DownloadConflicts(string? searchAlbum, string? folderLeaf, IReadOnlyCollection<string> fileStems, IReadOnlyCollection<string>? targetSecondaryTypes) =>
+            RemixSignaturesConflict(searchAlbum, [folderLeaf], targetSecondaryTypes) &&
+            (fileStems.Count == 0 || fileStems.Any(stem => RemixSignaturesConflict(searchAlbum, FileComponents(stem, folderLeaf), targetSecondaryTypes)));
+
+        // A file naming its own cut is judged by that name alone, so the folder's qualifiers can't mask it; a plain one borrows its folder's.
+        private static IReadOnlyList<string?> FileComponents(string stem, string? folderLeaf) =>
+            HasVariantQualifier(stem) ? [stem] : [stem, folderLeaf];
+
         // An instrumental is no remix, nor an acapella an instrumental: a label forgives only a copy sharing one of its kinds.
         private static bool RemixLabelsConflict(string searchSignature, string candidateSignature, string? searchAlbum, IReadOnlyList<string?> candidateComponents)
         {

@@ -11,7 +11,9 @@ public class WholeDownloadTagsTests
 {
     private const double Limit = 0.15;
 
-    private static readonly Func<LocalTrack, Track, bool> SameRecording = (_, _) => false;
+    private static readonly Func<LocalTrack, Track, FingerprintVerdict> SameRecording = (_, _) => FingerprintVerdict.Unverifiable;
+
+    private static readonly Func<LocalTrack, Track, FingerprintVerdict> HeardExactly = (_, _) => FingerprintVerdict.Verified;
 
     private static LocalTrack File(int n) => new() { Path = $"/downloads/{n:00}.flac" };
 
@@ -65,7 +67,7 @@ public class WholeDownloadTagsTests
     public void Refuses_every_file_when_one_is_a_different_recording()
     {
         LocalTrack[] files = [File(1), File(2), File(3), File(4)];
-        Func<LocalTrack, Track, bool> fourthDiffers = (file, _) => file.Path == files[3].Path;
+        Func<LocalTrack, Track, FingerprintVerdict> fourthDiffers = (file, _) => file.Path == files[3].Path ? FingerprintVerdict.Mismatch : FingerprintVerdict.Unverifiable;
 
         WholeDownloadTags.Plan plan = WholeDownloadTags.FromReleases([Release("The Beat Burger", 0.05, files, 4, 4)], 4, Limit, false, fourthDiffers);
 
@@ -112,6 +114,52 @@ public class WholeDownloadTagsTests
         Assert.Empty(plan.Targets);
         Assert.Equal("1/2 track(s) of 'Jungle Jam / What You Do' match too weakly", plan.Refusal);
         Assert.False(plan.WrongRecording);
+    }
+
+    // 0.158 is past the 0.150 limit; the fingerprint names every file's own recording.
+    [Fact]
+    public void Plans_a_release_past_the_limit_when_the_fingerprint_names_every_track()
+    {
+        LocalTrack[] files = [File(1), File(2)];
+
+        WholeDownloadTags.Plan plan = WholeDownloadTags.FromReleases([Release("Lantern Hours", 0.158, files, 2, 2, 0.0, 0.3)], 2, Limit, false, HeardExactly);
+
+        Assert.Null(plan.Refusal);
+        Assert.Equal(files.Select(f => f.Path), plan.Targets.Select(t => t.File.Path).Order());
+    }
+
+    [Fact]
+    public void Refuses_past_the_limit_when_one_track_is_only_unverifiable()
+    {
+        LocalTrack[] files = [File(1), File(2)];
+        Func<LocalTrack, Track, FingerprintVerdict> secondUnheard = (file, _) => file.Path == files[1].Path ? FingerprintVerdict.Unverifiable : FingerprintVerdict.Verified;
+
+        WholeDownloadTags.Plan plan = WholeDownloadTags.FromReleases([Release("Lantern Hours", 0.158, files, 2, 2)], 2, Limit, false, secondUnheard);
+
+        Assert.Equal("album match distance 0.158 exceeds max 0.150", plan.Refusal);
+    }
+
+    // Every file heard right, but the release has a track no file maps to.
+    [Fact]
+    public void Refuses_past_the_limit_when_a_release_track_has_no_file()
+    {
+        LocalTrack[] files = [File(1), File(2)];
+        LocalAlbumRelease release = Release("Lantern Hours", 0.158, files, 2, 3);
+        release.TrackMapping.MBExtra.Add(new Track { Title = "Lantern Hours 3", AbsoluteTrackNumber = 3, ForeignRecordingId = "rec-3" });
+
+        WholeDownloadTags.Plan plan = WholeDownloadTags.FromReleases([release], 2, Limit, false, HeardExactly);
+
+        Assert.Equal("album match distance 0.158 exceeds max 0.150", plan.Refusal);
+    }
+
+    [Fact]
+    public void Refuses_past_the_limit_when_a_file_maps_to_no_track()
+    {
+        LocalTrack[] files = [File(1), File(2), File(3)];
+
+        WholeDownloadTags.Plan plan = WholeDownloadTags.FromReleases([Release("Lantern Hours", 0.158, files, 2, 2)], 3, Limit, false, HeardExactly);
+
+        Assert.Equal("album match distance 0.158 exceeds max 0.150", plan.Refusal);
     }
 
     [Fact]
@@ -168,7 +216,7 @@ public class WholeDownloadTagsTests
     {
         LocalTrack[] files = [File(1), File(2)];
         Track[] tracks = [new() { Title = "Gam Gam" }, new() { Title = "Gam Gam (extended mix)" }];
-        Func<LocalTrack, Track, bool> secondDiffers = (file, _) => file.Path == files[1].Path;
+        Func<LocalTrack, Track, FingerprintVerdict> secondDiffers = (file, _) => file.Path == files[1].Path ? FingerprintVerdict.Mismatch : FingerprintVerdict.Unverifiable;
 
         WholeDownloadTags.Plan plan = WholeDownloadTags.FromTitles(files, new Dictionary<int, int> { [0] = 0, [1] = 1 }, tracks, new AlbumRelease { Title = "Gam Gam" }, secondDiffers);
 
