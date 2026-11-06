@@ -60,9 +60,10 @@ public sealed partial class SlskdChallengeResponder(
         if (!await TryAnswerAsync(settings, check))
             return;
 
-        logger.Info("Answered {Username}'s download check for {Release} with \"{Answer}\"", check.Username, check.Release, check.Answer);
+        // NLog quotes string values itself: no quotes or possessives around the holes.
+        logger.Info("Answered the download check from {Username} for {Release} with {Answer}", check.Username, check.Release, check.Answer);
         if (!await apiClient.AcknowledgeConversationAsync(settings, check.Username))
-            logger.Debug("Could not mark {Username}'s messages read in slskd", check.Username);
+            logger.Debug("Could not mark the messages from {Username} read in slskd", check.Username);
     }
 
     private PendingCheck? FindPendingCheck(SlskdEventRecord record, IEnumerable<SlskdDownloadItem> items)
@@ -150,12 +151,12 @@ public sealed partial class SlskdChallengeResponder(
             bool sent = await apiClient.SendPrivateMessageAsync(settings, username, answer);
             _lastSentAt = _utcNow();
             if (!sent)
-                logger.Warn("slskd did not send the answer to {Username}'s download check", username);
+                logger.Warn("slskd did not send the answer to the download check from {Username}", username);
             return sent;
         }
         catch (Exception ex)
         {
-            logger.Warn(ex, "Could not answer {Username}'s download check; the next check they send gets another try", username);
+            logger.Warn(ex, "Could not answer the download check from {Username}; the next check they send gets another try", username);
             return false;
         }
         finally
