@@ -284,6 +284,10 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             return lastSeparatorIndex >= 0 ? filename[..lastSeparatorIndex] : "";
         }
 
+        // Path.GetFileName splits only on '/' on Linux, so a peer's backslash path comes back whole.
+        public static string GetFileNameFromFilename(string? filename) =>
+            string.IsNullOrEmpty(filename) ? "" : filename[(filename.LastIndexOfAny(PathSeparators) + 1)..];
+
         public static bool IsDiscFolderName(string? name) =>
             !string.IsNullOrWhiteSpace(name) && DiscFolderRegex().IsMatch(name.Trim());
 

@@ -175,7 +175,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 }
 
                 throw new DownloadClientException(
-                    $"{refused.Count} of {files.Count} files failed to enqueue: {string.Join("; ", refused.Select(f => $"{Path.GetFileName(f.Filename)}: {f.Message}"))}");
+                    $"{refused.Count} of {files.Count} files failed to enqueue: {string.Join("; ", refused.Select(f => $"{SlskdTextProcessor.GetFileNameFromFilename(f.Filename)}: {f.Message}"))}");
             }
 
             if (takenOver.Count > 0)
@@ -238,7 +238,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }
 
         HashSet<string> retryBasenames = retry.FileData
-            .Select(f => Path.GetFileName((f.Filename ?? string.Empty).Replace('\\', '/')))
+            .Select(f => SlskdTextProcessor.GetFileNameFromFilename(f.Filename))
             .Where(n => !string.IsNullOrEmpty(n))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         // Fire-and-forget: it self-bounds, protects retry files, and handles
@@ -1293,7 +1293,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             {
                 string filename = transferEl.TryGetProperty("filename", out JsonElement fn) ? fn.GetString() ?? "" : "";
                 string username = transferEl.TryGetProperty("username", out JsonElement un) ? un.GetString() ?? "" : "";
-                _logger.Trace("[def={DefinitionId}] Event DownloadFileComplete: {Filename} by {Username}", definitionId, Path.GetFileName(filename), username);
+                _logger.Trace("[def={DefinitionId}] Event DownloadFileComplete: {Filename} by {Username}", definitionId, SlskdTextProcessor.GetFileNameFromFilename(filename), username);
             }
         }
     }
@@ -1703,8 +1703,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
             // Map disk path back to the SlskdFileState for retry short-circuit.
             string filename = Path.GetFileName(path);
-            SlskdFileState? fileState = item.FileStates.Values
-                .FirstOrDefault(fs => string.Equals(Path.GetFileName(fs.File.Filename), filename, StringComparison.OrdinalIgnoreCase));
+            SlskdFileState? fileState = item.FileStateForLocalName(filename);
 
             if (fileState == null)
                 _logger.Warn("[post-process] Corrupt file {Filename} not mapped to any tracked slskd transfer; counting as corruption but skipping retry short-circuit.", filename);
@@ -1808,7 +1807,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             {
                 // file.Filename is remote; only its basename exists locally, in the
                 // item's resolved output folder.
-                string fileName = Path.GetFileName((file.Filename ?? string.Empty).Replace('\\', '/'));
+                string fileName = SlskdTextProcessor.GetFileNameFromFilename(file.Filename);
 
                 // Never delete a basename the active retry shares in this folder.
                 if (protectBasenames?.Contains(fileName) == true)
@@ -1825,7 +1824,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
                     if (!_diskProvider.FileExists(localFilePath))
                     {
-                        _logger.Trace("Local file not found or path not accessible, skipping deletion: {Filename}", Path.GetFileName(file.Filename));
+                        _logger.Trace("Local file not found or path not accessible, skipping deletion: {Filename}", fileName);
                     }
                     // Basename and size, as the folder delete: a same-named file of another grab in a shared folder stays.
                     else if (!IsConclusivelyOwned(localFilePath, ownedFiles))
@@ -1841,7 +1840,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             }
             catch (Exception ex)
             {
-                _logger.Warn(ex, "Failed to delete local file for {Filename}", Path.GetFileName(file.Filename));
+                _logger.Warn(ex, "Failed to delete local file for {Filename}", SlskdTextProcessor.GetFileNameFromFilename(file.Filename));
             }
 
             _logger.Trace("Removed transfer {TransferId}", file.Id);

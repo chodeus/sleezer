@@ -648,7 +648,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 .Where(IsAudioFile)
                 .Select(f =>
                 {
-                    string raw = TrackNumberPrefixRegex().Replace(Path.GetFileNameWithoutExtension((f.Filename ?? string.Empty).Replace('\\', '/')), string.Empty);
+                    string raw = TrackNumberPrefixRegex().Replace(Path.GetFileNameWithoutExtension(SlskdTextProcessor.GetFileNameFromFilename(f.Filename)), string.Empty);
                     return (File: f, Tokens: SlskdTitleMatch.Tokens(raw), Raw: raw, Qualified: VariantQualifiers.HasVariantQualifier(raw));
                 })
                 .Where(x => x.Tokens.Count > 1)
@@ -748,7 +748,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         private static bool HasTrackNumberGaps(IEnumerable<SlskdFileData> files)
         {
             List<int> numbers = files
-                .Select(f => TrackNumberPrefixCaptureRegex().Match(Path.GetFileName(f.Filename ?? string.Empty)))
+                .Select(f => TrackNumberPrefixCaptureRegex().Match(SlskdTextProcessor.GetFileNameFromFilename(f.Filename)))
                 .Where(m => m.Success)
                 .Select(m => int.Parse(m.Groups[1].Value))
                 .Where(n => n is > 0 and <= 150)

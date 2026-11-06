@@ -25,7 +25,7 @@ public class SlskdRetryHandler(ISlskdApiClient apiClient, Logger logger)
         if (!item.OwnsAcceptedFile(fileState.File.Filename))
             return;
 
-        _logger.Trace("Retry triggered: {Filename} | State: {State} | Attempt: {Attempt}/{Max}", Path.GetFileName(fileState.File.Filename), fileState.State, fileState.RetryCount + 1, fileState.MaxRetryCount);
+        _logger.Trace("Retry triggered: {Filename} | State: {State} | Attempt: {Attempt}/{Max}", SlskdTextProcessor.GetFileNameFromFilename(fileState.File.Filename), fileState.State, fileState.RetryCount + 1, fileState.MaxRetryCount);
         _ = RetryDownloadAsync(item, fileState, settings);
     }
 
@@ -48,12 +48,12 @@ public class SlskdRetryHandler(ISlskdApiClient apiClient, Logger logger)
             string username = item.Username ?? ExtractUsernameFromPath(item.ReleaseInfo.DownloadUrl);
 
             SlskdEnqueueResult result = await _apiClient.EnqueueDownloadAsync(settings, username, [(fileState.File.Filename, size)], externalId: item.ID, destination: item.EnqueueDestination);
-            _logger.Trace("Retry enqueued: {Filename}", Path.GetFileName(fileState.File.Filename));
+            _logger.Trace("Retry enqueued: {Filename}", SlskdTextProcessor.GetFileNameFromFilename(fileState.File.Filename));
 
             // Removed while the enqueue was in flight: RemoveItem never saw this batch.
             if (result.BatchId != null && !item.TryRecordRetryBatch(result.BatchId))
             {
-                _logger.Debug("{ItemId} was removed while {Filename} was retried; cancelling the retry", item.ID, Path.GetFileName(fileState.File.Filename));
+                _logger.Debug("{ItemId} was removed while {Filename} was retried; cancelling the retry", item.ID, SlskdTextProcessor.GetFileNameFromFilename(fileState.File.Filename));
                 await SlskdBatchCanceller.CancelAsync(_apiClient, settings, username, new HashSet<string> { result.BatchId }, null, _logger);
             }
         }
@@ -75,7 +75,7 @@ public class SlskdRetryHandler(ISlskdApiClient apiClient, Logger logger)
                 fileState.MarkRetriesExhausted();
                 // Only log for the drop — the resolver skips abandoned extras silently.
                 if (!AudioFormatHelper.IsPostProcessAudioFile(fileState.File.Filename))
-                    _logger.Warn("Extra file {Filename} failed permanently; the album will complete without it", Path.GetFileName(fileState.File.Filename));
+                    _logger.Warn("Extra file {Filename} failed permanently; the album will complete without it", SlskdTextProcessor.GetFileNameFromFilename(fileState.File.Filename));
             }
         }
     }

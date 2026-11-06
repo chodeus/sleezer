@@ -1,6 +1,7 @@
 using NLog;
 using NzbDrone.Core.Download;
 using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek.Models;
+using NzbDrone.Plugin.Sleezer.Indexers.Soulseek;
 
 namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
 
@@ -103,7 +104,7 @@ public class SlskdWatchdog : ISlskdWatchdog
 
     private async Task CancelAsync(SlskdDownloadItem item, SlskdFileState fileState, SlskdProviderSettings settings, string reason)
     {
-        string filename = Path.GetFileName(fileState.File.Filename);
+        string filename = SlskdTextProcessor.GetFileNameFromFilename(fileState.File.Filename);
 
         try
         {

@@ -2,6 +2,7 @@ using NLog;
 using NzbDrone.Core.Indexers;
 using NzbDrone.Plugin.Sleezer.Core.PostProcessing;
 using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek.Models;
+using NzbDrone.Plugin.Sleezer.Indexers.Soulseek;
 
 namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
 
@@ -53,7 +54,7 @@ public class SlskdCorruptionHandler : ISlskdCorruptionHandler
         foreach (SlskdCorruptionStrike strike in strikes)
         {
             strike.FileState?.UpdateMaxRetryCount(0);
-            string fn = strike.FileState != null ? Path.GetFileName(strike.FileState.File.Filename) : "(unmapped)";
+            string fn = strike.FileState != null ? SlskdTextProcessor.GetFileNameFromFilename(strike.FileState.File.Filename) : "(unmapped)";
             _logger.Info("Corruption strike: {File} | reason: {Reason}", fn, strike.Reason ?? "(unknown)");
         }
 
@@ -67,7 +68,7 @@ public class SlskdCorruptionHandler : ISlskdCorruptionHandler
         //    so Lidarr blocklists and re-searches) to the shared handler.
         CorruptionStrike[] shared = strikes
             .Select(s => new CorruptionStrike(
-                File: s.FileState != null ? Path.GetFileName(s.FileState.File.Filename) : "(unmapped)",
+                File: s.FileState != null ? SlskdTextProcessor.GetFileNameFromFilename(s.FileState.File.Filename) : "(unmapped)",
                 Reason: s.Reason))
             .ToArray();
 
