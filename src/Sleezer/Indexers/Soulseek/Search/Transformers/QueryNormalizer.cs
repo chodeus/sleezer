@@ -39,10 +39,8 @@ public static partial class QueryNormalizer
         // ("G‐Eazy" → "GEazy" → zero results, verified against live slskd logs).
         string result = ComparableText.FoldAccents(ComparableText.MapPunctuation(input));
 
-        // Apostrophes are intra-word elision: delete ("Don't" → "Dont").
-        // Every other stripped character is a separator: replace with a space
-        // so the surrounding words stay distinct search terms.
-        result = ApostropheRegex().Replace(result, "");
+        // Apostrophes stay: matching joins them on both sides ("B'z" is "bz"), and ForPeers splits them.
+        // Every other stripped character is a separator, so the words around it stay apart.
         result = PlusRegex().Replace(result, " ");
         result = PunctuationRegex().Replace(result, " ");
         result = WhitespaceRegex().Replace(result, " ").Trim();
@@ -50,10 +48,14 @@ public static partial class QueryNormalizer
         return result;
     }
 
+    /// <summary>The search text as peers index it: "L'Orage" is "L" + "Orage" to them, so "Lorage" finds nothing.</summary>
+    public static string ForPeers(string searchText) =>
+        WhitespaceRegex().Replace(ApostropheRegex().Replace(searchText, " "), " ").Trim();
+
     [GeneratedRegex(@"[^\w\s\-&']", RegexOptions.Compiled)]
     private static partial Regex PunctuationRegex();
 
-    [GeneratedRegex(@"'+", RegexOptions.Compiled)]
+    [GeneratedRegex(@"['‘’ʼ]")]
     private static partial Regex ApostropheRegex();
 
     [GeneratedRegex(@"\+")]

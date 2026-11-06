@@ -1,6 +1,7 @@
 using NLog;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Plugin.Sleezer.Core.Model;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek.Models;
 using NzbDrone.Plugin.Sleezer.Indexers.Soulseek;
 using NzbDrone.Plugin.Sleezer.Indexers.Soulseek.Search.Transformers;
@@ -18,14 +19,33 @@ public class QueryNormalizerTests
     [InlineData("G‐Eazy", "G-Eazy")]                    // U+2010 HYPHEN (MusicBrainz) → ASCII, not deleted
     [InlineData("Sigur Rós", "Sigur Ros")]
     [InlineData("Ágætis byrjun", "Agaetis byrjun")] // ligature æ folds to ae
-    [InlineData("Don't", "Dont")]                             // apostrophes are elision, not separators
-    [InlineData("Superstylin’", "Superstylin")]
+    [InlineData("Don't", "Don't")]                            // kept for matching; ForPeers splits it for the search
+    [InlineData("C’est la vie", "C'est la vie")]
+    [InlineData("Superstylin’", "Superstylin'")]
     [InlineData("AC/DC", "AC DC")]
     [InlineData("Weezer+Blue Album", "Weezer Blue Album")]
     [InlineData("Him & I", "Him & I")]
     public void NormalizeText_produces_peer_matchable_terms(string input, string expected)
     {
         Assert.Equal(expected, QueryNormalizer.NormalizeText(input));
+    }
+
+    [Theory]
+    [InlineData("B'z")]
+    [InlineData("C’est la vie")]
+    [InlineData("Don't Stop")]
+    public void NormalizeText_keeps_the_name_a_folder_is_compared_with(string name)
+    {
+        Assert.Equal(ComparableText.Of(name), ComparableText.Of(QueryNormalizer.NormalizeText(name)));
+    }
+
+    [Theory]
+    [InlineData("C'est la vie Artist", "C est la vie Artist")]
+    [InlineData("Don’t Stop", "Don t Stop")]
+    [InlineData("Superstylin' Artist", "Superstylin Artist")]
+    public void ForPeers_splits_words_at_apostrophes(string searchText, string expected)
+    {
+        Assert.Equal(expected, QueryNormalizer.ForPeers(searchText));
     }
 }
 

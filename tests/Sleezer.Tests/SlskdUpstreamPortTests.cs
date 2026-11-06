@@ -51,6 +51,15 @@ public class BlockedTermTests
         Assert.Equal("Someone Like You", evidence[0]);
         Assert.DoesNotContain("25", evidence);
     }
+
+    [Theory]
+    [InlineData("Don't Stop (Live)", "Don't Stop")]
+    [InlineData("Re‐Work Song", "Re-Work Song")]
+    [InlineData("Song/Name", "Song Name")]
+    public void GetBlockedTermEvidenceTracks_cleans_titles_like_every_other_query(string track, string expected)
+    {
+        Assert.Equal(expected, Assert.Single(SlskdTextProcessor.GetBlockedTermEvidenceTracks([track], "Album")));
+    }
 }
 
 public class SlskdPathResolverTests
