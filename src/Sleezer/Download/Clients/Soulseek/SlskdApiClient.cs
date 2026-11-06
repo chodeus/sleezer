@@ -351,6 +351,27 @@ public class SlskdApiClient(IHttpClient httpClient, Logger logger) : ISlskdApiCl
         return (records, totalCount);
     }
 
+    public async Task<bool> SendPrivateMessageAsync(SlskdProviderSettings settings, string username, string message)
+    {
+        // slskd binds the body to a string: it must be a JSON string literal, not an object.
+        HttpRequest request = BuildRequest(settings, ConversationPath(username), HttpMethod.Post, JsonSerializer.Serialize(message));
+        request.SuppressHttpError = true;
+        request.RequestTimeout = TimeSpan.FromSeconds(15);
+        HttpResponse response = await httpClient.ExecuteAsync(request);
+        return response.StatusCode == HttpStatusCode.Created;
+    }
+
+    public async Task<bool> AcknowledgeConversationAsync(SlskdProviderSettings settings, string username)
+    {
+        HttpRequest request = BuildRequest(settings, ConversationPath(username), HttpMethod.Put);
+        request.SuppressHttpError = true;
+        request.RequestTimeout = TimeSpan.FromSeconds(15);
+        HttpResponse response = await httpClient.ExecuteAsync(request);
+        return response.StatusCode == HttpStatusCode.OK;
+    }
+
+    private static string ConversationPath(string username) => $"/api/v0/conversations/{Uri.EscapeDataString(username)}";
+
     private HttpRequest BuildRequest(SlskdProviderSettings settings, string endpoint,
         HttpMethod? method = null, string? content = null)
     {
