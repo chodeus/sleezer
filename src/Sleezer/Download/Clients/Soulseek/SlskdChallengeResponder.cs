@@ -54,36 +54,47 @@ public sealed partial class SlskdChallengeResponder(
 
     public async Task HandleAsync(SlskdEventRecord record, SlskdProviderSettings settings, IEnumerable<SlskdDownloadItem> items)
     {
-        if (!settings.AnswerPeerChallenges || SlskdPrivateMessage.Parse(record.Data) is not { } message)
+        if (!settings.AnswerPeerChallenges || FindPendingCheck(record, items) is not { } check)
             return;
 
-        if (FindAnswer(message.Text) is not { } answer)
+        if (!await TryAnswerAsync(settings, check))
             return;
 
-        if (items.FirstOrDefault(item => IsWaitingOn(item, message)) is not { } grab)
-        {
-            logger.Debug("Download check from {Username} left unanswered: no unfinished grab from them", message.Username);
-            return;
-        }
+        logger.Info("Answered {Username}'s download check for {Release} with \"{Answer}\"", check.Username, check.Release, check.Answer);
+        if (!await apiClient.AcknowledgeConversationAsync(settings, check.Username))
+            logger.Debug("Could not mark {Username}'s messages read in slskd", check.Username);
+    }
 
+    private PendingCheck? FindPendingCheck(SlskdEventRecord record, IEnumerable<SlskdDownloadItem> items)
+    {
+        if (SlskdPrivateMessage.Parse(record.Data) is not { } message || FindAnswer(message.Text) is not { } answer)
+            return null;
+
+        if (items.FirstOrDefault(item => IsWaitingOn(item, message)) is { } grab)
+            return new PendingCheck(message.Username, answer, grab.ReleaseInfo.Title);
+
+        logger.Debug("Download check from {Username} left unanswered: no unfinished grab from them", message.Username);
+        return null;
+    }
+
+    private async Task<bool> TryAnswerAsync(SlskdProviderSettings settings, PendingCheck check)
+    {
         // Keyed by server too: two slskd accounts each need their own answer, while two clients on one server share it.
-        string key = $"{settings.BaseUrl}|{message.Username}";
+        string key = $"{settings.BaseUrl}|{check.Username}";
         if (!TryClaim(key))
         {
-            logger.Debug("Download check from {Username} left unanswered: answered within the last {Hours} hours", message.Username, PeerCooldown.TotalHours);
-            return;
+            logger.Debug("Download check from {Username} left unanswered: answered within the last {Hours} hours", check.Username, PeerCooldown.TotalHours);
+            return false;
         }
 
-        if (!await TrySendAsync(settings, message.Username, answer))
-        {
-            Release(key);
-            return;
-        }
+        if (await TrySendAsync(settings, check.Username, check.Answer))
+            return true;
 
-        logger.Info("Answered {Username}'s download check for {Release} with \"{Answer}\"", message.Username, grab.ReleaseInfo.Title, answer);
-        if (!await apiClient.AcknowledgeConversationAsync(settings, message.Username))
-            logger.Debug("Could not mark {Username}'s messages read in slskd", message.Username);
+        Release(key);
+        return false;
     }
+
+    private sealed record PendingCheck(string Username, string Answer, string? Release);
 
     /// <summary>The word or phrase a download check asks for, or null when the text is not one.</summary>
     public static string? FindAnswer(string text)
