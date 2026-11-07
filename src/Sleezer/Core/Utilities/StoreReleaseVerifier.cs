@@ -47,7 +47,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
                 }
 
                 categories.Add(verdict.Value.Category);
-                logger.Debug("{Indexer} flagged '{Title}' — {Detail}", indexerName, release.Title, verdict.Value.Detail);
+                logger.Debug("{Indexer} flagged {Title} — {Detail}", indexerName, release.Title, verdict.Value.Detail);
 
                 // A Various Artists hit is removed outright: Lidarr's ParsingService resolves the
                 // credit through ArtistRepository.FindByName, which throws when the library holds

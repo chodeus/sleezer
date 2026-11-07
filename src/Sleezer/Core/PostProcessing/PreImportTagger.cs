@@ -80,7 +80,7 @@ public class PreImportTagger : IPreImportTagger
 
         if (verdict == FingerprintVerdict.Mismatch)
         {
-            _logger.Info("Pre-import tag: AcoustID named {Recordings} for {File} ({Seconds:F0}s); wanted {WantedId} \"{Wanted}\" ({WantedSeconds}s)",
+            _logger.Info("Pre-import tag: AcoustID named {Recordings} for {File} ({Seconds:F0}s); wanted {WantedId} {Wanted} ({WantedSeconds}s)",
                 RecordingVerdict.DescribeMatches(local.AcoustIdResults, knownRecordings), Path.GetFileName(local.Path),
                 fileDuration.TotalSeconds, wantedTrack.ForeignRecordingId, wantedTrack.Title, wantedTrack.Duration / 1000);
         }
@@ -244,7 +244,7 @@ public class PreImportTagger : IPreImportTagger
         string[] fileStems = [.. audioFiles.Select(Path.GetFileNameWithoutExtension).OfType<string>()];
         if (VariantQualifiers.DownloadConflicts(wantedTitle, folderLeaf, fileStems, VariantQualifiers.ForgivenVariants(album)))
         {
-            _logger.Info("Pre-import tag: remix qualifier mismatch between album '{Album}' and folder '{Folder}' with its file names — skipping tagging for {FileCount} files in \"{SourceId}\"",
+            _logger.Info("Pre-import tag: remix qualifier mismatch between album {Album} and folder {Folder} with its file names — skipping tagging for {FileCount} files in {SourceId}",
                 wantedTitle, folderLeaf, audioFiles.Count, sourceId);
             return new TaggingResult(0, audioFiles.Count, 0);
         }
@@ -329,7 +329,7 @@ public class PreImportTagger : IPreImportTagger
                                      ?? album.AlbumReleases?.Value?.FirstOrDefault();
             if (fallback != null)
             {
-                _logger.Debug("Pre-import tag: no release matched within confidence for {SourceId} via track-count ranking; retrying constrained to '{Fallback}' (digital={IsDigital})",
+                _logger.Debug("Pre-import tag: no release matched within confidence for {SourceId} via track-count ranking; retrying constrained to {Fallback} (digital={IsDigital})",
                     sourceId, fallback.Title, DigitalReleaseSelector.IsDigital(fallback));
                 overrides.AlbumRelease = fallback;
                 albumRelease = fallback;
@@ -389,7 +389,7 @@ public class PreImportTagger : IPreImportTagger
         {
             // Actionable: a digital download with no digital release of its length is an
             // album that wants a Harmony import into MusicBrainz.
-            _logger.Info("Pre-import tag: {SourceId} came from a digital source but MusicBrainz has no {TrackCount}-track Digital Media release for '{Album}' — keeping Lidarr's pick",
+            _logger.Info("Pre-import tag: {SourceId} came from a digital source but MusicBrainz has no {TrackCount}-track Digital Media release for {Album} — keeping Lidarr's pick",
                 sourceId, localTracks.Count, album.Title);
             return (releases, null);
         }
@@ -406,18 +406,18 @@ public class PreImportTagger : IPreImportTagger
             LocalAlbumRelease? matched = attempt.FirstOrDefault(r => Confidence(r) <= confidenceThreshold && r.TrackMapping != null);
             if (matched == null)
             {
-                _logger.Debug("Pre-import tag: digital release '{Digital}' ({DigitalTracks} tracks) missed {Threshold:F3} for {SourceId}",
+                _logger.Debug("Pre-import tag: digital release {Digital} ({DigitalTracks} tracks) missed {Threshold:F3} for {SourceId}",
                     candidate.Title, candidate.TrackCount, confidenceThreshold, sourceId);
                 continue;
             }
 
             // Both distances logged so a swap can be traced back to the ranking.
-            _logger.Info("Pre-import tag: steering {SourceId} onto Digital Media release '{Digital}' (distance {DigitalDistance:F3}) instead of '{Kept}' (distance {KeptDistance:F3})",
+            _logger.Info("Pre-import tag: steering {SourceId} onto Digital Media release {Digital} (distance {DigitalDistance:F3}) instead of {Kept} (distance {KeptDistance:F3})",
                 sourceId, candidate.Title, Confidence(matched), winner?.AlbumRelease?.Title ?? "<unknown>", winner is null ? 1.0 : Confidence(winner));
             return (attempt, candidate);
         }
 
-        _logger.Warn("Pre-import tag: {SourceId} came from a digital source but none of the {Count} Digital Media release(s) for '{Album}' mapped within {Threshold:F3} — keeping '{Kept}'",
+        _logger.Warn("Pre-import tag: {SourceId} came from a digital source but none of the {Count} Digital Media release(s) for {Album} mapped within {Threshold:F3} — keeping {Kept}",
             sourceId, digital.Count, album.Title, confidenceThreshold, winner?.AlbumRelease?.Title ?? "<unknown>");
         return (releases, null);
     }
@@ -448,7 +448,7 @@ public class PreImportTagger : IPreImportTagger
 
         if (!TitleFallbackGuard.IsEligibleAlbum(album, [.. tracks.Select(t => t.Title)]))
         {
-            _logger.Debug("Pre-import tag: no title fallback for {SourceId} — '{Album}' ({Type} {SecondaryTypes}) is not eligible for title matching",
+            _logger.Debug("Pre-import tag: no title fallback for {SourceId} — {Album} ({Type} {SecondaryTypes}) is not eligible for title matching",
                 sourceId, album.Title, album.AlbumType, string.Join("/", album.SecondaryTypes?.Select(t => t?.Name) ?? []));
             return (0, 0);
         }
@@ -457,7 +457,7 @@ public class PreImportTagger : IPreImportTagger
         {
             // A tracklist that does not fit the download usually means Lidarr is about to
             // attach the files to the wrong release, so this is worth seeing.
-            _logger.Warn("Pre-import tag: '{Release}' is not a safe title-fallback target for {SourceId} — {TrackCount} tracks vs {FileCount} files, digital={IsDigital} (digital source={PreferDigital}); leaving raw tags for Lidarr",
+            _logger.Warn("Pre-import tag: {Release} is not a safe title-fallback target for {SourceId} — {TrackCount} tracks vs {FileCount} files, digital={IsDigital} (digital source={PreferDigital}); leaving raw tags for Lidarr",
                 release.Title, sourceId, tracks.Count, localTracks.Count, DigitalReleaseSelector.IsDigital(release), preferDigitalMedia);
             return (0, 0);
         }
@@ -467,7 +467,7 @@ public class PreImportTagger : IPreImportTagger
             // Credits naming only other artists mean a same-titled track by someone else.
             if (foreignArtistFiles.Contains(lt.Path))
             {
-                _logger.Debug("Pre-import tag: excluding {File} from title matching — no artist credit names '{Artist}'",
+                _logger.Debug("Pre-import tag: excluding {File} from title matching — no artist credit names {Artist}",
                     Path.GetFileName(lt.Path), artist.Name);
                 return string.Empty;
             }
@@ -483,7 +483,7 @@ public class PreImportTagger : IPreImportTagger
         if (mapping.Count == 0)
             return (0, 0);
 
-        _logger.Info("Pre-import tag: album-level match failed but {Matched}/{FileCount} track title(s) match release '{Release}' — tagging by title for {SourceId}",
+        _logger.Info("Pre-import tag: album-level match failed but {Matched}/{FileCount} track title(s) match release {Release} — tagging by title for {SourceId}",
             mapping.Count, localTracks.Count, release.Title, sourceId);
 
         IReadOnlyDictionary<string, IReadOnlyList<KnownTrack>> knownRecordings = new Dictionary<string, IReadOnlyList<KnownTrack>>();
@@ -560,7 +560,7 @@ public class PreImportTagger : IPreImportTagger
                 break;
 
             written.Add((target, renamable));
-            _logger.Trace("Pre-import tag: tagged {File} → '{Title}' (track {TrackNum})", Path.GetFileName(target.File.Path), target.Track.Title, target.Track.AbsoluteTrackNumber);
+            _logger.Trace("Pre-import tag: tagged {File} → {Title} (track {TrackNum})", Path.GetFileName(target.File.Path), target.Track.Title, target.Track.AbsoluteTrackNumber);
         }
 
         return written;

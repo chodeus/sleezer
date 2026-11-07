@@ -32,7 +32,7 @@ public static class SlskdBatchCanceller
         }
         catch (Exception ex)
         {
-            logger.Warn(ex, "Could not list {Username}'s transfers to cancel batch(es) {Batches}; the next poll retries", username, string.Join(", ", batchIds));
+            logger.Warn(ex, "Could not list the transfers from {Username} to cancel batch(es) {Batches}; the next poll retries", username, string.Join(", ", batchIds));
             return 0;
         }
 

@@ -133,7 +133,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
                 return;
             }
 
-            logger.Debug("[post-process] {Client} item {ID}: tagging '{Album}' by '{Artist}'", request.Client, request.DownloadId, album.Title, artist.Name);
+            logger.Debug("[post-process] {Client} item {ID}: tagging {Album} by {Artist}", request.Client, request.DownloadId, album.Title, artist.Name);
             var tagSw = Stopwatch.StartNew();
 
             // albumRelease stays null so Lidarr's CandidateService ranks releases by
