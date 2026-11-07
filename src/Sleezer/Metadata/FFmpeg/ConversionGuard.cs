@@ -16,6 +16,16 @@ public static class ConversionGuard
         return lossyTarget ? null : Upsampled(sourceBitDepth, targetBitDepth, "-bit", "bit depth");
     }
 
+    /// <summary>The bit depth an ffprobe sample_fmt carries; floats count as their width, or a downsample of one reads as unreadable.</summary>
+    public static int? BitDepthOf(string sampleFormat) => sampleFormat.Trim().ToLowerInvariant() switch
+    {
+        "s16" or "s16le" or "s16be" or "s16p" => 16,
+        "s24" or "s24le" or "s24be" or "s24p" => 24,
+        "s32" or "s32le" or "s32be" or "s32p" or "flt" or "fltp" => 32,
+        "dbl" or "dblp" => 64,
+        _ => null
+    };
+
     // A source that can't be read could be upsampled, so it is left as it is.
     private static string? Upsampled(int? source, int? target, string unit, string measure)
     {

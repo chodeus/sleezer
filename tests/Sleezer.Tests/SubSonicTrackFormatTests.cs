@@ -17,6 +17,7 @@ public class SubSonicTrackFormatTests
     [InlineData("flac", null, "mp3", null, PreferredFormatEnum.Raw, ".mp3")]
     [InlineData("flac", null, null, "audio/ogg", PreferredFormatEnum.Raw, ".ogg")]
     [InlineData("flac", null, null, null, PreferredFormatEnum.Opus, ".opus")]
+    [InlineData("flac", null, "mp3", "audio/mpeg", PreferredFormatEnum.Opus, ".opus")]
     [InlineData("flac", null, null, null, PreferredFormatEnum.Aac, ".aac")]
     [InlineData("MP3", null, null, null, PreferredFormatEnum.Raw, ".mp3")]
     [InlineData(null, "audio/mp4", null, null, PreferredFormatEnum.Raw, ".m4a")]
@@ -42,6 +43,10 @@ public class SubSonicTrackFormatTests
     [InlineData("/d/01.aac", AudioFormat.AAC, null)]
     [InlineData("/d/01.m4a", AudioFormat.ALAC, null)]
     [InlineData("/d/01.flac", AudioFormat.Unknown, null)]
+    [InlineData("/d/01.aiff", AudioFormat.WAV, null)]
+    [InlineData("/d/01.ogg", AudioFormat.FLAC, null)]
+    [InlineData("/d/01.ogg", AudioFormat.Opus, null)]
+    [InlineData("/d/01.aiff", AudioFormat.FLAC, ".flac")]
     public void A_file_whose_extension_names_another_codec_is_corrected(string path, AudioFormat actual, string? expected)
     {
         Assert.Equal(expected, SubSonicTrackFormat.Corrected(path, actual));

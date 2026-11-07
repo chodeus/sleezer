@@ -1,6 +1,7 @@
 ﻿using System.Text.Json;
 using NLog;
 using NzbDrone.Common.Instrumentation;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
 namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
 {
@@ -60,11 +61,11 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
             }
         }
 
-        /// <summary>Storing Path is a folder picker: a folder gets the file inside it.</summary>
+        /// <summary>Storing Path is a folder, made if missing; an existing file or a .json path is used as the file.</summary>
         public static string ConfigFile(string configPath) =>
-            Directory.Exists(configPath) || configPath.EndsWith('/') || configPath.EndsWith('\\')
-                ? Path.Combine(configPath, "dynamic-threshold.json")
-                : configPath;
+            File.Exists(configPath) || configPath.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
+                ? configPath
+                : Path.Combine(configPath, "dynamic-threshold.json");
 
         private void SaveConfig()
         {
@@ -76,7 +77,8 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
                     string? folder = Path.GetDirectoryName(_configFilePath);
                     if (!string.IsNullOrEmpty(folder))
                         Directory.CreateDirectory(folder);
-                    File.WriteAllText(_configFilePath, JsonSerializer.Serialize(Config, _jsonOptions));
+                    // Not in place: a cut-off write would make the next load start afresh.
+                    AtomicFile.Write(_configFilePath, JsonSerializer.Serialize(Config, _jsonOptions));
                     _isDirty = false;
                 }
                 catch (Exception ex)
@@ -112,6 +114,13 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
         /// <param name="maxThreshold">The Maximal usable threshold setting; the result never exceeds it.</param>
         /// <returns>The computed dynamic threshold.</returns>
         public int GetDynamicThreshold(string proxyName, int aggregatedCount, int maxThreshold)
+        {
+            // Locked: searches run in parallel, and decay writes the metrics UpdateMetrics adds to.
+            lock (_lock)
+                return DynamicThreshold(proxyName, aggregatedCount, maxThreshold);
+        }
+
+        private int DynamicThreshold(string proxyName, int aggregatedCount, int maxThreshold)
         {
             int baseThreshold = Math.Min(aggregatedCount < 10 ? Config.BaseThresholdLowCount : aggregatedCount < 50 ? Config.BaseThresholdMediumCount : Config.BaseThresholdHighCount, maxThreshold);
 

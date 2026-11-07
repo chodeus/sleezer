@@ -38,4 +38,17 @@ public class ConversionRuleGuardTests
     {
         Assert.Null(Reason(source, bitrate, bitDepth, target, targetBitrate, targetBitDepth));
     }
+
+    // A float WAV read as unreadable refused even a downsample such as wav -> flac:16.
+    [Theory]
+    [InlineData("s16", 16)]
+    [InlineData("s24p", 24)]
+    [InlineData("fltp", 32)]
+    [InlineData("flt", 32)]
+    [InlineData("dbl", 64)]
+    [InlineData("u8", null)]
+    public void A_sample_format_reads_as_its_bit_depth(string sampleFormat, int? bits)
+    {
+        Assert.Equal(bits, ConversionGuard.BitDepthOf(sampleFormat));
+    }
 }

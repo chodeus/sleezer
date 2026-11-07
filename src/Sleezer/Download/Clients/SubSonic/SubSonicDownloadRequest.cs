@@ -407,7 +407,8 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
                 return trackPath;
 
             string renamed = Path.ChangeExtension(trackPath, extension);
-            File.Move(trackPath, renamed);
+            // A failed earlier attempt can leave the renamed file behind.
+            File.Move(trackPath, renamed, overwrite: true);
             _logger.Debug("Renamed {Track} to {Extension} to match its codec", Path.GetFileName(trackPath), extension);
             return renamed;
         }

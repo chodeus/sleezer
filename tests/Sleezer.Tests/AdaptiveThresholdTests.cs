@@ -46,4 +46,48 @@ public class AdaptiveThresholdTests
             Directory.Delete(folder, recursive: true);
         }
     }
+
+    private static void SaveOnce(string storingPath)
+    {
+        AdaptiveThresholdManager manager = new();
+        manager.LoadConfig(storingPath);
+        manager.UpdateMetrics("p", 120, 2, success: true);
+        manager.Dispose();
+    }
+
+    // A folder not made yet was taken for a file name: the weights became a file called after it.
+    [Fact]
+    public void A_folder_not_made_yet_is_made_and_gets_the_weights()
+    {
+        string root = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), $"threshold-{Guid.NewGuid():N}")).FullName;
+        try
+        {
+            string folder = Path.Combine(root, "weights");
+            SaveOnce(folder);
+
+            Assert.True(File.Exists(Path.Combine(folder, "dynamic-threshold.json")));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void An_existing_file_set_as_the_path_is_still_used()
+    {
+        string root = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), $"threshold-{Guid.NewGuid():N}")).FullName;
+        try
+        {
+            string file = Path.Combine(root, "weights");
+            File.WriteAllText(file, "{}");
+            SaveOnce(file);
+
+            Assert.Contains("ProxyMetrics", File.ReadAllText(file), StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
 }

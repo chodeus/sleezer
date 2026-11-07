@@ -5,6 +5,7 @@ public static class AtomicFile
 {
     public static void Write(string path, string contents)
     {
+        path = Target(path);
         string temp = TempFor(path);
         try
         {
@@ -20,6 +21,7 @@ public static class AtomicFile
 
     public static async Task WriteAsync(string path, string contents)
     {
+        path = Target(path);
         string temp = TempFor(path);
         try
         {
@@ -35,6 +37,13 @@ public static class AtomicFile
 
     // Unique per write: two writers of one path must not share a temp file.
     private static string TempFor(string path) => $"{path}.{Guid.NewGuid():N}.tmp";
+
+    // A symlinked file is written through, as an in-place write would: the move must not replace the link.
+    private static string Target(string path)
+    {
+        FileInfo file = new(path);
+        return file.LinkTarget == null ? path : file.ResolveLinkTarget(returnFinalTarget: true)?.FullName ?? path;
+    }
 
     private static void TryDelete(string path)
     {

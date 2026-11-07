@@ -179,16 +179,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
                 foreach (string line in probeOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries))
                 {
                     if (line.StartsWith("sample_fmt="))
-                    {
-                        string sampleFmt = line[11..].Trim().ToLower();
-                        return sampleFmt switch
-                        {
-                            "s16" or "s16le" or "s16be" or "s16p" => 16,
-                            "s24" or "s24le" or "s24be" or "s24p" => 24,
-                            "s32" or "s32le" or "s32be" or "s32p" => 32,
-                            _ => null
-                        };
-                    }
+                        return ConversionGuard.BitDepthOf(line[11..]);
                 }
 
                 return null;
