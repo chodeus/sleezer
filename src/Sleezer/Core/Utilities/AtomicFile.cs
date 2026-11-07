@@ -9,7 +9,7 @@ public static class AtomicFile
         string temp = TempFor(path);
         try
         {
-            using (FileStream stream = new(temp, FileMode.CreateNew, FileAccess.Write))
+            using (FileStream stream = new(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             {
                 stream.Write(System.Text.Encoding.UTF8.GetBytes(contents));
                 stream.Flush(flushToDisk: true);

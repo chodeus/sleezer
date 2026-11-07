@@ -108,6 +108,16 @@ public class ReleaseFormatterTokenTests
         Assert.Equal(expected, formatter.BuildArtistFolderName(null));
     }
 
+    [Theory]
+    [InlineData("\"\"")]
+    [InlineData("")]
+    public void An_album_name_that_cleans_to_nothing_never_names_the_artists_folder(string title)
+    {
+        var formatter = new ReleaseFormatter(new ReleaseInfo(), new Artist { Name = "Artist" }, new NamingConfig());
+
+        Assert.Equal("_", formatter.BuildAlbumFilename("{Album Title}", new Album { Title = title }));
+    }
+
     [Fact]
     public void Still_blanks_a_token_nobody_implements()
     {

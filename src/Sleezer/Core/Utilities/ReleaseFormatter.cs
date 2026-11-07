@@ -134,8 +134,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             }
 
             fileName = fileName.Trim();
-            // "." and ".." name a folder that isn't new: an artist called ".." would download outside the root.
-            return fileName.Length > 0 && fileName.All(c => c == '.') ? new string('_', fileName.Length) : fileName;
+            // Never "", "." or "..": each names a folder that exists already, the artist's or one outside the download root.
+            return fileName.Trim('.').Length == 0 ? new string('_', Math.Max(fileName.Length, 1)) : fileName;
         }
 
         private static string CleanTitle(string? title)

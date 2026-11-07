@@ -777,6 +777,9 @@ public class PreImportTagger : IPreImportTagger
             int trackNumber = track.AbsoluteTrackNumber;
             // The shared sanitizer: the OS list on Linux misses quotes, which break ffmpeg's probes of the file.
             string safeTitle = TidalPathSanitizer.CleanPath(cleanTitle).Trim();
+            // CleanPath trims trailing dots: a title of "..." would leave a hidden ".flac".
+            if (safeTitle.Length == 0)
+                return path;
             string baseName = trackNumber > 0
                 ? $"{trackNumber:D2} - {safeTitle}{ext}"
                 : $"{safeTitle}{ext}";
