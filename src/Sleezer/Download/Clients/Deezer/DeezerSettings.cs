@@ -28,7 +28,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer
         [FieldDefinition(2, Label = "Use LRCLIB as Backup Lyric Provider", Type = FieldType.Checkbox, Hidden = HiddenType.Hidden)]
         public bool UseLRCLIB { get; set; } = false;
 
-        [FieldDefinition(3, Label = "Allow Track Substitution", HelpText = "Download Deezer's alternative for an unavailable track, only when it is the same recording.", Type = FieldType.Checkbox)]
+        [FieldDefinition(3, Label = "Allow Track Substitution", HelpText = "Download Deezer's alternative for an unavailable track when its ISRC matches, or its title, version, duration and explicit flag do.", Type = FieldType.Checkbox)]
         public bool AllowTrackSubstitution { get; set; } = true;
 
         public NzbDroneValidationResult Validate()

@@ -116,7 +116,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
 
         private IEnumerable<KeyValuePair<string, string>> _customConversion = [];
 
-        [FieldDefinition(0, Label = "FFmpeg Path", Type = FieldType.Path, Section = MetadataSectionType.Metadata, Placeholder = "/downloads/FFmpeg", HelpText = "Required. Where ffmpeg is kept; saving installs it if missing. A newer ffmpeg on the PATH is used instead.", HelpTextWarning = "Enable only turns on conversion, which runs on every import, torrent and Usenet included. The corrupt scan runs either way.")]
+        [FieldDefinition(0, Label = "FFmpeg Path", Type = FieldType.Path, Section = MetadataSectionType.Metadata, Placeholder = "/downloads/FFmpeg", HelpText = "Required. Where ffmpeg is kept; saving installs it if missing. A newer ffmpeg on the PATH is used instead.", HelpTextWarning = "Enable converts any import a Convert toggle, artist tag or custom rule matches, torrent and Usenet included. The corrupt scan runs either way.")]
         public string FFmpegPath { get; set; } = string.Empty;
 
         [FieldDefinition(1, Label = "Convert MP3", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Convert MP3 files.")]
@@ -141,7 +141,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
         public int TargetFormat { get; set; } = (int)TargetAudioFormat.Opus;
 
         // Never null: an API save can send null, and the converter reads this on every import.
-        [FieldDefinition(9, Label = "Custom Conversion Rules", Type = FieldType.KeyValueList, Section = MetadataSectionType.Metadata, HelpText = "Rules such as 'flac -> mp3:320:cbr' or 'flac:24 -> flac:16'. Upsampling is blocked.")]
+        [FieldDefinition(9, Label = "Custom Conversion Rules", Type = FieldType.KeyValueList, Section = MetadataSectionType.Metadata, HelpText = "Rules such as 'flac -> mp3:320:cbr' or 'flac -> flac:16'. Upsampling is blocked.")]
         public IEnumerable<KeyValuePair<string, string>> CustomConversion
         {
             get => _customConversion;

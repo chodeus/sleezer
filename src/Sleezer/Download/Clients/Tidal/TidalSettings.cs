@@ -34,7 +34,7 @@ namespace NzbDrone.Core.Download.Clients.Tidal
         [FieldDefinition(4, Label = "Use LRCLIB as Backup Lyric Provider", Type = FieldType.Checkbox, Hidden = HiddenType.Hidden)]
         public bool UseLRCLIB { get; set; } = false;
 
-        [FieldDefinition(5, Label = "Download Delay", HelpText = "Pause between track downloads so Tidal doesn't rate-limit you.", Type = FieldType.Checkbox)]
+        [FieldDefinition(5, Label = "Download Delay", HelpText = "Pause between track downloads to reduce Tidal rate-limiting.", Type = FieldType.Checkbox)]
         public bool DownloadDelay { get; set; } = false;
 
         [FieldDefinition(6, Label = "Download Delay Minimum", HelpText = "Minimum download delay, in seconds.", Type = FieldType.Number, Advanced = true)]

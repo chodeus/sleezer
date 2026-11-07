@@ -64,7 +64,7 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
         [FieldDefinition(4, Label = "Use Token Authentication", Type = FieldType.Checkbox, Hidden = HiddenType.Hidden)]
         public bool UseTokenAuth { get; set; } = true;
 
-        [FieldDefinition(5, Label = "Indexer", Type = FieldType.Select, SelectOptionsProviderAction = IndexerLogin.OptionsAction, HelpText = "The SubSonic indexer whose login Test uses. Automatic takes the only one.")]
+        [FieldDefinition(5, Label = "Indexer", Type = FieldType.Select, SelectOptionsProviderAction = IndexerLogin.OptionsAction, HelpText = "The SubSonic indexer Test connects with, and downloads use when the release's indexer isn't SubSonic. Automatic takes the only one.")]
         public int IndexerId { get; set; }
 
         [FieldDefinition(6, Type = FieldType.Number, Label = "Connection Retries", HelpText = "Number of times to retry failed connections", Advanced = true)]

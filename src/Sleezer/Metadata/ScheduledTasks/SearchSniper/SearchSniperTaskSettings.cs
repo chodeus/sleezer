@@ -61,7 +61,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
         [FieldDefinition(3, Label = "Cache Retention Time", Type = FieldType.Number, Placeholder = "7", HelpText = "The number of days to retain cached data.", Advanced = true)]
         public int CacheRetentionDays { get; set; } = 7;
 
-        [FieldDefinition(4, Label = "Picks Per Interval", Type = FieldType.Number, Placeholder = "5", HelpText = "Albums to search each interval; recent releases first, the rest at random.")]
+        [FieldDefinition(4, Label = "Picks Per Interval", Type = FieldType.Number, Placeholder = "5", HelpText = "Albums to search each interval; Recent Releases First fills them first, the rest are random.")]
         public int RandomPicksPerInterval { get; set; } = 5;
 
         [FieldDefinition(5, Label = "Pause When Queued", Type = FieldType.Number, Placeholder = "0", HelpText = "Pause searching when the queue reaches this number. Set to 0 to disable.")]
@@ -82,7 +82,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
         [FieldDefinition(10, Label = "Cutoff Not Met", Type = FieldType.Checkbox, HelpText = "Automatically search for albums whose quality or custom format score is below the profile's cutoff.")]
         public bool SearchQualityCutoffNotMet { get; set; }
 
-        [FieldDefinition(11, Label = "Recent Releases First", Type = FieldType.Number, Unit = "days", Placeholder = "0", HelpText = "Search albums released within this many days first. 0 = off.")]
+        [FieldDefinition(11, Label = "Recent Releases First", Type = FieldType.Number, Unit = "days", Placeholder = "0", HelpText = "Search Missing and Missing Tracks albums released within this many days first. 0 = off.")]
         public int RecentReleaseDays { get; set; }
 
         public string BaseUrl { get; set; } = string.Empty;
