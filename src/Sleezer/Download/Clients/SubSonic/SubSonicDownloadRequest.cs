@@ -565,7 +565,7 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
             _ => DownloadItemStatus.Warning,
         };
 
-        private string BuildTrackFilename(Track track, Album album, string extension = ".flac") => _releaseFormatter.BuildTrackFilename(null, track, album) + extension;
+        private string BuildTrackFilename(Track track, Album album, string extension) => _releaseFormatter.BuildTrackFilename(null, track, album) + extension;
 
         public override void Start() => throw new NotImplementedException();
 

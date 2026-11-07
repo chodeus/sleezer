@@ -18,7 +18,7 @@ public class SubSonicTrackFormatTests
     [InlineData("flac", null, null, null, PreferredFormatEnum.Opus, ".opus")]
     [InlineData("flac", null, null, null, PreferredFormatEnum.Aac, ".aac")]
     [InlineData("MP3", null, null, null, PreferredFormatEnum.Raw, ".mp3")]
-    [InlineData(null, "audio/flac", null, null, PreferredFormatEnum.Raw, ".flac")]
+    [InlineData(null, "audio/mp4", null, null, PreferredFormatEnum.Raw, ".m4a")]
     [InlineData(null, null, null, null, PreferredFormatEnum.Raw, ".flac")]
     public void A_track_is_named_by_the_format_it_streams_in(string? suffix, string? contentType, string? transcodedSuffix, string? transcodedContentType, PreferredFormatEnum preferred, string expected)
     {

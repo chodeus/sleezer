@@ -39,7 +39,7 @@ internal static class SubSonicTrackFormat
         if (!string.IsNullOrWhiteSpace(suffix))
             return "." + suffix.Trim().TrimStart('.').ToLowerInvariant();
 
-        AudioFormat format = AudioFormatHelper.GetAudioFormatFromCodec(contentType?.Split('/')[^1].Trim() ?? string.Empty);
+        AudioFormat format = IndexerParserHelper.DetermineFormat(null, contentType, AudioFormat.Unknown);
         return format == AudioFormat.Unknown ? null : AudioFormatHelper.GetFileExtensionForFormat(format);
     }
 }
