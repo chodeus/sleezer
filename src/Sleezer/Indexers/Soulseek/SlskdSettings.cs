@@ -106,10 +106,10 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         [FieldDefinition(1, Label = "External URL", Type = FieldType.Url, Placeholder = "https://slskd.example.com", HelpText = "Public URL for interactive search links", Advanced = true)]
         public string? ExternalUrl { get; set; } = string.Empty;
 
-        [FieldDefinition(2, Label = "API Key", Type = FieldType.Textbox, Privacy = PrivacyLevel.ApiKey, HelpText = "The API key for your Slskd instance. You can find or set this in the Slskd's settings under 'Options'. Leave it empty if slskd's authentication is turned off.", Placeholder = "Enter your API key")]
+        [FieldDefinition(2, Label = "API Key", Type = FieldType.Textbox, Privacy = PrivacyLevel.ApiKey, HelpText = "From slskd's Options. Leave empty if slskd's authentication is off.", Placeholder = "Enter your API key")]
         public string ApiKey { get; set; } = string.Empty;
 
-        [FieldDefinition(3, Type = FieldType.Checkbox, Label = "Audio Files Only", HelpText = "Return only audio file types")]
+        [FieldDefinition(3, Type = FieldType.Checkbox, Label = "Audio Files Only", HelpText = "Return only audio file types", Advanced = true)]
         public bool OnlyAudioFiles { get; set; } = true;
 
         [FieldDefinition(4, Type = FieldType.Tag, Label = "File Extensions", HelpText = "Additional extensions when Audio Files Only is enabled (without dots, e.g. cue, log)", Advanced = true)]
@@ -170,16 +170,16 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         [FieldDefinition(24, Type = FieldType.Number, Label = "Max Queued/User", HelpText = "Max currently queued albums per user. 0 = disabled.", Advanced = true)]
         public int MaxQueuedPerUser { get; set; }
 
-        [FieldDefinition(25, Type = FieldType.Select, SelectOptions = typeof(MatchStrictnessType), Label = "Match Strictness", HelpText = "How aggressively to fuzzy-match peer folder names against the queried artist/album. Strict = fewer false positives; Loose = more candidates from messy metadata.", Advanced = true)]
+        [FieldDefinition(25, Type = FieldType.Select, SelectOptions = typeof(MatchStrictnessType), Label = "Match Strictness", HelpText = "How closely peer folder names must match the artist and album.", Advanced = true)]
         public int MatchStrictness { get; set; } = (int)MatchStrictnessType.Normal;
 
         [FieldDefinition(26, Label = "Require Coherent Single Source", Type = FieldType.Checkbox, Hidden = HiddenType.Hidden)]
         public bool RequireCoherentSingleSource { get; set; }
 
-        [FieldDefinition(27, Label = "Match Release Tracks", Type = FieldType.Checkbox, HelpText = "Only grab a folder whose audio files are the selected release's tracks: one file per track, each track title in a file name, and each track length within 8 seconds of a file. Titles too short to match reliably and tracks with no known length are not checked. Automatic searches skip folders that fail; interactive searches still list them.")]
+        [FieldDefinition(27, Label = "Match Release Tracks", Type = FieldType.Checkbox, HelpText = "Grab only folders whose files match the release's tracks by title and, where known, length; interactive search still lists the rest.")]
         public bool MatchReleaseTracks { get; set; }
 
-        [FieldDefinition(28, Label = "Label Results as Soulseek", Type = FieldType.Checkbox, HelpText = "End result titles with [Soulseek] instead of [WEB], so a custom format with a Release Title condition can score Soulseek results apart from store downloads. A CD, Vinyl or SACD named in the folder is kept; a WEB claim in the folder is dropped.")]
+        [FieldDefinition(28, Label = "Label Results as Soulseek", Type = FieldType.Checkbox, HelpText = "End result titles with [Soulseek] instead of [WEB], keeping any CD, Vinyl or SACD tag, so a custom format can score them apart.", Advanced = true)]
         public bool LabelSoulseekResults { get; set; }
 
         public NzbDroneValidationResult Validate() => new(Validator.Validate(this));

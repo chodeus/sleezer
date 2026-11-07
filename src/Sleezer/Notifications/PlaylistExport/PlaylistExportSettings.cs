@@ -25,7 +25,7 @@ public class PlaylistExportSettings : DynamicStateSettings
     [FieldDefinition(2, Label = "Auto-Detect Output Path", Type = FieldType.Checkbox, HelpText = "Automatically use the common root of your music library as the output directory. Overrides Output Path.")]
     public bool AutoDetectOutputPath { get; set; }
 
-    [FieldDefinition(3, Label = "Use Relative Paths", Type = FieldType.Checkbox, HelpText = "Write paths in the .m3u8 files relative to the output directory instead of absolute paths.")]
+    [FieldDefinition(3, Label = "Use Relative Paths", Type = FieldType.Checkbox, HelpText = "Write paths in the .m3u8 files relative to the output directory instead of absolute paths.", Advanced = true)]
     public bool UseRelativePaths { get; set; }
 
     [FieldDefinition(4, Label = "Clean Up Playlist on Removal", Type = FieldType.Checkbox, HelpText = "Delete the .m3u8 file when the corresponding import list is removed from Lidarr.")]
