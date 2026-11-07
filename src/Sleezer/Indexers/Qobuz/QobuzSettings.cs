@@ -45,16 +45,16 @@ namespace NzbDrone.Core.Indexers.Qobuz
         [FieldDefinition(0, Label = "User ID", Type = FieldType.Textbox, HelpText = "Your numeric Qobuz user ID. On play.qobuz.com open DevTools → Console and run: JSON.parse(localStorage.localuser).id")]
         public string UserID { get; set; } = "";
 
-        [FieldDefinition(1, Label = "User Auth Token", Type = FieldType.Password, Privacy = PrivacyLevel.ApiKey, HelpText = "The credential that enables downloading. On play.qobuz.com open DevTools → Console and run: copy(JSON.parse(localStorage.localuser).token) — it is then on your clipboard. The Network tab also carries it as the X-User-Auth-Token header, but only on api.qobuz.com calls, so the player has to be doing something first.")]
+        [FieldDefinition(1, Label = "User Auth Token", Type = FieldType.Password, Privacy = PrivacyLevel.ApiKey, HelpText = "Needed to download. On play.qobuz.com run copy(JSON.parse(localStorage.localuser).token) in the DevTools Console.")]
         public string UserAuthToken { get; set; } = "";
 
-        [FieldDefinition(2, Label = "Qobuz Email", Type = FieldType.Textbox, Advanced = true, HelpText = "Alternative to the token above.", HelpTextWarning = "Email/password sessions can search but CANNOT download — Qobuz refuses getFileUrl on them. Use the token for a working download client.")]
+        [FieldDefinition(2, Label = "Qobuz Email", Type = FieldType.Textbox, Advanced = true, HelpText = "Alternative to the token above.", HelpTextWarning = "Email/password logins can search but not download; use the token.")]
         public string Email { get; set; } = "";
 
         [FieldDefinition(3, Label = "Qobuz Password (MD5)", Type = FieldType.Password, Advanced = true, Privacy = PrivacyLevel.Password, HelpText = "The MD5 hash of your Qobuz password, not the password itself.")]
         public string MD5Password { get; set; } = "";
 
-        [FieldDefinition(4, Label = "App ID", Type = FieldType.Textbox, Advanced = true, Placeholder = "Auto-detected", HelpText = "Leave blank. Sleezer reads the current App ID from Qobuz's web player; only set this if that ever stops working.")]
+        [FieldDefinition(4, Label = "App ID", Type = FieldType.Textbox, Advanced = true, Placeholder = "Auto-detected", HelpText = "Leave blank; Sleezer reads it from Qobuz's web player. If that stops working, set it with App Secret.")]
         public string AppID { get; set; } = "";
 
         [FieldDefinition(5, Label = "App Secret", Type = FieldType.Password, Advanced = true, Privacy = PrivacyLevel.ApiKey, Placeholder = "Auto-detected", HelpText = "Leave blank. Set only alongside a manual App ID.")]

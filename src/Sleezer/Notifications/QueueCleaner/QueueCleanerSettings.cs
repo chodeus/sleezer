@@ -14,7 +14,7 @@ namespace NzbDrone.Plugin.Sleezer.Notifications.Queue
         [FieldDefinition(1, Label = "Blocklist Option", Type = FieldType.Select, SelectOptions = typeof(BlocklistOptions), HelpText = "Specify how to handle blocklisting during queue cleaning.")]
         public int BlocklistOption { get; set; } = (int)BlocklistOptions.RemoveAndBlocklist;
 
-        [FieldDefinition(2, Label = "Rename Option", Type = FieldType.Select, SelectOptions = typeof(RenameOptions), HelpText = "Specify how to handle renaming during queue cleaning.", HelpTextWarning = "Only enable this option if you plan to rename your songs again later (e.g., during Lidarr import), as it may disrupt the current naming structure.")]
+        [FieldDefinition(2, Label = "Rename Option", Type = FieldType.Select, SelectOptions = typeof(RenameOptions), HelpText = "Specify how to handle renaming during queue cleaning.", HelpTextWarning = "Enable only if you rename files again later, such as on Lidarr import; it may break the current naming.")]
         public int RenameOption { get; set; } = (int)RenameOptions.DoNotRename;
 
         [FieldDefinition(3, Label = "Import Cleaning Option", Type = FieldType.Select, SelectOptions = typeof(ImportCleaningOptions), HelpText = "Specify how to handle import cleaning during queue cleaning.")]
