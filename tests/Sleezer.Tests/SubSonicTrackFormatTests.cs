@@ -66,8 +66,9 @@ public class SubSonicReleaseYearTests
     [Fact]
     public void An_albums_server_added_date_is_not_its_release_year()
     {
-        SubSonicSearchAlbum album = JsonSerializer.Deserialize<SubSonicSearchAlbum>("{\"id\":\"1\",\"name\":\"Album\",\"artist\":\"Artist\",\"created\":\"2019-01-01T00:00:00Z\"}")!;
+        SubSonicSearchAlbum album = JsonSerializer.Deserialize<SubSonicSearchAlbum>("{\"id\":\"1\",\"name\":\"Album\",\"artist\":\"Artist\",\"created\":1546300800000}")!;
 
+        Assert.NotNull(album.Created);
         Assert.Equal(string.Empty, album.YearString);
     }
 }

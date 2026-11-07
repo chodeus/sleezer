@@ -110,7 +110,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Deezer
                 }
                 catch (Exception ex)
                 {
-                    _logger.Warn(ex, "Skipping Deezer artist {Artist} ({Id}): its albums failed to load", artistD.Name, artistD.Id);
+                    _logger.Warn(ex, "Skipping Deezer artist {Artist} ({Id}): reading the artist or its albums failed", artistD.Name, artistD.Id);
                     lock (failures)
                         failures.Add(ex);
                     return null;

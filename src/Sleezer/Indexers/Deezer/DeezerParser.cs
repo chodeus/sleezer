@@ -63,10 +63,10 @@ namespace NzbDrone.Core.Indexers.Deezer
             if (!Task.WaitAll(tasks, IndexerParseTimeout))
                 throw new TimeoutException($"Deezer search enrichment did not complete within {IndexerParseTimeout.TotalSeconds:F0}s");
 
-            // Every page failing is Deezer down or an expired ARL, not an empty search: Lidarr must see the failure.
+            // Pages failing with none giving a release is Deezer down or an expired ARL, not an empty search; a hidden album gives none either.
             Exception[] failures = [.. tasks.Select(t => t.Result.Failure).OfType<Exception>()];
-            if (failures.Length > 0 && failures.Length == tasks.Length)
-                throw new AggregateException($"Every one of {tasks.Length} Deezer album pages failed to load", failures);
+            if (failures.Length > 0 && tasks.All(t => t.Result.Releases is not { Count: > 0 }))
+                throw new AggregateException($"{failures.Length} of {tasks.Length} Deezer album pages failed to load, and none gave a release", failures);
 
             foreach (var task in tasks)
             {
@@ -307,11 +307,19 @@ namespace NzbDrone.Core.Indexers.Deezer
             await Task.WhenAll(recent.Select(async album =>
             {
                 var id = album["ALB_ID"]!.Value<long>();
-                JToken result;
+                JToken data;
                 Interlocked.Increment(ref attempted);
                 try
                 {
-                    result = await api.Client.GWApi.GetAlbumPage(id);
+                    // Read inside the handler: a page missing SONGS or DATA must skip its album, not fail the channel.
+                    var result = await api.Client.GWApi.GetAlbumPage(id);
+                    var duration = result["SONGS"]!.Sum(track => track.Contains("DURATION") ? track["DURATION"]!.Value<long>() : 0L);
+                    var trackCount = result["SONGS"]!.Count();
+
+                    data = result["DATA"]!;
+                    data["DURATION"] = duration;
+                    data["NUMBER_TRACK"] = trackCount;
+                    data["LINK"] = $"https://deezer.com/album/{id}";
                 }
                 catch (Exception ex)
                 {
@@ -319,14 +327,6 @@ namespace NzbDrone.Core.Indexers.Deezer
                     failures.Add(ex);
                     return;
                 }
-
-                var duration = result["SONGS"]!.Sum(track => track.Contains("DURATION") ? track["DURATION"]!.Value<long>() : 0L);
-                var trackCount = result["SONGS"]!.Count();
-
-                var data = result["DATA"]!;
-                data["DURATION"] = duration;
-                data["NUMBER_TRACK"] = trackCount;
-                data["LINK"] = $"https://deezer.com/album/{id}";
 
                 lock (dataArray)
                 {
