@@ -301,11 +301,14 @@ namespace NzbDrone.Core.Indexers.Deezer
             JArray dataArray = new();
 
             long albumCount = 0;
+            int attempted = 0;
+            System.Collections.Concurrent.ConcurrentBag<Exception> failures = [];
 
             await Task.WhenAll(recent.Select(async album =>
             {
                 var id = album["ALB_ID"]!.Value<long>();
                 JToken result;
+                Interlocked.Increment(ref attempted);
                 try
                 {
                     result = await api.Client.GWApi.GetAlbumPage(id);
@@ -313,6 +316,7 @@ namespace NzbDrone.Core.Indexers.Deezer
                 catch (Exception ex)
                 {
                     _logger.Warn(ex, "Skipping new release {AlbumId}: its Deezer page could not be read", id);
+                    failures.Add(ex);
                     return;
                 }
 
@@ -330,6 +334,10 @@ namespace NzbDrone.Core.Indexers.Deezer
                     albumCount++;
                 }
             }));
+
+            // As in a search: every page failing is Deezer down or an expired ARL, not an empty channel.
+            if (attempted > 0 && failures.Count == attempted)
+                throw new AggregateException($"Every one of {attempted} Deezer new-release pages failed to load", failures);
 
             baseObj.Add("data", dataArray);
             baseObj.Add("total", albumCount);

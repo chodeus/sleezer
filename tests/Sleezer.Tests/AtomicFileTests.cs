@@ -14,7 +14,15 @@ public sealed class AtomicFileTests : IDisposable
         string target = Path.Combine(_root, "real.json");
         string link = Path.Combine(_root, "settings.json");
         File.WriteAllText(target, "old");
-        File.CreateSymbolicLink(link, target);
+        try
+        {
+            File.CreateSymbolicLink(link, target);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Windows without developer mode can't make links.
+            return;
+        }
 
         AtomicFile.Write(link, "new");
         Assert.Equal("new", File.ReadAllText(target));

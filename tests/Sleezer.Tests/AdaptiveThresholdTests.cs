@@ -73,6 +73,25 @@ public class AdaptiveThresholdTests
         }
     }
 
+    // A file that failed to load was saved over at the next save, losing every weight it held.
+    [Fact]
+    public void A_file_that_cannot_be_read_is_never_saved_over()
+    {
+        string folder = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), $"threshold-{Guid.NewGuid():N}")).FullName;
+        try
+        {
+            string file = Path.Combine(folder, "dynamic-threshold.json");
+            File.WriteAllText(file, "{ not json");
+            SaveOnce(folder);
+
+            Assert.Equal("{ not json", File.ReadAllText(file));
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
     [Fact]
     public void An_existing_file_set_as_the_path_is_still_used()
     {

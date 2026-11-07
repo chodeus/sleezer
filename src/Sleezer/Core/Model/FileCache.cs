@@ -52,10 +52,15 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
             {
                 cachedData = JsonSerializer.Deserialize<CachedData<T>>(await File.ReadAllTextAsync(cacheFilePath));
             }
-            catch (Exception ex) when (ex is JsonException or IOException)
+            catch (JsonException)
             {
-                // A torn or half-read entry is a miss; left in place it would fail every later lookup.
+                // A torn entry is a miss; left in place it would fail every later lookup.
                 cachedData = null;
+            }
+            catch (IOException)
+            {
+                // A read that failed says nothing about the entry: keep it.
+                return default;
             }
 
             if (cachedData == null || DateTime.UtcNow - cachedData.CreatedAt > cachedData.ExpirationDuration)

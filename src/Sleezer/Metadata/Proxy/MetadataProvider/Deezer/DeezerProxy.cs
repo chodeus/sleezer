@@ -98,7 +98,8 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Deezer
         public List<Artist> SearchNewArtist(DeezerMetadataProxySettings settings, string title)
         {
             UpdateCache(settings);
-            return CachedSearchAsync<Artist, DeezerArtist>(settings, "", artistD =>
+            List<Exception> failures = [];
+            List<Artist> artists = CachedSearchAsync<Artist, DeezerArtist>(settings, "", artistD =>
             {
                 // One artist whose albums fail to load must not fail the whole search.
                 try
@@ -110,9 +111,17 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Deezer
                 catch (Exception ex)
                 {
                     _logger.Warn(ex, "Skipping Deezer artist {Artist} ({Id}): its albums failed to load", artistD.Name, artistD.Id);
+                    lock (failures)
+                        failures.Add(ex);
                     return null;
                 }
             }, title).GetAwaiter().GetResult();
+
+            // Every artist failing is Deezer down, not a search with no matches.
+            if (artists.Count == 0 && failures.Count > 0)
+                throw new AggregateException($"Every one of {failures.Count} Deezer artists failed to load", failures);
+
+            return artists;
         }
 
         public List<object> SearchNewEntity(DeezerMetadataProxySettings settings, string query)

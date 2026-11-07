@@ -23,6 +23,7 @@ public class ConversionRuleGuardTests
     [Theory]
     [InlineData(AudioFormat.FLAC, 16, 24)]
     [InlineData(AudioFormat.FLAC, null, 16)]
+    [InlineData(AudioFormat.FLAC, 0, 16)]
     public void A_lossless_conversion_that_could_fake_bit_depth_is_blocked(AudioFormat source, int? bitDepth, int targetBitDepth)
     {
         Assert.NotNull(Reason(source, null, bitDepth, AudioFormat.FLAC, targetBitDepth: targetBitDepth));

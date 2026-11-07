@@ -23,6 +23,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
         private bool _disposed;
         private System.Timers.Timer? _saveTimer;
         private bool _isDirty;
+        private bool _unreadable;
         private readonly object _lock = new();
 
         public AdaptiveThresholdConfig Config { get; private set; } = new();
@@ -38,6 +39,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
                 if (filePath == _configFilePath)
                     return;
                 _configFilePath = filePath;
+                _unreadable = false;
 
                 if (File.Exists(filePath))
                 {
@@ -47,7 +49,9 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
                     }
                     catch (Exception ex)
                     {
-                        Logger.Warn(ex, "Could not read the dynamic threshold from {Path}; starting afresh", filePath);
+                        // Never saved over: the weights it holds may only be unreadable for now.
+                        _unreadable = true;
+                        Logger.Warn(ex, "Could not read the dynamic threshold from {Path}; learning afresh without saving over it", filePath);
                     }
                 }
 
@@ -71,7 +75,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
         {
             lock (_lock)
             {
-                if (!_isDirty || _configFilePath == null) return;
+                if (!_isDirty || _configFilePath == null || _unreadable) return;
                 try
                 {
                     string? folder = Path.GetDirectoryName(_configFilePath);

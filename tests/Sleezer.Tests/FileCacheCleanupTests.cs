@@ -48,6 +48,28 @@ public class FileCacheCleanupTests
         }
     }
 
+    // A read that fails says nothing about the entry: deleting it threw away a good one.
+    [Fact]
+    public async Task An_entry_that_cannot_be_read_now_is_kept()
+    {
+        string folder = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), $"cache-{Guid.NewGuid():N}")).FullName;
+        try
+        {
+            FileCache cache = new(folder);
+            await cache.SetAsync("key", "value", TimeSpan.FromHours(1));
+            string entry = Assert.Single(Directory.GetFiles(folder, "*.json", SearchOption.AllDirectories));
+
+            using (new FileStream(entry, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+                Assert.Null(await cache.GetAsync<string>("key"));
+
+            Assert.Equal("value", await cache.GetAsync<string>("key"));
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
     [Fact]
     public async Task A_write_that_cannot_land_leaves_no_temp_file()
     {

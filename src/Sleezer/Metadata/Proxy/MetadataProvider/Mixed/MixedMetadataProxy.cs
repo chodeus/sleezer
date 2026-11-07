@@ -209,6 +209,8 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
                 return query.GetAwaiter().GetResult();
 
             _logger.Warn("Proxy {Proxy} took over {Seconds}s for artist {Id}; keeping its previous albums", proxy.Name, seconds, id);
+            // The proxies take no CancellationToken: the query runs on, and its failure is logged here rather than lost.
+            _ = query.ContinueWith(t => _logger.Debug(t.Exception, "Proxy {Proxy}'s late query for artist {Id} failed", proxy.Name, id), TaskContinuationOptions.OnlyOnFaulted);
             return null;
         }
 

@@ -1,6 +1,6 @@
 namespace NzbDrone.Plugin.Sleezer.Core.Utilities;
 
-/// <summary>Writes a file whole or not at all: written aside, then moved over the old one.</summary>
+/// <summary>Writes a file whole or not at all: written aside and flushed to disk, then moved over the old one.</summary>
 public static class AtomicFile
 {
     public static void Write(string path, string contents)
@@ -9,7 +9,12 @@ public static class AtomicFile
         string temp = TempFor(path);
         try
         {
-            File.WriteAllText(temp, contents);
+            using (FileStream stream = new(temp, FileMode.CreateNew, FileAccess.Write))
+            {
+                stream.Write(System.Text.Encoding.UTF8.GetBytes(contents));
+                stream.Flush(flushToDisk: true);
+            }
+
             File.Move(temp, path, overwrite: true);
         }
         catch
@@ -25,7 +30,12 @@ public static class AtomicFile
         string temp = TempFor(path);
         try
         {
-            await File.WriteAllTextAsync(temp, contents);
+            await using (FileStream stream = new(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, useAsync: true))
+            {
+                await stream.WriteAsync(System.Text.Encoding.UTF8.GetBytes(contents));
+                stream.Flush(flushToDisk: true);
+            }
+
             File.Move(temp, path, overwrite: true);
         }
         catch

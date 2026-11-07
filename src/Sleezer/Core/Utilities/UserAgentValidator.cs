@@ -47,6 +47,9 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
     /// </summary>
     public partial class UserAgentValidator : IUserAgentValidator
     {
+        /// <summary>The rule the metadata proxies' User Agent settings fail with.</summary>
+        public const string RuleMessage = "Use Name/Version with a version of digits and dots, such as MyApp/1.0, and avoid terms such as lidarr, bot, crawler or proxy.";
+
         private readonly HashSet<string> _allowedExact = new(StringComparer.OrdinalIgnoreCase);
         private readonly List<Regex> _allowedRegex = [];
         private readonly HashSet<string> _blackExact = new(StringComparer.OrdinalIgnoreCase);
