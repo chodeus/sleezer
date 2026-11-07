@@ -252,6 +252,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     public IEnumerable<DownloadClientItem> GetItems(int definitionId, SlskdProviderSettings settings, OsPath remotePath)
     {
         _settingsCache[definitionId] = settings;
+        _corruptionHandler.UseSettings(settings);
 
         try
         {

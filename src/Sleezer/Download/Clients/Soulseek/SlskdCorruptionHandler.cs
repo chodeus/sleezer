@@ -14,6 +14,9 @@ public interface ISlskdCorruptionHandler
         string? completedFolderPath,
         SlskdProviderSettings settings,
         CancellationToken ct);
+
+    /// <summary>Applies the client's current ban threshold to the peers already struck.</summary>
+    void UseSettings(SlskdProviderSettings settings);
 }
 
 // Slskd-internal strike shape: carries the SlskdFileState so the handler can
@@ -36,6 +39,8 @@ public class SlskdCorruptionHandler : ISlskdCorruptionHandler
         _userTracker = userTracker;
         _logger = logger;
     }
+
+    public void UseSettings(SlskdProviderSettings settings) => _userTracker.UseThreshold(settings.BanUserAfterCorruptCount);
 
     public async Task HandleCorruptDownloadAsync(
         SlskdDownloadItem item,

@@ -20,6 +20,9 @@ public interface ISlskdCorruptUserTracker
     /// empty when no strikes have been recorded or the threshold is 0.
     /// </summary>
     IReadOnlySet<string> GetBannedUsers();
+
+    /// <summary>The current Ban User After Corrupt Count; 0 releases every ban.</summary>
+    void UseThreshold(int banThreshold);
 }
 
 public class SlskdCorruptUserTracker : ISlskdCorruptUserTracker
@@ -46,6 +49,9 @@ public class SlskdCorruptUserTracker : ISlskdCorruptUserTracker
         else
             _logger.Info("Slskd corruption strike recorded for {Username}: {Total} total (threshold {Threshold})", username, total, banThreshold);
     }
+
+    // Read on every download-client poll: a strike was the only update, so 0 left bans standing until restart.
+    public void UseThreshold(int banThreshold) => _lastKnownThreshold = banThreshold;
 
     public IReadOnlySet<string> GetBannedUsers()
     {
