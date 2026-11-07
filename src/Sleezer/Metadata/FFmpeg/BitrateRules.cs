@@ -218,7 +218,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
                 return true;
             }
 
-            // Match format like "opus" or format+bitrate like "opus192"
+            // Match a format like "mp3" or a format and bitrate like "mp3-320"
             Match match = ArtistTagRegex().Match(tagLabel.Trim());
             if (!match.Success)
             {
@@ -419,7 +419,8 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
         [GeneratedRegex(@"^([a-zA-Z0-9]+)(?::(\d+)k?)?(?::(cbr))?$", RegexOptions.Compiled)]
         private static partial Regex TargetFormatRegex();
 
-        [GeneratedRegex(@"^([a-zA-Z]+)(?:-(\d+)k?)?$", RegexOptions.Compiled)]
+        // Formats can hold digits ("mp3-320", "ac3"): a letters-only name never matched them.
+        [GeneratedRegex(@"^([a-zA-Z0-9]+?)(?:-(\d+)k?)?$", RegexOptions.Compiled)]
         private static partial Regex ArtistTagRegex();
     }
 }
