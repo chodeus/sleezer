@@ -116,7 +116,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
 
         private IEnumerable<KeyValuePair<string, string>> _customConversion = [];
 
-        [FieldDefinition(0, Label = "FFmpeg Path", Type = FieldType.Path, Section = MetadataSectionType.Metadata, Placeholder = "/downloads/FFmpeg", HelpText = "Required. Where ffmpeg is kept; saving installs it if missing. A newer ffmpeg on the PATH is used instead.", HelpTextWarning = "Enable converts any import a Convert toggle, artist tag or custom rule matches, torrent and Usenet included. The corrupt scan runs either way.")]
+        [FieldDefinition(0, Label = "FFmpeg Path", Type = FieldType.Path, Section = MetadataSectionType.Metadata, Placeholder = "/downloads/FFmpeg", HelpText = "Required. Where ffmpeg is kept; saving installs it if missing. A newer ffmpeg on the PATH is used instead.", HelpTextWarning = "Enable allows conversion of any import a Convert toggle, artist tag or custom rule matches, torrent and Usenet included. The corrupt scan runs either way.")]
         public string FFmpegPath { get; set; } = string.Empty;
 
         [FieldDefinition(1, Label = "Convert MP3", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Convert MP3 files.")]

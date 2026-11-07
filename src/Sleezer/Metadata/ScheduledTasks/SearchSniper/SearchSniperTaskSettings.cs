@@ -70,7 +70,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.ScheduledTasks.SearchSniper
         [FieldDefinition(6, Label = "Pause When Status", Type = FieldType.Select, SelectOptions = typeof(WaitOnType), HelpText = "Queue statuses that count toward Pause When Queued.", Advanced = true)]
         public int WaitOn { get; set; } = (int)WaitOnType.QueuedAndDownloading;
 
-        [FieldDefinition(7, Label = "Cache Type", Type = FieldType.Select, SelectOptions = typeof(CacheType), HelpText = "Memory is lost on restart; Permanent keeps results in the Cache Directory.", Advanced = true)]
+        [FieldDefinition(7, Label = "Cache Type", Type = FieldType.Select, SelectOptions = typeof(CacheType), HelpText = "Memory is lost on restart; Permanent keeps the list of searched albums in the Cache Directory.", Advanced = true)]
         public int RequestCacheType { get; set; } = (int)CacheType.Memory;
 
         [FieldDefinition(8, Label = "Missing", Type = FieldType.Checkbox, HelpText = "Search for albums that are missing from your library.")]

@@ -96,7 +96,7 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek
         [FieldDefinition(14, Label = "Tag Files as Soulseek", Type = FieldType.Checkbox, HelpText = "Write SOURCE=soulseek into downloaded FLAC and Ogg files before import.", Advanced = true)]
         public bool TagFilesAsSoulseek { get; set; }
 
-        [FieldDefinition(15, Label = "Answer Peer Challenges", Type = FieldType.Checkbox, HelpText = "Answer a peer's private-chat word check while grabbing from them, once per peer every 12 hours.")]
+        [FieldDefinition(15, Label = "Answer Peer Challenges", Type = FieldType.Checkbox, HelpText = "Answer a peer's private-chat word check while grabbing from them, once per peer every 12 hours. Set Retry Attempts to 2 or more.")]
         public bool AnswerPeerChallenges { get; set; }
 
         [FieldDefinition(98, Label = "Is Fetched remote", Type = FieldType.Checkbox, Hidden = HiddenType.Hidden)]
