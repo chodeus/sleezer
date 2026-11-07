@@ -61,7 +61,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 
             foreach (ReleaseInfo release in flagged)
             {
-                logger.Debug("{Indexer} flagged '{Title}' ({Year}) — the searched album is from {TargetYear}",
+                logger.Debug("{Indexer} flagged {Title} ({Year}) — the searched album is from {TargetYear}",
                     indexerName, release.Title, release.PublishDate.Year, targetYear);
             }
 

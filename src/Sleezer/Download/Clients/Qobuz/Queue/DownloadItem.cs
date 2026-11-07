@@ -190,7 +190,7 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
                 // cleanup then deletes what did download. A real ID of 0 still works.
                 if (track.Id is null)
                 {
-                    logger.Warn("Qobuz track '{TrackTitle}' has no ID in the album payload; skipping", track.Title);
+                    logger.Warn("Qobuz track {TrackTitle} has no ID in the album payload; skipping", track.Title);
                     Interlocked.Increment(ref _skippedTracks);
                     return;
                 }

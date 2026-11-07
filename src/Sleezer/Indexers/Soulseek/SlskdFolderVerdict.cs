@@ -49,7 +49,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             string searchArtistNorm = NormalizeString(searchData.Artist ?? "");
             string searchAlbumNorm = NormalizeString(searchData.Album ?? "");
 
-            _logger.Trace("Creating album data - Dir: '{Dir}', Search artist: '{Artist}', Search album: '{Album}'", dirNameNorm, searchArtistNorm, searchAlbumNorm);
+            _logger.Trace("Creating album data - Dir: {Dir}, Search artist: {Artist}, Search album: {Album}", dirNameNorm, searchArtistNorm, searchAlbumNorm);
 
             // The volume route needs a keyword ("Vol. 3", "Part II"); a title that is a number ("1989", "IV") takes the normal route.
             bool isVolumeSearch = !string.IsNullOrEmpty(searchData.Album) && VolumeKeywordRegex().Match(searchData.Album).Success;
@@ -156,7 +156,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             if (!VariantQualifiers.RemixSignaturesConflict(searchAlbum, [candidateLeaf, candidateParent], searchData.TargetVariantTypes))
                 return;
 
-            _logger.Trace("Remix qualifier mismatch: search '{Album}' vs folder '{Folder}'", searchAlbum, candidateLeaf);
+            _logger.Trace("Remix qualifier mismatch: search {Album} vs folder {Folder}", searchAlbum, candidateLeaf);
             judgement.AlbumMatch = false;
             judgement.Reject("remix or version qualifier differs");
         }
@@ -171,7 +171,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             if (evidence.Covered == 0)
             {
                 judgement.Reject("holds none of the wanted tracks");
-                _logger.Debug("Single/EP target '{Album}': source '{Dir}' holds none of the wanted tracks — rejecting", searchData.Album, directory.Key);
+                _logger.Debug("Single/EP target {Album}: source {Dir} holds none of the wanted tracks — rejecting", searchData.Album, directory.Key);
                 return;
             }
 
@@ -191,7 +191,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             if (audioFileCount <= expectedTrackCount || evidence.Wanted != expectedTrackCount || !evidence.CoversEveryTitle || evidence.Files.Count >= audioFileCount)
                 return;
 
-            _logger.Debug("Single/EP target '{Album}': plucking {Matched} track(s) from a {Total}-file source '{Dir}'", searchData.Album, evidence.Files.Count, audioFileCount, directoryKey);
+            _logger.Debug("Single/EP target {Album}: plucking {Matched} track(s) from a {Total}-file source {Dir}", searchData.Album, evidence.Files.Count, audioFileCount, directoryKey);
             judgement.Files = evidence.Files;
             judgement.Reasons.Add($"took {evidence.Files.Count} of {audioFileCount} audio files");
         }
@@ -206,7 +206,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             else if (settings?.RequireCoherentSingleSource == true)
             {
                 judgement.Reject($"holds {evidence.Covered} of {evidence.Wanted} matchable tracks and Whole Albums Only is on");
-                _logger.Debug("Single/EP target '{Album}': source '{Dir}' covers {Covered}/{Wanted} matchable tracks and Whole Albums Only is on — rejecting partial source", searchData.Album, directoryKey, evidence.Covered, evidence.Wanted);
+                _logger.Debug("Single/EP target {Album}: source {Dir} covers {Covered}/{Wanted} matchable tracks and Whole Albums Only is on — rejecting partial source", searchData.Album, directoryKey, evidence.Covered, evidence.Wanted);
             }
             else
             {
@@ -223,7 +223,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 return;
 
             judgement.Reject($"Match Release Tracks: {mismatch}");
-            _logger.Debug("Match Release Tracks: '{Dir}' is not the release of '{Album}' — {Reason}", directoryKey, searchData.Album, mismatch);
+            _logger.Debug("Match Release Tracks: {Dir} is not the release of {Album} — {Reason}", directoryKey, searchData.Album, mismatch);
         }
 
         // The verdict while JudgeFolder builds it; each step narrows it.

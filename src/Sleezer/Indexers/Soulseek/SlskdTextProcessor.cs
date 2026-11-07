@@ -1,5 +1,6 @@
 ﻿using System.Text.RegularExpressions;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
+using NzbDrone.Plugin.Sleezer.Indexers.Soulseek.Search.Transformers;
 
 namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 {
@@ -17,7 +18,6 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         };
 
         private static readonly string[] VolumeFormats = { "Volume", "Vol.", "Vol", "v", "V" };
-        private static readonly Regex PunctuationPattern = new(@"[^\w\s-&]", RegexOptions.Compiled);
         private static readonly Regex VolumePattern = new(@"(Vol(?:ume)?\.?)\s*([0-9]+|[IVXLCDM]+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex RomanNumeralPattern = new(@"\b([IVXLCDM]+)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
@@ -64,22 +64,6 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         public static string BuildSearchText(string? artist, string? album)
             => string.Join(" ", new[] { album, artist }.Where(term => !string.IsNullOrWhiteSpace(term)).Select(term => term?.Trim()));
 
-        public static bool ShouldNormalizeCharacters(string? artist, string? album)
-        {
-            string? normalizedArtist = artist != null ? NormalizeSpecialCharacters(artist) : null;
-            string? normalizedAlbum = album != null ? NormalizeSpecialCharacters(album) : null;
-            return (normalizedArtist != null && !string.Equals(normalizedArtist, artist, StringComparison.OrdinalIgnoreCase)) ||
-                   (normalizedAlbum != null && !string.Equals(normalizedAlbum, album, StringComparison.OrdinalIgnoreCase));
-        }
-
-        public static bool ShouldStripPunctuation(string? artist, string? album)
-        {
-            string? strippedArtist = artist != null ? StripPunctuation(artist) : null;
-            string? strippedAlbum = album != null ? StripPunctuation(album) : null;
-            return (strippedArtist != null && !string.Equals(strippedArtist, artist, StringComparison.OrdinalIgnoreCase)) ||
-                   (strippedAlbum != null && !string.Equals(strippedAlbum, album, StringComparison.OrdinalIgnoreCase));
-        }
-
         public static bool ContainsVolumeReference(string album)
             => album.Contains("Volume", StringComparison.OrdinalIgnoreCase) || album.Contains("Vol", StringComparison.OrdinalIgnoreCase);
 
@@ -90,14 +74,6 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
             Match volumeMatch = VolumePattern.Match(album);
             return !(volumeMatch.Success && volumeMatch.Groups[2].Value.Equals(romanMatch.Groups[1].Value, StringComparison.OrdinalIgnoreCase));
-        }
-
-        public static string StripPunctuation(string? input)
-        {
-            if (string.IsNullOrEmpty(input)) return string.Empty;
-
-            string stripped = PunctuationPattern.Replace(input, "");
-            return StripPunctuationRegex().Replace(stripped, " ").Trim();
         }
 
         public static string NormalizeSpecialCharacters(string? input) =>
@@ -159,7 +135,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             if (string.IsNullOrWhiteSpace(searchText))
                 return string.Empty;
 
-            string[] words = searchText.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            string[] words = PeerWords(searchText);
             bool[] removed = new bool[words.Length];
 
             foreach (string[] termWords in BlockedTermWords)
@@ -183,9 +159,12 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             if (string.IsNullOrWhiteSpace(searchText))
                 return false;
 
-            string[] words = searchText.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            return RemoveBlockedTerms(searchText).Split(' ', StringSplitOptions.RemoveEmptyEntries).Length != words.Length;
+            return RemoveBlockedTerms(searchText).Split(' ', StringSplitOptions.RemoveEmptyEntries).Length != PeerWords(searchText).Length;
         }
+
+        // The server filters the words a search reaches peers with: "Beatles'" goes out as "Beatles".
+        private static string[] PeerWords(string searchText) =>
+            QueryNormalizer.ForPeers(searchText).Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
         private static readonly Dictionary<char, string> AccentInjectionMap = new()
         {
@@ -211,7 +190,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             if (string.IsNullOrWhiteSpace(searchText))
                 return string.Empty;
 
-            string[] words = searchText.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            string[] words = PeerWords(searchText);
             string[] normalized = [.. words.Select(NormalizeSpecialCharacters)];
             bool[] keep = [.. words.Select(_ => true)];
 
@@ -266,9 +245,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
             static string CleanEvidenceTitle(string title)
             {
-                string cleaned = VariantQualifiers.StripBrackets(title);
-                cleaned = StripPunctuation(cleaned);
-                return cleaned.Trim();
+                return QueryNormalizer.NormalizeText(VariantQualifiers.StripBrackets(title));
             }
         }
 
@@ -320,9 +297,6 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 .Select(username => username.Trim())
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
         }
-
-        [GeneratedRegex(@"\s+")]
-        private static partial Regex StripPunctuationRegex();
 
         [GeneratedRegex(@"^(?:cd|disc|disk|dvd)\s*[-_. ]?\s*\d{1,2}$", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
         private static partial Regex DiscFolderRegex();

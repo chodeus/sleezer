@@ -14,6 +14,7 @@ using NzbDrone.Core.Music;
 using NzbDrone.Plugin.Sleezer.Core.Replacements;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Indexers.Soulseek.Search.Core;
+using NzbDrone.Plugin.Sleezer.Indexers.Soulseek.Search.Transformers;
 
 namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 {
@@ -137,6 +138,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                     SlskdTextProcessor.BuildSearchText(query.Artist, query.Album));
             }
 
+            searchText = QueryNormalizer.ForPeers(searchText);
             if (string.IsNullOrWhiteSpace(searchText))
                 return [];
 

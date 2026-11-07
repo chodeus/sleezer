@@ -107,7 +107,7 @@ namespace NzbDrone.Core.Indexers.Deezer
 
             if (Rules.WholeAlbumsOnly && (missing128 || blocked.Count > 0))
             {
-                _logger.Debug("Deezer hid album {AlbumId} '{Title}' — {Blocked} track(s) not streamable in your country, missing formats: {Missing}",
+                _logger.Debug("Deezer hid album {AlbumId} {Title} — {Blocked} track(s) not streamable in your country, missing formats: {Missing}",
                     result.AlbumId, result.AlbumTitle, blocked.Count, missing128);
                 return null;
             }
@@ -131,7 +131,7 @@ namespace NzbDrone.Core.Indexers.Deezer
 
             if (Settings.HideCleanReleases && explicitType == ExplicitStatus.Clean)
             {
-                _logger.Debug("Deezer hid album {AlbumId} '{Title}' — clean release", result.AlbumId, result.AlbumTitle);
+                _logger.Debug("Deezer hid album {AlbumId} {Title} — clean release", result.AlbumId, result.AlbumTitle);
                 return null;
             }
 

@@ -212,7 +212,7 @@ public class SubSonicIndexerParser(Logger logger, IHttpClient httpClient) : ISub
     {
         if (album.Songs == null || album.Songs.Count == 0)
         {
-            _logger.Warn("Album '{Name}' (ID: {Id}) has no songs", album.Name, album.Id);
+            _logger.Warn("Album {Name} (ID: {Id}) has no songs", album.Name, album.Id);
             throw new InvalidOperationException($"Album {album.Id} has no songs");
         }
 
@@ -224,7 +224,7 @@ public class SubSonicIndexerParser(Logger logger, IHttpClient httpClient) : ISub
 
         long totalSize = CalculateTotalAlbumSize(album.Songs, bitrate);
 
-        _logger.Trace("Parsed album '{Name}' with {TrackCount} tracks, total size: {Size} bytes, format: {Format} {BitDepth}bit",
+        _logger.Trace("Parsed album {Name} with {TrackCount} tracks, total size: {Size} bytes, format: {Format} {BitDepth}bit",
             album.Name, album.Songs.Count, totalSize, format, bitDepth);
 
         return new AlbumData("SubSonic", nameof(SubSonicDownloadProtocol))
