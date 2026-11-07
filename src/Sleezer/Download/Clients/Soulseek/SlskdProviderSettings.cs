@@ -63,7 +63,7 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek
         [FieldDefinition(2, Label = "Indexer", Type = FieldType.Select, SelectOptionsProviderAction = IndexerLogin.OptionsAction, HelpText = "The Slskd indexer whose URL and API key this client uses. Automatic takes the only one.")]
         public int IndexerId { get; set; }
 
-        [FieldDefinition(3, Label = "Timeout", Type = FieldType.Textbox, HelpText = "Fail a grab idle twice this long with nothing downloading or queued. Decimals OK; blank = no timeout.", Unit = "minutes", Advanced = true, Placeholder = "Enter timeout in minutes")]
+        [FieldDefinition(3, Label = "Timeout", Type = FieldType.Textbox, HelpText = "Fail a grab stuck in a peer's queue this long, or idle twice as long. Decimals OK; blank = no timeout.", Unit = "minutes", Advanced = true, Placeholder = "Enter timeout in minutes")]
         public double? TimeoutMinutes { get; set; }
 
         [FieldDefinition(4, Label = "Retry Attempts", Type = FieldType.Number, HelpText = "Times to retry a failed file. Use 2 or more with Answer Peer Challenges.", Advanced = true, Placeholder = "Enter retry attempts")]
