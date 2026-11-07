@@ -66,7 +66,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Lastfm
         [FieldDefinition(1, Label = "API Key", Type = FieldType.Textbox, Privacy = PrivacyLevel.ApiKey, HelpText = "Your Last.fm API key", Placeholder = "Enter your API key", Hidden = HiddenType.Hidden)]
         public string ApiKey { get; set; } = string.Empty;
 
-        [FieldDefinition(2, Label = "User Agent", Section = MetadataSectionType.Metadata, Type = FieldType.Textbox, HelpText = "Specify a custom User-Agent to identify yourself. A User-Agent helps servers understand the software making the request. Use a unique identifier that includes a name and version. Avoid generic or suspicious-looking User-Agents to prevent blocking.", Placeholder = "Lidarr/1.0.0", Hidden = HiddenType.Hidden)]
+        [FieldDefinition(2, Label = "User Agent", Section = MetadataSectionType.Metadata, Type = FieldType.Textbox, HelpText = "User-Agent sent with requests, such as a name and version.", Placeholder = "Lidarr/1.0.0", Hidden = HiddenType.Hidden)]
         public string UserAgent { get; set; } = string.Empty;
 
         [FieldDefinition(3, Label = "Page Number", Type = FieldType.Number, HelpText = "Page number for pagination", Placeholder = "1", Hidden = HiddenType.Hidden)]
@@ -89,13 +89,13 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Lastfm
         [FieldDefinition(1, Label = "API Key", Type = FieldType.Textbox, Privacy = PrivacyLevel.ApiKey, HelpText = "Your Last.fm API key", Placeholder = "Enter your API key")]
         public string ApiKey { get; set; } = string.Empty;
 
-        [FieldDefinition(2, Label = "User Agent", Section = MetadataSectionType.Metadata, Type = FieldType.Textbox, HelpText = "Specify a custom User-Agent to identify yourself. A User-Agent helps servers understand the software making the request. Use a unique identifier that includes a name and version. Avoid generic or suspicious-looking User-Agents to prevent blocking.", Placeholder = "Lidarr/1.0.0")]
+        [FieldDefinition(2, Label = "User Agent", Section = MetadataSectionType.Metadata, Type = FieldType.Textbox, HelpText = "User-Agent sent with requests, such as a name and version.", Placeholder = "Lidarr/1.0.0")]
         public string UserAgent { get; set; } = string.Empty;
 
-        [FieldDefinition(3, Label = "Page Number", Type = FieldType.Number, HelpText = "Page number for pagination", Placeholder = "1")]
+        [FieldDefinition(3, Label = "Page Number", Type = FieldType.Number, HelpText = "Page number for pagination", Placeholder = "1", Advanced = true)]
         public int PageNumber { get; set; } = 1;
 
-        [FieldDefinition(4, Label = "Page Size", Type = FieldType.Number, HelpText = "Page size for pagination", Placeholder = "30")]
+        [FieldDefinition(4, Label = "Page Size", Type = FieldType.Number, HelpText = "Page size for pagination", Placeholder = "30", Advanced = true)]
         public int PageSize { get; set; } = 3;
 
         [FieldDefinition(5, Label = "Cache Type", Type = FieldType.Select, SelectOptions = typeof(CacheType), HelpText = "Select Memory (non-permanent) or Permanent caching")]
@@ -104,7 +104,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Lastfm
         [FieldDefinition(6, Label = "Cache Directory", Type = FieldType.Path, HelpText = "Directory to store cached data (only used for Permanent caching)")]
         public string CacheDirectory { get; set; } = string.Empty;
 
-        [FieldDefinition(7, Label = "Warning", Type = FieldType.Checkbox, HelpText = "Use at your own risk this is not ready and is not in beta but in alpha state")]
+        [FieldDefinition(7, Label = "Warning", Type = FieldType.Checkbox, HelpText = "Use at your own risk: this provider is in alpha.")]
         public bool UseAtOwnRisk { get; set; }
 
 #endif

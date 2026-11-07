@@ -63,10 +63,10 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek
         [FieldDefinition(2, Label = "Indexer", Type = FieldType.Select, SelectOptionsProviderAction = IndexerLogin.OptionsAction, HelpText = "The Slskd indexer whose URL and API key this client uses. Automatic takes the only one.")]
         public int IndexerId { get; set; }
 
-        [FieldDefinition(3, Label = "Timeout", Type = FieldType.Textbox, HelpText = "Maximum time to wait for a response from the Slskd instance before timing out. Fractional values allowed (e.g. 1.5 = 1 minute 30 seconds). Leave blank for no timeout.", Unit = "minutes", Advanced = true, Placeholder = "Enter timeout in minutes")]
+        [FieldDefinition(3, Label = "Timeout", Type = FieldType.Textbox, HelpText = "How long to wait for slskd to answer, in minutes (1.5 = 90 seconds). Blank = no timeout.", Unit = "minutes", Advanced = true, Placeholder = "Enter timeout in minutes")]
         public double? TimeoutMinutes { get; set; }
 
-        [FieldDefinition(4, Label = "Retry Attempts", Type = FieldType.Number, HelpText = "The number of times to retry downloading a file if it fails.", Advanced = true, Placeholder = "Enter retry attempts")]
+        [FieldDefinition(4, Label = "Retry Attempts", Type = FieldType.Number, HelpText = "Times to retry a failed file. Use 2 or more with Answer Peer Challenges.", Advanced = true, Placeholder = "Enter retry attempts")]
         public int RetryAttempts { get; set; } = 1;
 
         [FieldDefinition(5, Label = "Inclusive", Type = FieldType.Checkbox, HelpText = "Include all downloads made in Slskd, or only the ones initialized by this Lidarr instance.", Advanced = true)]
@@ -75,10 +75,10 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek
         [FieldDefinition(6, Label = "Clean Directories", Type = FieldType.Checkbox, HelpText = "After importing, remove stale directories.", Advanced = true)]
         public bool CleanStaleDirectories { get; set; }
 
-        [FieldDefinition(8, Label = "Ban User After Corrupt Count", Type = FieldType.Number, HelpText = "After this many corrupt files from the same user, exclude them from future searches until the plugin restarts. 0 disables the per-user ban. Requires the corrupt file scan to be enabled for Slskd under Settings \u2192 Metadata \u2192 FFmpeg.", Advanced = true)]
+        [FieldDefinition(8, Label = "Ban User After Corrupt Count", Type = FieldType.Number, HelpText = "Skip a user's results after this many corrupt files, until restart. 0 = off. Needs the corrupt scan on for Slskd.", Advanced = true)]
         public int BanUserAfterCorruptCount { get; set; }
 
-        [FieldDefinition(9, Label = "Max Queue Position Before Cancel", Type = FieldType.Number, HelpText = "Cancel a queued file when the peer's queue position exceeds this value, forcing Lidarr to re-search with a different peer. 0 disables.", Advanced = true)]
+        [FieldDefinition(9, Label = "Max Queue Position Before Cancel", Type = FieldType.Number, HelpText = "Cancel a file queued deeper than this at the peer, so Lidarr searches again. 0 = off.", Advanced = true)]
         public int MaxQueuePositionBeforeCancel { get; set; } = 500;
 
         [FieldDefinition(10, Label = "Max Queue Wait", Type = FieldType.Number, Unit = "minutes", HelpText = "Cancel a file that has been queued at a peer for longer than this. 0 disables.", Advanced = true)]
@@ -87,16 +87,16 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek
         [FieldDefinition(11, Label = "Stall Timeout", Type = FieldType.Number, Unit = "minutes", HelpText = "Cancel a file that is InProgress but hasn't transferred any new bytes for this long. 0 disables.", Advanced = true)]
         public int StallTimeoutMinutes { get; set; } = 15;
 
-        [FieldDefinition(12, Label = "Post-Processing Timeout", Type = FieldType.Number, Unit = "minutes", HelpText = "Maximum wall time for the corruption scan, Soulseek source tag and pre-import tagger to finish per album. Raise for very large albums on slow disks.", Advanced = true)]
+        [FieldDefinition(12, Label = "Post-Processing Timeout", Type = FieldType.Number, Unit = "minutes", HelpText = "Longest the corrupt scan, source tag and pre-import tagging may run per album.", Advanced = true)]
         public int PostProcessingTimeoutMinutes { get; set; } = 30;
 
-        [FieldDefinition(13, Label = "Verify Imports With Fingerprint", Type = FieldType.Checkbox, HelpText = "Acoustically fingerprint EVERY completed download (not just album-extracted singles) and refuse to tag a file whose audio is a different MusicBrainz recording than the wanted track. With Soulseek in Download Rules' 'Run Pre-Import Tagging On', such a download is held in Lidarr's queue with the reason for a manual import, instead of importing on Lidarr's own matching; Queue Cleaner can still remove it for Lidarr's own rejections. Adds about a quarter of a second per file while AcoustID answers promptly; needs fpcalc + AcoustID. Files AcoustID can't identify are left to normal matching (fail-safe). Album-extracted singles are always fingerprint-checked for tagging regardless of this setting; only this setting holds downloads.", Advanced = true)]
+        [FieldDefinition(13, Label = "Verify Imports With Fingerprint", Type = FieldType.Checkbox, HelpText = "Hold a download for manual import when a file's fingerprint is a different recording. Needs fpcalc, AcoustID and Soulseek in Run Pre-Import Tagging On.", Advanced = true)]
         public bool VerifyImportsWithFingerprint { get; set; }
 
-        [FieldDefinition(14, Label = "Tag Files as Soulseek", Type = FieldType.Checkbox, HelpText = "Before import, write SOURCE=soulseek into each downloaded FLAC or Ogg file, replacing any SOURCE the shared file carried, so the files themselves record that they came from Soulseek. MP3 and M4A files are left unchanged.")]
+        [FieldDefinition(14, Label = "Tag Files as Soulseek", Type = FieldType.Checkbox, HelpText = "Write SOURCE=soulseek into downloaded FLAC and Ogg files before import.", Advanced = true)]
         public bool TagFilesAsSoulseek { get; set; }
 
-        [FieldDefinition(15, Label = "Answer Peer Challenges", Type = FieldType.Checkbox, HelpText = "When a peer you are downloading from asks in private chat for a word or phrase before it will upload, reply with it: at most once per peer every 12 hours, and only while a grab from that peer is unfinished. The file then comes through on the peer's own restart or on Retry Attempts; a peer that denies the file until answered needs Retry Attempts of 2 or more.", Advanced = true)]
+        [FieldDefinition(15, Label = "Answer Peer Challenges", Type = FieldType.Checkbox, HelpText = "Answer a peer's private-chat word check while grabbing from them, once per peer every 12 hours.")]
         public bool AnswerPeerChallenges { get; set; }
 
         [FieldDefinition(98, Label = "Is Fetched remote", Type = FieldType.Checkbox, Hidden = HiddenType.Hidden)]

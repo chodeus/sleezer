@@ -52,14 +52,14 @@ namespace NzbDrone.Core.Indexers.Tidal
 
         // Display only — see Tidal.cs; never fed back in as session input.
         [FieldDefinition(4, Label = "Account Storefront", Type = FieldType.Textbox, Advanced = true, Hidden = HiddenType.HiddenIfNotSet,
-            HelpText = "Reported by Tidal when you authenticate. Editing it has no effect — the value is refreshed from Tidal on every session load. Tidal licenses per territory, so an album missing from search or refusing to download is usually not licensed in this country. Changing it requires a Tidal account registered in another country.")]
+            HelpText = "Tidal's country for this account, refreshed on login. Albums not licensed there won't show or download.")]
         public string CountryCode { get; set; } = "";
 
         [FieldDefinition(5, Label = "User Id", Type = FieldType.Number, Hidden = HiddenType.Hidden)]
         public long UserId { get; set; }
 
         [FieldDefinition(6, Label = "Playback Client ID", Type = FieldType.Textbox, Advanced = true, Placeholder = "Built-in",
-            HelpText = "Leave blank to refresh logins under Tidal's Android client, which is what plays lossless. Set another client only if Tidal stops letting that one play.")]
+            HelpText = "Leave blank to use Tidal's Android client, which plays lossless.")]
         public string PlaybackClientId { get; set; } = "";
 
         [FieldDefinition(7, Label = "Playback Client Secret", Type = FieldType.Password, Advanced = true, Privacy = PrivacyLevel.ApiKey, Placeholder = "Built-in",

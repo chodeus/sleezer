@@ -32,7 +32,7 @@ namespace NzbDrone.Core.Indexers.Deezer
         [FieldDefinition(1, Label = "Hide Albums This Account Can't Stream", Type = FieldType.Checkbox, Hidden = HiddenType.Hidden)]
         public bool HideAlbumsWithMissing { get; set; } = true;
 
-        [FieldDefinition(2, Label = "Hide Clean Releases", HelpText = "Skip albums labelled as 'Clean' (explicit content censored). Non-clean releases are labelled [Explicit] in the title so you can filter with release profiles.", Type = FieldType.Checkbox)]
+        [FieldDefinition(2, Label = "Hide Clean Releases", HelpText = "Skip censored 'Clean' albums; uncensored ones get [Explicit] in the title.", Type = FieldType.Checkbox)]
         public bool HideCleanReleases { get; set; } = true;
 
         [FieldDefinition(3, Label = "Allow MP3 320 Fallback for Missing FLAC Tracks", Type = FieldType.Checkbox, Hidden = HiddenType.Hidden)]

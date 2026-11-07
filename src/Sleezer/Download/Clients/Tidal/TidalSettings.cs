@@ -21,10 +21,10 @@ namespace NzbDrone.Core.Download.Clients.Tidal
         [FieldDefinition(0, Label = "Download Path", Type = FieldType.Textbox)]
         public string DownloadPath { get; set; } = "";
 
-        [FieldDefinition(1, Label = "Extract FLAC From M4A", Type = FieldType.Checkbox, HelpText = "Tidal serves lossless as FLAC inside M4A, which Lidarr reads as AAC. This unwraps it into .flac without re-encoding. Needs ffmpeg: set the FFmpeg Path in Settings → Metadata → FFmpeg & Post-Processing.")]
+        [FieldDefinition(1, Label = "Extract FLAC From M4A", Type = FieldType.Checkbox, HelpText = "Unwrap Tidal's lossless M4A into .flac without re-encoding. Needs the FFmpeg Path.")]
         public bool ExtractFlac { get; set; } = false;
 
-        [FieldDefinition(2, Label = "Re-encode AAC Into MP3", Type = FieldType.Checkbox, HelpText = "Re-encode the AAC stream in Tidal's M4A files into MP3. Needs ffmpeg, like the option above.")]
+        [FieldDefinition(2, Label = "Re-encode AAC Into MP3", Type = FieldType.Checkbox, HelpText = "Re-encode Tidal's AAC into MP3. Needs the FFmpeg Path.")]
         public bool ReEncodeAAC { get; set; } = false;
 
         // Moved to the Lyrics metadata entry; hidden so the one-time copy can read them.
@@ -34,7 +34,7 @@ namespace NzbDrone.Core.Download.Clients.Tidal
         [FieldDefinition(4, Label = "Use LRCLIB as Backup Lyric Provider", Type = FieldType.Checkbox, Hidden = HiddenType.Hidden)]
         public bool UseLRCLIB { get; set; } = false;
 
-        [FieldDefinition(5, Label = "Download Delay", HelpText = "When downloading many tracks, Tidal may rate-limit you. This will add a delay between track downloads to help prevent this.", Type = FieldType.Checkbox)]
+        [FieldDefinition(5, Label = "Download Delay", HelpText = "Pause between track downloads so Tidal doesn't rate-limit you.", Type = FieldType.Checkbox)]
         public bool DownloadDelay { get; set; } = false;
 
         [FieldDefinition(6, Label = "Download Delay Minimum", HelpText = "Minimum download delay, in seconds.", Type = FieldType.Number, Advanced = true)]
