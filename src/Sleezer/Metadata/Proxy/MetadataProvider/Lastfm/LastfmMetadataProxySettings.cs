@@ -43,12 +43,10 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Lastfm
                 .Must((settings, path) => settings.RequestCacheType != (int)CacheType.Permanent || (!string.IsNullOrWhiteSpace(path) && Directory.Exists(path)))
                 .WithMessage("A valid Cache Directory is required for Permanent caching.");
 
-            // Validate the system stability for Memory cache
-            RuleFor(x => x.RequestCacheType)
-                .Must((type) => type == (int)CacheType.Permanent || SleezerPlugin.AverageRuntime > TimeSpan.FromDays(4) ||
-                           DateTime.UtcNow - SleezerPlugin.LastStarted > TimeSpan.FromDays(5))
-                .When(x => x.RequestCacheType == (int)CacheType.Memory)
-                .WithMessage("The system is not detected as stable. Please wait for the system to stabilize or use permanent cache.");
+            RuleFor(x => x.UserAgent)
+                .Must(x => UserAgentValidator.Instance.IsAllowed(x))
+                .WithMessage("The provided User-Agent is not allowed. " +
+                "Ensure it follows the format 'Name/Version' and avoids terms like: lidarr, bot, crawler or proxy.");
 
             // Validate that Warn is checked
             RuleFor(x => x.UseAtOwnRisk)
