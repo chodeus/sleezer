@@ -31,7 +31,15 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
         public void LoadConfig(string? configPath)
         {
             if (string.IsNullOrWhiteSpace(configPath))
+            {
+                // Blank = not kept: a path cleared after a load must stop the saves to it.
+                lock (_lock)
+                {
+                    _configFilePath = null;
+                    _unreadable = false;
+                }
                 return;
+            }
 
             string filePath = ConfigFile(configPath);
             lock (_lock)

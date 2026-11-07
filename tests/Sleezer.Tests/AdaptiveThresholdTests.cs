@@ -89,6 +89,26 @@ public class AdaptiveThresholdTests
     }
 
     [Fact]
+    public void A_storing_path_cleared_after_a_load_saves_nothing()
+    {
+        string folder = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), $"threshold-{Guid.NewGuid():N}")).FullName;
+        try
+        {
+            AdaptiveThresholdManager manager = new();
+            manager.LoadConfig(folder);
+            manager.UpdateMetrics("p", 120, 2, success: true);
+            manager.LoadConfig("");
+            manager.Dispose();
+
+            Assert.Empty(Directory.GetFiles(folder));
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    [Fact]
     public void An_existing_file_set_as_the_path_is_still_used()
     {
         string root = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), $"threshold-{Guid.NewGuid():N}")).FullName;
