@@ -47,4 +47,26 @@ public class FileCacheCleanupTests
             Directory.Delete(folder, recursive: true);
         }
     }
+
+    [Fact]
+    public async Task A_write_that_cannot_land_leaves_no_temp_file()
+    {
+        string folder = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), $"cache-{Guid.NewGuid():N}")).FullName;
+        try
+        {
+            FileCache cache = new(folder);
+            await cache.SetAsync("key", "value", TimeSpan.FromHours(1));
+            string entry = Assert.Single(Directory.GetFiles(folder, "*.json", SearchOption.AllDirectories));
+            File.Delete(entry);
+            Directory.CreateDirectory(entry);
+
+            await Assert.ThrowsAnyAsync<Exception>(() => cache.SetAsync("key", "value", TimeSpan.FromHours(1)));
+
+            Assert.Empty(Directory.GetFiles(folder, "*.tmp", SearchOption.AllDirectories));
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
 }

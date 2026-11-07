@@ -90,8 +90,16 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
 
             // Written aside and moved into place, so a crash or a second writer never leaves a torn entry.
             string tempPath = $"{cacheFilePath}.{Guid.NewGuid():N}.tmp";
-            await File.WriteAllTextAsync(tempPath, JsonSerializer.Serialize(cachedData, _jsonOptions));
-            File.Move(tempPath, cacheFilePath, overwrite: true);
+            try
+            {
+                await File.WriteAllTextAsync(tempPath, JsonSerializer.Serialize(cachedData, _jsonOptions));
+                File.Move(tempPath, cacheFilePath, overwrite: true);
+            }
+            catch
+            {
+                try { File.Delete(tempPath); } catch { }
+                throw;
+            }
         }
 
         /// <summary>
