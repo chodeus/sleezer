@@ -59,7 +59,7 @@ namespace NzbDrone.Core.Indexers.Tidal
         public long UserId { get; set; }
 
         [FieldDefinition(6, Label = "Playback Client ID", Type = FieldType.Textbox, Advanced = true, Placeholder = "Built-in",
-            HelpText = "Leave blank to use Tidal's Android client, which plays lossless. Set another only if Tidal stops letting it play.")]
+            HelpText = "Leave blank to use Tidal's Android client, which plays lossless. If Tidal stops letting it play, set it with the Client Secret.")]
         public string PlaybackClientId { get; set; } = "";
 
         [FieldDefinition(7, Label = "Playback Client Secret", Type = FieldType.Password, Advanced = true, Privacy = PrivacyLevel.ApiKey, Placeholder = "Built-in",

@@ -50,7 +50,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Discogs
         [FieldDefinition(1, Label = "Token", Type = FieldType.Textbox, Privacy = PrivacyLevel.ApiKey, HelpText = "Your Discogs personal access token", Placeholder = "Enter your API key")]
         public string AuthToken { get; set; } = string.Empty;
 
-        [FieldDefinition(2, Label = "User Agent", Section = MetadataSectionType.Metadata, Type = FieldType.Textbox, HelpText = "User-Agent sent with requests, such as a name and version.", Placeholder = "Lidarr/1.0.0")]
+        [FieldDefinition(2, Label = "User Agent", Section = MetadataSectionType.Metadata, Type = FieldType.Textbox, HelpText = "User-Agent sent with requests, as Name/Version; terms such as lidarr, bot, crawler or proxy are refused.", Placeholder = "MyApp/1.0.0")]
         public string UserAgent { get; set; } = string.Empty;
 
         [FieldDefinition(3, Label = "Page Number", Type = FieldType.Number, HelpText = "Page number for pagination", Placeholder = "1", Advanced = true)]
