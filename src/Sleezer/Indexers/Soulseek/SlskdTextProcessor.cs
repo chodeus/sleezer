@@ -54,7 +54,9 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             "purple rain",
             "in the navy",
             "paper kingdom",
-            "from zero"
+            "from zero",
+            "deftones",
+            "housezzz"
         };
 
         private static readonly string[][] BlockedTermWords = [.. BlockedSearchTerms
