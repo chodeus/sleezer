@@ -88,6 +88,16 @@ public class ReleaseFormatterTokenTests
     }
 
     [Fact]
+    public void A_quote_in_a_title_never_reaches_a_file_name()
+    {
+        var formatter = new ReleaseFormatter(new ReleaseInfo(), new Artist { Name = "David Bowie" }, new NamingConfig());
+        var album = new Album { Title = "\"Heroes\"" };
+
+        Assert.Equal("03 - Heroes", formatter.BuildTrackFilename("{track:00} - {Track Title}", new Track { TrackNumber = "3", Title = "\"Heroes\"" }, album));
+        Assert.Equal("Heroes", formatter.BuildAlbumFilename(null, album));
+    }
+
+    [Fact]
     public void Still_blanks_a_token_nobody_implements()
     {
         Assert.Equal("[]", Replace("[{Quality Title}]", Handlers()));

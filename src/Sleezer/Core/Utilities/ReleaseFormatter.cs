@@ -107,6 +107,9 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             char[] invalidChars = invalidFileNameChars.Union(invalidPathChars).ToArray();
             fileName = invalidChars.Aggregate(fileName, (current, invalidChar) => current.Replace(invalidChar.ToString(), string.Empty));
 
+            // Xabe hands ffmpeg/ffprobe a path wrapped in quotes it never escapes, so a quote in it breaks every probe; Lidarr drops it on every OS too.
+            fileName = fileName.Replace("\"", string.Empty);
+
             switch (_namingConfig?.ColonReplacementFormat)
             {
                 case ColonReplacementFormat.Delete:

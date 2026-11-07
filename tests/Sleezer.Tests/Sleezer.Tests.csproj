@@ -376,6 +376,8 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Utilities\IndexerParserHelper.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Metadata\FFmpeg\ConversionGuard.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\ImportLists\LastFmRecommendation\LastFmRecords.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Model\IVerifiableRelease.cs"
