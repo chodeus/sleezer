@@ -97,6 +97,17 @@ public class ReleaseFormatterTokenTests
         Assert.Equal("Heroes", formatter.BuildAlbumFilename(null, album));
     }
 
+    [Theory]
+    [InlineData("..", "__")]
+    [InlineData(".", "_")]
+    [InlineData("...And You Will Know Us", "...And You Will Know Us")]
+    public void A_name_of_only_dots_never_names_an_existing_folder(string artist, string expected)
+    {
+        var formatter = new ReleaseFormatter(new ReleaseInfo(), new Artist { Name = artist }, new NamingConfig());
+
+        Assert.Equal(expected, formatter.BuildArtistFolderName(null));
+    }
+
     [Fact]
     public void Still_blanks_a_token_nobody_implements()
     {

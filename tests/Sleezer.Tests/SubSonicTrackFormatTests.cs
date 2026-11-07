@@ -7,7 +7,6 @@ using Xunit;
 
 namespace Sleezer.Tests;
 
-// SubSonic tracks were all saved as .flac, whatever the server streamed (Tubifarry 7e4458f).
 public class SubSonicTrackFormatTests
 {
     private static SubSonicSearchSong Song(string? suffix = null, string? contentType = null, string? transcodedSuffix = null, string? transcodedContentType = null) =>
@@ -53,7 +52,6 @@ public class SubSonicTrackFormatTests
     }
 }
 
-// A SubSonic album with no year was titled with the current year, which Lidarr reads as its release year.
 public class SubSonicReleaseYearTests
 {
     [Fact]

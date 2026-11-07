@@ -420,7 +420,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
         private static partial Regex TargetFormatRegex();
 
         // Formats can hold digits ("mp3-320", "ac3"): a letters-only name never matched them.
-        [GeneratedRegex(@"^([a-zA-Z0-9]+?)(?:-(\d+)k?)?$", RegexOptions.Compiled)]
+        [GeneratedRegex(@"^([a-zA-Z][a-zA-Z0-9]*)(?:-(\d+)k?)?$", RegexOptions.Compiled)]
         private static partial Regex ArtistTagRegex();
     }
 }

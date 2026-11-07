@@ -3,7 +3,6 @@ using Xunit;
 
 namespace Sleezer.Tests;
 
-// Opening a cache deleted every top-level .json in the chosen folder, not only the old-scheme entries.
 public class FileCacheCleanupTests
 {
     [Fact]
@@ -48,7 +47,6 @@ public class FileCacheCleanupTests
         }
     }
 
-    // A read that fails says nothing about the entry: deleting it threw away a good one.
     [Fact]
     public async Task An_entry_that_cannot_be_read_now_is_kept()
     {

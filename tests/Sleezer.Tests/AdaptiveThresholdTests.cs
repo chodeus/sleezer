@@ -3,7 +3,6 @@ using Xunit;
 
 namespace Sleezer.Tests;
 
-// Maximal usable threshold was never read: the dynamic threshold ran up to a hard-coded 15.
 public class AdaptiveThresholdTests
 {
     private static AdaptiveThresholdManager Poorly(string proxy)
@@ -27,7 +26,6 @@ public class AdaptiveThresholdTests
         Assert.Equal(2, new AdaptiveThresholdManager().GetDynamicThreshold("p", 5, 2));
     }
 
-    // Storing Path is picked as a folder, and a first run has no file yet: the weights were never saved.
     [Fact]
     public void A_first_run_saves_the_weights_into_the_picked_folder()
     {
@@ -55,7 +53,6 @@ public class AdaptiveThresholdTests
         manager.Dispose();
     }
 
-    // A folder not made yet was taken for a file name: the weights became a file called after it.
     [Fact]
     public void A_folder_not_made_yet_is_made_and_gets_the_weights()
     {
@@ -73,7 +70,6 @@ public class AdaptiveThresholdTests
         }
     }
 
-    // A file that failed to load was saved over at the next save, losing every weight it held.
     [Fact]
     public void A_file_that_cannot_be_read_is_never_saved_over()
     {

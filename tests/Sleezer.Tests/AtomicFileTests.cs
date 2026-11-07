@@ -3,7 +3,6 @@ using Xunit;
 
 namespace Sleezer.Tests;
 
-// The writes it replaced went through a symlink: moving a temp file over the link must not cut it.
 public sealed class AtomicFileTests : IDisposable
 {
     private readonly string _root = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), $"atomic-{Guid.NewGuid():N}")).FullName;

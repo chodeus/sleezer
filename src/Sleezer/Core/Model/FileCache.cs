@@ -57,7 +57,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
                 // A torn entry is a miss; left in place it would fail every later lookup.
                 cachedData = null;
             }
-            catch (IOException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 // A read that failed says nothing about the entry: keep it.
                 return default;

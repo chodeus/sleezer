@@ -5,7 +5,6 @@ using Xunit;
 
 namespace Sleezer.Tests;
 
-// Saves go to a temp file and are moved into place: an in-place write cut short by a full disk lost every setting.
 public sealed class PluginSettingsTests : IDisposable
 {
     private readonly string _appData = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), $"settings-{Guid.NewGuid():N}")).FullName;

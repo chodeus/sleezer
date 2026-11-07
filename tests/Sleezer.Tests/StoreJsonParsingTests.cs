@@ -6,7 +6,6 @@ using Xunit;
 
 namespace Sleezer.Tests;
 
-// One malformed value must not fail a whole store response (Tubifarry 666b256, 5cd42bd).
 public class StoreJsonParsingTests
 {
     private sealed record Dated(

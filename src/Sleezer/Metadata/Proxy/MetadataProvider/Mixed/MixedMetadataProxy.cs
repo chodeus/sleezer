@@ -124,7 +124,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
 
             return new ProxyDecisionHandler<Artist>(
                 mixedProxy: this,
-                searchExecutor: proxy => ExecuteSingleProxyArtistSearch(proxy, lidarrId, metadataProfileId, baseArtist, usedProxies),
+                searchExecutor: proxy => ExecuteSingleProxyArtistSearch(proxy, lidarrId, metadataProfileId, baseArtist, usedProxies, settings),
                 containsItem: ContainsArtistInfo,
                 isValidQuery: null,
                 supportSelector: s => DetermineSupportLevel(s, lidarrId, baseArtist, settings),
@@ -152,12 +152,12 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
                 _adaptiveThreshold.LoadConfig(settings.WeightsPath);
         }
 
-        private List<Artist> ExecuteSingleProxyArtistSearch(IProxy proxy, string lidarrId, int metadataProfileId, Artist? baseArtist, HashSet<IProxy> usedProxies)
+        private List<Artist> ExecuteSingleProxyArtistSearch(IProxy proxy, string lidarrId, int metadataProfileId, Artist? baseArtist, HashSet<IProxy> usedProxies, MixedMetadataProxySettings settings)
         {
             ISupportMetadataMixing mixingProxy = (ISupportMetadataMixing)proxy;
             _logger.Debug($"Checking proxy: {proxy.Name}");
 
-            Artist? proxyArtist = TryGetArtistFromProxy(proxy, mixingProxy, lidarrId, metadataProfileId, baseArtist);
+            Artist? proxyArtist = TryGetArtistFromProxy(proxy, mixingProxy, lidarrId, metadataProfileId, baseArtist, settings);
 
             if (HasValidAlbumData(proxyArtist))
             {
@@ -169,14 +169,14 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
         }
 
         private Artist? TryGetArtistFromProxy(IProxy proxy, ISupportMetadataMixing mixingProxy,
-            string lidarrId, int metadataProfileId, Artist? baseArtist)
+            string lidarrId, int metadataProfileId, Artist? baseArtist, MixedMetadataProxySettings settings)
         {
             try
             {
                 if (mixingProxy.CanHandleId(lidarrId) == MetadataSupportLevel.Supported)
                 {
                     _logger.Debug($"Proxy {proxy.Name} can handle ID {lidarrId} directly.");
-                    return QueryArtist(proxy, lidarrId, metadataProfileId, baseArtist);
+                    return QueryArtist(proxy, lidarrId, metadataProfileId, baseArtist, settings);
                 }
 
                 if (baseArtist?.Metadata?.Value?.Links != null)
@@ -186,7 +186,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
                     if (proxyID != null)
                     {
                         _logger.Debug($"Proxy {proxy.Name} found matching link-based ID: {proxyID}");
-                        return QueryArtist(proxy, proxyID, metadataProfileId, baseArtist);
+                        return QueryArtist(proxy, proxyID, metadataProfileId, baseArtist, settings);
                     }
                 }
             }
@@ -198,9 +198,9 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
         }
 
         // With albums to keep, a source slower than Artist Query Timeout is skipped and its previous albums stay.
-        private Artist? QueryArtist(IProxy proxy, string id, int metadataProfileId, Artist? baseArtist)
+        private Artist? QueryArtist(IProxy proxy, string id, int metadataProfileId, Artist? baseArtist, MixedMetadataProxySettings settings)
         {
-            int seconds = ActiveSettings.ArtistQueryTimeoutSeconds;
+            int seconds = settings.ArtistQueryTimeoutSeconds;
             if (seconds <= 0 || baseArtist?.Albums?.Value?.Any() != true)
                 return InvokeProxyMethod<Artist>(proxy, nameof(GetArtistInfo), id, metadataProfileId);
 

@@ -4,7 +4,6 @@ using Xunit;
 
 namespace Sleezer.Tests;
 
-// A conversion never fakes quality, including one a source that can't be read could hide.
 public class ConversionRuleGuardTests
 {
     private static string? Reason(AudioFormat source, int? bitrate, int? bitDepth, AudioFormat target, int? targetBitrate = null, int? targetBitDepth = null) =>
@@ -40,7 +39,6 @@ public class ConversionRuleGuardTests
         Assert.Null(Reason(source, bitrate, bitDepth, target, targetBitrate, targetBitDepth));
     }
 
-    // A float WAV read as unreadable refused even a downsample such as wav -> flac:16.
     [Theory]
     [InlineData("s16", 16)]
     [InlineData("s24p", 24)]
