@@ -6,7 +6,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
     {
         public void LoadConfig(string? configPath);
 
-        public int GetDynamicThreshold(string proxyName, int aggregatedCount);
+        public int GetDynamicThreshold(string proxyName, int aggregatedCount, int maxThreshold);
 
         public void UpdateMetrics(string proxyName, double responseTimeMs, int newCount, bool success);
     }
@@ -75,13 +75,14 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
         /// </summary>
         /// <param name="proxyName">The name of the proxy.</param>
         /// <param name="aggregatedCount">The aggregated result count.</param>
+        /// <param name="maxThreshold">The Maximal usable threshold setting; the result never exceeds it.</param>
         /// <returns>The computed dynamic threshold.</returns>
-        public int GetDynamicThreshold(string proxyName, int aggregatedCount)
+        public int GetDynamicThreshold(string proxyName, int aggregatedCount, int maxThreshold)
         {
-            int baseThreshold = aggregatedCount < 10 ? Config.BaseThresholdLowCount : aggregatedCount < 50 ? Config.BaseThresholdMediumCount : Config.BaseThresholdHighCount;
+            int baseThreshold = Math.Min(aggregatedCount < 10 ? Config.BaseThresholdLowCount : aggregatedCount < 50 ? Config.BaseThresholdMediumCount : Config.BaseThresholdHighCount, maxThreshold);
 
             if (!Config.ProxyMetrics.TryGetValue(proxyName, out ProxyMetrics? metrics) || metrics.Calls < Config.MinCallsForReliableMetrics)
-                return baseThreshold;
+                return Math.Max(baseThreshold, 1);
 
             DecayMetrics(metrics);
 
@@ -91,9 +92,9 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
 
             // Weights can be tuned; here we use a weighted sum.
             double adjustment = (0.5 * qualityAdjustment) + (0.3 * performanceAdjustment) + (0.2 * failureRatio);
-            int maxAdjustment = Config.MaxThresholdCount - baseThreshold;
+            int maxAdjustment = maxThreshold - baseThreshold;
             int dynamicThreshold = baseThreshold + (int)Math.Round(adjustment * maxAdjustment);
-            return dynamicThreshold < 1 ? 1 : dynamicThreshold;
+            return Math.Clamp(dynamicThreshold, 1, Math.Max(maxThreshold, 1));
         }
 
         /// <summary>

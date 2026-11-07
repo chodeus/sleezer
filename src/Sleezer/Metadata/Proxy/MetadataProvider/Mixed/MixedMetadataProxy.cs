@@ -176,7 +176,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
                 if (mixingProxy.CanHandleId(lidarrId) == MetadataSupportLevel.Supported)
                 {
                     _logger.Debug($"Proxy {proxy.Name} can handle ID {lidarrId} directly.");
-                    return InvokeProxyMethod<Artist>(proxy, nameof(GetArtistInfo), lidarrId, metadataProfileId);
+                    return QueryArtist(proxy, lidarrId, metadataProfileId, baseArtist);
                 }
 
                 if (baseArtist?.Metadata?.Value?.Links != null)
@@ -186,7 +186,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
                     if (proxyID != null)
                     {
                         _logger.Debug($"Proxy {proxy.Name} found matching link-based ID: {proxyID}");
-                        return InvokeProxyMethod<Artist>(proxy, nameof(GetArtistInfo), proxyID, metadataProfileId);
+                        return QueryArtist(proxy, proxyID, metadataProfileId, baseArtist);
                     }
                 }
             }
@@ -194,6 +194,21 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
             {
                 _logger.Warn(ex, $"Proxy {proxy.Name} failed to get artist info for {lidarrId}.");
             }
+            return null;
+        }
+
+        // With albums to keep, a source slower than Artist Query Timeout is skipped and its previous albums stay.
+        private Artist? QueryArtist(IProxy proxy, string id, int metadataProfileId, Artist? baseArtist)
+        {
+            int seconds = ActiveSettings.ArtistQueryTimeoutSeconds;
+            if (seconds <= 0 || baseArtist?.Albums?.Value?.Any() != true)
+                return InvokeProxyMethod<Artist>(proxy, nameof(GetArtistInfo), id, metadataProfileId);
+
+            Task<Artist> query = Task.Run(() => InvokeProxyMethod<Artist>(proxy, nameof(GetArtistInfo), id, metadataProfileId));
+            if (Task.WhenAny(query, Task.Delay(TimeSpan.FromSeconds(seconds))).GetAwaiter().GetResult() == query)
+                return query.GetAwaiter().GetResult();
+
+            _logger.Warn("Proxy {Proxy} took over {Seconds}s for artist {Id}; keeping its previous albums", proxy.Name, seconds, id);
             return null;
         }
 
@@ -324,8 +339,8 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
 
         internal int CalculateThreshold(string proxyName, int aggregatedCount, MixedMetadataProxySettings settings) =>
             settings.DynamicThresholdMode == true
-                ? _adaptiveThreshold.GetDynamicThreshold(proxyName, aggregatedCount)
-                : GetThreshold(aggregatedCount);
+                ? _adaptiveThreshold.GetDynamicThreshold(proxyName, aggregatedCount, settings.MaxThreshold)
+                : Math.Min(GetThreshold(aggregatedCount), settings.MaxThreshold);
 
         #region Utility Methods
 
