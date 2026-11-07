@@ -80,7 +80,8 @@ public class FileCacheCleanupTests
             File.Delete(entry);
             Directory.CreateDirectory(entry);
 
-            await Assert.ThrowsAnyAsync<Exception>(() => cache.SetAsync("key", "value", TimeSpan.FromHours(1)));
+            Exception thrown = await Assert.ThrowsAnyAsync<Exception>(() => cache.SetAsync("key", "value", TimeSpan.FromHours(1)));
+            Assert.True(thrown is IOException or UnauthorizedAccessException, thrown.GetType().Name);
 
             Assert.Empty(Directory.GetFiles(folder, "*.tmp", SearchOption.AllDirectories));
         }

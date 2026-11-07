@@ -21,20 +21,31 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
             CleanupOldCacheFiles();
         }
 
-        /// <summary>
-        /// Deletes any JSON files stored directly in the root cache directory,
-        /// as these are from the old file naming scheme.
-        /// </summary>
+        /// <summary>Deletes entries the old naming scheme left in the cache folder's top level.</summary>
         private void CleanupOldCacheFiles()
         {
+            string[] files;
             try
             {
-                // Old-scheme entries only: the folder can hold other files, such as the Mixed proxy's weights.
-                foreach (string file in Directory.GetFiles(_cacheDirectory, "*.json", SearchOption.TopDirectoryOnly).Where(f => OldSchemeEntry().IsMatch(Path.GetFileName(f))))
-                    File.Delete(file);
+                files = Directory.GetFiles(_cacheDirectory, "*.json", SearchOption.TopDirectoryOnly);
             }
-            catch
-            { }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                return;
+            }
+
+            // Old-scheme entries only: the folder can hold other files, such as the Mixed proxy's weights.
+            foreach (string file in files.Where(f => OldSchemeEntry().IsMatch(Path.GetFileName(f))))
+            {
+                try
+                {
+                    File.Delete(file);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    // One entry that can't go must not keep the rest; the next open tries it again.
+                }
+            }
         }
 
         /// <summary>

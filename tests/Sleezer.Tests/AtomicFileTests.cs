@@ -19,8 +19,7 @@ public sealed class AtomicFileTests : IDisposable
         }
         catch (UnauthorizedAccessException)
         {
-            // Windows without developer mode can't make links.
-            return;
+            Assert.Skip("This machine can't make symbolic links (Windows without developer mode).");
         }
 
         AtomicFile.Write(link, "new");
