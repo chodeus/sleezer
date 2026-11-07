@@ -78,11 +78,14 @@ public static class SlskdStatusResolver
             // All-stuck check: short-circuit once one file is NOT stuck
             if (allIncompleteRemoteQueued)
             {
+                // slskd can omit enqueuedAt; with no time known the file is not stuck.
+                DateTime queuedSince = f.EnqueuedAt != DateTime.MinValue ? f.EnqueuedAt : f.RequestedAt;
                 bool stuckRemote = timeout.HasValue
+                    && queuedSince != DateTime.MinValue
                     && Enum.TryParse<TransferStates>(f.State, ignoreCase: true, out TransferStates ts)
                     && ts.HasFlag(TransferStates.Queued)
                     && ts.HasFlag(TransferStates.Remotely)
-                    && (utcNow - f.EnqueuedAt) > timeout.Value;
+                    && (utcNow - queuedSince) > timeout.Value;
                 if (!stuckRemote)
                     allIncompleteRemoteQueued = false;
             }
@@ -133,7 +136,8 @@ public static class SlskdStatusResolver
         DownloadItemStatus status;
         string? message = null;
 
-        if (allStuckInRemoteQueue && !anyActive)
+        // Every unfinished file waits in a peer's queue, so none is downloading.
+        if (allStuckInRemoteQueue)
         {
             status = DownloadItemStatus.Failed;
             message = "All files stuck in remote queue past timeout.";
@@ -149,7 +153,7 @@ public static class SlskdStatusResolver
         }
         else if (!anyActive && anyIncomplete)
         {
-            status = timeout.HasValue && (utcNow - lastActivity) > timeout.Value * 2
+            status = timeout.HasValue && lastActivity != DateTime.MinValue && (utcNow - lastActivity) > timeout.Value * 2
                 ? DownloadItemStatus.Failed
                 : DownloadItemStatus.Queued;
             if (untransferred.Count > 0)

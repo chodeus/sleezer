@@ -17,6 +17,8 @@ public class BlockedTermTests
     [InlineData("In the Navy 1979", true)]
     [InlineData("From Zero Deluxe", true)]
     [InlineData("Paper Kingdom EP", true)]
+    [InlineData("Deftones White Pony", true)]
+    [InlineData("Housezzz Shake", true)]
     [InlineData("Prince 1999", false)]
     [InlineData("The Beatles' Hits", true)]                  // reaches peers as "Beatles"
     [InlineData("Don't Stop Believin", false)]
