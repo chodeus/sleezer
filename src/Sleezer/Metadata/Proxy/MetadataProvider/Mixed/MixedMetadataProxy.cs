@@ -205,7 +205,8 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
                 return InvokeProxyMethod<Artist>(proxy, nameof(GetArtistInfo), id, metadataProfileId);
 
             Task<Artist> query = Task.Run(() => InvokeProxyMethod<Artist>(proxy, nameof(GetArtistInfo), id, metadataProfileId));
-            if (Task.WhenAny(query, Task.Delay(TimeSpan.FromSeconds(seconds))).GetAwaiter().GetResult() == query)
+            // WaitAny, not Wait: it returns on a fault too, and GetResult then throws the query's own exception.
+            if (Task.WaitAny([query], TimeSpan.FromSeconds(seconds)) == 0)
                 return query.GetAwaiter().GetResult();
 
             _logger.Warn("Proxy {Proxy} took over {Seconds}s for artist {Id}; keeping its previous albums", proxy.Name, seconds, id);

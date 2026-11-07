@@ -12,6 +12,7 @@ public class ConversionRuleGuardTests
     [Theory]
     [InlineData(AudioFormat.MP3, 320, AudioFormat.FLAC, null)]
     [InlineData(AudioFormat.MP3, 128, AudioFormat.MP3, 320)]
+    [InlineData(AudioFormat.MP3, 128, AudioFormat.OGG, 320)]
     [InlineData(AudioFormat.MP3, null, AudioFormat.MP3, 128)]
     [InlineData(AudioFormat.Opus, 0, AudioFormat.MP3, 128)]
     public void A_lossy_conversion_that_could_fake_quality_is_blocked(AudioFormat source, int? bitrate, AudioFormat target, int? targetBitrate)
@@ -30,6 +31,7 @@ public class ConversionRuleGuardTests
 
     [Theory]
     [InlineData(AudioFormat.MP3, 320, null, AudioFormat.MP3, 128, null)]
+    [InlineData(AudioFormat.MP3, 320, null, AudioFormat.OGG, 192, null)]
     [InlineData(AudioFormat.MP3, 128, null, AudioFormat.Opus, null, null)]
     [InlineData(AudioFormat.FLAC, null, 24, AudioFormat.FLAC, null, 16)]
     [InlineData(AudioFormat.FLAC, null, null, AudioFormat.MP3, 320, null)]

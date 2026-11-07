@@ -9,7 +9,8 @@ public static class ConversionGuard
     public static string? BlockReason(AudioFormat source, int? sourceBitrate, int? sourceBitDepth, AudioFormat target, int? targetBitrate, int? targetBitDepth)
     {
         bool lossySource = AudioFormatHelper.IsLossyFormat(source);
-        bool lossyTarget = AudioFormatHelper.IsLossyFormat(target);
+        // An OGG target is encoded as Vorbis; as a source the container can hold FLAC, so the shared list leaves it out.
+        bool lossyTarget = target == AudioFormat.OGG || AudioFormatHelper.IsLossyFormat(target);
         if (lossySource)
             return lossyTarget ? Upsampled(sourceBitrate, targetBitrate, "kbps", "bitrate") : "a lossy file can't become lossless";
 
