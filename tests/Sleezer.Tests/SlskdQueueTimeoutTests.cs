@@ -100,6 +100,26 @@ public class SlskdQueueTimeoutTests
     }
 
     [Fact]
+    public void A_file_waiting_to_retry_shows_the_grab_as_retrying()
+    {
+        SlskdDownloadFile done = Transfer("01.flac", "Completed, Succeeded", Now.AddMinutes(-10), Now.AddMinutes(-10), Now.AddMinutes(-9));
+        SlskdDownloadFile errored = Transfer("02.flac", "Completed, Errored", Now.AddMinutes(-10), Now.AddMinutes(-10), Now.AddMinutes(-5));
+
+        SlskdStatusResolver.DownloadStatus resolved = Resolve(Timeout, done, errored);
+
+        Assert.Equal(DownloadItemStatus.Warning, resolved.Status);
+        Assert.Contains("Retrying", resolved.Message);
+    }
+
+    [Fact]
+    public void A_retrying_grab_idle_for_twice_the_timeout_still_fails()
+    {
+        SlskdDownloadFile errored = Transfer("01.flac", "Completed, Errored", Now.AddHours(-4), Now.AddHours(-4), Now.AddHours(-3));
+
+        Assert.Equal(DownloadItemStatus.Failed, Resolve(Timeout, errored).Status);
+    }
+
+    [Fact]
     public void A_retrying_file_with_no_known_activity_is_not_failed_as_idle()
     {
         SlskdDownloadFile retrying = Transfer("01.flac", "Completed, TimedOut", DateTime.MinValue, DateTime.MinValue, DateTime.MinValue);

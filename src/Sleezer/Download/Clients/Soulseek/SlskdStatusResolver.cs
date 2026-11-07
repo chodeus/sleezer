@@ -151,13 +151,21 @@ public static class SlskdStatusResolver
             status = DownloadItemStatus.Failed;
             message = $"Downloading {failedCount} files failed: {string.Join(", ", failedFileNames)}";
         }
+        else if (!anyActive && anyIncomplete && timeout.HasValue && lastActivity != DateTime.MinValue && (utcNow - lastActivity) > timeout.Value * 2)
+        {
+            status = DownloadItemStatus.Failed;
+            message = UntransferredMessage(untransferred) ?? "No progress for twice the timeout.";
+        }
+        else if (anyWarning)
+        {
+            status = DownloadItemStatus.Warning;
+            message = "Some files failed. Retrying download...";
+        }
+        // Must stay above Completed: a file slskd no longer lists keeps the album from completing short.
         else if (!anyActive && anyIncomplete)
         {
-            status = timeout.HasValue && lastActivity != DateTime.MinValue && (utcNow - lastActivity) > timeout.Value * 2
-                ? DownloadItemStatus.Failed
-                : DownloadItemStatus.Queued;
-            if (untransferred.Count > 0)
-                message = $"No slskd transfer for {untransferred.Count} file(s): {string.Join(", ", untransferred.Select(f => SlskdTextProcessor.GetFileNameFromFilename(f.Filename)))}";
+            status = DownloadItemStatus.Queued;
+            message = UntransferredMessage(untransferred);
         }
         else if (totalFileCount > 0 && completedCount == totalFileCount)
         {
@@ -170,11 +178,6 @@ public static class SlskdStatusResolver
         else if (anyPaused)
         {
             status = DownloadItemStatus.Paused;
-        }
-        else if (anyWarning)
-        {
-            status = DownloadItemStatus.Warning;
-            message = "Some files failed. Retrying download...";
         }
         else if (anyDownloadingState)
         {
@@ -198,6 +201,10 @@ public static class SlskdStatusResolver
 
         return new(status, message, totalSize, remainingSize, remainingTime);
     }
+
+    private static string? UntransferredMessage(List<SlskdFileData> untransferred) => untransferred.Count == 0
+        ? null
+        : $"No slskd transfer for {untransferred.Count} file(s): {string.Join(", ", untransferred.Select(f => SlskdTextProcessor.GetFileNameFromFilename(f.Filename)))}";
 
     private static string? BuildQueueMessage(SlskdDownloadItem item, IReadOnlyList<SlskdDownloadFile> files)
     {
