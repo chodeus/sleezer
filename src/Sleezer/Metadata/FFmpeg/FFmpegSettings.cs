@@ -141,7 +141,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
         public int TargetFormat { get; set; } = (int)TargetAudioFormat.Opus;
 
         // Never null: an API save can send null, and the converter reads this on every import.
-        [FieldDefinition(9, Label = "Custom Conversion Rules", Type = FieldType.KeyValueList, Section = MetadataSectionType.Metadata, HelpText = "Rules such as 'flac -> mp3:320:cbr' or 'flac -> flac:16'. Upsampling is blocked.")]
+        [FieldDefinition(9, Label = "Custom Conversion Rules", Type = FieldType.KeyValueList, Section = MetadataSectionType.Metadata, HelpText = "Rules such as 'flac -> mp3:320:cbr' or 'flac -> flac:16'. Upsampling is blocked when the source's bitrate or bit depth can be read.")]
         public IEnumerable<KeyValuePair<string, string>> CustomConversion
         {
             get => _customConversion;
