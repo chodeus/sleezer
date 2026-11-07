@@ -2,10 +2,11 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace NzbDrone.Plugin.Sleezer.Core.Model
 {
-    public class FileCache
+    public partial class FileCache
     {
         private readonly string _cacheDirectory;
         private static readonly JsonSerializerOptions _jsonOptions = new() { WriteIndented = true };
@@ -27,7 +28,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
         {
             try
             {
-                foreach (string file in Directory.GetFiles(_cacheDirectory, "*.json", SearchOption.TopDirectoryOnly))
+                // Old-scheme entries only: the folder can hold other files, such as the Mixed proxy's weights.
+                foreach (string file in Directory.GetFiles(_cacheDirectory, "*.json", SearchOption.TopDirectoryOnly).Where(f => OldSchemeEntry().IsMatch(Path.GetFileName(f))))
                     File.Delete(file);
             }
             catch
@@ -101,6 +103,9 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
         /// <summary>
         /// Computes the file path for a given cache key using a SHA256 hash and sharding.
         /// </summary>
+        [GeneratedRegex("^[0-9a-f]{64}\\.json$")]
+        private static partial Regex OldSchemeEntry();
+
         private string GetCacheFilePath(string cacheKey)
         {
             byte[] hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(cacheKey));
