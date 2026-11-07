@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
 namespace NzbDrone.Plugin.Sleezer.Core.Model
 {
@@ -88,18 +89,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
                 ExpirationDuration = expirationDuration
             };
 
-            // Written aside and moved into place, so a crash or a second writer never leaves a torn entry.
-            string tempPath = $"{cacheFilePath}.{Guid.NewGuid():N}.tmp";
-            try
-            {
-                await File.WriteAllTextAsync(tempPath, JsonSerializer.Serialize(cachedData, _jsonOptions));
-                File.Move(tempPath, cacheFilePath, overwrite: true);
-            }
-            catch
-            {
-                try { File.Delete(tempPath); } catch { }
-                throw;
-            }
+            // Not in place: a crash or a second writer must never leave a torn entry.
+            await AtomicFile.WriteAsync(cacheFilePath, JsonSerializer.Serialize(cachedData, _jsonOptions));
         }
 
         /// <summary>

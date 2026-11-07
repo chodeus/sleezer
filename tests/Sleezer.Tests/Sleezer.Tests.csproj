@@ -240,6 +240,8 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Utilities\PluginFolder.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Core\Utilities\AtomicFile.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Utilities\DownloadIdFile.cs"
              LinkBase="SourceUnderTest" />
     <!-- Pure ffmpeg-release helpers (platform→asset map, version/tag parse, 24h
