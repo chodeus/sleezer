@@ -44,7 +44,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             }
 
             if (retitled > 0 || dropped > 0)
-                logger.Debug("{Indexer}: {Retitled} result(s) retitled and {Dropped} dropped for '{Artist}' — their credited artist matches more than one library artist",
+                logger.Debug("{Indexer}: {Retitled} result(s) retitled and {Dropped} dropped for {Artist} — their credited artist matches more than one library artist",
                     indexer, retitled, dropped, searched.Name);
 
             return kept;

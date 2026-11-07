@@ -401,7 +401,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             // Defense in depth: the recovery path is basename-driven, so re-confine it.
             if (folder.Length == 0 || !IsStrictDescendantOfRoot(folder, root))
             {
-                _logger.Warn("[{ItemId}] No download folder inside '{Root}' to read extras from; skipping extra import", item.ID, root);
+                _logger.Warn("[{ItemId}] No download folder inside {Root} to read extras from; skipping extra import", item.ID, root);
                 return;
             }
 
@@ -436,13 +436,13 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         {
             if (!onDisk.TryGetValue(basename, out string? source))
             {
-                _logger.Debug("[{ItemId}] Extra '{Extra}' not downloaded — skipping", item.ID, basename);
+                _logger.Debug("[{ItemId}] Extra {Extra} not downloaded — skipping", item.ID, basename);
                 continue;
             }
 
             if (!IsConclusivelyOwned(source, ownedFiles))
             {
-                _logger.Debug("[{ItemId}] Extra '{Extra}' in '{Folder}' is not conclusively this download's — skipping", item.ID, basename, folder);
+                _logger.Debug("[{ItemId}] Extra {Extra} in {Folder} is not conclusively this download's — skipping", item.ID, basename, folder);
                 continue;
             }
 
@@ -456,7 +456,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             }
             catch (Exception ex)
             {
-                _logger.Warn(ex, "[{ItemId}] Failed to copy extra '{Extra}' into '{Folder}'", item.ID, basename, destination);
+                _logger.Warn(ex, "[{ItemId}] Failed to copy extra {Extra} into {Folder}", item.ID, basename, destination);
             }
         }
 
@@ -485,7 +485,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         // Fail closed - if we can't prove containment, we don't delete.
         if (!IsStrictDescendantOfRoot(folder, localRoot))
         {
-            _logger.Warn("[{Title}] OutputPath '{Folder}' is not inside the download root '{Root}', refusing to delete", clientItem.Title, folder, localRoot);
+            _logger.Warn("[{Title}] OutputPath {Folder} is not inside the download root {Root}, refusing to delete", clientItem.Title, folder, localRoot);
             return;
         }
 
@@ -493,22 +493,22 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         {
             if (_diskProvider.FolderExists(folder))
             {
-                _logger.Debug("[{Title}] Deleting folder '{Folder}'", clientItem.Title, folder);
+                _logger.Debug("[{Title}] Deleting folder {Folder}", clientItem.Title, folder);
                 DeleteFolderGuardedByOwnership(folder, ownedFiles, clientItem.Title);
             }
             else if (_diskProvider.FileExists(folder))
             {
-                _logger.Debug("[{Title}] Deleting file '{Folder}'", clientItem.Title, folder);
+                _logger.Debug("[{Title}] Deleting file {Folder}", clientItem.Title, folder);
                 _diskProvider.DeleteFile(folder);
             }
             else
             {
-                _logger.Debug("[{Title}] Folder '{Folder}' already gone, skipping", clientItem.Title, folder);
+                _logger.Debug("[{Title}] Folder {Folder} already gone, skipping", clientItem.Title, folder);
             }
         }
         catch (Exception ex)
         {
-            _logger.Warn(ex, "[{Title}] Failed to delete output folder '{Folder}'", clientItem.Title, folder);
+            _logger.Warn(ex, "[{Title}] Failed to delete output folder {Folder}", clientItem.Title, folder);
         }
     }
 
@@ -523,7 +523,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         // An item that accepted no files claims nothing, not even a folder of extras.
         if (ownedFiles.FileCount == 0)
         {
-            _logger.Debug("[{Context}] Owns no files; leaving '{Folder}'", context, folder);
+            _logger.Debug("[{Context}] Owns no files; leaving {Folder}", context, folder);
             return;
         }
 
@@ -532,7 +532,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         // Equal or fewer is normal: Lidarr moves the audio out on import.
         if (!ownedFiles.AccountsFor(ownedOnDisk.Count))
         {
-            _logger.Warn("[{Context}] '{Folder}' holds {Count} audio file(s) matching this download's {Expected}; at least one is another download's, leaving the folder", context, folder, ownedOnDisk.Count, ownedFiles.AudioFileCount);
+            _logger.Warn("[{Context}] {Folder} holds {Count} audio file(s) matching this download's {Expected}; at least one is another download's, leaving the folder", context, folder, ownedOnDisk.Count, ownedFiles.AudioFileCount);
             return;
         }
 
@@ -542,7 +542,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             return;
         }
 
-        _logger.Warn("[{Context}] '{Folder}' holds {Count} audio file(s) not conclusively this download's — deleting only this item's own files", context, folder, foreignAudio);
+        _logger.Warn("[{Context}] {Folder} holds {Count} audio file(s) not conclusively this download's — deleting only this item's own files", context, folder, foreignAudio);
         foreach (string file in ownedOnDisk)
         {
             try
@@ -551,7 +551,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             }
             catch (Exception ex)
             {
-                _logger.Warn(ex, "[{Context}] Failed to delete '{File}'", context, file);
+                _logger.Warn(ex, "[{Context}] Failed to delete {File}", context, file);
             }
         }
     }
@@ -615,7 +615,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             }
             catch (Exception ex)
             {
-                _logger.Trace(ex, "[{ItemId}] Skipping '{Folder}' while locating download files", item.ID, candidate);
+                _logger.Trace(ex, "[{ItemId}] Skipping {Folder} while locating download files", item.ID, candidate);
             }
         }
 
@@ -642,12 +642,12 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
             try
             {
-                _logger.Debug("[{ItemId}] Deleting unmerged disc folder '{Folder}'", item.ID, folder);
+                _logger.Debug("[{ItemId}] Deleting unmerged disc folder {Folder}", item.ID, folder);
                 DeleteFolderGuardedByOwnership(folder, ownedFiles, item.ID);
             }
             catch (Exception ex)
             {
-                _logger.Warn(ex, "[{ItemId}] Failed to delete unmerged disc folder '{Folder}'", item.ID, folder);
+                _logger.Warn(ex, "[{ItemId}] Failed to delete unmerged disc folder {Folder}", item.ID, folder);
             }
         }
     }
@@ -676,7 +676,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }
         catch (Exception ex)
         {
-            _logger.Warn(ex, "Path containment check failed for '{Candidate}' under '{Root}'; refusing to delete", candidate, root);
+            _logger.Warn(ex, "Path containment check failed for {Candidate} under {Root}; refusing to delete", candidate, root);
             return false;
         }
     }
@@ -877,7 +877,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }
         catch (Exception ex) when (!tracked)
         {
-            _logger.Debug(ex, "Could not list {Username}'s transfers for a removed grab's leftovers; the next poll retries", username);
+            _logger.Debug(ex, "Could not list the transfers from {Username} for a removed grab's leftovers; the next poll retries", username);
             return;
         }
 
@@ -1170,7 +1170,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                     FindFolderOwningItemFiles(item, root) is { } actualFolder &&
                     SlskdPathResolver.MakeRelativeToDownloads(root, actualFolder) is { Length: > 0 } relative)
                 {
-                    _logger.Info("[{ItemId}] Files are in '{Actual}', not '{Expected}' — correcting the output path",
+                    _logger.Info("[{ItemId}] Files are in {Actual}, not {Expected} — correcting the output path",
                         item.ID, actualFolder, folder);
                     // GetItems reads OutputPath from GetFullFolderPath after this
                     // returns, so the corrected path lands on the same poll.
@@ -1196,11 +1196,11 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             if (!item.CompletedFolderFailureLogged)
             {
                 item.CompletedFolderFailureLogged = true;
-                _logger.Warn("[{ItemId}] Completed download has no audio left in '{Folder}' — reporting failure so the release is retried", item.ID, folder);
+                _logger.Warn("[{ItemId}] Completed download has no audio left in {Folder} — reporting failure so the release is retried", item.ID, folder);
             }
             else
             {
-                _logger.Trace("[{ItemId}] Still no audio in '{Folder}' — keeping the failed status", item.ID, folder);
+                _logger.Trace("[{ItemId}] Still no audio in {Folder} — keeping the failed status", item.ID, folder);
             }
 
             return resolved with
@@ -1470,7 +1470,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 string downloadRoot = remotePath.FullPath;
                 if (sourceTagEnabled && !folderPath.PathEquals(downloadRoot) && !IsStrictDescendantOfRoot(folderPath, downloadRoot))
                 {
-                    _logger.Warn("[post-process] {ItemId}: '{FolderPath}' is outside the download root; not writing SOURCE tags", item.ID, folderPath);
+                    _logger.Warn("[post-process] {ItemId}: {FolderPath} is outside the download root; not writing SOURCE tags", item.ID, folderPath);
                 }
                 else if (sourceTagEnabled)
                 {
@@ -1549,7 +1549,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }
         catch (Exception ex)
         {
-            _logger.Debug(ex, "[post-process] Could not list '{Folder}' before tagging", folder);
+            _logger.Debug(ex, "[post-process] Could not list {Folder} before tagging", folder);
             return new HashSet<string>();
         }
     }
@@ -1589,7 +1589,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
             if (!IsStrictDescendantOfRoot(albumFolder, localRoot))
             {
-                _logger.Warn("[merge] Album folder '{Album}' is not inside the download root '{Root}', refusing disc merge", albumFolder, localRoot);
+                _logger.Warn("[merge] Album folder {Album} is not inside the download root {Root}, refusing disc merge", albumFolder, localRoot);
                 return;
             }
 
@@ -1614,7 +1614,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                     if (!leafIsAlbumFolder && !_diskProvider.FolderExists(Path.Combine(albumFolder, leaf)))
                     {
                         allMoved = false;
-                        _logger.Warn("[merge] {ItemId}: disc folder '{Leaf}' is in neither the download root nor the album folder", item.ID, leaf);
+                        _logger.Warn("[merge] {ItemId}: disc folder {Leaf} is in neither the download root nor the album folder", item.ID, leaf);
                     }
 
                     continue;
@@ -1644,13 +1644,13 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                     if (!_diskProvider.FolderExists(albumFolder))
                         _diskProvider.CreateFolder(albumFolder);
 
-                    _logger.Debug("[merge] {ItemId}: moving disc folder '{Source}' -> '{Target}'", item.ID, source, target);
+                    _logger.Debug("[merge] {ItemId}: moving disc folder {Source} -> {Target}", item.ID, source, target);
                     _diskProvider.MoveFolder(source, target);
                 }
                 catch (Exception ex)
                 {
                     allMoved = false;
-                    _logger.Warn(ex, "[merge] {ItemId}: failed to move disc folder '{Source}'", item.ID, source);
+                    _logger.Warn(ex, "[merge] {ItemId}: failed to move disc folder {Source}", item.ID, source);
                 }
             }
 
@@ -1866,7 +1866,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
             if (!IsStrictDescendantOfRoot(localPath, localRoot))
             {
-                _logger.Warn("Refusing stale-directory cleanup: '{Path}' is not inside the download root '{Root}'", localPath, localRoot);
+                _logger.Warn("Refusing stale-directory cleanup: {Path} is not inside the download root {Root}", localPath, localRoot);
                 return;
             }
 
@@ -2031,7 +2031,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }
         catch (Exception ex)
         {
-            _logger.Warn(ex, "Could not resolve '{Destination}' locally to check it for an earlier attempt's files", destination);
+            _logger.Warn(ex, "Could not resolve {Destination} locally to check it for an earlier attempt's files", destination);
             throw new DownloadClientUnavailableException("The album folder could not be resolved to check it for an earlier attempt's files; the grab is retried on a later pass", ex);
         }
     }
@@ -2046,7 +2046,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }
         catch (Exception ex)
         {
-            _logger.Warn(ex, "Could not match '{Folder}' against the queue to check it for an earlier attempt's files", folder);
+            _logger.Warn(ex, "Could not match {Folder} against the queue to check it for an earlier attempt's files", folder);
             throw new DownloadClientUnavailableException("The album folder could not be matched against the queue to check it for an earlier attempt's files; the grab is retried on a later pass", ex);
         }
 
@@ -2063,7 +2063,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         if (clients.SelectMany(c => GetItemsForDef(c.DefinitionId)).FirstOrDefault(i => i.FolderUnknown && i.HasLiveTransfers()) is { } unplaced &&
             SlskdLeftoverFolder.HoldsFiles(_diskProvider, folder))
         {
-            _logger.Debug("'{Folder}' may be where {Title}, restored without its album, is downloading", folder, unplaced.ReleaseInfo.Title);
+            _logger.Debug("{Folder} may be where {Title}, restored without its album, is downloading", folder, unplaced.ReleaseInfo.Title);
             throw new DownloadClientUnavailableException("A grab restored after Lidarr started is downloading into a folder sleezer can't name; the grab is retried on a later pass");
         }
 
@@ -2084,12 +2084,12 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }
 
         if (aside != null)
-            _logger.Info("Moved an earlier attempt's files from '{Folder}' to '{Aside}' before grabbing {Title}", folder, aside, release.Title);
+            _logger.Info("Moved an earlier attempt's files from {Folder} to {Aside} before grabbing {Title}", folder, aside, release.Title);
 
         // Lidarr is done with them; removing one later would delete its file names from the new grab's folder. Replaced attempts retire with the grab.
         foreach ((int definitionId, SlskdDownloadItem finished) in clients.SelectMany(c => c.Owners.Except(superseded).Select(o => (c.DefinitionId, o))))
         {
-            _logger.Debug("Untracking {DownloadId}, finished in Lidarr, as '{Folder}' goes to {Title}", finished.ID, folder, release.Title);
+            _logger.Debug("Untracking {DownloadId}, finished in Lidarr, as {Folder} goes to {Title}", finished.ID, folder, release.Title);
             finished.MarkRemoved();
             RememberRemovedGrab(definitionId, finished.ID, finished);
             RemoveItemFromDict(definitionId, finished.ID);

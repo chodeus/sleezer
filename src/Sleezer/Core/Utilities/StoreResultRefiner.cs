@@ -50,7 +50,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             }
 
             if (retitled > 0)
-                logger.Debug("{Indexer}: {Count} verified result(s) presented as '{Album}'", indexerName, retitled, searched);
+                logger.Debug("{Indexer}: {Count} verified result(s) presented as {Album}", indexerName, retitled, searched);
 
             return releases;
         }

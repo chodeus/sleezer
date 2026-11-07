@@ -74,7 +74,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Replacements
             if (!AmbiguousArtistScope.Rejects(release))
                 return true;
 
-            _logger.Debug("{Indexer}: dropping '{Title}' — its credited artist matches more than one library artist", Name, release.Title);
+            _logger.Debug("{Indexer}: dropping {Title} — its credited artist matches more than one library artist", Name, release.Title);
             return false;
         }
 

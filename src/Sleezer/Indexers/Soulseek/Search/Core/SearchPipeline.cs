@@ -36,7 +36,7 @@ public sealed class SearchPipeline : ISlskdSearchChain
         QueryType queryType = QueryAnalyzer.Analyze(context);
         SearchContext ctx = ApplyNormalization(context, queryType);
 
-        _logger.Debug("Search: Artist='{Artist}', Album='{Album}', Type={QueryType}", ctx.Artist, ctx.Album, queryType);
+        _logger.Debug("Search: Artist={Artist}, Album={Album}, Type={QueryType}", ctx.Artist, ctx.Album, queryType);
 
         bool isFirst = true;
         foreach (var strategy in _strategies)
@@ -68,7 +68,7 @@ public sealed class SearchPipeline : ISlskdSearchChain
         var normalized = QueryNormalizer.Normalize(context with { QueryType = queryType });
         
         if (normalized.NormalizedArtist != null || normalized.NormalizedAlbum != null)
-            _logger.Trace("Normalized: '{Artist}' / '{Album}'", normalized.NormalizedArtist ?? context.Artist, normalized.NormalizedAlbum ?? context.Album);
+            _logger.Trace("Normalized: {Artist} / {Album}", normalized.NormalizedArtist ?? context.Artist, normalized.NormalizedAlbum ?? context.Album);
 
         return normalized;
     }
@@ -91,12 +91,12 @@ public sealed class SearchPipeline : ISlskdSearchChain
 
         if (context.ProcessedSearches.Contains(query))
         {
-            _logger.Trace("[{Strategy}] Skip duplicate: '{Query}'", strategy.Name, query);
+            _logger.Trace("[{Strategy}] Skip duplicate: {Query}", strategy.Name, query);
             return [];
         }
 
         context.ProcessedSearches.Add(query);
-        _logger.Debug("[{Strategy}] Search: '{Query}'", strategy.Name, query);
+        _logger.Debug("[{Strategy}] Search: {Query}", strategy.Name, query);
 
         try
         {
@@ -111,7 +111,7 @@ public sealed class SearchPipeline : ISlskdSearchChain
         }
         catch (Exception ex)
         {
-            _logger.Error(ex, "[{Strategy}] Error: '{Query}'", strategy.Name, query);
+            _logger.Error(ex, "[{Strategy}] Error: {Query}", strategy.Name, query);
             return [];
         }
     }
@@ -131,14 +131,14 @@ public sealed class SearchPipeline : ISlskdSearchChain
             string candidate = SlskdTextProcessor.RewriteRestrictedTerms(query, variant);
             if (candidate != query && !SlskdTextProcessor.ContainsBlockedTerms(candidate))
             {
-                _logger.Debug("Rewrote server-blocked search term: '{Query}' -> '{Candidate}'", query, candidate);
+                _logger.Debug("Rewrote server-blocked search term: {Query} -> {Candidate}", query, candidate);
                 return candidate;
             }
         }
 
         // Info, not Debug: this abandons the search outright, so zero results otherwise
         // arrive with no explanation anywhere.
-        _logger.Info("Slskd: dropping search '{Query}' — it contains a server-blocked term and no rewrite avoided it", query);
+        _logger.Info("Slskd: dropping search {Query} — it contains a server-blocked term and no rewrite avoided it", query);
         return string.Empty;
     }
 }

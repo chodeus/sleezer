@@ -147,7 +147,7 @@ public sealed partial class PlaylistExportService : IPlaylistExportService,
         {
             snapshots[listId] = current;
             SaveSnapshots(snapshots);
-            _logger.Info("Stored {Count} item(s) for '{List}'", current.Items.Count, list.Definition.Name);
+            _logger.Info("Stored {Count} item(s) for {List}", current.Items.Count, list.Definition.Name);
         }
 
         return current;
@@ -155,7 +155,7 @@ public sealed partial class PlaylistExportService : IPlaylistExportService,
 
     private List<PlaylistItem>? Fetch(IImportList list)
     {
-        _logger.Debug("Fetching items from '{List}'", list.Definition.Name);
+        _logger.Debug("Fetching items from {List}", list.Definition.Name);
         try
         {
             return list is IPlaylistTrackSource trackSource
@@ -164,7 +164,7 @@ public sealed partial class PlaylistExportService : IPlaylistExportService,
         }
         catch (Exception ex)
         {
-            _logger.Warn(ex, "Fetching '{List}' failed; keeping its previous items", list.Definition.Name);
+            _logger.Warn(ex, "Fetching {List} failed; keeping its previous items", list.Definition.Name);
             return null;
         }
     }
@@ -318,9 +318,9 @@ public sealed partial class PlaylistExportService : IPlaylistExportService,
         int written = PlaylistFile.Write(fullPath, listName, files.Select(f => f.Path), outputPath, useRelative);
 
         if (written == 0)
-            _logger.Debug("Skipping '{List}': none of its {Count} track(s) are on disk", listName, files.Count);
+            _logger.Debug("Skipping {List}: none of its {Count} track(s) are on disk", listName, files.Count);
         else
-            _logger.Info("Written {Count} track(s) to '{Path}'", written, fullPath);
+            _logger.Info("Written {Count} track(s) to {Path}", written, fullPath);
     }
 
     private static string? FindCommonRoot(List<string> paths)

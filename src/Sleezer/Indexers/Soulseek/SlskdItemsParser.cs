@@ -300,7 +300,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
 
         public string NormalizeVolume(string volume)
         {
-            _logger.Trace("Normalizing volume: '{Volume}'", volume);
+            _logger.Trace("Normalizing volume: {Volume}", volume);
 
             if (_textNumbers.TryGetValue(volume, out string? textNum))
                 return textNum;
@@ -356,7 +356,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             if (total <= 0 || total > 5000)
                 return 0;
 
-            _logger.Trace("Roman numeral '{Roman}' converted to: {Total}", roman, total);
+            _logger.Trace("Roman numeral {Roman} converted to: {Total}", roman, total);
             return total;
         }
 

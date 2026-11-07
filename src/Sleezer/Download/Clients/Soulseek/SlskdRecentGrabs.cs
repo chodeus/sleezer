@@ -53,7 +53,7 @@ public sealed class SlskdRecentGrabs(Func<DateTime, IReadOnlyList<DownloadHistor
             }
             catch (Exception ex)
             {
-                logger.Trace(ex, "Grab {DownloadId}'s file list can't be read, so it owns no folder", grab.DownloadId);
+                logger.Trace(ex, "The file list of grab {DownloadId} can't be read, so it owns no folder", grab.DownloadId);
             }
         }
 
