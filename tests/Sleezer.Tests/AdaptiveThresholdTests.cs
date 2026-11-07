@@ -26,4 +26,24 @@ public class AdaptiveThresholdTests
     {
         Assert.Equal(2, new AdaptiveThresholdManager().GetDynamicThreshold("p", 5, 2));
     }
+
+    // Storing Path is picked as a folder, and a first run has no file yet: the weights were never saved.
+    [Fact]
+    public void A_first_run_saves_the_weights_into_the_picked_folder()
+    {
+        string folder = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), $"threshold-{Guid.NewGuid():N}")).FullName;
+        try
+        {
+            AdaptiveThresholdManager manager = new();
+            manager.LoadConfig(folder);
+            manager.UpdateMetrics("p", 120, 2, success: true);
+            manager.Dispose();
+
+            Assert.True(File.Exists(Path.Combine(folder, "dynamic-threshold.json")));
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
 }

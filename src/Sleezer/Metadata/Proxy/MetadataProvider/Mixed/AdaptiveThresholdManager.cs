@@ -1,4 +1,6 @@
 ﻿using System.Text.Json;
+using NLog;
+using NzbDrone.Common.Instrumentation;
 
 namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
 {
@@ -14,6 +16,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
     public class AdaptiveThresholdManager : IProvideAdaptiveThreshold, IDisposable
     {
         private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true, WriteIndented = true };
+        private static readonly Logger Logger = NzbDroneLogger.GetLogger(typeof(AdaptiveThresholdManager));
 
         private string? _configFilePath;
         private bool _disposed;
@@ -25,30 +28,61 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
 
         public void LoadConfig(string? configPath)
         {
-            if (string.IsNullOrWhiteSpace(configPath) || configPath == _configFilePath)
+            if (string.IsNullOrWhiteSpace(configPath))
                 return;
-            _configFilePath = configPath;
-            if (!File.Exists(_configFilePath))
-                return;
-            try
+
+            string filePath = ConfigFile(configPath);
+            lock (_lock)
             {
-                Config = JsonSerializer.Deserialize<AdaptiveThresholdConfig>(File.ReadAllText(_configFilePath)) ?? new AdaptiveThresholdConfig();
+                if (filePath == _configFilePath)
+                    return;
+                _configFilePath = filePath;
+
+                if (File.Exists(filePath))
+                {
+                    try
+                    {
+                        Config = JsonSerializer.Deserialize<AdaptiveThresholdConfig>(File.ReadAllText(filePath)) ?? new AdaptiveThresholdConfig();
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Warn(ex, "Could not read the dynamic threshold from {Path}; starting afresh", filePath);
+                    }
+                }
+
+                // A first run has no file yet: saving must not wait for one to exist.
+                if (_saveTimer != null)
+                    return;
                 _saveTimer = new System.Timers.Timer(300000) { AutoReset = true };
-                _saveTimer.Elapsed += (s, e) => { if (_isDirty) SaveConfig(); };
+                _saveTimer.Elapsed += (s, e) => SaveConfig();
                 _saveTimer.Start();
                 AppDomain.CurrentDomain.ProcessExit += (s, e) => SaveConfig();
             }
-            catch { }
         }
+
+        /// <summary>Storing Path is a folder picker: a folder gets the file inside it.</summary>
+        public static string ConfigFile(string configPath) =>
+            Directory.Exists(configPath) || configPath.EndsWith('/') || configPath.EndsWith('\\')
+                ? Path.Combine(configPath, "dynamic-threshold.json")
+                : configPath;
 
         private void SaveConfig()
         {
             lock (_lock)
             {
                 if (!_isDirty || _configFilePath == null) return;
-                string json = JsonSerializer.Serialize(Config, _jsonOptions);
-                File.WriteAllText(_configFilePath, json);
-                _isDirty = false;
+                try
+                {
+                    string? folder = Path.GetDirectoryName(_configFilePath);
+                    if (!string.IsNullOrEmpty(folder))
+                        Directory.CreateDirectory(folder);
+                    File.WriteAllText(_configFilePath, JsonSerializer.Serialize(Config, _jsonOptions));
+                    _isDirty = false;
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warn(ex, "Could not save the dynamic threshold to {Path}", _configFilePath);
+                }
             }
         }
 
@@ -156,7 +190,6 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
                     if (_saveTimer != null)
                     {
                         _saveTimer.Stop();
-                        _saveTimer.Elapsed -= (s, e) => { if (_isDirty) SaveConfig(); };
                         _saveTimer.Dispose();
                         _saveTimer = null;
                     }

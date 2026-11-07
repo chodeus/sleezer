@@ -337,10 +337,15 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
             return result;
         }
 
-        internal int CalculateThreshold(string proxyName, int aggregatedCount, MixedMetadataProxySettings settings) =>
-            settings.DynamicThresholdMode == true
-                ? _adaptiveThreshold.GetDynamicThreshold(proxyName, aggregatedCount, settings.MaxThreshold)
-                : Math.Min(GetThreshold(aggregatedCount), settings.MaxThreshold);
+        internal int CalculateThreshold(string proxyName, int aggregatedCount, MixedMetadataProxySettings settings)
+        {
+            if (settings.DynamicThresholdMode != true)
+                return Math.Min(GetThreshold(aggregatedCount), settings.MaxThreshold);
+
+            // Dynamic mode or Storing Path turned on after startup still loads (and later saves) the weights.
+            _adaptiveThreshold.LoadConfig(settings.WeightsPath);
+            return _adaptiveThreshold.GetDynamicThreshold(proxyName, aggregatedCount, settings.MaxThreshold);
+        }
 
         #region Utility Methods
 
