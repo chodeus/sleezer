@@ -93,7 +93,7 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek
         [FieldDefinition(13, Label = "Verify Imports With Fingerprint", Type = FieldType.Checkbox, HelpText = "Hold a download for manual import when a file's fingerprint is a different recording. Needs fpcalc, AcoustID and Soulseek in Run Pre-Import Tagging On.", Advanced = true)]
         public bool VerifyImportsWithFingerprint { get; set; }
 
-        [FieldDefinition(14, Label = "Tag Files as Soulseek", Type = FieldType.Checkbox, HelpText = "Write SOURCE=soulseek into downloaded FLAC and Ogg files before import.", Advanced = true)]
+        [FieldDefinition(14, Label = "Tag Files as Soulseek", Type = FieldType.Checkbox, HelpText = "Write SOURCE=soulseek into downloaded FLAC and Ogg files before import, replacing any SOURCE tag they carry.", Advanced = true)]
         public bool TagFilesAsSoulseek { get; set; }
 
         [FieldDefinition(15, Label = "Answer Peer Challenges", Type = FieldType.Checkbox, HelpText = "Answer a peer's private-chat word check while grabbing from them, once per peer every 12 hours. Set Retry Attempts to 2 or more.")]
