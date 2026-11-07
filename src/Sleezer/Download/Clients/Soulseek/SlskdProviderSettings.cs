@@ -96,6 +96,9 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek
         [FieldDefinition(14, Label = "Tag Files as Soulseek", Type = FieldType.Checkbox, HelpText = "Before import, write SOURCE=soulseek into each downloaded FLAC or Ogg file, replacing any SOURCE the shared file carried, so the files themselves record that they came from Soulseek. MP3 and M4A files are left unchanged.")]
         public bool TagFilesAsSoulseek { get; set; }
 
+        [FieldDefinition(15, Label = "Answer Peer Challenges", Type = FieldType.Checkbox, HelpText = "When a peer you are downloading from asks in private chat for a word or phrase before it will upload, reply with it: at most once per peer every 12 hours, and only while a grab from that peer is unfinished. The file then comes through on the peer's own restart or on Retry Attempts; a peer that denies the file until answered needs Retry Attempts of 2 or more.", Advanced = true)]
+        public bool AnswerPeerChallenges { get; set; }
+
         [FieldDefinition(98, Label = "Is Fetched remote", Type = FieldType.Checkbox, Hidden = HiddenType.Hidden)]
         public bool IsRemotePath { get; set; }
 

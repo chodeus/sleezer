@@ -31,6 +31,7 @@ internal static class SlskdEventTypes
 {
     public const string DownloadDirectoryComplete = "DownloadDirectoryComplete";
     public const string DownloadFileComplete = "DownloadFileComplete";
+    public const string PrivateMessageReceived = "PrivateMessageReceived";
 }
 
 public class SlskdDownloadManager : ISlskdDownloadManager
@@ -67,6 +68,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     private readonly IDiskProvider _diskProvider;
     private readonly Logger _logger;
     private readonly SlskdRetryHandler _retryHandler;
+    private readonly SlskdChallengeResponder _challengeResponder;
     private readonly ICorruptionScanner _corruptionScanner;
     private readonly IPreImportTagger _preImportTagger;
     private readonly ISlskdCorruptionHandler _corruptionHandler;
@@ -113,6 +115,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         _downloadClientRepository = downloadClientRepository;
         _ffmpeg = new FFmpegPathResolver(logger);
         _retryHandler = new SlskdRetryHandler(apiClient, NzbDroneLogger.GetLogger(typeof(SlskdRetryHandler)));
+        _challengeResponder = new SlskdChallengeResponder(apiClient, NzbDroneLogger.GetLogger(typeof(SlskdChallengeResponder)));
         _recentGrabs = new SlskdRecentGrabs(SoulseekGrabsSince, () => DateTime.UtcNow, logger);
         _taggedFiles = new SlskdTaggedFilesStore(Path.Combine(PluginFolder.Resolve(appFolderInfo.GetPluginPath(), PluginInfo.RepoUrl), "slskd-tagged"), logger);
     }
@@ -1295,6 +1298,10 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 string username = transferEl.TryGetProperty("username", out JsonElement un) ? un.GetString() ?? "" : "";
                 _logger.Trace("[def={DefinitionId}] Event DownloadFileComplete: {Filename} by {Username}", definitionId, SlskdTextProcessor.GetFileNameFromFilename(filename), username);
             }
+        }
+        else if (record.Type == SlskdEventTypes.PrivateMessageReceived)
+        {
+            await _challengeResponder.HandleAsync(record, settings, GetItemsForDef(definitionId));
         }
     }
 

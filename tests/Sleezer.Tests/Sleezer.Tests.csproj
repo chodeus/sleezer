@@ -446,6 +446,10 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Download\Clients\Soulseek\SlskdEventCursor.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Download\Clients\Soulseek\SlskdChallengeResponder.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Download\Clients\Soulseek\SlskdApiClient.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Download\Clients\Soulseek\SlskdProviderSettings.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Download\Clients\Soulseek\SlskdSourceTag.cs"

@@ -31,4 +31,10 @@ public interface ISlskdApiClient
     Task<SlskdDestinationConfig?> GetDestinationConfigAsync(SlskdProviderSettings settings);
     Task<ValidationFailure?> TestConnectionAsync(SlskdProviderSettings settings);
     Task<(List<SlskdEventRecord> Events, int TotalCount)> GetEventsAsync(SlskdProviderSettings settings, int offset, int limit);
+
+    /// <summary>Sends a private message; true only when slskd sent it (a blacklisted peer gets nothing).</summary>
+    Task<bool> SendPrivateMessageAsync(SlskdProviderSettings settings, string username, string message);
+
+    /// <summary>Marks every message from the peer read.</summary>
+    Task<bool> AcknowledgeConversationAsync(SlskdProviderSettings settings, string username);
 }
