@@ -5,4 +5,6 @@ public static class PluginInfo
 {
     public const string Version = "0.0.0-test";
     public const string RepoUrl = "https://example.invalid/sleezer";
+    public const string Author = "test";
+    public const string Name = "Sleezer";
 }

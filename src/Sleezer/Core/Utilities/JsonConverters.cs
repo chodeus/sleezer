@@ -1,4 +1,5 @@
-﻿using System.Text.Json;
+﻿using System.Globalization;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace NzbDrone.Plugin.Sleezer.Core.Utilities
@@ -99,6 +100,31 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             {
                 writer.WriteNullValue();
             }
+        }
+    }
+
+    /// <summary>A date that is unknown ("0000-00-00", blank or not a date) reads as null instead of failing the whole response.</summary>
+    internal class LenientDateTimeConverter : JsonConverter<DateTime?>
+    {
+        public override DateTime? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            if (reader.TokenType != JsonTokenType.String)
+            {
+                reader.Skip();
+                return null;
+            }
+
+            return DateTime.TryParse(reader.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out DateTime date) && date != DateTime.MinValue
+                ? date
+                : null;
+        }
+
+        public override void Write(Utf8JsonWriter writer, DateTime? value, JsonSerializerOptions options)
+        {
+            if (value.HasValue)
+                writer.WriteStringValue(value.Value);
+            else
+                writer.WriteNullValue();
         }
     }
 }

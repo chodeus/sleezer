@@ -36,8 +36,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Deezer
             // Validate the User-Agent
             RuleFor(x => x.UserAgent)
                 .Must(x => UserAgentValidator.Instance.IsAllowed(x))
-                .WithMessage("The provided User-Agent is not allowed. " +
-                "Ensure it follows the format 'Name/Version' and avoids terms like: lidarr, bot, crawler or proxy.");
+                .WithMessage(UserAgentValidator.RuleMessage);
         }
     }
 

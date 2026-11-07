@@ -354,6 +354,7 @@ public sealed partial class PlaylistExportService : IPlaylistExportService,
     private void SaveSnapshots(Dictionary<int, PlaylistSnapshot> snapshots) =>
         _pluginSettings.SetValue(SnapshotKey, snapshots);
 
+    // Unchanged on purpose: another sanitizer renames existing playlists, leaving the old files behind.
     private static string SanitizeFilename(string name) =>
         Path.GetInvalidFileNameChars().Aggregate(name, (s, c) => s.Replace(c, '_'));
 

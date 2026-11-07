@@ -2,10 +2,12 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
 namespace NzbDrone.Plugin.Sleezer.Core.Model
 {
-    public class FileCache
+    public partial class FileCache
     {
         private readonly string _cacheDirectory;
         private static readonly JsonSerializerOptions _jsonOptions = new() { WriteIndented = true };
@@ -19,19 +21,31 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
             CleanupOldCacheFiles();
         }
 
-        /// <summary>
-        /// Deletes any JSON files stored directly in the root cache directory,
-        /// as these are from the old file naming scheme.
-        /// </summary>
+        /// <summary>Deletes entries the old naming scheme left in the cache folder's top level.</summary>
         private void CleanupOldCacheFiles()
         {
+            string[] files;
             try
             {
-                foreach (string file in Directory.GetFiles(_cacheDirectory, "*.json", SearchOption.TopDirectoryOnly))
-                    File.Delete(file);
+                files = Directory.GetFiles(_cacheDirectory, "*.json", SearchOption.TopDirectoryOnly);
             }
-            catch
-            { }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                return;
+            }
+
+            // Old-scheme entries only: the folder can hold other files, such as the Mixed proxy's weights.
+            foreach (string file in files.Where(f => OldSchemeEntry().IsMatch(Path.GetFileName(f))))
+            {
+                try
+                {
+                    File.Delete(file);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    // One entry that can't go must not keep the rest; the next open tries it again.
+                }
+            }
         }
 
         /// <summary>
@@ -44,8 +58,21 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
             if (!File.Exists(cacheFilePath))
                 return default;
 
-            string json = await File.ReadAllTextAsync(cacheFilePath);
-            CachedData<T>? cachedData = JsonSerializer.Deserialize<CachedData<T>>(json);
+            CachedData<T>? cachedData;
+            try
+            {
+                cachedData = JsonSerializer.Deserialize<CachedData<T>>(await File.ReadAllTextAsync(cacheFilePath));
+            }
+            catch (JsonException)
+            {
+                // A torn entry is a miss; left in place it would fail every later lookup.
+                cachedData = null;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // A read that failed says nothing about the entry: keep it.
+                return default;
+            }
 
             if (cachedData == null || DateTime.UtcNow - cachedData.CreatedAt > cachedData.ExpirationDuration)
             {
@@ -78,8 +105,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
                 ExpirationDuration = expirationDuration
             };
 
-            string json = JsonSerializer.Serialize(cachedData, _jsonOptions);
-            await File.WriteAllTextAsync(cacheFilePath, json);
+            // Not in place: a crash or a second writer must never leave a torn entry.
+            await AtomicFile.WriteAsync(cacheFilePath, JsonSerializer.Serialize(cachedData, _jsonOptions));
         }
 
         /// <summary>
@@ -101,6 +128,9 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
         /// <summary>
         /// Computes the file path for a given cache key using a SHA256 hash and sharding.
         /// </summary>
+        [GeneratedRegex("^[0-9a-f]{64}\\.json$")]
+        private static partial Regex OldSchemeEntry();
+
         private string GetCacheFilePath(string cacheKey)
         {
             byte[] hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(cacheKey));

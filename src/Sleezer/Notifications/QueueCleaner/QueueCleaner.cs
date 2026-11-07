@@ -204,10 +204,14 @@ namespace NzbDrone.Plugin.Sleezer.Notifications.QueueCleaner
 
             try
             {
-                TagLib.File fileTags = TagLib.File.Create(filePath);
-                string artistName = fileTags.Tag.FirstAlbumArtist ?? fileTags.Tag.FirstPerformer ?? "UnknownArtist";
-                string title = fileTags.Tag.Title ?? Path.GetFileNameWithoutExtension(filePath);
-                string trackNumber = fileTags.Tag.Track.ToString("D2");
+                // Closed before the move: an open handle leaks per file, and Windows refuses to move a file in use.
+                string artistName, title, trackNumber;
+                using (TagLib.File fileTags = TagLib.File.Create(filePath))
+                {
+                    artistName = fileTags.Tag.FirstAlbumArtist ?? fileTags.Tag.FirstPerformer ?? "UnknownArtist";
+                    title = fileTags.Tag.Title ?? Path.GetFileNameWithoutExtension(filePath);
+                    trackNumber = fileTags.Tag.Track.ToString("D2");
+                }
 
                 string newFileNameWithoutExtension = releaseFormatter.BuildTrackFilename(null, new Track
                 {

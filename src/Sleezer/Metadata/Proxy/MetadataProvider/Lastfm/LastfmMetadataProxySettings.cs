@@ -43,12 +43,9 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Lastfm
                 .Must((settings, path) => settings.RequestCacheType != (int)CacheType.Permanent || (!string.IsNullOrWhiteSpace(path) && Directory.Exists(path)))
                 .WithMessage("A valid Cache Directory is required for Permanent caching.");
 
-            // Validate the system stability for Memory cache
-            RuleFor(x => x.RequestCacheType)
-                .Must((type) => type == (int)CacheType.Permanent || SleezerPlugin.AverageRuntime > TimeSpan.FromDays(4) ||
-                           DateTime.UtcNow - SleezerPlugin.LastStarted > TimeSpan.FromDays(5))
-                .When(x => x.RequestCacheType == (int)CacheType.Memory)
-                .WithMessage("The system is not detected as stable. Please wait for the system to stabilize or use permanent cache.");
+            RuleFor(x => x.UserAgent)
+                .Must(x => UserAgentValidator.Instance.IsAllowed(x))
+                .WithMessage(UserAgentValidator.RuleMessage);
 
             // Validate that Warn is checked
             RuleFor(x => x.UseAtOwnRisk)
@@ -66,7 +63,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Lastfm
         [FieldDefinition(1, Label = "API Key", Type = FieldType.Textbox, Privacy = PrivacyLevel.ApiKey, HelpText = "Your Last.fm API key", Placeholder = "Enter your API key", Hidden = HiddenType.Hidden)]
         public string ApiKey { get; set; } = string.Empty;
 
-        [FieldDefinition(2, Label = "User Agent", Section = MetadataSectionType.Metadata, Type = FieldType.Textbox, HelpText = "User-Agent sent with requests, as Name/Version.", Placeholder = "MyApp/1.0.0", Hidden = HiddenType.Hidden)]
+        [FieldDefinition(2, Label = "User Agent", Section = MetadataSectionType.Metadata, Type = FieldType.Textbox, HelpText = "User-Agent sent with requests, as Name/Version; terms such as lidarr, bot, crawler or proxy are refused.", Placeholder = "MyApp/1.0.0", Hidden = HiddenType.Hidden)]
         public string UserAgent { get; set; } = string.Empty;
 
         [FieldDefinition(3, Label = "Page Number", Type = FieldType.Number, HelpText = "Page number for pagination", Placeholder = "1", Hidden = HiddenType.Hidden)]
@@ -89,7 +86,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Lastfm
         [FieldDefinition(1, Label = "API Key", Type = FieldType.Textbox, Privacy = PrivacyLevel.ApiKey, HelpText = "Your Last.fm API key", Placeholder = "Enter your API key")]
         public string ApiKey { get; set; } = string.Empty;
 
-        [FieldDefinition(2, Label = "User Agent", Section = MetadataSectionType.Metadata, Type = FieldType.Textbox, HelpText = "User-Agent sent with requests, as Name/Version.", Placeholder = "MyApp/1.0.0")]
+        [FieldDefinition(2, Label = "User Agent", Section = MetadataSectionType.Metadata, Type = FieldType.Textbox, HelpText = "User-Agent sent with requests, as Name/Version; terms such as lidarr, bot, crawler or proxy are refused.", Placeholder = "MyApp/1.0.0")]
         public string UserAgent { get; set; } = string.Empty;
 
         [FieldDefinition(3, Label = "Page Number", Type = FieldType.Number, HelpText = "Page number for pagination", Placeholder = "1", Advanced = true)]

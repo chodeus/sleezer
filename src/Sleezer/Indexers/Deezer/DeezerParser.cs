@@ -58,15 +58,20 @@ namespace NzbDrone.Core.Indexers.Deezer
 
             var sw = Stopwatch.StartNew();
             _logger.Debug("Deezer enrichment fan-out: {AlbumCount} albums", jsonResponse.Data.Count);
-            var tasks = jsonResponse.Data.Select(result => ProcessResultAsync(result, api)).ToArray();
+            var tasks = jsonResponse.Data.Select(result => ProcessResultOrSkipAsync(result, api)).ToArray();
 
             if (!Task.WaitAll(tasks, IndexerParseTimeout))
                 throw new TimeoutException($"Deezer search enrichment did not complete within {IndexerParseTimeout.TotalSeconds:F0}s");
 
+            // Every page failing is Deezer down or an expired ARL, not an empty search: Lidarr must see the failure.
+            Exception[] failures = [.. tasks.Select(t => t.Result.Failure).OfType<Exception>()];
+            if (failures.Length > 0 && failures.Length == tasks.Length)
+                throw new AggregateException($"Every one of {tasks.Length} Deezer album pages failed to load", failures);
+
             foreach (var task in tasks)
             {
-                if (task.Result != null)
-                    torrentInfos.AddRange(task.Result);
+                if (task.Result.Releases != null)
+                    torrentInfos.AddRange(task.Result.Releases);
             }
 
             _logger.Debug("Deezer enrichment done in {ElapsedMs}ms — {ReleaseCount} releases from {AlbumCount} albums",
@@ -83,6 +88,20 @@ namespace NzbDrone.Core.Indexers.Deezer
                 return "<empty>";
             const int MaxLen = 512;
             return content.Length <= MaxLen ? content : content[..MaxLen] + "…";
+        }
+
+        // One album whose page fails must not fail the search, which Lidarr would count against the indexer.
+        private async Task<(IList<ReleaseInfo>? Releases, Exception? Failure)> ProcessResultOrSkipAsync(DeezerGwAlbum result, DeezerAPI api)
+        {
+            try
+            {
+                return (await ProcessResultAsync(result, api), null);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warn(ex, "Skipping Deezer album {AlbumId}: its page could not be read", result.AlbumId);
+                return (null, ex);
+            }
         }
 
         private async Task<IList<ReleaseInfo>?> ProcessResultAsync(DeezerGwAlbum result, DeezerAPI api)
@@ -282,11 +301,24 @@ namespace NzbDrone.Core.Indexers.Deezer
             JArray dataArray = new();
 
             long albumCount = 0;
+            int attempted = 0;
+            System.Collections.Concurrent.ConcurrentBag<Exception> failures = [];
 
             await Task.WhenAll(recent.Select(async album =>
             {
                 var id = album["ALB_ID"]!.Value<long>();
-                var result = await api.Client.GWApi.GetAlbumPage(id);
+                JToken result;
+                Interlocked.Increment(ref attempted);
+                try
+                {
+                    result = await api.Client.GWApi.GetAlbumPage(id);
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warn(ex, "Skipping new release {AlbumId}: its Deezer page could not be read", id);
+                    failures.Add(ex);
+                    return;
+                }
 
                 var duration = result["SONGS"]!.Sum(track => track.Contains("DURATION") ? track["DURATION"]!.Value<long>() : 0L);
                 var trackCount = result["SONGS"]!.Count();
@@ -302,6 +334,10 @@ namespace NzbDrone.Core.Indexers.Deezer
                     albumCount++;
                 }
             }));
+
+            // As in a search: every page failing is Deezer down or an expired ARL, not an empty channel.
+            if (attempted > 0 && failures.Count == attempted)
+                throw new AggregateException($"Every one of {attempted} Deezer new-release pages failed to load", failures);
 
             baseObj.Add("data", dataArray);
             baseObj.Add("total", albumCount);
