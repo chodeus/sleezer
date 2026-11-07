@@ -42,5 +42,20 @@ public sealed class AtomicFileTests : IDisposable
         Assert.Single(Directory.GetFiles(_root));
     }
 
+    [Fact]
+    public void A_replaced_file_keeps_its_mode()
+    {
+        if (OperatingSystem.IsWindows())
+            Assert.Skip("Unix file modes only.");
+
+        string path = Path.Combine(_root, "settings.resx");
+        File.WriteAllText(path, "old");
+        File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+
+        AtomicFile.Write(path, "new");
+
+        Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(path));
+    }
+
     public void Dispose() => Directory.Delete(_root, recursive: true);
 }

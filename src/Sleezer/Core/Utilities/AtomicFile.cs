@@ -15,6 +15,7 @@ public static class AtomicFile
                 stream.Flush(flushToDisk: true);
             }
 
+            KeepMode(temp, path);
             File.Move(temp, path, overwrite: true);
         }
         catch
@@ -36,6 +37,7 @@ public static class AtomicFile
                 stream.Flush(flushToDisk: true);
             }
 
+            KeepMode(temp, path);
             File.Move(temp, path, overwrite: true);
         }
         catch
@@ -43,6 +45,13 @@ public static class AtomicFile
             TryDelete(temp);
             throw;
         }
+    }
+
+    // A replaced file keeps its mode, as an in-place write did: the settings file holds credentials.
+    private static void KeepMode(string temp, string path)
+    {
+        if (!OperatingSystem.IsWindows() && File.Exists(path))
+            File.SetUnixFileMode(temp, File.GetUnixFileMode(path));
     }
 
     // Unique per write: two writers of one path must not share a temp file.

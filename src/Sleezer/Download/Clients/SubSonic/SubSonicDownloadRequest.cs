@@ -462,7 +462,7 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
             string artistName = albumInfo?.Artist ?? track.Artist ?? ReleaseInfo.Artist ??
                                 _remoteAlbum.Artist?.Name ?? "Unknown Artist";
 
-            DateTime releaseDate = DetermineReleaseDate(albumInfo, track);
+            DateTime? releaseDate = DetermineReleaseDate(albumInfo, track);
 
             return new Album
             {
@@ -481,14 +481,11 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
             };
         }
 
-        private DateTime DetermineReleaseDate(SubSonicAlbumFull? albumInfo, SubSonicSearchSong track)
+        // No year stays no year, as in the indexer: Created is when the server added the album.
+        private static DateTime? DetermineReleaseDate(SubSonicAlbumFull? albumInfo, SubSonicSearchSong track)
         {
             int? year = albumInfo?.Year ?? track.Year;
-            if (year > 1900 && year.Value <= DateTime.Now.Year)
-                return new DateTime(year.Value, 1, 1);
-            if (albumInfo?.Created != null)
-                return albumInfo.Created.Value;
-            return ReleaseInfo.PublishDate;
+            return year > 1900 && year.Value <= DateTime.Now.Year ? new DateTime(year.Value, 1, 1) : null;
         }
 
         private static Track CreateTrackFromSubSonicData(SubSonicSearchSong track) => new()
