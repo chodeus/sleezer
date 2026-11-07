@@ -303,7 +303,6 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             }
         }
 
-
         private HashSet<string> GetRateLimitedUsers()
         {
             IReadOnlySet<string> corruptBanned = _corruptUserTracker.GetBannedUsers();
