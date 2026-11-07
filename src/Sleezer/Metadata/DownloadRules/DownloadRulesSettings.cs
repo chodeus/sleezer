@@ -27,7 +27,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.DownloadRules
         public IEnumerable<int> PreImportTaggingClients { get; set; } = Array.Empty<int>();
 
         [FieldDefinition(4, Label = "Remove Featured Artists From Tags", Type = FieldType.Checkbox,
-            HelpText = "Remove '(feat. X)' credits from the tags and names of files pre-import tagging handles.")]
+            HelpText = "Remove '(feat. X)' from the tags of files pre-import tagging handles, and from the names of those it matches.")]
         public bool StripFeaturedArtists { get; set; }
 
         // Set once the values from the old per-provider settings have been copied in.

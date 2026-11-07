@@ -52,7 +52,7 @@ namespace NzbDrone.Core.Indexers.Tidal
 
         // Display only — see Tidal.cs; never fed back in as session input.
         [FieldDefinition(4, Label = "Account Storefront", Type = FieldType.Textbox, Advanced = true, Hidden = HiddenType.HiddenIfNotSet,
-            HelpText = "Tidal's country for this account, set by Tidal on login; editing it does nothing. Albums not licensed there won't show or download.")]
+            HelpText = "Tidal's country for this account, set by Tidal on login; editing it does nothing. Albums not licensed there can't be downloaded.")]
         public string CountryCode { get; set; } = "";
 
         [FieldDefinition(5, Label = "User Id", Type = FieldType.Number, Hidden = HiddenType.Hidden)]
