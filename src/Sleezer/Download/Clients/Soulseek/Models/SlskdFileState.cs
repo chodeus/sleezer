@@ -38,7 +38,13 @@ public class SlskdFileState(SlskdDownloadFile file)
 
     public bool WatchdogCancelled { get; private set; }
 
-    public void MarkWatchdogCancelled() => WatchdogCancelled = true;
+    private string? _watchdogCancelledId;
+
+    public void MarkWatchdogCancelled()
+    {
+        WatchdogCancelled = true;
+        _watchdogCancelledId = File.Id;
+    }
 
     // Sticky terminal flag set by SlskdRetryHandler once IncrementAttempt has
     // pushed RetryCount to MaxRetryCount. Without this, "exhausted" is derived
@@ -99,6 +105,10 @@ public class SlskdFileState(SlskdDownloadFile file)
 
     private void UpdateWatchdogState(SlskdDownloadFile file)
     {
+        // A retry is a new transfer, often in the same peer's queue: the watchdog must judge it too.
+        if (WatchdogCancelled && file.Id != _watchdogCancelledId)
+            WatchdogCancelled = false;
+
         DownloadItemStatus status = GetStatus(file.State);
         DateTime now = DateTime.UtcNow;
 
