@@ -1,4 +1,6 @@
 using NLog;
+using NzbDrone.Core.Download;
+using NzbDrone.Core.ThingiProvider.Events;
 using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
 using Xunit;
 
@@ -23,5 +25,21 @@ public class SlskdCorruptUserTrackerTests
 
         tracker.UseThreshold(1, 2);
         Assert.Contains("peer", tracker.GetBannedUsers());
+    }
+
+    [Fact]
+    public void A_disabled_or_deleted_clients_count_stops_banning()
+    {
+        SlskdCorruptUserTracker tracker = new(LogManager.GetCurrentClassLogger());
+        tracker.UseThreshold(1, 2);
+        tracker.UseThreshold(2, 2);
+        tracker.UseThreshold(3, 0);
+        tracker.RecordStrike("peer", 2, 2);
+
+        tracker.Handle(new ProviderUpdatedEvent<IDownloadClient>(new DownloadClientDefinition { Id = 1, Enable = false }));
+        Assert.Contains("peer", tracker.GetBannedUsers());
+
+        tracker.Handle(new ProviderDeletedEvent<IDownloadClient>(2));
+        Assert.Empty(tracker.GetBannedUsers());
     }
 }

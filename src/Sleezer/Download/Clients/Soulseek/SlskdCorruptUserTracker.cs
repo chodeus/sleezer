@@ -1,5 +1,8 @@
 using System.Collections.Concurrent;
 using NLog;
+using NzbDrone.Core.Download;
+using NzbDrone.Core.Messaging.Events;
+using NzbDrone.Core.ThingiProvider.Events;
 
 namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
 
@@ -24,7 +27,7 @@ public interface ISlskdCorruptUserTracker
     void UseThreshold(int clientId, int banThreshold);
 }
 
-public class SlskdCorruptUserTracker : ISlskdCorruptUserTracker
+public class SlskdCorruptUserTracker : ISlskdCorruptUserTracker, IHandle<ProviderUpdatedEvent<IDownloadClient>>, IHandle<ProviderDeletedEvent<IDownloadClient>>
 {
     private readonly ConcurrentDictionary<string, int> _strikes = new(StringComparer.OrdinalIgnoreCase);
     private readonly Logger _logger;
@@ -50,6 +53,15 @@ public class SlskdCorruptUserTracker : ISlskdCorruptUserTracker
 
     // Read on every download-client poll, per client: one client's 0 must not lift another's bans.
     public void UseThreshold(int clientId, int banThreshold) => _thresholds[clientId] = banThreshold;
+
+    // A disabled or deleted client stops polling: its last count must not keep banning.
+    public void Handle(ProviderUpdatedEvent<IDownloadClient> message)
+    {
+        if (!message.Definition.Enable)
+            _thresholds.TryRemove(message.Definition.Id, out _);
+    }
+
+    public void Handle(ProviderDeletedEvent<IDownloadClient> message) => _thresholds.TryRemove(message.ProviderId, out _);
 
     public IReadOnlySet<string> GetBannedUsers()
     {
