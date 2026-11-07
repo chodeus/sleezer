@@ -300,7 +300,16 @@ namespace NzbDrone.Core.Indexers.Deezer
             await Task.WhenAll(recent.Select(async album =>
             {
                 var id = album["ALB_ID"]!.Value<long>();
-                var result = await api.Client.GWApi.GetAlbumPage(id);
+                JToken result;
+                try
+                {
+                    result = await api.Client.GWApi.GetAlbumPage(id);
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warn(ex, "Skipping new release {AlbumId}: its Deezer page could not be read", id);
+                    return;
+                }
 
                 var duration = result["SONGS"]!.Sum(track => track.Contains("DURATION") ? track["DURATION"]!.Value<long>() : 0L);
                 var trackCount = result["SONGS"]!.Count();
