@@ -236,6 +236,8 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Utilities\EmptyDownloadDirectorySweeper.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Core\Utilities\PluginSettings.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Utilities\PluginFolder.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Utilities\DownloadIdFile.cs"
