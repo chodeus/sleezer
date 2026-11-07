@@ -6,30 +6,29 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
 public interface ISlskdCorruptUserTracker
 {
     /// <summary>
-    /// Record one or more corruption strikes against a user. If the running
-    /// strike count reaches <paramref name="banThreshold"/>, the user is added
-    /// to the ban set returned by <see cref="GetBannedUsers"/> until the plugin
-    /// is restarted.
+    /// Record one or more corruption strikes against a user; strikes last until the
+    /// plugin restarts. <paramref name="banThreshold"/> only words the log line: the
+    /// clients' thresholds from <see cref="UseThreshold"/> decide the ban.
     /// </summary>
     void RecordStrike(string username, int strikeCount, int banThreshold);
 
     /// <summary>
-    /// Current set of users whose strike count is at or above the last-configured
-    /// <c>BanUserAfterCorruptCount</c> threshold. Consulted by
+    /// Current set of users whose strike count is at or above the lowest
+    /// <c>BanUserAfterCorruptCount</c> above 0 of any slskd client. Consulted by
     /// <c>SlskdIndexerParser</c> to filter them out of search results. Returns
-    /// empty when no strikes have been recorded or the threshold is 0.
+    /// empty when no strikes have been recorded or every client's count is 0.
     /// </summary>
     IReadOnlySet<string> GetBannedUsers();
 
-    /// <summary>The current Ban User After Corrupt Count; 0 releases every ban.</summary>
-    void UseThreshold(int banThreshold);
+    /// <summary>A download client's current Ban User After Corrupt Count; 0 releases the bans it alone imposed.</summary>
+    void UseThreshold(int clientId, int banThreshold);
 }
 
 public class SlskdCorruptUserTracker : ISlskdCorruptUserTracker
 {
     private readonly ConcurrentDictionary<string, int> _strikes = new(StringComparer.OrdinalIgnoreCase);
     private readonly Logger _logger;
-    private volatile int _lastKnownThreshold;
+    private readonly ConcurrentDictionary<int, int> _thresholds = new();
 
     public SlskdCorruptUserTracker(Logger logger)
     {
@@ -41,7 +40,6 @@ public class SlskdCorruptUserTracker : ISlskdCorruptUserTracker
         if (string.IsNullOrEmpty(username) || strikeCount <= 0)
             return;
 
-        _lastKnownThreshold = banThreshold;
         int total = _strikes.AddOrUpdate(username, strikeCount, (_, current) => current + strikeCount);
 
         if (banThreshold > 0 && total >= banThreshold)
@@ -50,12 +48,12 @@ public class SlskdCorruptUserTracker : ISlskdCorruptUserTracker
             _logger.Info("Slskd corruption strike recorded for {Username}: {Total} total (threshold {Threshold})", username, total, banThreshold);
     }
 
-    // Read on every download-client poll: a strike was the only update, so 0 left bans standing until restart.
-    public void UseThreshold(int banThreshold) => _lastKnownThreshold = banThreshold;
+    // Read on every download-client poll, per client: one client's 0 must not lift another's bans.
+    public void UseThreshold(int clientId, int banThreshold) => _thresholds[clientId] = banThreshold;
 
     public IReadOnlySet<string> GetBannedUsers()
     {
-        int threshold = _lastKnownThreshold;
+        int threshold = _thresholds.Values.Where(t => t > 0).DefaultIfEmpty(0).Min();
         if (threshold <= 0)
             return new HashSet<string>();
 

@@ -69,9 +69,11 @@ public static class SlskdStatusResolver
                 anyActive = true;
             }
 
-            // Inactivity timestamp: max of enqueued / started / (started + elapsed)
+            // Inactivity timestamp: max of requested / enqueued / started / (started + elapsed).
+            // Requested too: a peer's rejection sets no other time, and its stalled retry must still time out.
             DateTime t3 = f.StartedAt + f.ElapsedTime;
             DateTime latest = f.EnqueuedAt > f.StartedAt ? f.EnqueuedAt : f.StartedAt;
+            if (f.RequestedAt > latest) latest = f.RequestedAt;
             if (t3 > latest) latest = t3;
             if (latest > lastActivity) lastActivity = latest;
 

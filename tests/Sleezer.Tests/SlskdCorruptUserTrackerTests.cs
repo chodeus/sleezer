@@ -11,16 +11,17 @@ public class SlskdCorruptUserTrackerTests
     public void The_current_threshold_decides_who_is_banned()
     {
         SlskdCorruptUserTracker tracker = new(LogManager.GetCurrentClassLogger());
+        tracker.UseThreshold(1, 2);
         tracker.RecordStrike("peer", 2, 2);
         Assert.Contains("peer", tracker.GetBannedUsers());
 
-        tracker.UseThreshold(0);
+        tracker.UseThreshold(1, 0);
         Assert.Empty(tracker.GetBannedUsers());
 
-        tracker.UseThreshold(5);
+        tracker.UseThreshold(1, 5);
         Assert.Empty(tracker.GetBannedUsers());
 
-        tracker.UseThreshold(2);
+        tracker.UseThreshold(1, 2);
         Assert.Contains("peer", tracker.GetBannedUsers());
     }
 }

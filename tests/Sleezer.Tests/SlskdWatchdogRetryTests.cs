@@ -30,7 +30,7 @@ public class SlskdWatchdogRetryTests
     {
         SlskdDownloadItem item = Item(Transfer("first", "Queued, Remotely"));
         SlskdFileState state = item.FileStates[Name];
-        state.MarkWatchdogCancelled();
+        state.MarkWatchdogCancelled("first");
 
         item.SlskdDownloadDirectory = new SlskdDownloadDirectory(Dir, 1, [Transfer("first", "Queued, Remotely")]);
         Assert.True(state.WatchdogCancelled);

@@ -110,8 +110,10 @@ public class SlskdWatchdog : ISlskdWatchdog
         {
             _logger.Info("[watchdog] Cancelling {Filename} from {Username}: {Reason}", filename, item.Username, reason);
 
-            await _apiClient.DeleteTransferAsync(settings, item.Username!, fileState.File.Id);
-            fileState.MarkWatchdogCancelled();
+            // Read once: a poll during the DELETE can install the retry's transfer, which must stay watched.
+            string transferId = fileState.File.Id;
+            await _apiClient.DeleteTransferAsync(settings, item.Username!, transferId);
+            fileState.MarkWatchdogCancelled(transferId);
         }
         catch (Exception ex)
         {
