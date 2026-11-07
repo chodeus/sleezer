@@ -102,7 +102,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 {
                     if (!File.Exists(Settings.IgnoreListPath))
                         return new ValidationFailure("IgnoreListPath", "Ignore List File does not exists.");
-                    SlskdIndexerParser.InvalidIgnoreCache(Settings.IgnoreListPath);
+                    SlskdIgnoreList.Invalidate(Settings.IgnoreListPath);
                     return PermissionTester.TestReadWritePermissions(Path.GetDirectoryName(Settings.IgnoreListPath)!, _logger)!;
                 }
                 return null!;

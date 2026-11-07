@@ -332,6 +332,8 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Indexers\Soulseek\SlskdTextProcessor.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Indexers\Soulseek\SlskdIgnoreList.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Utilities\VariantQualifiers.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Utilities\SharedTrackQualifier.cs"
