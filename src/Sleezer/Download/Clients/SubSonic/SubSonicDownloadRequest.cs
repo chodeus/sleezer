@@ -9,6 +9,7 @@ using NzbDrone.Core.Music;
 using NzbDrone.Core.Parser.Model;
 using Requests;
 using Requests.Options;
+using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
 using NzbDrone.Plugin.Sleezer.Core.Model;
@@ -28,6 +29,9 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
         private readonly StringBuilder _message = new();
         private readonly RequestContainer<IRequest> _requestContainer = [];
         private readonly RequestContainer<LoadRequest> _trackContainer = [];
+
+        // A post-process retry must find a track the first attempt renamed.
+        private readonly ConcurrentDictionary<string, string> _renamedTracks = new();
 
         // The orchestrating request must NOT share the download handler. It occupies a
         // slot while waiting for the tracks that need that same slot, so at
@@ -352,7 +356,7 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
             string streamUrl = BuildStreamUrl(track.Id);
             Track trackMetadata = CreateTrackFromSubSonicData(track);
             Album albumMetadata = CreateAlbumFromSubSonicData(track, _currentAlbum);
-            string fileName = BuildTrackFilename(trackMetadata, albumMetadata);
+            string fileName = BuildTrackFilename(trackMetadata, albumMetadata, SubSonicTrackFormat.Extension(track, Options.PreferredFormat));
 
             LoadRequest downloadRequest = CreateDownloadRequest(streamUrl, fileName, token);
             OwnRequest postProcessRequest = CreatePostProcessRequest(track, downloadRequest, fileName, token);
@@ -393,9 +397,24 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
                 RequestFailed = (_, __) => LogAndAppendMessage($"Post-processing failed: {fileName}", LogLevel.Error)
             });
 
+        // A server can stream another format than it names: rename the file to the codec ffprobe reads.
+        private async Task<string> NameByCodecAsync(string trackPath)
+        {
+            if (!AudioMetadataHandler.CheckFFmpegInstalled())
+                return trackPath;
+
+            if (SubSonicTrackFormat.Corrected(trackPath, await AudioMetadataHandler.GetSupportedCodecAsync(trackPath)) is not string extension)
+                return trackPath;
+
+            string renamed = Path.ChangeExtension(trackPath, extension);
+            File.Move(trackPath, renamed);
+            _logger.Debug("Renamed {Track} to {Extension} to match its codec", Path.GetFileName(trackPath), extension);
+            return renamed;
+        }
+
         private async Task<bool> PostProcessTrackAsync(SubSonicSearchSong trackInfo, LoadRequest request, CancellationToken token)
         {
-            string trackPath = request.Destination;
+            string trackPath = _renamedTracks.GetValueOrDefault(request.Destination, request.Destination);
             await Task.Delay(100, token);
 
             if (!File.Exists(trackPath))
@@ -406,9 +425,10 @@ namespace NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic
 
             try
             {
+                trackPath = _renamedTracks[request.Destination] = await NameByCodecAsync(trackPath);
                 AudioMetadataHandler audioData = new(trackPath) { AlbumCover = _albumCover };
 
-                AudioFormat detectedFormat = AudioFormatHelper.GetAudioCodecFromExtension(trackPath);
+                AudioFormat detectedFormat = AudioFormatHelper.GetAudioCodecFromExtension(Path.GetExtension(trackPath));
                 if (!AudioMetadataHandler.SupportsMetadataEmbedding(detectedFormat))
                 {
                     _logger.Warn($"Skipping metadata embedding for {detectedFormat} format. Not supported: {Path.GetFileName(trackPath)}");

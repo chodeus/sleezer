@@ -100,9 +100,18 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Deezer
             UpdateCache(settings);
             return CachedSearchAsync<Artist, DeezerArtist>(settings, "", artistD =>
             {
-                Artist artist = DeezerMappingHelper.MapArtistFromDeezerArtist(artistD);
-                artist.Albums = GetArtistAlbumsAsync(settings, artist).GetAwaiter().GetResult();
-                return artist;
+                // One artist whose albums fail to load must not fail the whole search.
+                try
+                {
+                    Artist artist = DeezerMappingHelper.MapArtistFromDeezerArtist(artistD);
+                    artist.Albums = GetArtistAlbumsAsync(settings, artist).GetAwaiter().GetResult();
+                    return artist;
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warn(ex, "Skipping Deezer artist {Artist} ({Id}): its albums failed to load", artistD.Name, artistD.Id);
+                    return null;
+                }
             }, title).GetAwaiter().GetResult();
         }
 
