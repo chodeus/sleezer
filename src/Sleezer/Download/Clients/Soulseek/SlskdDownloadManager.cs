@@ -1473,8 +1473,11 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 string downloadRoot = remotePath.FullPath;
                 if (!IsStrictDescendantOfRoot(folderPath, downloadRoot))
                 {
-                    item.PostProcessFailure = "The download has no folder of its own inside the download root";
-                    _logger.Warn("[post-process] {ItemId}: failing — {FolderPath} is not a folder inside the download root", item.ID, folderPath);
+                    // SOURCE tags are optional provenance: skipped there, they never fail a download.
+                    if (scanEnabled || tagEnabled)
+                        item.PostProcessFailure = "The download has no folder of its own inside the download root";
+                    _logger.Warn("[post-process] {ItemId}: {FolderPath} is not a folder inside the download root; {Outcome}",
+                        item.ID, folderPath, scanEnabled || tagEnabled ? "failing it" : "not writing SOURCE tags");
                     return;
                 }
 

@@ -109,6 +109,21 @@ public class SlskdRealSeamTests
     }
 
     [Fact]
+    public async Task The_watchdog_marks_the_transfer_it_deleted()
+    {
+        SlskdDownloadItem item = NewItem(Name);
+        item.SlskdDownloadDirectory = new SlskdDownloadDirectory(Dir, 1, [Parse("first", "Queued, Remotely", Unzoned(Now), Unzoned(Now), null, 9999)]);
+        SlskdFileState state = item.FileStates[Name];
+        RacingApiClient api = new(() => { });
+
+        await new SlskdWatchdog(api, LogManager.GetLogger("tests"))
+            .InspectAsync(item, new SlskdProviderSettings { MaxQueuePositionBeforeCancel = 500 }, CancellationToken.None);
+
+        Assert.Equal(["first"], api.Deleted);
+        Assert.True(state.WatchdogCancelled);
+    }
+
+    [Fact]
     public async Task The_flag_names_the_transfer_the_watchdog_deleted_not_the_one_a_concurrent_poll_installed()
     {
         SlskdDownloadItem item = NewItem(Name);

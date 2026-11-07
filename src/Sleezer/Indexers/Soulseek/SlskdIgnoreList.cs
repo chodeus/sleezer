@@ -8,7 +8,7 @@ public static class SlskdIgnoreList
 {
     private static readonly ConcurrentDictionary<string, (HashSet<string> Users, long Size, DateTime WrittenUtc)> Cache = new();
 
-    /// <summary>The listed users, or null when no list is set or none was ever read.</summary>
+    /// <summary>The listed users, or null when no list is set or its file was never there; a failed first read throws.</summary>
     public static HashSet<string>? Users(string? path, Logger logger)
     {
         if (string.IsNullOrWhiteSpace(path))
@@ -30,10 +30,11 @@ public static class SlskdIgnoreList
             logger.Trace("Loaded ignore list with {Count} users from {Path}", users.Count, path);
             return users;
         }
-        catch (Exception ex)
+        // With no list read yet the read's exception escapes: the search then returns nothing rather than ignored peers.
+        catch (Exception ex) when (cached.Users != null)
         {
             // A list being saved can fail one read: the last one read keeps blocked peers blocked.
-            logger.Warn(ex, "Failed to read the ignore list {Path}; {Action}", path, cached.Users != null ? "using the last one read" : "no users ignored");
+            logger.Warn(ex, "Failed to read the ignore list {Path}; using the last one read", path);
             return cached.Users;
         }
     }
