@@ -252,6 +252,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     public IEnumerable<DownloadClientItem> GetItems(int definitionId, SlskdProviderSettings settings, OsPath remotePath)
     {
         _settingsCache[definitionId] = settings;
+        _corruptionHandler.UseSettings(definitionId, settings);
 
         try
         {
@@ -592,6 +593,18 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             // Unreadable size = unprovable ownership = keep the file.
             return false;
         }
+    }
+
+    /// <summary>The folder under <paramref name="root"/> that holds the item's files when <paramref name="expected"/> does not; pins the output path to it.</summary>
+    private string? RelocateOutputFolder(SlskdDownloadItem item, string root, string expected)
+    {
+        if (FindFolderOwningItemFiles(item, root) is not { } actual ||
+            SlskdPathResolver.MakeRelativeToDownloads(root, actual) is not { Length: > 0 } relative)
+            return null;
+
+        _logger.Info("[{ItemId}] Files are in {Actual}, not {Expected} — correcting the output path", item.ID, actual, expected);
+        item.ConfirmedSubdirectory = relative;
+        return actual;
     }
 
     /// <summary>
@@ -1170,14 +1183,10 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 // ConfirmedSubdirectory to it and strand the rest.
                 if (!item.CompletedFolderFailureLogged &&
                     !item.AwaitingDiscMerge &&
-                    FindFolderOwningItemFiles(item, root) is { } actualFolder &&
-                    SlskdPathResolver.MakeRelativeToDownloads(root, actualFolder) is { Length: > 0 } relative)
+                    RelocateOutputFolder(item, root, folder) is not null)
                 {
-                    _logger.Info("[{ItemId}] Files are in {Actual}, not {Expected} — correcting the output path",
-                        item.ID, actualFolder, folder);
                     // GetItems reads OutputPath from GetFullFolderPath after this
                     // returns, so the corrected path lands on the same poll.
-                    item.ConfirmedSubdirectory = relative;
                     item.CompletedFolderMissingSince = null;
                     item.CompletedFolderFailureLogged = false;
                     return resolved;
@@ -1446,6 +1455,11 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 OsPath remotePath = GetRemoteDownloadPath(settings);
                 string folderPath = item.GetFullFolderPath(remotePath).FullPath;
 
+                // Relocate here, not only once the grab reads as completed: import would find the files unscanned.
+                if (!_diskProvider.FolderExists(folderPath) &&
+                    RelocateOutputFolder(item, remotePath.FullPath.TrimEnd('/', '\\'), folderPath) is { } relocated)
+                    folderPath = relocated;
+
                 if (!_diskProvider.FolderExists(folderPath))
                 {
                     _logger.Warn("[post-process] Folder missing after DownloadDirectoryComplete: {FolderPath}", folderPath);
@@ -1454,6 +1468,18 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
                 if (!scanEnabled && !tagEnabled && !sourceTagEnabled)
                     return;
+
+                // A peer's "album/.." leaf falls back to the bare root: scanning it would judge, and could delete, every download.
+                string downloadRoot = remotePath.FullPath;
+                if (!IsStrictDescendantOfRoot(folderPath, downloadRoot))
+                {
+                    // SOURCE tags are optional provenance: skipped there, they never fail a download.
+                    if (scanEnabled || tagEnabled)
+                        item.PostProcessFailure = "The download has no folder of its own inside the download root";
+                    _logger.Warn("[post-process] {ItemId}: {FolderPath} is not a folder inside the download root; {Outcome}",
+                        item.ID, folderPath, scanEnabled || tagEnabled ? "failing it" : "not writing SOURCE tags");
+                    return;
+                }
 
                 if (scanEnabled)
                 {
@@ -1473,13 +1499,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 }
 
                 // Before the tagger, which records the identities of the files it renames.
-                // It writes files, so only in the download root or a folder inside it.
-                string downloadRoot = remotePath.FullPath;
-                if (sourceTagEnabled && !folderPath.PathEquals(downloadRoot) && !IsStrictDescendantOfRoot(folderPath, downloadRoot))
-                {
-                    _logger.Warn("[post-process] {ItemId}: {FolderPath} is outside the download root; not writing SOURCE tags", item.ID, folderPath);
-                }
-                else if (sourceTagEnabled)
+                if (sourceTagEnabled)
                 {
                     string[] audioFiles = [.. _diskProvider.GetFiles(folderPath, recursive: true).Where(AudioFormatHelper.IsPostProcessAudioFile)];
                     int written = SlskdSourceTag.Write(item, downloadRoot, audioFiles, _logger, cts.Token);

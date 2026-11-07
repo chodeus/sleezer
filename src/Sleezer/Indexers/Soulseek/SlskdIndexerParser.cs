@@ -33,7 +33,6 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
         private readonly ISlskdCorruptUserTracker _corruptUserTracker;
 
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, string> _interactiveResults = new();
-        private static readonly Dictionary<string, (HashSet<string> IgnoredUsers, long LastFileSize)> _ignoreListCache = new();
         private readonly object _rateLimitLock = new();
         private DateTime _rateLimitCacheTimestamp = DateTime.MinValue;
         private HashSet<string> _rateLimitedUsersCache = new(StringComparer.OrdinalIgnoreCase);
@@ -77,7 +76,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
                 searchIdForCleanup = searchResponse.Id;
                 SlskdSearchData searchTextData = SlskdSearchData.FromJson(indexerResponse.HttpRequest.ContentSummary);
                 SlskdSettings settings = Settings.WithWholeAlbumsOnly(_indexer.Rules.WholeAlbumsOnly);
-                HashSet<string>? ignoredUsers = GetIgnoredUsers(Settings.IgnoreListPath);
+                HashSet<string>? ignoredUsers = SlskdIgnoreList.Users(Settings.IgnoreListPath, _logger);
                 HashSet<string> rateLimitedUsers = GetRateLimitedUsers();
                 (HashSet<string> recentlyFailedIds, Dictionary<string, int> recentlyFailedUsers) = GetRecentFailureState();
 
@@ -304,8 +303,6 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             }
         }
 
-        public static void InvalidIgnoreCache(string path) => _ignoreListCache.Remove(path);
-
         private HashSet<string> GetRateLimitedUsers()
         {
             IReadOnlySet<string> corruptBanned = _corruptUserTracker.GetBannedUsers();
@@ -516,33 +513,6 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             catch (HttpException ex)
             {
                 _logger.Error(ex, "Failed to remove slskd search with ID: {SearchId}", searchId);
-            }
-        }
-
-        private HashSet<string>? GetIgnoredUsers(string? ignoreListPath)
-        {
-            if (string.IsNullOrWhiteSpace(ignoreListPath) || !File.Exists(ignoreListPath))
-                return null;
-
-            try
-            {
-                FileInfo fileInfo = new(ignoreListPath);
-                long fileSize = fileInfo.Length;
-
-                if (_ignoreListCache.TryGetValue(ignoreListPath, out (HashSet<string> IgnoredUsers, long LastFileSize) cached) && cached.LastFileSize == fileSize)
-                {
-                    _logger.Trace("Using cached ignore list from: {Path} with {Count} users", ignoreListPath, cached.IgnoredUsers.Count);
-                    return cached.IgnoredUsers;
-                }
-                HashSet<string> ignoredUsers = SlskdTextProcessor.ParseListContent(File.ReadAllText(ignoreListPath));
-                _ignoreListCache[ignoreListPath] = (ignoredUsers, fileSize);
-                _logger.Trace("Loaded ignore list with {Count} users from: {Path}", ignoredUsers.Count, ignoreListPath);
-                return ignoredUsers;
-            }
-            catch (Exception ex)
-            {
-                _logger.Warn(ex, "Failed to load ignore list from: {Path}", ignoreListPath);
-                return null;
             }
         }
     }
