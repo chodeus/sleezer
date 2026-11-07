@@ -75,6 +75,8 @@ public class SlskdRemovedGrabTests
             Task.FromResult<ValidationFailure?>(null);
         public Task<(List<SlskdEventRecord> Events, int TotalCount)> GetEventsAsync(SlskdProviderSettings settings, int offset, int limit) =>
             Task.FromResult((new List<SlskdEventRecord>(), 0));
+        public Task<bool> SendPrivateMessageAsync(SlskdProviderSettings settings, string username, string message) => Task.FromResult(false);
+        public Task<bool> AcknowledgeConversationAsync(SlskdProviderSettings settings, string username) => Task.FromResult(false);
     }
 
     private static SlskdDownloadFile Transfer(string id, string state, string? batchId, string filename = Track) => new(
