@@ -58,7 +58,7 @@ namespace NzbDrone.Core.Indexers.Deezer
 
             var sw = Stopwatch.StartNew();
             _logger.Debug("Deezer enrichment fan-out: {AlbumCount} albums", jsonResponse.Data.Count);
-            var tasks = jsonResponse.Data.Select(result => ProcessResultAsync(result, api)).ToArray();
+            var tasks = jsonResponse.Data.Select(result => ProcessResultOrSkipAsync(result, api)).ToArray();
 
             if (!Task.WaitAll(tasks, IndexerParseTimeout))
                 throw new TimeoutException($"Deezer search enrichment did not complete within {IndexerParseTimeout.TotalSeconds:F0}s");
@@ -83,6 +83,20 @@ namespace NzbDrone.Core.Indexers.Deezer
                 return "<empty>";
             const int MaxLen = 512;
             return content.Length <= MaxLen ? content : content[..MaxLen] + "…";
+        }
+
+        // One album whose page fails must not fail the search, which Lidarr would count against the indexer.
+        private async Task<IList<ReleaseInfo>?> ProcessResultOrSkipAsync(DeezerGwAlbum result, DeezerAPI api)
+        {
+            try
+            {
+                return await ProcessResultAsync(result, api);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warn(ex, "Skipping Deezer album {AlbumId}: its page could not be read", result.AlbumId);
+                return null;
+            }
         }
 
         private async Task<IList<ReleaseInfo>?> ProcessResultAsync(DeezerGwAlbum result, DeezerAPI api)
