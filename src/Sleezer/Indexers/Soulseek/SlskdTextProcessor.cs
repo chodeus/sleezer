@@ -135,7 +135,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             if (string.IsNullOrWhiteSpace(searchText))
                 return string.Empty;
 
-            string[] words = searchText.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            string[] words = PeerWords(searchText);
             bool[] removed = new bool[words.Length];
 
             foreach (string[] termWords in BlockedTermWords)
@@ -159,9 +159,12 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             if (string.IsNullOrWhiteSpace(searchText))
                 return false;
 
-            string[] words = searchText.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            return RemoveBlockedTerms(searchText).Split(' ', StringSplitOptions.RemoveEmptyEntries).Length != words.Length;
+            return RemoveBlockedTerms(searchText).Split(' ', StringSplitOptions.RemoveEmptyEntries).Length != PeerWords(searchText).Length;
         }
+
+        // The server filters the words a search reaches peers with: "Beatles'" goes out as "Beatles".
+        private static string[] PeerWords(string searchText) =>
+            QueryNormalizer.ForPeers(searchText).Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
         private static readonly Dictionary<char, string> AccentInjectionMap = new()
         {
@@ -187,7 +190,7 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.Soulseek
             if (string.IsNullOrWhiteSpace(searchText))
                 return string.Empty;
 
-            string[] words = searchText.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            string[] words = PeerWords(searchText);
             string[] normalized = [.. words.Select(NormalizeSpecialCharacters)];
             bool[] keep = [.. words.Select(_ => true)];
 

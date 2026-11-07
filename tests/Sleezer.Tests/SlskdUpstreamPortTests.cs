@@ -18,6 +18,8 @@ public class BlockedTermTests
     [InlineData("From Zero Deluxe", true)]
     [InlineData("Paper Kingdom EP", true)]
     [InlineData("Prince 1999", false)]
+    [InlineData("The Beatles' Hits", true)]                  // reaches peers as "Beatles"
+    [InlineData("Don't Stop Believin", false)]
     public void ContainsBlockedTerms_detects_server_filtered_terms(string query, bool expected)
     {
         Assert.Equal(expected, SlskdTextProcessor.ContainsBlockedTerms(query));
@@ -50,6 +52,17 @@ public class BlockedTermTests
 
         Assert.Equal("Someone Like You", evidence[0]);
         Assert.DoesNotContain("25", evidence);
+    }
+
+    [Fact]
+    public void A_blocked_term_with_an_apostrophe_is_rewritten_and_never_evidence()
+    {
+        string rewritten = SlskdTextProcessor.RewriteRestrictedTerms("The Beatles' Hits");
+
+        Assert.False(SlskdTextProcessor.ContainsBlockedTerms(rewritten));
+        Assert.Equal("The Beatles Hits", SlskdTextProcessor.NormalizeSpecialCharacters(rewritten));
+        Assert.Equal("Hits", SlskdTextProcessor.RemoveBlockedTerms("Beatles' Hits"));
+        Assert.Equal(["Other Song"], SlskdTextProcessor.GetBlockedTermEvidenceTracks(["Beatles' Song", "Other Song"], "Album"));
     }
 
     [Theory]
