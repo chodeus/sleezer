@@ -595,13 +595,6 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }
     }
 
-    /// <summary>
-    /// Finds the root child actually holding the item's files. The batch
-    /// destination lives only in memory, so a restart mid-download leaves
-    /// GetFullFolderPath guessing the peer's source-directory name — this
-    /// recovers the real folder by basename+size, the same ownership test the
-    /// delete guards use. SelectOwningFolder applies the majority rule.
-    /// </summary>
     /// <summary>The folder under <paramref name="root"/> that holds the item's files when <paramref name="expected"/> does not; pins the output path to it.</summary>
     private string? RelocateOutputFolder(SlskdDownloadItem item, string root, string expected)
     {
@@ -614,6 +607,13 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         return actual;
     }
 
+    /// <summary>
+    /// Finds the root child actually holding the item's files. The batch
+    /// destination lives only in memory, so a restart mid-download leaves
+    /// GetFullFolderPath guessing the peer's source-directory name — this
+    /// recovers the real folder by basename+size, the same ownership test the
+    /// delete guards use. SelectOwningFolder applies the majority rule.
+    /// </summary>
     private string? FindFolderOwningItemFiles(SlskdDownloadItem item, string root)
     {
         SlskdOwnedFiles ownedFiles = item.BuildOwnedFiles();

@@ -42,6 +42,17 @@ public sealed class SlskdIgnoreListTests : IDisposable
     }
 
     [Fact]
+    public void A_list_that_vanishes_keeps_the_last_one_read()
+    {
+        Write("alice\n", new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        Assert.Equal(["alice"], SlskdIgnoreList.Users(_path, Logger)!);
+
+        File.Delete(_path);
+
+        Assert.Equal(["alice"], SlskdIgnoreList.Users(_path, Logger)!);
+    }
+
+    [Fact]
     public void No_file_ignores_nobody()
     {
         Assert.Null(SlskdIgnoreList.Users(_path, Logger));

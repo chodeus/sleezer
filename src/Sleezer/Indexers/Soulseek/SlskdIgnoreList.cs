@@ -8,13 +8,17 @@ public static class SlskdIgnoreList
 {
     private static readonly ConcurrentDictionary<string, (HashSet<string> Users, long Size, DateTime WrittenUtc)> Cache = new();
 
-    /// <summary>The listed users, or null when no list is set or the file is gone.</summary>
+    /// <summary>The listed users, or null when no list is set or none was ever read.</summary>
     public static HashSet<string>? Users(string? path, Logger logger)
     {
-        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        if (string.IsNullOrWhiteSpace(path))
             return null;
 
         Cache.TryGetValue(path, out (HashSet<string> Users, long Size, DateTime WrittenUtc) cached);
+        // An editor can delete the file before writing it back: the blocked peers stay blocked meanwhile.
+        if (!File.Exists(path))
+            return cached.Users;
+
         try
         {
             FileInfo file = new(path);
