@@ -46,8 +46,16 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
             if (!File.Exists(cacheFilePath))
                 return default;
 
-            string json = await File.ReadAllTextAsync(cacheFilePath);
-            CachedData<T>? cachedData = JsonSerializer.Deserialize<CachedData<T>>(json);
+            CachedData<T>? cachedData;
+            try
+            {
+                cachedData = JsonSerializer.Deserialize<CachedData<T>>(await File.ReadAllTextAsync(cacheFilePath));
+            }
+            catch (Exception ex) when (ex is JsonException or IOException)
+            {
+                // A torn or half-read entry is a miss; left in place it would fail every later lookup.
+                cachedData = null;
+            }
 
             if (cachedData == null || DateTime.UtcNow - cachedData.CreatedAt > cachedData.ExpirationDuration)
             {
@@ -80,8 +88,10 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
                 ExpirationDuration = expirationDuration
             };
 
-            string json = JsonSerializer.Serialize(cachedData, _jsonOptions);
-            await File.WriteAllTextAsync(cacheFilePath, json);
+            // Written aside and moved into place, so a crash or a second writer never leaves a torn entry.
+            string tempPath = $"{cacheFilePath}.{Guid.NewGuid():N}.tmp";
+            await File.WriteAllTextAsync(tempPath, JsonSerializer.Serialize(cachedData, _jsonOptions));
+            File.Move(tempPath, cacheFilePath, overwrite: true);
         }
 
         /// <summary>
