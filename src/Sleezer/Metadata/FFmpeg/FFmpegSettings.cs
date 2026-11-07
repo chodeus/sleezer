@@ -148,7 +148,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
             set => _customConversion = value ?? [];
         }
 
-        [FieldDefinition(10, Label = "Run Corrupt Scan On", Type = FieldType.TagSelect, SelectOptions = typeof(PostProcessClient), Section = MetadataSectionType.Metadata, Placeholder = "Type to add a client", HelpText = "Check downloads from these clients for corrupt files; one fails the download and it is searched again. Empty = off.")]
+        [FieldDefinition(10, Label = "Run Corrupt Scan On", Type = FieldType.TagSelect, SelectOptions = typeof(PostProcessClient), Section = MetadataSectionType.Metadata, Placeholder = "Type to add a client", HelpText = "Check downloads from these clients for corrupt files; one deletes the download and it is searched again. Empty = off.")]
         public IEnumerable<int> CorruptionScanClients { get; set; } = Array.Empty<int>();
 
         // Moved to the Tidal download client; kept hidden so the one-time copy can read them.

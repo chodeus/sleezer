@@ -34,7 +34,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.DownloadRules
         [FieldDefinition(99, Label = "Values Imported", Type = FieldType.Checkbox, Hidden = HiddenType.Hidden)]
         public bool ValuesImported { get; set; }
 
-        public const string StrictMatchingHelp = "Check results against the release and reject mismatches and alternate versions such as live or remix; interactive search still lists them with the reason.";
+        public const string StrictMatchingHelp = "Check results against the release; reject mismatches and alternate versions such as live or remix unless the album is one. Interactive search shows why.";
 
         public NzbDroneValidationResult Validate() => new(Validator.Validate(this));
     }
