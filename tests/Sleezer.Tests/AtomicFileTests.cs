@@ -46,7 +46,10 @@ public sealed class AtomicFileTests : IDisposable
     public void A_replaced_file_keeps_its_mode()
     {
         if (OperatingSystem.IsWindows())
+        {
             Assert.Skip("Unix file modes only.");
+            return;
+        }
 
         string path = Path.Combine(_root, "settings.resx");
         File.WriteAllText(path, "old");
