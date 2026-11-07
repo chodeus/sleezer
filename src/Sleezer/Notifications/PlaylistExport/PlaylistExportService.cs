@@ -8,6 +8,7 @@ using NzbDrone.Core.Music;
 using NzbDrone.Core.Notifications;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Core.ThingiProvider.Events;
+using NzbDrone.Plugin.Sleezer.Core.Tidal;
 using System.Text.RegularExpressions;
 using NzbDrone.Plugin.Sleezer.Core.Model;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
@@ -355,7 +356,7 @@ public sealed partial class PlaylistExportService : IPlaylistExportService,
         _pluginSettings.SetValue(SnapshotKey, snapshots);
 
     private static string SanitizeFilename(string name) =>
-        Path.GetInvalidFileNameChars().Aggregate(name, (s, c) => s.Replace(c, '_'));
+        TidalPathSanitizer.CleanPath(name);
 
     [GeneratedRegex(@"[^\w]")]
     private static partial Regex NormalizeRegex();
