@@ -110,7 +110,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
         /// <summary>
         /// Parses the release date based on the precision.
         /// </summary>
-        public void ParseReleaseDate() => ReleaseDateTime = ReleaseDatePrecision switch
+        public void ParseReleaseDate() => ReleaseDateTime = string.IsNullOrWhiteSpace(ReleaseDate) ? DateTime.MinValue : ReleaseDatePrecision switch
         {
             "year" => new DateTime(int.Parse(ReleaseDate), 1, 1),
             "month" => DateTime.ParseExact(ReleaseDate, "yyyy-MM", System.Globalization.CultureInfo.InvariantCulture),

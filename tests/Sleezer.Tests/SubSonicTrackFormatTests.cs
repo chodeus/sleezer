@@ -1,4 +1,5 @@
 using System.Text.Json;
+using NzbDrone.Plugin.Sleezer.Core.Model;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
 using NzbDrone.Plugin.Sleezer.Download.Clients.SubSonic;
 using NzbDrone.Plugin.Sleezer.Indexers.SubSonic;
@@ -44,5 +45,26 @@ public class SubSonicTrackFormatTests
     public void A_file_whose_extension_names_another_codec_is_corrected(string path, AudioFormat actual, string? expected)
     {
         Assert.Equal(expected, SubSonicTrackFormat.Corrected(path, actual));
+    }
+}
+
+// A SubSonic album with no year was titled with the current year, which Lidarr reads as its release year.
+public class SubSonicReleaseYearTests
+{
+    [Fact]
+    public void An_album_with_no_year_has_none_in_its_title()
+    {
+        AlbumData album = new("SubSonic", "SubSonicDownloadProtocol") { AlbumName = "Album", ArtistName = "Artist", ReleaseDate = string.Empty, ReleaseDatePrecision = "year" };
+        album.ParseReleaseDate();
+
+        Assert.DoesNotContain("(", album.ToReleaseInfo().Title);
+    }
+
+    [Fact]
+    public void An_albums_server_added_date_is_not_its_release_year()
+    {
+        SubSonicSearchAlbum album = JsonSerializer.Deserialize<SubSonicSearchAlbum>("{\"id\":\"1\",\"name\":\"Album\",\"artist\":\"Artist\",\"created\":\"2019-01-01T00:00:00Z\"}")!;
+
+        Assert.Equal(string.Empty, album.YearString);
     }
 }
