@@ -67,10 +67,10 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
         [FieldDefinition(2, Label = "Maximal usable threshold", Section = MetadataSectionType.Metadata, Type = FieldType.Number, HelpText = "The maximum threshold added to a lower priority proxy to still use for populating data.", Placeholder = "15")]
         public int MaxThreshold { get; set; }
 
-        [FieldDefinition(3, Label = "Dynamic threshold", Section = MetadataSectionType.Metadata, Type = FieldType.Checkbox, HelpText = "Generate a dynamic threshold based on old results or use a static one.")]
+        [FieldDefinition(3, Label = "Dynamic threshold", Section = MetadataSectionType.Metadata, Type = FieldType.Checkbox, HelpText = "Generate a dynamic threshold based on old results or use a static one.", Advanced = true)]
         public bool DynamicThresholdMode { get; set; }
 
-        [FieldDefinition(4, Label = "Storing Path", Section = MetadataSectionType.Metadata, Type = FieldType.Path, HelpText = "Path to store the dynamic threshold for usage after restarts.")]
+        [FieldDefinition(4, Label = "Storing Path", Section = MetadataSectionType.Metadata, Type = FieldType.Path, HelpText = "Path to store the dynamic threshold for usage after restarts.", Advanced = true)]
         public string WeightsPath { get; set; } = string.Empty;
 
         [FieldDefinition(5, Label = "Artist Query Timeout", Unit = "Seconds", Section = MetadataSectionType.Metadata, Type = FieldType.Number, HelpText = "Timeout for artist queries when previous albums exist.", Placeholder = "30")]

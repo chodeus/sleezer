@@ -16,7 +16,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Lyrics
         public bool SaveSyncedLyrics { get; set; }
 
         [FieldDefinition(1, Label = "Use LRCLIB", Type = FieldType.Checkbox,
-            HelpText = "Fetch lyrics from LRCLIB when the store has none. Qobuz supplies no lyrics of its own, so this is its only source.")]
+            HelpText = "Fetch lyrics from LRCLIB when the store has none; it is the only source for Qobuz downloads.")]
         public bool UseLRCLIB { get; set; }
 
         public NzbDroneValidationResult Validate() => new(Validator.Validate(this));

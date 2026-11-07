@@ -116,10 +116,10 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
 
         private IEnumerable<KeyValuePair<string, string>> _customConversion = [];
 
-        [FieldDefinition(0, Label = "FFmpeg Path", Type = FieldType.Path, Section = MetadataSectionType.Metadata, Placeholder = "/downloads/FFmpeg", HelpText = "Required. Where Sleezer keeps ffmpeg for conversion, the corrupt scan's decode check and Tidal's M4A handling. Saving installs ffmpeg here if it is missing (from chodeus/ffmpeg-static, checked for updates daily). A newer ffmpeg on the host PATH is preferred over the downloaded copy.", HelpTextWarning = "Enable only switches on conversion, and conversion runs on EVERY track Lidarr imports, torrent and Usenet included. The corrupt scan runs whether or not this entry is enabled.")]
+        [FieldDefinition(0, Label = "FFmpeg Path", Type = FieldType.Path, Section = MetadataSectionType.Metadata, Placeholder = "/downloads/FFmpeg", HelpText = "Required. Where ffmpeg is kept; saving installs it if missing. A newer ffmpeg on the PATH is used instead.", HelpTextWarning = "Enable allows conversion of any import a Convert toggle, artist tag or custom rule matches, torrent and Usenet included. The corrupt scan runs either way.")]
         public string FFmpegPath { get; set; } = string.Empty;
 
-        [FieldDefinition(1, Label = "Convert MP3", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Convert MP3 files. Applies to all imports (torrent/Usenet/plugin) when this provider is enabled.")]
+        [FieldDefinition(1, Label = "Convert MP3", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Convert MP3 files.")]
         public bool ConvertMP3 { get; set; }
 
         [FieldDefinition(2, Label = "Convert AAC", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Convert AAC files.")]
@@ -141,14 +141,14 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
         public int TargetFormat { get; set; } = (int)TargetAudioFormat.Opus;
 
         // Never null: an API save can send null, and the converter reads this on every import.
-        [FieldDefinition(9, Label = "Custom Conversion Rules", Type = FieldType.KeyValueList, Section = MetadataSectionType.Metadata, HelpText = "Custom conversion rules. Examples: 'flac -> mp3:320:cbr' (FLAC to CBR MP3), 'mp3:320 -> mp3:128' (downsample), 'flac:24 -> flac:16' (reduce bit depth). Add ':cbr' for constant bitrate encoding. Upsampling is blocked automatically.")]
+        [FieldDefinition(9, Label = "Custom Conversion Rules", Type = FieldType.KeyValueList, Section = MetadataSectionType.Metadata, HelpText = "Rules such as 'flac -> mp3:320:cbr' or 'flac -> flac:16'. Upsampling is blocked when the source's bitrate or bit depth can be read.")]
         public IEnumerable<KeyValuePair<string, string>> CustomConversion
         {
             get => _customConversion;
             set => _customConversion = value ?? [];
         }
 
-        [FieldDefinition(10, Label = "Run Corrupt Scan On", Type = FieldType.TagSelect, SelectOptions = typeof(PostProcessClient), Section = MetadataSectionType.Metadata, Placeholder = "Type to add a client", HelpText = "After download, scan audio files for corruption on the selected Sleezer downloaders: size, TagLib parse and, when ffmpeg can be found, a decode. One corrupt file fails the whole download: its folder is deleted and the release is re-searched. Empty = scan disabled. Runs whether or not this entry is enabled; not on torrent or Usenet downloads.")]
+        [FieldDefinition(10, Label = "Run Corrupt Scan On", Type = FieldType.TagSelect, SelectOptions = typeof(PostProcessClient), Section = MetadataSectionType.Metadata, Placeholder = "Type to add a client", HelpText = "Check downloads from these clients for corrupt files; one deletes the download and it is searched again. Empty = off.")]
         public IEnumerable<int> CorruptionScanClients { get; set; } = Array.Empty<int>();
 
         // Moved to the Tidal download client; kept hidden so the one-time copy can read them.
