@@ -10,16 +10,18 @@ public static class ConversionGuard
     {
         bool lossySource = AudioFormatHelper.IsLossyFormat(source);
         bool lossyTarget = AudioFormatHelper.IsLossyFormat(target);
-        if (lossySource && !lossyTarget)
-            return "a lossy file can't become lossless";
+        if (lossySource)
+            return lossyTarget ? Upsampled(sourceBitrate, targetBitrate, "kbps", "bitrate") : "a lossy file can't become lossless";
 
-        // A source that can't be read could be upsampled, so it is left as it is.
-        if (lossySource && targetBitrate is int bitrate && !(sourceBitrate > 0 && bitrate <= sourceBitrate))
-            return sourceBitrate > 0 ? $"{sourceBitrate}kbps is below the {bitrate}kbps target" : "its bitrate could not be read";
+        return lossyTarget ? null : Upsampled(sourceBitDepth, targetBitDepth, "-bit", "bit depth");
+    }
 
-        if (!lossySource && !lossyTarget && targetBitDepth is int bitDepth && !(sourceBitDepth > 0 && bitDepth <= sourceBitDepth))
-            return sourceBitDepth > 0 ? $"{sourceBitDepth}-bit is below the {bitDepth}-bit target" : "its bit depth could not be read";
+    // A source that can't be read could be upsampled, so it is left as it is.
+    private static string? Upsampled(int? source, int? target, string unit, string measure)
+    {
+        if (target is not int wanted || (source > 0 && wanted <= source))
+            return null;
 
-        return null;
+        return source > 0 ? $"{source}{unit} is below the {wanted}{unit} target" : $"its {measure} could not be read";
     }
 }
