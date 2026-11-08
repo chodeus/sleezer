@@ -174,9 +174,10 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
 
             string finalPath = Path.Combine(targetDir, localName);
             string tmpPath = finalPath + ".tmp-" + Guid.NewGuid().ToString("N");
-            await File.WriteAllBytesAsync(tmpPath, data, ct).ConfigureAwait(false);
             try
             {
+                // Inside the try: a write cut short by the update deadline would leave a partial binary behind.
+                await File.WriteAllBytesAsync(tmpPath, data, ct).ConfigureAwait(false);
                 SetExecutable(tmpPath);
                 File.Move(tmpPath, finalPath, overwrite: true);
             }

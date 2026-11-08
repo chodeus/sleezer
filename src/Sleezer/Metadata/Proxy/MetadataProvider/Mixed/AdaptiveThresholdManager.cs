@@ -1,4 +1,7 @@
 ﻿using System.Text.Json;
+using NLog;
+using NzbDrone.Common.Instrumentation;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
 namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
 {
@@ -6,7 +9,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
     {
         public void LoadConfig(string? configPath);
 
-        public int GetDynamicThreshold(string proxyName, int aggregatedCount);
+        public int GetDynamicThreshold(string proxyName, int aggregatedCount, int maxThreshold);
 
         public void UpdateMetrics(string proxyName, double responseTimeMs, int newCount, bool success);
     }
@@ -14,41 +17,86 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
     public class AdaptiveThresholdManager : IProvideAdaptiveThreshold, IDisposable
     {
         private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true, WriteIndented = true };
+        private static readonly Logger Logger = NzbDroneLogger.GetLogger(typeof(AdaptiveThresholdManager));
 
         private string? _configFilePath;
         private bool _disposed;
         private System.Timers.Timer? _saveTimer;
         private bool _isDirty;
+        private bool _unreadable;
         private readonly object _lock = new();
 
         public AdaptiveThresholdConfig Config { get; private set; } = new();
 
         public void LoadConfig(string? configPath)
         {
-            if (string.IsNullOrWhiteSpace(configPath) || configPath == _configFilePath)
-                return;
-            _configFilePath = configPath;
-            if (!File.Exists(_configFilePath))
-                return;
-            try
+            if (string.IsNullOrWhiteSpace(configPath))
             {
-                Config = JsonSerializer.Deserialize<AdaptiveThresholdConfig>(File.ReadAllText(_configFilePath)) ?? new AdaptiveThresholdConfig();
+                // Blank = not kept: a path cleared after a load must stop the saves to it.
+                lock (_lock)
+                {
+                    _configFilePath = null;
+                    _unreadable = false;
+                }
+                return;
+            }
+
+            string filePath = ConfigFile(configPath);
+            lock (_lock)
+            {
+                if (filePath == _configFilePath)
+                    return;
+                _configFilePath = filePath;
+                _unreadable = false;
+
+                if (File.Exists(filePath))
+                {
+                    try
+                    {
+                        Config = JsonSerializer.Deserialize<AdaptiveThresholdConfig>(File.ReadAllText(filePath)) ?? new AdaptiveThresholdConfig();
+                    }
+                    catch (Exception ex)
+                    {
+                        // Never saved over: the weights it holds may only be unreadable for now.
+                        _unreadable = true;
+                        Logger.Warn(ex, "Could not read the dynamic threshold from {Path}; learning afresh without saving over it", filePath);
+                    }
+                }
+
+                // A first run has no file yet: saving must not wait for one to exist.
+                if (_saveTimer != null)
+                    return;
                 _saveTimer = new System.Timers.Timer(300000) { AutoReset = true };
-                _saveTimer.Elapsed += (s, e) => { if (_isDirty) SaveConfig(); };
+                _saveTimer.Elapsed += (s, e) => SaveConfig();
                 _saveTimer.Start();
                 AppDomain.CurrentDomain.ProcessExit += (s, e) => SaveConfig();
             }
-            catch { }
         }
+
+        /// <summary>Storing Path is a folder, made if missing; an existing file or a .json path is used as the file.</summary>
+        public static string ConfigFile(string configPath) =>
+            File.Exists(configPath) || configPath.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
+                ? configPath
+                : Path.Combine(configPath, "dynamic-threshold.json");
 
         private void SaveConfig()
         {
             lock (_lock)
             {
-                if (!_isDirty || _configFilePath == null) return;
-                string json = JsonSerializer.Serialize(Config, _jsonOptions);
-                File.WriteAllText(_configFilePath, json);
-                _isDirty = false;
+                if (!_isDirty || _configFilePath == null || _unreadable) return;
+                try
+                {
+                    string? folder = Path.GetDirectoryName(_configFilePath);
+                    if (!string.IsNullOrEmpty(folder))
+                        Directory.CreateDirectory(folder);
+                    // Not in place: a cut-off write would make the next load start afresh.
+                    AtomicFile.Write(_configFilePath, JsonSerializer.Serialize(Config, _jsonOptions));
+                    _isDirty = false;
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warn(ex, "Could not save the dynamic threshold to {Path}", _configFilePath);
+                }
             }
         }
 
@@ -75,13 +123,21 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
         /// </summary>
         /// <param name="proxyName">The name of the proxy.</param>
         /// <param name="aggregatedCount">The aggregated result count.</param>
+        /// <param name="maxThreshold">The Maximal usable threshold setting; the result never exceeds it.</param>
         /// <returns>The computed dynamic threshold.</returns>
-        public int GetDynamicThreshold(string proxyName, int aggregatedCount)
+        public int GetDynamicThreshold(string proxyName, int aggregatedCount, int maxThreshold)
         {
-            int baseThreshold = aggregatedCount < 10 ? Config.BaseThresholdLowCount : aggregatedCount < 50 ? Config.BaseThresholdMediumCount : Config.BaseThresholdHighCount;
+            // Locked: searches run in parallel, and decay writes the metrics UpdateMetrics adds to.
+            lock (_lock)
+                return DynamicThreshold(proxyName, aggregatedCount, maxThreshold);
+        }
+
+        private int DynamicThreshold(string proxyName, int aggregatedCount, int maxThreshold)
+        {
+            int baseThreshold = Math.Min(aggregatedCount < 10 ? Config.BaseThresholdLowCount : aggregatedCount < 50 ? Config.BaseThresholdMediumCount : Config.BaseThresholdHighCount, maxThreshold);
 
             if (!Config.ProxyMetrics.TryGetValue(proxyName, out ProxyMetrics? metrics) || metrics.Calls < Config.MinCallsForReliableMetrics)
-                return baseThreshold;
+                return Math.Max(baseThreshold, 1);
 
             DecayMetrics(metrics);
 
@@ -91,9 +147,9 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
 
             // Weights can be tuned; here we use a weighted sum.
             double adjustment = (0.5 * qualityAdjustment) + (0.3 * performanceAdjustment) + (0.2 * failureRatio);
-            int maxAdjustment = Config.MaxThresholdCount - baseThreshold;
+            int maxAdjustment = maxThreshold - baseThreshold;
             int dynamicThreshold = baseThreshold + (int)Math.Round(adjustment * maxAdjustment);
-            return dynamicThreshold < 1 ? 1 : dynamicThreshold;
+            return Math.Clamp(dynamicThreshold, 1, Math.Max(maxThreshold, 1));
         }
 
         /// <summary>
@@ -155,7 +211,6 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Mixed
                     if (_saveTimer != null)
                     {
                         _saveTimer.Stop();
-                        _saveTimer.Elapsed -= (s, e) => { if (_isDirty) SaveConfig(); };
                         _saveTimer.Dispose();
                         _saveTimer = null;
                     }

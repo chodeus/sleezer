@@ -18,11 +18,6 @@
         public int BaseThresholdHighCount { get; set; } = 1;
 
         /// <summary>
-        /// Represents the maximal possible threshold for proxies.
-        /// </summary>
-        public int MaxThresholdCount { get; set; } = 15;
-
-        /// <summary>
         /// Represents the initial learning rate used for updating proxy metrics.
         /// </summary>
         public double InitialLearningRate { get; set; } = 0.2;

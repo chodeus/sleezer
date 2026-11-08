@@ -12,8 +12,6 @@ public static class DownloadIdFile
     public static void Write(string path, string contents)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        string temp = path + ".tmp";
-        File.WriteAllText(temp, contents);
-        File.Move(temp, path, overwrite: true);
+        AtomicFile.Write(path, contents);
     }
 }

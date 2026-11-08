@@ -72,7 +72,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.SubSonic
         [property: JsonPropertyName("genre")] string? Genre = null)
     {
         [JsonIgnore]
-        public string YearString => Year?.ToString() ?? Created?.Year.ToString() ?? DateTime.Now.Year.ToString();
+        // Created is when the server added the album, not when it was released: no year stays no year.
+        public string YearString => Year?.ToString() ?? string.Empty;
     }
 
     /// <summary>
@@ -92,7 +93,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.SubSonic
         [property: JsonPropertyName("song")] List<SubSonicSearchSong>? Songs)
     {
         [JsonIgnore]
-        public string YearString => Year?.ToString() ?? Created?.Year.ToString() ?? DateTime.Now.Year.ToString();
+        // Created is when the server added the album, not when it was released: no year stays no year.
+        public string YearString => Year?.ToString() ?? string.Empty;
     }
 
     /// <summary>
@@ -136,6 +138,8 @@ namespace NzbDrone.Plugin.Sleezer.Indexers.SubSonic
         [property: JsonPropertyName("size")] long Size = 0,
         [property: JsonPropertyName("suffix")] string? Suffix = null,
         [property: JsonPropertyName("contentType")] string? ContentType = null,
+        [property: JsonPropertyName("transcodedSuffix")] string? TranscodedSuffix = null,
+        [property: JsonPropertyName("transcodedContentType")] string? TranscodedContentType = null,
         [property: JsonPropertyName("path")] string? Path = null)
     {
         [JsonIgnore]

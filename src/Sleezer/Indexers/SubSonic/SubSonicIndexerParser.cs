@@ -277,7 +277,7 @@ public class SubSonicIndexerParser(Logger logger, IHttpClient httpClient) : ISub
             ArtistName = song.Artist,
             InfoUrl = BuildInfoUrl("track", song.Id),
             TotalTracks = 1,
-            ReleaseDate = song.Year?.ToString() ?? DateTime.Now.Year.ToString(),
+            ReleaseDate = song.Year?.ToString() ?? string.Empty,
             ReleaseDatePrecision = "year",
             Duration = song.Duration,
             CustomString = song.CoverArt ?? string.Empty,

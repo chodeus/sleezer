@@ -159,7 +159,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 
                 string json = JsonSerializer.Serialize(_settings, _jsonOptions);
                 string obfuscated = ObfuscateString(json);
-                File.WriteAllText(_settingsPath, obfuscated);
+                // Not in place: a disk filling mid-write would truncate the file, and Load then drops every setting.
+                AtomicFile.Write(_settingsPath, obfuscated);
             }
             catch (Exception ex)
             {

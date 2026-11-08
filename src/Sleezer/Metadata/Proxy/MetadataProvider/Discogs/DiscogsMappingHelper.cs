@@ -163,7 +163,9 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Discogs
         /// <summary>
         /// Maps a Discogs image to a MediaCover object.
         /// </summary>
-        public static MediaCover? MapImage(DiscogsImage img, bool isArtist) => new(MapCoverType(img.Type, isArtist), img.Uri);
+        // Discogs blanks image URIs for a request without a token; Lidarr fails to fetch a blank cover.
+        public static MediaCover? MapImage(DiscogsImage img, bool isArtist) =>
+            string.IsNullOrWhiteSpace(img.Uri) ? null : new(MapCoverType(img.Type, isArtist), img.Uri);
 
         /// <summary>
         /// Maps a Discogs image type to a MediaCoverTypes enum.
@@ -293,7 +295,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Discogs
                 Genres = masterRelease.Genres != null || masterRelease.Styles != null ? new List<string>(masterRelease.Genres ?? Enumerable.Empty<string>()).Concat(masterRelease.Styles ?? Enumerable.Empty<string>()).ToList() : [],
                 CleanTitle = masterRelease.Title.CleanArtistName() ?? string.Empty,
                 Overview = "Found on Discogs",
-                Images = masterRelease.Images?.Take(2).Select(img => MapImage(img, false)).Where(x => x != null).ToList() ?? new List<MediaCover>()!,
+                Images = masterRelease.Images?.Take(2).Select(img => MapImage(img, false)).OfType<MediaCover>().ToList() ?? [],
                 Links = [new() { Url = masterRelease.ResourceUrl, Name = "Discogs" }],
                 AlbumType = "Album",
                 Ratings = new Ratings(),
@@ -338,7 +340,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Discogs
                 Genres = release.Genres != null || release.Styles != null ? new List<string>(release.Genres ?? Enumerable.Empty<string>()).Concat(release.Styles ?? Enumerable.Empty<string>()).ToList() : [],
                 CleanTitle = release.Title.CleanArtistName() ?? string.Empty,
                 Overview = release.Notes?.Trim(),
-                Images = release.Images?.Take(2).Select(img => MapImage(img, false)).Where(x => x != null).ToList() ?? new List<MediaCover>()!,
+                Images = release.Images?.Take(2).Select(img => MapImage(img, false)).OfType<MediaCover>().ToList() ?? [],
                 Links = [new() { Url = release.ResourceUrl, Name = "Discogs" }],
                 Ratings = ComputeCommunityRating(release.Community),
                 SecondaryTypes = [],
@@ -473,7 +475,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Discogs
                 Name = discogsArtist.Name ?? string.Empty,
                 ForeignArtistId = "a" + discogsArtist.Id + _identifier,
                 Aliases = discogsArtist.NameVariations ?? [],
-                Images = discogsArtist.Images?.Select(img => MapImage(img, true)).ToList() ?? new List<MediaCover>()!,
+                Images = discogsArtist.Images?.Select(img => MapImage(img, true)).OfType<MediaCover>().ToList() ?? [],
                 Ratings = new Ratings(),
                 Links = discogsArtist.Urls?.Select(url => new Links { Url = url, Name = AlbumMapper.GetLinkNameFromUrl(url) }).ToList() ?? [],
                 Type = discogsArtist.Role ?? string.Empty,

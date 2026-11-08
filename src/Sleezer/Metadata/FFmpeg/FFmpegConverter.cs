@@ -179,16 +179,7 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
                 foreach (string line in probeOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries))
                 {
                     if (line.StartsWith("sample_fmt="))
-                    {
-                        string sampleFmt = line[11..].Trim().ToLower();
-                        return sampleFmt switch
-                        {
-                            "s16" or "s16le" or "s16be" or "s16p" => 16,
-                            "s24" or "s24le" or "s24be" or "s24p" => 24,
-                            "s32" or "s32le" or "s32be" or "s32p" => 32,
-                            _ => null
-                        };
-                    }
+                        return ConversionGuard.BitDepthOf(line[11..]);
                 }
 
                 return null;
@@ -206,38 +197,11 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
             if (rule.TargetFormat == AudioFormat.Unknown)
                 return ConversionResult.Blocked();
 
-            // Block lossy to lossless conversion
-            if (AudioFormatHelper.IsLossyFormat(trackFormat) && !AudioFormatHelper.IsLossyFormat(rule.TargetFormat))
-            {
-                _logger.Warn("Blocked lossy→lossless conversion from {Source} to {Target}", trackFormat, rule.TargetFormat);
-                return ConversionResult.Blocked();
-            }
+            if (ConversionGuard.BlockReason(trackFormat, currentBitrate, currentBitDepth, rule.TargetFormat, rule.TargetBitrate, rule.TargetBitDepth) is not string reason)
+                return ConversionResult.FromRule(rule);
 
-            // Block bitrate upsampling for lossy formats
-            if (AudioFormatHelper.IsLossyFormat(trackFormat) &&
-                AudioFormatHelper.IsLossyFormat(rule.TargetFormat) &&
-                currentBitrate.HasValue &&
-                rule.TargetBitrate.HasValue &&
-                rule.TargetBitrate.Value > currentBitrate.Value)
-            {
-                _logger.Warn("Blocked bitrate upsampling from {CurrentBitrate}kbps to {TargetBitrate}kbps for {Format}",
-                    currentBitrate, rule.TargetBitrate, trackFormat);
-                return ConversionResult.Blocked();
-            }
-
-            // Block bit depth upsampling for lossless formats
-            if (!AudioFormatHelper.IsLossyFormat(trackFormat) &&
-                !AudioFormatHelper.IsLossyFormat(rule.TargetFormat) &&
-                currentBitDepth.HasValue &&
-                rule.TargetBitDepth.HasValue &&
-                rule.TargetBitDepth.Value > currentBitDepth.Value)
-            {
-                _logger.Warn("Blocked bit-depth upsampling from {CurrentBitDepth}-bit to {TargetBitDepth}-bit for {Format}",
-                    currentBitDepth, rule.TargetBitDepth, trackFormat);
-                return ConversionResult.Blocked();
-            }
-
-            return ConversionResult.FromRule(rule);
+            _logger.Warn("Not converting {Source} to {Target}: {Reason}", trackFormat, rule.TargetFormat, reason);
+            return ConversionResult.Blocked();
         }
 
         private async Task<ConversionResult> GetTargetConversionForTrack(AudioFormat trackFormat, int? currentBitrate, TrackFile trackFile)
@@ -279,7 +243,8 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
                 return result;
             }
 
-            return ConversionResult.Success((AudioFormat)Settings.TargetFormat);
+            // A Convert toggle gets the same guard as a rule: an MP3 never becomes FLAC.
+            return ShouldBlockConversion(new ConversionRule { TargetFormat = (AudioFormat)Settings.TargetFormat }, trackFormat, currentBitrate, currentBitDepth);
         }
 
         private async Task<bool> ShouldConvertTrack(TrackFile trackFile)

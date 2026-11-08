@@ -107,6 +107,9 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
             char[] invalidChars = invalidFileNameChars.Union(invalidPathChars).ToArray();
             fileName = invalidChars.Aggregate(fileName, (current, invalidChar) => current.Replace(invalidChar.ToString(), string.Empty));
 
+            // Xabe hands ffmpeg/ffprobe a path wrapped in quotes it never escapes, so a quote in it breaks every probe; Lidarr drops it on every OS too.
+            fileName = fileName.Replace("\"", string.Empty);
+
             switch (_namingConfig?.ColonReplacementFormat)
             {
                 case ColonReplacementFormat.Delete:
@@ -130,7 +133,9 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
                     break;
             }
 
-            return fileName.Trim();
+            fileName = fileName.Trim();
+            // Never "", "." or "..": each names a folder that exists already, the artist's or one outside the download root.
+            return fileName.Trim('.').Length == 0 ? new string('_', Math.Max(fileName.Length, 1)) : fileName;
         }
 
         private static string CleanTitle(string? title)

@@ -2,6 +2,7 @@ using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using NzbDrone.Plugin.Sleezer.Qobuz;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
 namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
 {
@@ -55,7 +56,7 @@ namespace NzbDrone.Core.Download.Clients.Qobuz.Queue
         public void WriteTo(string folder)
         {
             string json = JsonSerializer.Serialize(this, SerializerOptions);
-            File.WriteAllText(SidecarPath(folder), json);
+            AtomicFile.Write(SidecarPath(folder), json);
         }
 
         public static PersistedDownloadItem? TryRead(string sidecarPath)

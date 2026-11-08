@@ -2,6 +2,7 @@ using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using DeezNET.Data;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
 namespace NzbDrone.Core.Download.Clients.Deezer.Queue
 {
@@ -60,7 +61,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer.Queue
         {
             string path = SidecarPath(folder);
             string json = JsonSerializer.Serialize(this, SerializerOptions);
-            File.WriteAllText(path, json);
+            AtomicFile.Write(path, json);
         }
 
         public static PersistedDownloadItem? TryRead(string sidecarPath)

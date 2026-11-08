@@ -1,4 +1,3 @@
-using System.Text;
 using NLog;
 using NzbDrone.Common.Disk;
 using NzbDrone.Core.Datastore;
@@ -10,6 +9,7 @@ using NzbDrone.Core.Parser;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Core.Qualities;
 using NzbDrone.Plugin.Sleezer.Core.Utilities;
+using NzbDrone.Plugin.Sleezer.Core.Tidal;
 
 namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing;
 
@@ -775,9 +775,14 @@ public class PreImportTagger : IPreImportTagger
                 return path;
 
             int trackNumber = track.AbsoluteTrackNumber;
+            // The shared sanitizer: the OS list on Linux misses quotes, which break ffmpeg's probes of the file.
+            string safeTitle = TidalPathSanitizer.CleanPath(cleanTitle).Trim();
+            // CleanPath trims trailing dots: a title of "..." would leave a hidden ".flac".
+            if (safeTitle.Length == 0)
+                return path;
             string baseName = trackNumber > 0
-                ? $"{trackNumber:D2} - {SanitiseForFilename(cleanTitle)}{ext}"
-                : $"{SanitiseForFilename(cleanTitle)}{ext}";
+                ? $"{trackNumber:D2} - {safeTitle}{ext}"
+                : $"{safeTitle}{ext}";
 
             string newPath = Path.Combine(dir, baseName);
             if (string.Equals(newPath, path, StringComparison.OrdinalIgnoreCase))
@@ -808,15 +813,6 @@ public class PreImportTagger : IPreImportTagger
             _logger.Warn(ex, "Pre-import tag: feat-strip rename failed for {Path}", path);
             return path;
         }
-    }
-
-    private static readonly char[] InvalidFilenameChars = Path.GetInvalidFileNameChars();
-    private static string SanitiseForFilename(string input)
-    {
-        StringBuilder sb = new(input.Length);
-        foreach (char c in input)
-            sb.Append(InvalidFilenameChars.Contains(c) ? '_' : c);
-        return sb.ToString().Trim();
     }
 
     private List<string> EnumerateAudioFiles(string folderPath)
