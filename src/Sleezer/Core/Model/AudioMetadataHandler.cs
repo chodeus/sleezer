@@ -211,7 +211,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
 
             try
             {
-                IMediaInfo mediaInfo = await XabeFFmpeg.GetMediaInfo(TrackPath);
+                using FfmpegInput input = FfmpegPaths.Input(TrackPath);
+                IMediaInfo mediaInfo = await XabeFFmpeg.GetMediaInfo(input.Path);
                 IVideoStream? coverStream = mediaInfo.VideoStreams
                     .FirstOrDefault(vs => CoverArtCodecs.Contains(vs.Codec ?? ""));
 
@@ -222,7 +223,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
                 try
                 {
                     IConversion conversion = XabeFFmpeg.Conversions.New()
-                        .AddParameter($"-i \"{TrackPath}\"")
+                        .AddParameter($"-i \"{input.Path}\"")
                         .AddParameter("-an -vcodec copy")
                         .SetOutput(tempCoverPath);
 
@@ -285,7 +286,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
                 return false;
 
             string finalOutputPath = Path.ChangeExtension(TrackPath, AudioFormatHelper.GetFileExtensionForFormat(audioFormat));
-            string tempOutputPath = Path.ChangeExtension(TrackPath, $".converted{AudioFormatHelper.GetFileExtensionForFormat(audioFormat)}");
+            string tempOutputPath = FfmpegPaths.TempOutput(TrackPath, $".converted{AudioFormatHelper.GetFileExtensionForFormat(audioFormat)}");
 
             try
             {
@@ -294,7 +295,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
 
                 byte[]? preservedCoverArt = AlbumCover?.Length > 0 ? AlbumCover : await TryExtractCoverArtAsync();
 
-                IConversion conversion = CreateBaseAudioConversion(TrackPath, tempOutputPath);
+                using FfmpegInput input = FfmpegPaths.Input(TrackPath);
+                IConversion conversion = CreateBaseAudioConversion(input.Path, tempOutputPath);
 
                 foreach (string parameter in BaseConversionParameters[audioFormat])
                     conversion.AddParameter(parameter);
@@ -410,7 +412,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
         {
             try
             {
-                IMediaInfo mediaInfo = await XabeFFmpeg.GetMediaInfo(TrackPath);
+                using FfmpegInput input = FfmpegPaths.Input(TrackPath);
+                IMediaInfo mediaInfo = await XabeFFmpeg.GetMediaInfo(input.Path);
 
                 bool hasRealVideo = mediaInfo.VideoStreams.Any(vs =>
                     !CoverArtCodecs.Contains(vs.Codec ?? "") &&
@@ -419,7 +422,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
                 if (hasRealVideo)
                     return true;
 
-                string probeResult = await Probe.New().Start($"-v error -show_entries format=format_name -of default=noprint_wrappers=1:nokey=1 \"{TrackPath}\"");
+                string probeResult = await Probe.New().Start($"-v error -show_entries format=format_name -of default=noprint_wrappers=1:nokey=1 \"{input.Path}\"");
                 string formatName = probeResult?.Trim().ToLower() ?? "";
                 return VideoFormats.Any(container => formatName.Contains(container));
             }
@@ -443,7 +446,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
 
             try
             {
-                IMediaInfo mediaInfo = await XabeFFmpeg.GetMediaInfo(TrackPath);
+                using FfmpegInput input = FfmpegPaths.Input(TrackPath);
+                IMediaInfo mediaInfo = await XabeFFmpeg.GetMediaInfo(input.Path);
                 IAudioStream? audioStream = mediaInfo.AudioStreams.FirstOrDefault();
 
                 if (audioStream == null)
@@ -454,12 +458,12 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
 
                 string codec = audioStream.Codec.ToLower();
                 string finalOutputPath = Path.ChangeExtension(TrackPath, AudioFormatHelper.GetFileExtensionForCodec(codec));
-                string tempOutputPath = Path.ChangeExtension(TrackPath, $".extracted{AudioFormatHelper.GetFileExtensionForCodec(codec)}");
+                string tempOutputPath = FfmpegPaths.TempOutput(TrackPath, $".extracted{AudioFormatHelper.GetFileExtensionForCodec(codec)}");
 
                 if (File.Exists(tempOutputPath))
                     File.Delete(tempOutputPath);
 
-                IConversion conversion = CreateBaseAudioConversion(TrackPath, tempOutputPath);
+                IConversion conversion = CreateBaseAudioConversion(input.Path, tempOutputPath);
                 foreach (string parameter in ExtractionParameters)
                     conversion.AddParameter(parameter);
 
@@ -505,14 +509,15 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
                 AudioFormat format = AudioFormatHelper.GetAudioFormatFromCodec(codec ?? "aac");
                 string extension = AudioFormatHelper.GetFileExtensionForFormat(format);
                 string outputPath = Path.ChangeExtension(TrackPath, extension);
-                string tempOutput = Path.ChangeExtension(TrackPath, $".dec{extension}");
+                string tempOutput = FfmpegPaths.TempOutput(TrackPath, $".dec{extension}");
 
                 if (File.Exists(tempOutput))
                     File.Delete(tempOutput);
 
+                using FfmpegInput input = FfmpegPaths.Input(TrackPath);
                 IConversion conversion = XabeFFmpeg.Conversions.New()
                     .AddParameter($"-decryption_key {decryptionKey}")
-                    .AddParameter($"-i \"{TrackPath}\"")
+                    .AddParameter($"-i \"{input.Path}\"")
                     .AddParameter("-c copy")
                     .SetOutput(tempOutput);
 
@@ -564,7 +569,9 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
         {
             try
             {
-                IMediaInfo mediaInfo = await XabeFFmpeg.GetMediaInfo(TrackPath);
+                IMediaInfo mediaInfo;
+                using (FfmpegInput input = FfmpegPaths.Input(TrackPath))
+                    mediaInfo = await XabeFFmpeg.GetMediaInfo(input.Path);
                 string codec = mediaInfo.AudioStreams.FirstOrDefault()?.Codec.ToLower() ?? string.Empty;
                 if (string.IsNullOrEmpty(codec))
                     return false;
@@ -663,7 +670,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
         {
             try
             {
-                IMediaInfo mediaInfo = await XabeFFmpeg.GetMediaInfo(filePath);
+                using FfmpegInput input = FfmpegPaths.Input(filePath);
+                IMediaInfo mediaInfo = await XabeFFmpeg.GetMediaInfo(input.Path);
                 IAudioStream? audioStream = mediaInfo.AudioStreams.FirstOrDefault();
 
                 if (audioStream == null)
