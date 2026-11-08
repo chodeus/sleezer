@@ -20,7 +20,12 @@ internal sealed class FakeHttpClient(Func<HttpRequest, HttpResponse> handler) : 
         return handler(request);
     }
 
-    HttpResponse IHttpClient.Execute(HttpRequest request) => throw new NotSupportedException();
+    public HttpResponse Execute(HttpRequest request)
+    {
+        Requests.Add(request);
+        return handler(request);
+    }
+
     void IHttpClient.DownloadFile(string url, string fileName) => throw new NotSupportedException();
     HttpResponse<T> IHttpClient.Get<T>(HttpRequest request) => throw new NotSupportedException();
     HttpResponse IHttpClient.Head(HttpRequest request) => throw new NotSupportedException();

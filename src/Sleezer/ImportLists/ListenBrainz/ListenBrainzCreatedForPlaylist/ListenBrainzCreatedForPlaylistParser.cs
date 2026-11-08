@@ -68,23 +68,32 @@ namespace NzbDrone.Plugin.Sleezer.ImportLists.ListenBrainz.ListenBrainzCreatedFo
             }
 
             List<ImportListItemInfo> allItems = [];
+            int attempted = 0, failed = 0;
             foreach (PlaylistInfo? playlist in matchingPlaylists)
             {
+                string? identifier = playlist.Playlist?.Identifier;
+                if (string.IsNullOrWhiteSpace(identifier))
+                    continue;
+
+                attempted++;
                 try
                 {
-                    string? identifier = playlist.Playlist?.Identifier;
-                    if (string.IsNullOrWhiteSpace(identifier))
-                        continue;
-
                     _logger.Debug("Processing playlist of type {0}: {1}", targetPlaylistType, identifier);
-                    IList<ImportListItemInfo> playlistItems = FetchPlaylistItems(ExtractPlaylistMbid(identifier));
-                    allItems.AddRange(playlistItems);
+                    if (FetchPlaylistItems(ExtractPlaylistMbid(identifier)) is { } playlistItems)
+                        allItems.AddRange(playlistItems);
+                    else
+                        failed++;
                 }
                 catch (Exception ex)
                 {
+                    failed++;
                     _logger.Warn(ex, "Failed to process playlist");
                 }
             }
+
+            // Every playlist failing is ListenBrainz down, not an empty list: Lidarr must record the failure.
+            if (attempted > 0 && failed == attempted)
+                throw new InvalidOperationException($"All {attempted} ListenBrainz playlist(s) of type {targetPlaylistType} failed to load");
 
             return allItems;
         }
@@ -115,7 +124,8 @@ namespace NzbDrone.Plugin.Sleezer.ImportLists.ListenBrainz.ListenBrainzCreatedFo
         private static string ExtractPlaylistMbid(string identifier) =>
             identifier.Split('/').Last();
 
-        private List<ImportListItemInfo> FetchPlaylistItems(string mbid)
+        // Null when the playlist could not be fetched; an empty list is an empty playlist.
+        private List<ImportListItemInfo>? FetchPlaylistItems(string mbid)
         {
             try
             {
@@ -135,7 +145,7 @@ namespace NzbDrone.Plugin.Sleezer.ImportLists.ListenBrainz.ListenBrainzCreatedFo
                 if (response.StatusCode != HttpStatusCode.OK)
                 {
                     _logger.Warn("Failed to fetch playlist {0} with HTTP {1}", mbid, response.StatusCode);
-                    return [];
+                    return null;
                 }
 
                 PlaylistResponse? playlistResponse = JsonSerializer.Deserialize<PlaylistResponse>(response.Content, _jsonOptions);
@@ -160,7 +170,7 @@ namespace NzbDrone.Plugin.Sleezer.ImportLists.ListenBrainz.ListenBrainzCreatedFo
             catch (Exception ex)
             {
                 _logger.Warn(ex, "Failed to fetch playlist {0}", mbid);
-                return [];
+                return null;
             }
         }
 
