@@ -40,12 +40,21 @@ public sealed class FfmpegPathsTests : IDisposable
     }
 
     [Fact]
-    public void A_quoted_path_writes_its_temporary_output_without_the_quote()
+    public void A_quoted_file_writes_its_temporary_output_beside_it_without_the_quote()
     {
-        string output = FfmpegPaths.TempOutput(Path.Combine(_root, "\"Heroes\"", "03 - \"Heroes\".flac"), ".converted.mp3");
+        string track = Path.Combine(_root, "03 - \"Heroes\".flac");
 
-        Assert.DoesNotContain('"', output);
+        string output = FfmpegPaths.TempOutput(track, ".converted.mp3");
+
+        Assert.Equal(_root, Path.GetDirectoryName(output));
+        Assert.DoesNotContain('"', Path.GetFileName(output));
         Assert.EndsWith(".converted.mp3", output);
+    }
+
+    [Fact]
+    public void A_quoted_folder_is_refused_before_anything_is_written()
+    {
+        Assert.Throws<InvalidOperationException>(() => FfmpegPaths.TempOutput(Path.Combine(_root, "\"Heroes\"", "03 - Heroes.flac"), ".converted.mp3"));
     }
 
     public void Dispose() => Directory.Delete(_root, recursive: true);

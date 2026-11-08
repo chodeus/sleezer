@@ -26,14 +26,19 @@ public static class FfmpegPaths
         return new FfmpegInput(alias, alias);
     }
 
-    /// <summary>Where ffmpeg writes a temporary output for <paramref name="trackPath"/>: beside it, or in the temp folder when the path holds a quote.</summary>
+    /// <summary>Where ffmpeg writes a temporary output for <paramref name="trackPath"/>: always beside it, under a quote-free name when needed.</summary>
     public static string TempOutput(string trackPath, string suffix)
     {
         if (!trackPath.Contains('"'))
             return Path.ChangeExtension(trackPath, suffix);
 
-        Directory.CreateDirectory(AliasFolder);
-        return Path.Combine(AliasFolder, Guid.NewGuid().ToString("N") + suffix);
+        // Beside the track, never the temp folder: callers delete the original before moving the output in, and a move
+        // across disks is a copy that can fail with the original already gone.
+        string folder = Path.GetDirectoryName(trackPath) ?? string.Empty;
+        if (folder.Contains('"'))
+            throw new InvalidOperationException($"ffmpeg can't be given a folder whose name holds a double quote: {folder}");
+
+        return Path.Combine(folder, $"sleezer-{Guid.NewGuid():N}{suffix}");
     }
 }
 

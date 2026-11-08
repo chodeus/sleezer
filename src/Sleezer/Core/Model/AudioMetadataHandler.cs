@@ -285,11 +285,11 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
             if (!BaseConversionParameters.ContainsKey(audioFormat))
                 return false;
 
-            string finalOutputPath = Path.ChangeExtension(TrackPath, AudioFormatHelper.GetFileExtensionForFormat(audioFormat));
-            string tempOutputPath = FfmpegPaths.TempOutput(TrackPath, $".converted{AudioFormatHelper.GetFileExtensionForFormat(audioFormat)}");
-
             try
             {
+                string finalOutputPath = Path.ChangeExtension(TrackPath, AudioFormatHelper.GetFileExtensionForFormat(audioFormat));
+                string tempOutputPath = FfmpegPaths.TempOutput(TrackPath, $".converted{AudioFormatHelper.GetFileExtensionForFormat(audioFormat)}");
+
                 if (File.Exists(tempOutputPath))
                     File.Delete(tempOutputPath);
 
