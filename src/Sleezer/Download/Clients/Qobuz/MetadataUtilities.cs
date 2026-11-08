@@ -33,7 +33,7 @@ namespace NzbDrone.Core.Download.Clients.Qobuz
         // Delegated to the canonical sanitizer rather than Path.GetInvalidFileNameChars,
         // which on Linux returns only '/' and NUL — leaving ':' and '\' in album titles
         // for Lidarr's path parser to trip over. Tidal's MetadataUtilities does the same.
-        public static string CleanPath(string str) => TidalPathSanitizer.CleanPath(str);
+        public static string CleanPath(string str) => TidalPathSanitizer.CleanComponent(str);
 
         // Interpolating a null through "{x:00}" yields an empty field, which silently
         // produces filenames like " -  - Title.flac". "00" says "Qobuz did not tell us".

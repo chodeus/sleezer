@@ -22,7 +22,10 @@ namespace NzbDrone.Core.Download.Clients.Deezer
             if (!string.IsNullOrWhiteSpace(albumVersion))
                 albumTitle = $"{albumTitle} {albumVersion}";
 
-            var releaseDate = DateTime.Parse(deezerPage["DATA"]!["PHYSICAL_RELEASE_DATE"]!.ToString(), CultureInfo.InvariantCulture);
+            // Deezer gives "0000-00-00" for an unknown date, which threw and failed every track of the album.
+            string year = DateTime.TryParse(deezerPage["DATA"]?["PHYSICAL_RELEASE_DATE"]?.ToString(), CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime releaseDate)
+                ? releaseDate.Year.ToString(CultureInfo.InvariantCulture)
+                : string.Empty;
             return GetFilledTemplate_Internal(template,
                 songTitle,
                 albumTitle,
@@ -32,7 +35,7 @@ namespace NzbDrone.Core.Download.Clients.Deezer
                 deezerPage["DATA"]!["ARTISTS"]!.Select(a => a["ART_NAME"]!.ToString()).ToArray(),
                 $"{(int)deezerPage["DATA"]!["TRACK_NUMBER"]!:00}",
                 deezerAlbumPage["SONGS"]!["total"]!.ToString(),
-                releaseDate.Year.ToString(CultureInfo.InvariantCulture),
+                year,
                 ext);
         }
 
@@ -59,6 +62,6 @@ namespace NzbDrone.Core.Download.Clients.Deezer
         }
 
         // Canonical sanitizer: GetInvalidFileNameChars misses ':' and '\\' on Linux.
-        public static string CleanPath(string str) => TidalPathSanitizer.CleanPath(str);
+        public static string CleanPath(string str) => TidalPathSanitizer.CleanComponent(str);
     }
 }
