@@ -101,6 +101,7 @@ public class ListenBrainzCreatedForPlaylistParserTests
     {
         Exception? ex = Record.Exception(() => ParseWithRealClient(_ => ((HttpStatusCode)429, "{}", "3600")));
 
-        Assert.IsType<TooManyRequestsException>(ex);
+        TooManyRequestsException limited = Assert.IsType<TooManyRequestsException>(ex);
+        Assert.Equal(TimeSpan.FromSeconds(3600), limited.RetryAfter);
     }
 }

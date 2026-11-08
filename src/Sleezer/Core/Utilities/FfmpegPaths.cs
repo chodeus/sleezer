@@ -17,7 +17,8 @@ public static class FfmpegPaths
         {
             File.CreateSymbolicLink(alias, path);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+        // NotSupportedException covers PlatformNotSupportedException too.
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
         {
             // Windows without developer mode can't make links; a copy reads the same.
             File.Copy(path, alias);
