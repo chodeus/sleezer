@@ -4,6 +4,7 @@ using NzbDrone.Core.Music;
 using NzbDrone.Core.Parser;
 using NzbDrone.Core.Profiles.Metadata;
 using System.Globalization;
+using System.Text.RegularExpressions;
 
 namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider
 {
@@ -30,7 +31,8 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider
         public static readonly Dictionary<SecondaryAlbumType, List<string>> SecondaryTypeKeywords = new()
         {
             { SecondaryAlbumType.Live, new List<string> { "live at", "live in", "live from", "in concert", "unplugged", "live performance", "live session", "recorded live", "live", "concert", "tour", "festival", "performance" } },
-            { SecondaryAlbumType.Remix, new List<string> { "remixed", "remixes", "remastered", "remix", "remaster", "rework", "reimagined", "revisited", "redux", "deluxe edition", "expanded edition" } },
+            // Not remasters or deluxe editions: MusicBrainz, which Lidarr follows, never calls those remix albums.
+            { SecondaryAlbumType.Remix, new List<string> { "remixed", "remixes", "remix", "rework", "reimagined", "revisited", "redux" } },
             { SecondaryAlbumType.Compilation, new List<string> { "greatest hits", "best of", "the best of", "very best", "ultimate", "essential", "essentials", "definitive", "collection", "anthology", "retrospective", "complete", "selected works", "treasures", "favorites", "favourites", " hits", "singles collection" } },
             { SecondaryAlbumType.Soundtrack, new List<string> { "original soundtrack", "original motion picture soundtrack", "music from and inspired by", "music from the motion picture", "music from the film", "original score", "film score", "movie soundtrack", "soundtrack", "ost", "music from", "inspired by the" } },
             { SecondaryAlbumType.Spokenword, new List<string> { "spoken word", "poetry reading", "lecture", "speech", "reading", "poetry" } },
@@ -41,6 +43,13 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider
             { SecondaryAlbumType.DJMix, new List<string> { "dj mix", "continuous mix", "mixed by", "mix session", "live mix", "club mix" } },
             { SecondaryAlbumType.Audiodrama, new List<string> { "audio drama", "audio play", "radio play", "radio drama", "theater production", "theatre production" } }
         };
+
+        // Whole words only: a substring match made "Ghost Stories" a soundtrack ("ost") and "Olive" live,
+        // and a metadata profile allowing only Studio then hid the album. Declared after the keywords it reads.
+        private static readonly Dictionary<SecondaryAlbumType, Regex> SecondaryTypePatterns = SecondaryTypeKeywords.ToDictionary(
+            kvp => kvp.Key,
+            kvp => new Regex(@"(?<![\p{L}\p{N}])(?:" + string.Join("|", kvp.Value.Select(k => Regex.Escape(k.Trim()))) + @")(?![\p{L}\p{N}])",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled));
 
         /// <summary>
         /// Direct mapping of strings to SecondaryAlbumType (used by Discogs).
@@ -108,27 +117,11 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider
             if (cleanTitle == null)
                 return [];
 
-            title = title.ToLowerInvariant();
-
             HashSet<SecondaryAlbumType> detectedTypes = [];
-            HashSet<string> keywordMatcher = [];
-
-            foreach (KeyValuePair<SecondaryAlbumType, List<string>> kvp in SecondaryTypeKeywords)
+            foreach (KeyValuePair<SecondaryAlbumType, Regex> kvp in SecondaryTypePatterns)
             {
-                keywordMatcher.Clear();
-                foreach (string keyword in kvp.Value)
-                {
-                    keywordMatcher.Add(keyword.ToLowerInvariant());
-                }
-
-                foreach (string keyword in keywordMatcher)
-                {
-                    if (title.Contains(keyword) || cleanTitle.Contains(keyword))
-                    {
-                        detectedTypes.Add(kvp.Key);
-                        break;
-                    }
-                }
+                if (kvp.Value.IsMatch(title) || kvp.Value.IsMatch(cleanTitle))
+                    detectedTypes.Add(kvp.Key);
             }
 
             if (detectedTypes.Contains(SecondaryAlbumType.Live) && detectedTypes.Contains(SecondaryAlbumType.Remix))

@@ -121,6 +121,13 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Deezer
             }
         }
 
+        private static string PageProblem(JsonElement response, string field) => response.ValueKind switch
+        {
+            JsonValueKind.Undefined => "the request failed (see the warning before this)",
+            JsonValueKind.Object => response.TryGetProperty("error", out JsonElement error) ? $"Deezer answered with an error: {error.GetRawText()}" : $"no \"{field}\" array",
+            _ => $"the response was a JSON {response.ValueKind}, not an object"
+        };
+
         /// <summary>
         /// Fetches paginated results from a Deezer endpoint.
         /// </summary>
@@ -137,13 +144,15 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Deezer
                     .AddQueryParam("limit", itemsPerPage.ToString(), true);
                 JsonElement response = await ExecuteRequestWithRetryAsync(pagedRequest);
 
-                if (response.TryGetProperty("data", out JsonElement dataElement))
-                {
-                    List<T>? pageResults = JsonSerializer.Deserialize<List<T>>(dataElement.GetRawText());
-                    if (pageResults != null)
-                        results.AddRange(pageResults);
-                }
-                else { break; }
+                // A failed page is a failure, not the end of the list: stopping would cache a partial answer as whole.
+                // Deezer reports errors such as an exceeded quota as HTTP 200 with an "error" object and no "data".
+                if (response.ValueKind != JsonValueKind.Object ||
+                    !response.TryGetProperty("data", out JsonElement dataElement) || dataElement.ValueKind != JsonValueKind.Array)
+                    throw new HttpRequestException($"Deezer results page {page + 1} failed: {PageProblem(response, "data")}");
+
+                List<T>? pageResults = JsonSerializer.Deserialize<List<T>>(dataElement.GetRawText());
+                if (pageResults != null)
+                    results.AddRange(pageResults);
 
                 hasNextPage = response.TryGetProperty("next", out JsonElement nextElement) &&
                               !string.IsNullOrWhiteSpace(nextElement.GetString());

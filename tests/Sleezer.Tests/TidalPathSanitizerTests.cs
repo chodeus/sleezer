@@ -47,4 +47,14 @@ public class TidalPathSanitizerTests
         Assert.Equal("Album", TidalPathSanitizer.CleanPath("Album   "));
         Assert.Equal("Album", TidalPathSanitizer.CleanPath("Album . . "));
     }
+
+    [Theory]
+    [InlineData("...", "_")]
+    [InlineData("", "_")]
+    [InlineData(null, "_")]
+    [InlineData("A/B", "A_B")]
+    public void CleanComponent_never_returns_an_empty_name(string? input, string expected)
+    {
+        Assert.Equal(expected, TidalPathSanitizer.CleanComponent(input));
+    }
 }

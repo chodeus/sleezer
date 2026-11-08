@@ -14,6 +14,9 @@ namespace NzbDrone.Plugin.Sleezer.Core.Tidal
         // permits but Lidarr's path parser treats as separators or quotes.
         private static readonly char[] ExtraInvalidChars = { '\\', ':', '*', '?', '<', '>', '|', '/', '"' };
 
+        /// <summary>A folder or file name part that is never empty: an empty one puts a "/" at the start of a template and roots the path.</summary>
+        public static string CleanComponent(string? str) => CleanPath(str ?? string.Empty) is { Length: > 0 } cleaned ? cleaned : "_";
+
         public static string CleanPath(string str)
         {
             if (string.IsNullOrEmpty(str))

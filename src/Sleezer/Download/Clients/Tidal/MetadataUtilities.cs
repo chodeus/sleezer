@@ -13,7 +13,8 @@ namespace NzbDrone.Core.Download.Clients.Tidal
         public static string GetFilledTemplate(string template, string ext, JObject tidalPage, JObject tidalAlbum)
         {
             var rawReleaseDate = tidalAlbum["releaseDate"]?.ToString() ?? tidalAlbum["streamStartDate"]?.ToString();
-            var releaseDate = !string.IsNullOrEmpty(rawReleaseDate) ? DateTime.Parse(rawReleaseDate, CultureInfo.InvariantCulture) : DateTime.MinValue;
+            // A malformed date must not fail every track of the album; no template the client uses names the year.
+            var releaseDate = DateTime.TryParse(rawReleaseDate, CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime parsed) ? parsed : DateTime.MinValue;
 
             return GetFilledTemplate_Internal(
                 template,
@@ -53,6 +54,6 @@ namespace NzbDrone.Core.Download.Clients.Tidal
 
         // Sanitization delegated so the test project can exercise it without
         // pulling in TidalSharp / Lidarr.Core. See TidalPathSanitizer.
-        public static string CleanPath(string str) => TidalPathSanitizer.CleanPath(str);
+        public static string CleanPath(string str) => TidalPathSanitizer.CleanComponent(str);
     }
 }

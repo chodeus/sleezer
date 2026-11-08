@@ -220,16 +220,25 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Discogs
                     .AddQueryParam("per_page", itemsPerPage.ToString(), true);
                 JsonElement response = await ExecuteRequestWithRetryAsync(pagedRequest);
 
-                if (response.TryGetProperty("results", out JsonElement resultsElement) || response.TryGetProperty("releases", out resultsElement))
+                // A failed page is a failure, not the end of the list: stopping would cache a partial answer as whole.
+                if (response.ValueKind != JsonValueKind.Object ||
+                    // Search answers "results", artist and label lists "releases", master versions "versions".
+                    !(response.TryGetProperty("results", out JsonElement resultsElement) || response.TryGetProperty("releases", out resultsElement) ||
+                      response.TryGetProperty("versions", out resultsElement)) ||
+                    resultsElement.ValueKind != JsonValueKind.Array)
                 {
-                    List<T>? pageResults = JsonSerializer.Deserialize<List<T>>(resultsElement.GetRawText());
-                    if (pageResults != null)
-                        results.AddRange(pageResults);
+                    string problem = response.ValueKind switch
+                    {
+                        JsonValueKind.Undefined => "the request failed (see the warning before this)",
+                        JsonValueKind.Object => "no \"results\", \"releases\" or \"versions\" array",
+                        _ => $"the response was a JSON {response.ValueKind}, not an object"
+                    };
+                    throw new HttpRequestException($"Discogs results page {page} failed: {problem}");
                 }
-                else
-                {
-                    break;
-                }
+
+                List<T>? pageResults = JsonSerializer.Deserialize<List<T>>(resultsElement.GetRawText());
+                if (pageResults != null)
+                    results.AddRange(pageResults);
 
                 hasNextPage = response.TryGetProperty("pagination", out JsonElement pagination) && pagination.TryGetProperty("pages", out JsonElement pages) && pages.TryGetInt32(out int pagesInt) && pagesInt > page;
 
