@@ -137,6 +137,10 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Deezer
                     .AddQueryParam("limit", itemsPerPage.ToString(), true);
                 JsonElement response = await ExecuteRequestWithRetryAsync(pagedRequest);
 
+                // A failed page is a failure, not the end of the list: stopping would cache a partial answer as whole.
+                if (response.ValueKind != JsonValueKind.Object)
+                    throw new HttpRequestException($"Deezer request for results page {page + 1} failed; see the warning before this.");
+
                 if (response.TryGetProperty("data", out JsonElement dataElement))
                 {
                     List<T>? pageResults = JsonSerializer.Deserialize<List<T>>(dataElement.GetRawText());

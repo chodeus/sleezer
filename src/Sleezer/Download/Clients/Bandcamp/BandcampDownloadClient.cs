@@ -391,10 +391,5 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
                 _ => DownloadItemStatus.Queued
             };
         }
-
-        /// <summary>
-        /// Creates a filesystem-safe directory name from a release title.
-        /// Strips characters invalid on Windows/Linux and collapses whitespace.
-        /// </summary>
     }
 }

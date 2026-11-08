@@ -220,6 +220,10 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Discogs
                     .AddQueryParam("per_page", itemsPerPage.ToString(), true);
                 JsonElement response = await ExecuteRequestWithRetryAsync(pagedRequest);
 
+                // A failed page is a failure, not the end of the list: stopping would cache a partial answer as whole.
+                if (response.ValueKind != JsonValueKind.Object)
+                    throw new HttpRequestException($"Discogs request for results page {page} failed; see the warning before this.");
+
                 if (response.TryGetProperty("results", out JsonElement resultsElement) || response.TryGetProperty("releases", out resultsElement))
                 {
                     List<T>? pageResults = JsonSerializer.Deserialize<List<T>>(resultsElement.GetRawText());
