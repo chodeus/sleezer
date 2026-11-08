@@ -1,5 +1,9 @@
 using System.Net;
+using NLog;
+using NzbDrone.Common.Cache;
 using NzbDrone.Common.Http;
+using NzbDrone.Common.Http.Dispatchers;
+using NzbDrone.Common.TPL;
 using NzbDrone.Core.ImportLists;
 using NzbDrone.Core.ImportLists.Exceptions;
 using NzbDrone.Plugin.Sleezer.ImportLists.ListenBrainz.ListenBrainzCreatedForPlaylist;
@@ -51,5 +55,52 @@ public class ListenBrainzCreatedForPlaylistParserTests
     public void Empty_playlists_are_an_empty_list_not_a_failure()
     {
         Assert.Empty(Parse(_ => (HttpStatusCode.OK, NoTracks)));
+    }
+
+    private sealed class WireDispatcher(Func<HttpRequest, HttpResponse> handler) : IHttpDispatcher
+    {
+        public Task<HttpResponse> GetResponseAsync(HttpRequest request, CookieContainer cookies) => Task.FromResult(handler(request));
+    }
+
+    // Lidarr's real HttpClient, which throws on an error status; only the wire is faked.
+    private static IList<NzbDrone.Core.Parser.Model.ImportListItemInfo> ParseWithRealClient(Func<string, (HttpStatusCode Status, string Body, string? RetryAfter)> playlist)
+    {
+        Logger nullLogger = LogManager.CreateNullLogger();
+        CacheManager cache = new();
+        NzbDrone.Common.Http.HttpClient http = new([], cache, new RateLimitService(cache, nullLogger), new WireDispatcher(request =>
+        {
+            (HttpStatusCode status, string body, string? retryAfter) = playlist(request.Url.FullUri);
+            return FakeHttpClient.Respond(request, status, body, retryAfter);
+        }), nullLogger);
+
+        ListenBrainzCreatedForPlaylistSettings settings = new();
+        ListenBrainzCreatedForPlaylistParser parser = new(settings, new ListenBrainzCreatedForPlaylistRequestGenerator(settings), http);
+
+        HttpRequest listingRequest = new("https://api.listenbrainz.org/1/user/someone/playlists/createdfor");
+        return parser.ParseResponse(new ImportListResponse(new ImportListRequest(listingRequest), FakeHttpClient.Respond(listingRequest, HttpStatusCode.OK, Listing)));
+    }
+
+    [Fact]
+    public void Through_the_real_client_every_playlist_failing_fails_the_list_and_says_why()
+    {
+        ImportListException ex = Assert.Throws<ImportListException>(() => ParseWithRealClient(_ => (HttpStatusCode.InternalServerError, "{}", null)));
+
+        Assert.Contains("failed to load", ex.Message);
+    }
+
+    [Fact]
+    public void Through_the_real_client_one_playlist_failing_keeps_the_others()
+    {
+        var items = ParseWithRealClient(url => url.EndsWith("/aaa") ? (HttpStatusCode.InternalServerError, "{}", null) : (HttpStatusCode.OK, OneTrack, null));
+
+        Assert.Equal("Album", Assert.Single(items).Album);
+    }
+
+    [Fact]
+    public void A_rate_limit_reaches_lidarr_with_its_retry_after()
+    {
+        Exception? ex = Record.Exception(() => ParseWithRealClient(_ => ((HttpStatusCode)429, "{}", "3600")));
+
+        Assert.IsType<TooManyRequestsException>(ex);
     }
 }

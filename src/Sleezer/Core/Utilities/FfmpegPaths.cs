@@ -38,7 +38,9 @@ public static class FfmpegPaths
         if (folder.Contains('"'))
             throw new InvalidOperationException($"ffmpeg can't be given a folder whose name holds a double quote: {folder}");
 
-        return Path.Combine(folder, $"sleezer-{Guid.NewGuid():N}{suffix}");
+        // Named from the track, not at random: callers clear a leftover from an aborted attempt by this name.
+        string key = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(trackPath)))[..16].ToLowerInvariant();
+        return Path.Combine(folder, $"sleezer-{key}{suffix}");
     }
 }
 

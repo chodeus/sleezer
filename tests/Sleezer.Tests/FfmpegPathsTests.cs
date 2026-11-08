@@ -57,5 +57,54 @@ public sealed class FfmpegPathsTests : IDisposable
         Assert.Throws<InvalidOperationException>(() => FfmpegPaths.TempOutput(Path.Combine(_root, "\"Heroes\"", "03 - Heroes.flac"), ".converted.mp3"));
     }
 
+    [Fact]
+    public void Curly_quotes_need_no_alias()
+    {
+        string track = Path.Combine(_root, "03 - \u201cHeroes\u201d.flac");
+        File.WriteAllText(track, "audio");
+
+        using FfmpegInput input = FfmpegPaths.Input(track);
+
+        Assert.Equal(track, input.Path);
+    }
+
+    [Fact]
+    public void A_file_in_a_quoted_folder_is_still_read_through_an_alias()
+    {
+        string track = Path.Combine(Directory.CreateDirectory(Path.Combine(_root, "\"Heroes\"")).FullName, "03 - Heroes.flac");
+        File.WriteAllText(track, "audio");
+
+        using FfmpegInput input = FfmpegPaths.Input(track);
+
+        Assert.DoesNotContain('"', input.Path);
+        Assert.Equal("audio", File.ReadAllText(input.Path));
+    }
+
+    [Fact]
+    public async Task Readers_of_one_quoted_file_at_once_each_get_and_remove_their_own_alias()
+    {
+        string track = Path.Combine(_root, "03 - \"Heroes\".flac");
+        File.WriteAllText(track, "audio");
+
+        string[] aliases = await Task.WhenAll(Enumerable.Range(0, 32).Select(_ => Task.Run(() =>
+        {
+            using FfmpegInput input = FfmpegPaths.Input(track);
+            Assert.Equal("audio", File.ReadAllText(input.Path));
+            return input.Path;
+        })));
+
+        Assert.Equal(32, aliases.Distinct().Count());
+        Assert.All(aliases, alias => Assert.False(File.Exists(alias)));
+        Assert.Equal("audio", File.ReadAllText(track));
+    }
+
+    [Fact]
+    public void A_quoted_files_leftover_temp_output_is_found_by_the_next_attempt()
+    {
+        string track = Path.Combine(_root, "03 - \"Heroes\".flac");
+
+        Assert.Equal(FfmpegPaths.TempOutput(track, ".converted.mp3"), FfmpegPaths.TempOutput(track, ".converted.mp3"));
+    }
+
     public void Dispose() => Directory.Delete(_root, recursive: true);
 }

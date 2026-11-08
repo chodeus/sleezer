@@ -34,20 +34,21 @@ namespace NzbDrone.Plugin.Sleezer.ImportLists.ListenBrainz.ListenBrainzCreatedFo
 
             try
             {
-                IList<ImportListItemInfo> items = ParseCreatedForPlaylists(importListResponse.Content);
+                IList<ImportListItemInfo> items = ParseCreatedForPlaylists(importListResponse);
                 _logger.Debug("Successfully parsed {0} items from ListenBrainz playlists", items.Count);
                 return items;
             }
-            catch (Exception ex)
+            // Through as they are: Lidarr honours a rate limit's Retry-After, and the list's own failure says what failed.
+            catch (Exception ex) when (ex is not (ImportListException or TooManyRequestsException))
             {
                 _logger.Error(ex, "Failed to parse ListenBrainz playlists response");
                 throw new ImportListException(importListResponse, "Failed to parse response", ex);
             }
         }
 
-        private IList<ImportListItemInfo> ParseCreatedForPlaylists(string content)
+        private IList<ImportListItemInfo> ParseCreatedForPlaylists(ImportListResponse importListResponse)
         {
-            PlaylistsResponse? response = JsonSerializer.Deserialize<PlaylistsResponse>(content, _jsonOptions);
+            PlaylistsResponse? response = JsonSerializer.Deserialize<PlaylistsResponse>(importListResponse.Content, _jsonOptions);
             IReadOnlyList<PlaylistInfo>? playlists = response?.Playlists;
 
             if (playlists?.Any() != true)
@@ -81,6 +82,10 @@ namespace NzbDrone.Plugin.Sleezer.ImportLists.ListenBrainz.ListenBrainzCreatedFo
                     _logger.Debug("Processing playlist of type {0}: {1}", targetPlaylistType, identifier);
                     allItems.AddRange(FetchPlaylistItems(ExtractPlaylistMbid(identifier)));
                 }
+                catch (TooManyRequestsException)
+                {
+                    throw;
+                }
                 catch (Exception ex)
                 {
                     failed++;
@@ -90,7 +95,7 @@ namespace NzbDrone.Plugin.Sleezer.ImportLists.ListenBrainz.ListenBrainzCreatedFo
 
             // Every playlist failing is ListenBrainz down, not an empty list: Lidarr must record the failure.
             if (attempted > 0 && failed == attempted)
-                throw new InvalidOperationException($"All {attempted} ListenBrainz playlist(s) of type {targetPlaylistType} failed to load");
+                throw new ImportListException(importListResponse, "All {0} ListenBrainz playlist(s) of type {1} failed to load", attempted, targetPlaylistType);
 
             return allItems;
         }
