@@ -11,10 +11,17 @@ public class AlbumMapperTests
     [InlineData("Lost Highway")]
     [InlineData("Olive")]
     [InlineData("Democracy")]
-    [InlineData("Back in Black (Remastered)")]
-    [InlineData("Rumours (Deluxe Edition)")]
     [InlineData("Spreading the Disease")]
     public void A_title_that_only_contains_a_keyword_inside_a_word_gets_no_secondary_type(string title)
+    {
+        Assert.Empty(AlbumMapper.DetermineSecondaryTypesFromTitle(title));
+    }
+
+    [Theory]
+    [InlineData("Back in Black (Remastered)")]
+    [InlineData("Rumours (Deluxe Edition)")]
+    [InlineData("Ten (Expanded Edition)")]
+    public void A_remaster_or_new_edition_is_not_a_remix(string title)
     {
         Assert.Empty(AlbumMapper.DetermineSecondaryTypesFromTitle(title));
     }
