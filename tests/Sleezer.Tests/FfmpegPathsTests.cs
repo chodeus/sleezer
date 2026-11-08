@@ -54,12 +54,20 @@ public sealed class FfmpegPathsTests : IDisposable
     [Fact]
     public void A_relative_quoted_path_links_to_the_file_it_names()
     {
-        string track = Path.Combine(_root, "03 - \"Heroes\".flac");
-        File.WriteAllText(track, "audio");
+        // Under the working folder: a path that climbs to the root with ".." resolves the same from anywhere.
+        string folder = Directory.CreateDirectory(Path.Combine(Environment.CurrentDirectory, $"ffmpeg-relative-{Guid.NewGuid():N}")).FullName;
+        try
+        {
+            File.WriteAllText(Path.Combine(folder, "03 - \"Heroes\".flac"), "audio");
 
-        using FfmpegInput input = FfmpegPaths.Input(Path.GetRelativePath(Environment.CurrentDirectory, track));
+            using FfmpegInput input = FfmpegPaths.Input(Path.Combine(Path.GetFileName(folder), "03 - \"Heroes\".flac"));
 
-        Assert.Equal("audio", File.ReadAllText(input.Path));
+            Assert.Equal("audio", File.ReadAllText(input.Path));
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
     }
 
     [Theory]
