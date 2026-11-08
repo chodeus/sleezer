@@ -15,7 +15,7 @@ public static class FfmpegPaths
         string alias = Path.Combine(AliasFolder, Guid.NewGuid().ToString("N") + Path.GetExtension(path).Replace("\"", string.Empty));
         try
         {
-            File.CreateSymbolicLink(alias, path);
+            File.CreateSymbolicLink(alias, Path.GetFullPath(path));
         }
         // NotSupportedException covers PlatformNotSupportedException too.
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
@@ -27,6 +27,9 @@ public static class FfmpegPaths
         return new FfmpegInput(alias, alias);
     }
 
+    /// <summary>True when the track's folder name holds a double quote, which ffmpeg can't be handed and no output may be written beside.</summary>
+    public static bool FolderHoldsQuote(string trackPath) => (Path.GetDirectoryName(trackPath) ?? string.Empty).Contains('"');
+
     /// <summary>Where ffmpeg writes a temporary output for <paramref name="trackPath"/>: always beside it, under a quote-free name when needed.</summary>
     public static string TempOutput(string trackPath, string suffix)
     {
@@ -36,7 +39,7 @@ public static class FfmpegPaths
         // Beside the track, never the temp folder: callers delete the original before moving the output in, and a move
         // across disks is a copy that can fail with the original already gone.
         string folder = Path.GetDirectoryName(trackPath) ?? string.Empty;
-        if (folder.Contains('"'))
+        if (FolderHoldsQuote(trackPath))
             throw new InvalidOperationException($"ffmpeg can't be given a folder whose name holds a double quote: {folder}");
 
         // Named from the track, not at random: callers clear a leftover from an aborted attempt by this name.

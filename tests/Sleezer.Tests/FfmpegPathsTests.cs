@@ -52,6 +52,25 @@ public sealed class FfmpegPathsTests : IDisposable
     }
 
     [Fact]
+    public void A_relative_quoted_path_links_to_the_file_it_names()
+    {
+        string track = Path.Combine(_root, "03 - \"Heroes\".flac");
+        File.WriteAllText(track, "audio");
+
+        using FfmpegInput input = FfmpegPaths.Input(Path.GetRelativePath(Environment.CurrentDirectory, track));
+
+        Assert.Equal("audio", File.ReadAllText(input.Path));
+    }
+
+    [Theory]
+    [InlineData("\"Heroes\"/03 - Heroes.flac", true)]
+    [InlineData("Heroes/03 - \"Heroes\".flac", false)]
+    public void A_folder_holding_a_quote_is_recognised(string relativeTrack, bool holdsQuote)
+    {
+        Assert.Equal(holdsQuote, FfmpegPaths.FolderHoldsQuote(Path.Combine(_root, relativeTrack)));
+    }
+
+    [Fact]
     public void A_quoted_folder_is_refused_before_anything_is_written()
     {
         Assert.Throws<InvalidOperationException>(() => FfmpegPaths.TempOutput(Path.Combine(_root, "\"Heroes\"", "03 - Heroes.flac"), ".converted.mp3"));

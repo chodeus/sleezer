@@ -274,6 +274,13 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
             if (!CheckFFmpegInstalled())
                 return false;
 
+            // Before the extension check below, which can rename the file: nothing is changed in a folder that is refused.
+            if (FfmpegPaths.FolderHoldsQuote(TrackPath))
+            {
+                _logger?.Warn("Not converting {Path}: its folder name holds a double quote, which ffmpeg can't be given", TrackPath);
+                return false;
+            }
+
             if (!await TryExtractAudioFromVideoAsync())
                 return false;
 
