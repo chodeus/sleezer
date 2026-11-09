@@ -129,8 +129,11 @@ public sealed class FfmpegPathsTests : IDisposable
     public void A_quoted_files_leftover_temp_output_is_found_by_the_next_attempt()
     {
         string track = Path.Combine(_root, "03 - \"Heroes\".flac");
+        string output = FfmpegPaths.TempOutput(track, ".converted.mp3");
 
-        Assert.Equal(FfmpegPaths.TempOutput(track, ".converted.mp3"), FfmpegPaths.TempOutput(track, ".converted.mp3"));
+        Assert.Equal(output, FfmpegPaths.TempOutput(track, ".converted.mp3"));
+        Assert.NotEqual(output, FfmpegPaths.TempOutput(Path.Combine(_root, "04 - \"Heroes\" (Edit).flac"), ".converted.mp3"));
+        Assert.NotEqual(output, FfmpegPaths.TempOutput(track, ".extracted.flac"));
     }
 
     public void Dispose() => Directory.Delete(_root, recursive: true);
