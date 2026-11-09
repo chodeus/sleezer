@@ -65,6 +65,13 @@ namespace NzbDrone.Plugin.Sleezer.ImportLists.ListenBrainz.ListenBrainzCreatedFo
                 IList<ImportListItemInfo> items = GetParser().ParseResponse(response);
                 return null!;
             }
+            catch (TooManyRequestsException ex)
+            {
+                _logger.Warn(ex, "Connection test rate limited");
+                return new ValidationFailure(string.Empty, ex.RetryAfter > TimeSpan.Zero
+                    ? $"ListenBrainz is rate limiting requests; try again in {Math.Ceiling(ex.RetryAfter.TotalMinutes):0} minute(s)"
+                    : "ListenBrainz is rate limiting requests; try again later");
+            }
             catch (ImportListException ex)
             {
                 _logger.Warn(ex, "Connection test failed");

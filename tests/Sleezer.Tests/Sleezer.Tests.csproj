@@ -165,6 +165,16 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Metadata\Proxy\MetadataProvider\AlbumMapper.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Core\Utilities\FfmpegPaths.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\ImportLists\ListenBrainz\ListenBrainzRecords.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\ImportLists\ListenBrainz\ListenBrainzCreatedForPlaylist\ListenBrainzCreatedForPlaylistParser.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\ImportLists\ListenBrainz\ListenBrainzCreatedForPlaylist\ListenBrainzCreatedForPlaylistRequestGenerator.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\ImportLists\ListenBrainz\ListenBrainzCreatedForPlaylist\ListenBrainzCreatedForPlaylistSettings.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Tidal\TidalPathSanitizer.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\Tidal\TidalAlbumAvailability.cs"

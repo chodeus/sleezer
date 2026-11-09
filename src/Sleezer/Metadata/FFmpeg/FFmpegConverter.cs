@@ -145,7 +145,8 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
         {
             try
             {
-                IMediaInfo mediaInfo = await XabeFFmpeg.GetMediaInfo(filePath);
+                using FfmpegInput input = FfmpegPaths.Input(filePath);
+                IMediaInfo mediaInfo = await XabeFFmpeg.GetMediaInfo(input.Path);
                 IAudioStream? audioStream = mediaInfo.AudioStreams.FirstOrDefault();
 
                 if (audioStream == null)
@@ -164,7 +165,8 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
         {
             try
             {
-                string probeArgs = $"-v error -select_streams a:0 -show_entries stream=bits_per_raw_sample,sample_fmt -of default=noprint_wrappers=1 \"{filePath}\"";
+                using FfmpegInput input = FfmpegPaths.Input(filePath);
+                string probeArgs = $"-v error -select_streams a:0 -show_entries stream=bits_per_raw_sample,sample_fmt -of default=noprint_wrappers=1 \"{input.Path}\"";
                 string probeOutput = await Probe.New().Start(probeArgs);
 
                 if (string.IsNullOrWhiteSpace(probeOutput))

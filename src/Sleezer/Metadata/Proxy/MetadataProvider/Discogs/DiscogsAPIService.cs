@@ -52,19 +52,6 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Discogs
             return MappingAgent.MapAgent(master, _userAgent);
         }
 
-        public async Task<List<DiscogsMasterReleaseVersion>> GetMasterVersionsAsync(int masterId, int? maxPages = null, string? format = null, string? label = null, string? released = null, string? country = null, string? sort = null, string? sortOrder = null)
-        {
-            HttpRequestBuilder request = BuildRequest($"masters/{masterId}/versions");
-            AddQueryParamIfNotNull(request, "format", format);
-            AddQueryParamIfNotNull(request, "label", label);
-            AddQueryParamIfNotNull(request, "released", released);
-            AddQueryParamIfNotNull(request, "country", country);
-            AddQueryParamIfNotNull(request, "sort", sort);
-            AddQueryParamIfNotNull(request, "sort_order", sortOrder);
-            List<DiscogsMasterReleaseVersion> masterReleaseVersions = await FetchPaginatedResultsAsync<DiscogsMasterReleaseVersion>(request, maxPages ?? MaxPageLimit, PageSize) ?? [];
-            return MappingAgent.MapAgent(masterReleaseVersions, _userAgent)!;
-        }
-
         public async Task<DiscogsArtist?> GetArtistAsync(int artistId)
         {
             JsonElement response = await ExecuteRequestWithRetryAsync(BuildRequest($"artists/{artistId}"));
@@ -222,15 +209,14 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Discogs
 
                 // A failed page is a failure, not the end of the list: stopping would cache a partial answer as whole.
                 if (response.ValueKind != JsonValueKind.Object ||
-                    // Search answers "results", artist and label lists "releases", master versions "versions".
-                    !(response.TryGetProperty("results", out JsonElement resultsElement) || response.TryGetProperty("releases", out resultsElement) ||
-                      response.TryGetProperty("versions", out resultsElement)) ||
+                    // Search answers "results", artist and label lists "releases".
+                    !(response.TryGetProperty("results", out JsonElement resultsElement) || response.TryGetProperty("releases", out resultsElement)) ||
                     resultsElement.ValueKind != JsonValueKind.Array)
                 {
                     string problem = response.ValueKind switch
                     {
                         JsonValueKind.Undefined => "the request failed (see the warning before this)",
-                        JsonValueKind.Object => "no \"results\", \"releases\" or \"versions\" array",
+                        JsonValueKind.Object => "no \"results\" or \"releases\" array",
                         _ => $"the response was a JSON {response.ValueKind}, not an object"
                     };
                     throw new HttpRequestException($"Discogs results page {page} failed: {problem}");

@@ -127,21 +127,6 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.Proxy.MetadataProvider.Discogs
         [property: JsonPropertyName("data_quality")] string? DataQuality
     ) : MappingAgent;
 
-    public record DiscogsMasterReleaseVersion(
-        [property: JsonPropertyName("status")] string? Status,
-        [property: JsonPropertyName("stats")] DiscogsStats? Stats,
-        [property: JsonPropertyName("thumb")] string? Thumb,
-        [property: JsonPropertyName("format")] string? Format,
-        [property: JsonPropertyName("country")] string? Country,
-        [property: JsonPropertyName("title")] string? Title,
-        [property: JsonPropertyName("label")] string? Label,
-        [property: JsonPropertyName("released")] string? Released,
-        [property: JsonPropertyName("major_formats")] List<string>? MajorFormats,
-        [property: JsonPropertyName("catno")] string? Catno,
-        [property: JsonPropertyName("resource_url")] string? ResourceUrl,
-        [property: JsonPropertyName("id")] int Id
-    ) : MappingAgent;
-
     public record DiscogsMember(
         [property: JsonPropertyName("id")] int Id,
         [property: JsonPropertyName("name")] string? Name,

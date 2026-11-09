@@ -34,20 +34,21 @@ namespace NzbDrone.Plugin.Sleezer.ImportLists.ListenBrainz.ListenBrainzCreatedFo
 
             try
             {
-                IList<ImportListItemInfo> items = ParseCreatedForPlaylists(importListResponse.Content);
+                IList<ImportListItemInfo> items = ParseCreatedForPlaylists(importListResponse);
                 _logger.Debug("Successfully parsed {0} items from ListenBrainz playlists", items.Count);
                 return items;
             }
-            catch (Exception ex)
+            // Through as they are: Lidarr honours a rate limit's Retry-After, and the list's own failure says what failed.
+            catch (Exception ex) when (ex is not (ImportListException or TooManyRequestsException))
             {
                 _logger.Error(ex, "Failed to parse ListenBrainz playlists response");
                 throw new ImportListException(importListResponse, "Failed to parse response", ex);
             }
         }
 
-        private IList<ImportListItemInfo> ParseCreatedForPlaylists(string content)
+        private IList<ImportListItemInfo> ParseCreatedForPlaylists(ImportListResponse importListResponse)
         {
-            PlaylistsResponse? response = JsonSerializer.Deserialize<PlaylistsResponse>(content, _jsonOptions);
+            PlaylistsResponse? response = JsonSerializer.Deserialize<PlaylistsResponse>(importListResponse.Content, _jsonOptions);
             IReadOnlyList<PlaylistInfo>? playlists = response?.Playlists;
 
             if (playlists?.Any() != true)
@@ -68,23 +69,33 @@ namespace NzbDrone.Plugin.Sleezer.ImportLists.ListenBrainz.ListenBrainzCreatedFo
             }
 
             List<ImportListItemInfo> allItems = [];
+            int attempted = 0, failed = 0;
             foreach (PlaylistInfo? playlist in matchingPlaylists)
             {
+                string? identifier = playlist.Playlist?.Identifier;
+                if (string.IsNullOrWhiteSpace(identifier))
+                    continue;
+
+                attempted++;
                 try
                 {
-                    string? identifier = playlist.Playlist?.Identifier;
-                    if (string.IsNullOrWhiteSpace(identifier))
-                        continue;
-
                     _logger.Debug("Processing playlist of type {0}: {1}", targetPlaylistType, identifier);
-                    IList<ImportListItemInfo> playlistItems = FetchPlaylistItems(ExtractPlaylistMbid(identifier));
-                    allItems.AddRange(playlistItems);
+                    allItems.AddRange(FetchPlaylistItems(ExtractPlaylistMbid(identifier)));
+                }
+                catch (TooManyRequestsException)
+                {
+                    throw;
                 }
                 catch (Exception ex)
                 {
-                    _logger.Warn(ex, "Failed to process playlist");
+                    failed++;
+                    _logger.Warn(ex, "Failed to fetch ListenBrainz playlist {0}", identifier);
                 }
             }
+
+            // Every playlist failing is ListenBrainz down, not an empty list: Lidarr must record the failure.
+            if (attempted > 0 && failed == attempted)
+                throw new ImportListException(importListResponse, "All {0} ListenBrainz playlist(s) of type {1} failed to load", attempted, targetPlaylistType);
 
             return allItems;
         }
@@ -115,53 +126,43 @@ namespace NzbDrone.Plugin.Sleezer.ImportLists.ListenBrainz.ListenBrainzCreatedFo
         private static string ExtractPlaylistMbid(string identifier) =>
             identifier.Split('/').Last();
 
+        // Throws when the playlist can't be fetched: an empty list means an empty playlist.
         private List<ImportListItemInfo> FetchPlaylistItems(string mbid)
         {
-            try
+            HttpRequestBuilder request = new HttpRequestBuilder(_settings.BaseUrl)
+                .Accept(HttpAccept.Json);
+
+            if (!string.IsNullOrEmpty(_settings.UserToken))
             {
-                HttpRequestBuilder request = new HttpRequestBuilder(_settings.BaseUrl)
-                    .Accept(HttpAccept.Json);
-
-                if (!string.IsNullOrEmpty(_settings.UserToken))
-                {
-                    request.SetHeader("Authorization", $"Token {_settings.UserToken}");
-                }
-
-                HttpRequest httpRequest = request.Build();
-                httpRequest.Url = new HttpUri($"{_settings.BaseUrl}/1/playlist/{mbid}");
-
-                HttpResponse response = _httpClient.Execute(httpRequest);
-
-                if (response.StatusCode != HttpStatusCode.OK)
-                {
-                    _logger.Warn("Failed to fetch playlist {0} with HTTP {1}", mbid, response.StatusCode);
-                    return [];
-                }
-
-                PlaylistResponse? playlistResponse = JsonSerializer.Deserialize<PlaylistResponse>(response.Content, _jsonOptions);
-                IReadOnlyList<TrackData>? tracks = playlistResponse?.Playlist?.Tracks;
-
-                if (tracks?.Any() != true)
-                {
-                    _logger.Debug("No tracks found in playlist {0}", mbid);
-                    return [];
-                }
-
-                _logger.Trace("Processing {0} tracks from playlist {1}", tracks.Count, mbid);
-
-                return tracks
-                    .Select(ExtractAlbumInfo)
-                    .Where(item => item != null)
-                    .Cast<ImportListItemInfo>()
-                    .GroupBy(item => new { item.Album, item.Artist, item.ArtistMusicBrainzId })
-                    .Select(g => g.First())
-                    .ToList();
+                request.SetHeader("Authorization", $"Token {_settings.UserToken}");
             }
-            catch (Exception ex)
+
+            HttpRequest httpRequest = request.Build();
+            httpRequest.Url = new HttpUri($"{_settings.BaseUrl}/1/playlist/{mbid}");
+
+            HttpResponse response = _httpClient.Execute(httpRequest);
+
+            if (response.StatusCode != HttpStatusCode.OK)
+                throw new HttpRequestException($"HTTP {(int)response.StatusCode} fetching ListenBrainz playlist {mbid}");
+
+            PlaylistResponse? playlistResponse = JsonSerializer.Deserialize<PlaylistResponse>(response.Content, _jsonOptions);
+            IReadOnlyList<TrackData>? tracks = playlistResponse?.Playlist?.Tracks;
+
+            if (tracks?.Any() != true)
             {
-                _logger.Warn(ex, "Failed to fetch playlist {0}", mbid);
+                _logger.Debug("No tracks found in playlist {0}", mbid);
                 return [];
             }
+
+            _logger.Trace("Processing {0} tracks from playlist {1}", tracks.Count, mbid);
+
+            return tracks
+                .Select(ExtractAlbumInfo)
+                .Where(item => item != null)
+                .Cast<ImportListItemInfo>()
+                .GroupBy(item => new { item.Album, item.Artist, item.ArtistMusicBrainzId })
+                .Select(g => g.First())
+                .ToList();
         }
 
         private ImportListItemInfo? ExtractAlbumInfo(TrackData track)
