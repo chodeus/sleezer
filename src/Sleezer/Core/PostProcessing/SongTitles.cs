@@ -19,6 +19,9 @@ public static partial class SongTitles
         "remaster", "remastered", "album", "single", "original", "version", "mix", "mono", "stereo", "digital",
     };
 
+    // The original's own cuts: "(Extended)", "(Radio Edit)", "(Album Version)".
+    private static readonly HashSet<string> OriginalCutWords = new(ReissueWords.Concat(["extended", "radio", "edit"]), StringComparer.Ordinal);
+
     /// <summary>Whether two titles name one song once framing, articles, a one-letter typo or a compatible qualifier are set aside.</summary>
     public static bool Same(string? heard, string? wanted, Func<string?, string> comparable)
     {
@@ -54,12 +57,17 @@ public static partial class SongTitles
         return !wordsA.SetEquals(wordsB) && wordsA.Concat(wordsB).Except(wordsA.Intersect(wordsB)).All(w => ReissueWords.Contains(w) || YearRegex().IsMatch(w));
     }
 
-    /// <summary>A plain title against a wanted remix of it: AcoustID files remixes under the original.</summary>
-    public static bool PlainForRemix(string? heard, string? wanted, Func<string?, string> comparable)
+    /// <summary>A plain title against a wanted remix or cut of it: AcoustID files remixes and cuts under the original.</summary>
+    public static bool PlainForRemix(string? heard, string? wanted, Func<string?, string> comparable) =>
+        Qualifier(Unframed(heard)).Length == 0 && OriginalForRemix(heard, wanted, comparable);
+
+    /// <summary>The original, plain or in a cut of its own, against a wanted remix or cut of it.</summary>
+    public static bool OriginalForRemix(string? heard, string? wanted, Func<string?, string> comparable)
     {
-        string a = Unframed(heard), b = Unframed(wanted);
-        return Qualifier(a).Length == 0 && Words(Qualifier(b)).Overlaps(RemixWords) &&
-               Squashed(comparable(a)) is { Length: > 0 } plain && plain == Squashed(comparable(Base(b)));
+        (string a, string b) = WithoutOnePrefix(heard, wanted);
+        string cut = Qualifier(b);
+        return Words(Qualifier(a)).All(w => OriginalCutWords.Contains(w) || YearRegex().IsMatch(w)) &&
+               (Words(cut).Overlaps(RemixWords) || TrailingCutRegex().IsMatch(cut)) && SameBase(a, b, comparable);
     }
 
     /// <summary>The title without a "(from X)" or " - From X" source frame.</summary>
@@ -154,6 +162,10 @@ public static partial class SongTitles
 
     [GeneratedRegex(@"^(?:19|20)\d\d$")]
     private static partial Regex YearRegex();
+
+    // "(Alternative Cut)", "(Album Cut)"; "(Cut Me Loose)" names no cut.
+    [GeneratedRegex(@"\bcut\W*$", RegexOptions.IgnoreCase)]
+    private static partial Regex TrailingCutRegex();
 
     [GeneratedRegex(@"\bre-mix\b", RegexOptions.IgnoreCase)]
     private static partial Regex ReMixRegex();

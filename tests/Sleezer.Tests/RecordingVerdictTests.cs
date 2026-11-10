@@ -169,7 +169,10 @@ public class RecordingVerdictTests
     [InlineData(175, 172, 155, FingerprintVerdict.Unverifiable)]
     [InlineData(176, 172, 155, FingerprintVerdict.Mismatch)]
     [InlineData(173, 172, 162, FingerprintVerdict.Unverifiable)]
-    [InlineData(173, 172, 163, FingerprintVerdict.Mismatch)]
+    [InlineData(173, 172, 168, FingerprintVerdict.Unverifiable)]
+    [InlineData(173, 172, 176, FingerprintVerdict.Mismatch)]
+    [InlineData(173, 172, 177, FingerprintVerdict.Mismatch)]
+    [InlineData(173, 172, 178, FingerprintVerdict.Unverifiable)]
     [InlineData(173, 172, 0, FingerprintVerdict.Mismatch)]
     [InlineData(173, 0, 155, FingerprintVerdict.Mismatch)]
     [InlineData(0, 2, 155, FingerprintVerdict.Mismatch)]
@@ -180,6 +183,15 @@ public class RecordingVerdictTests
             Timed((OtherId, "Lantern Song", knownSeconds)), fileSeconds);
 
         Assert.Equal(expected, verdict);
+    }
+
+    // No remix or cut of the named title: within 10 s of the file, AcoustID may have heard it right.
+    [Theory]
+    [InlineData(162, FingerprintVerdict.Unverifiable)]
+    [InlineData(163, FingerprintVerdict.Mismatch)]
+    public void Another_take_far_off_the_files_length_defers_only_past_ten_seconds(int knownSeconds, FingerprintVerdict expected)
+    {
+        Assert.Equal(expected, Resolve(new[] { OtherId }, Wanted("Lantern Song (acoustic)", seconds: 172), Timed((OtherId, "Lantern Song", knownSeconds)), 173));
     }
 
     [Theory]
@@ -327,6 +339,78 @@ public class RecordingVerdictTests
     {
         Assert.Equal(FingerprintVerdict.Unverifiable,
             Resolve(new[] { OtherId }, Wanted("Lantern Song (Fern remix)", seconds: 205), Timed((OtherId, "Lantern Song", 205)), fileSeconds: 205));
+    }
+
+    private const string CutId = "5b0f3c2e-8d4a-4e6f-a1b9-7c3d2e8f0a14";
+
+    // Live 2026-11-09: AcoustID named the plain take and the album cut for an alternative cut of its own length; the three cuts fingerprint apart.
+    [Theory]
+    [InlineData("Lantern Song - (alternative cut)", "Lantern Song", FingerprintVerdict.Unverifiable)]
+    [InlineData("Lantern Song (alternate cut)", "Lantern Song", FingerprintVerdict.Unverifiable)]
+    [InlineData("Lantern Song - (alternative cut)", "Lantern Song (acoustic)", FingerprintVerdict.Mismatch)]
+    public void A_plain_title_of_the_wanted_cuts_length_defers(string wantedTitle, string knownTitle, FingerprintVerdict expected)
+    {
+        Dictionary<string, IReadOnlyList<KnownTrack>> known = Timed((OtherId, knownTitle, 193), (OtherId, knownTitle, 191), (CutId, "Lantern Song - (album cut)", 196));
+
+        Assert.Equal(expected, Resolve(new[] { OtherId, CutId }, Wanted(wantedTitle, seconds: 191), known, fileSeconds: 191));
+    }
+
+    // Live 2026-11-09: AcoustID named the original's 260 s extended mix for a 255 s file of the remix's extended mix, bit for bit the library's copy.
+    [Theory]
+    [InlineData("Lantern Song - Fern Remix Extended", "Lantern Song (extended)", 260, 255, FingerprintVerdict.Unverifiable)]
+    [InlineData("Lantern Song (Fern remix)", "Lantern Song", 245, 255, FingerprintVerdict.Unverifiable)]
+    [InlineData("Lantern Song (alternative cut)", "Lantern Song (album version)", 260, 255, FingerprintVerdict.Unverifiable)]
+    [InlineData("Lantern Song (Fern remix)", "Lantern Song (Remastered 2011)", 260, 255, FingerprintVerdict.Unverifiable)]
+    [InlineData("Lantern Song (from “Glass Harbour”) (Fern remix)", "Glass Harbour: Lantern Song", 260, 255, FingerprintVerdict.Unverifiable)]
+    [InlineData("Lantern Song - Fern Remix Extended", "Lantern Song (extended)", 259, 255, FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song - Fern Remix Extended", "Lantern Song (extended)", 257, 255, FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song - Fern Remix Extended", "Lantern Song (extended)", 260, 258, FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song - Fern Remix Extended", "Lantern Song (extended)", 0, 255, FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song - Fern Remix Extended", "Lantern Song (Moss remix)", 260, 255, FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song - Fern Remix Extended", "Quiet Hours (extended)", 260, 255, FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song (acoustic)", "Lantern Song", 260, 255, FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song (Cut Me Loose)", "Lantern Song", 260, 255, FingerprintVerdict.Mismatch)]
+    public void An_original_off_the_files_length_defers_to_a_wanted_remix_the_file_fits(string wantedTitle, string knownTitle, int knownSeconds, int fileSeconds, FingerprintVerdict expected)
+    {
+        Assert.Equal(expected,
+            Resolve(new[] { OtherId }, Wanted(wantedTitle, seconds: 254), Timed((OtherId, knownTitle, knownSeconds)), fileSeconds));
+    }
+
+    [Fact]
+    public void An_original_on_any_release_of_the_files_length_still_refuses()
+    {
+        Dictionary<string, IReadOnlyList<KnownTrack>> known = Timed((OtherId, "Lantern Song (extended)", 260), (OtherId, "Lantern Song (extended)", 256));
+
+        Assert.Equal(FingerprintVerdict.Mismatch, Resolve(new[] { OtherId }, Wanted("Lantern Song - Fern Remix Extended", seconds: 254), known, fileSeconds: 255));
+    }
+
+    [Fact]
+    public void Another_song_heard_at_the_files_length_still_refuses_beside_an_original_off_it()
+    {
+        Dictionary<string, IReadOnlyList<KnownTrack>> known = Timed((OtherId, "Lantern Song (extended)", 260), (CutId, "Quiet Hours", 255));
+
+        Assert.Equal(FingerprintVerdict.Mismatch, Resolve(new[] { OtherId, CutId }, Wanted("Lantern Song - Fern Remix Extended", seconds: 254), known, fileSeconds: 255));
+    }
+
+    // Live 2026-11-09: AcoustID named a remixer's 140 s "Edit" for a 138 s DJ-mix segment of the same remixer's "Remix".
+    [Theory]
+    [InlineData("Lantern Song (Moonward remix)", "Lantern Song (Moonward Edit)", 138, 140, 138, FingerprintVerdict.Unverifiable)]
+    [InlineData("Lantern Song (Moonward Edit)", "Lantern Song (Moonward mix)", 138, 140, 138, FingerprintVerdict.Unverifiable)]
+    [InlineData("Lantern Song (Moonward remix)", "Lantern Song (Moonward Edit)", 300, 140, 140, FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song (Moonward remix)", "Lantern Song (Moonward Edit)", 300, 140, 200, FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song (Moonward remix)", "Lantern Song (Moonward Edit)", 138, 140, 200, FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song (Moonward remix)", "Lantern Song (Moonward Edit)", 138, 145, 138, FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song (Dance Mix)", "Lantern Song (Dance Edit)", 138, 140, 138, FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song (Single Mix)", "Lantern Song (Single Edit)", 138, 140, 138, FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song - Moonward Remix", "Lantern Song - Moonward Edit", 138, 140, 138, FingerprintVerdict.Unverifiable)]
+    [InlineData("Lantern Song (Moonward remix)", "Lantern Song (Fern Edit)", 138, 140, 138, FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song (Remix)", "Lantern Song (Edit)", 138, 140, 138, FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song (Radio Mix)", "Lantern Song (Radio Edit)", 138, 140, 138, FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song (Moonward remix)", "Lantern Song (Moonward Remix Edit)", 138, 140, 138, FingerprintVerdict.Mismatch)]
+    public void One_remixers_edit_is_their_remix(string wantedTitle, string knownTitle, int wantedSeconds, int knownSeconds, int fileSeconds, FingerprintVerdict expected)
+    {
+        Assert.Equal(expected,
+            Resolve(new[] { OtherId }, Wanted(wantedTitle, seconds: wantedSeconds), Timed((OtherId, knownTitle, knownSeconds)), fileSeconds));
     }
 
     [Theory]
