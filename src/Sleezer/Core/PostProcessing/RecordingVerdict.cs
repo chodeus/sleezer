@@ -31,6 +31,9 @@ public static partial class RecordingVerdict
     private const int FitsWantedMs = 3000;
     private const int SameAudioMs = 10000;
 
+    // An original of the wanted remix or cut this far off the file on every release is no copy of it: live mislinks sat 5-6 s off.
+    private const int OriginalOffMs = 4000;
+
     // Sleezer's grab check pairs a file with a track within 8 s; further off is another cut.
     private const int OtherVersionMs = 8000;
 
@@ -63,6 +66,7 @@ public static partial class RecordingVerdict
 
         string wantedTitle = Comparable(wanted.Title, wanted.CreditedArtists);
         string wantedSong = Comparable(WithoutUnheardCut(wanted.Title), wanted.CreditedArtists);
+        string wantedRemix = Comparable(WithoutRemixersEdit(wanted.Title), wanted.CreditedArtists);
         bool fitsWanted = fileDuration > TimeSpan.Zero && wanted.DurationMs > 0 &&
                           Math.Abs(fileDuration.TotalMilliseconds - wanted.DurationMs) <= FitsWantedMs;
         // A clean, explicit or dirty edit keeps the album cut's length; the file may still be a rip off its track length.
@@ -79,6 +83,7 @@ public static partial class RecordingVerdict
             (SongTitles.Same(t.Title, wanted.Title, Key) && !OtherVersion(t)) ||
             (fitsWanted && Within(t.DurationMs, (int)fileDuration.TotalMilliseconds, FitsWantedMs) && SongTitles.Reissue(t.Title, wanted.Title, Key)) ||
             (fitsWanted && SongTitles.PlainForRemix(t.Title, wanted.Title, Key) && Within(t.DurationMs, wanted.DurationMs, FitsWantedMs)) ||
+            (fitsWanted && Key(WithoutRemixersEdit(t.Title)) == wantedRemix && Within(t.DurationMs, wanted.DurationMs, FitsWantedMs)) ||
             (cleanCut && Key(WithoutCleanCut(t.Title)) == wantedSong && Within(t.DurationMs, wanted.DurationMs, FitsWantedMs) &&
              Within((int)fileDuration.TotalMilliseconds, wanted.DurationMs, OtherVersionMs));
 
@@ -86,6 +91,9 @@ public static partial class RecordingVerdict
         bool OtherVersion(KnownTrack t) =>
             Within(t.DurationMs, (int)fileDuration.TotalMilliseconds, FitsWantedMs) && wanted.DurationMs > 0 &&
             Math.Abs(fileDuration.TotalMilliseconds - wanted.DurationMs) > OtherVersionMs;
+
+        // AcoustID files a song's remixes and cuts under its original, so the original is heard only nearer the file.
+        int HeardWithinMs(KnownTrack t) => SongTitles.OriginalForRemix(t.Title, wanted.Title, Key) ? OriginalOffMs : SameAudioMs;
 
         foreach (string id in acoustIdRecordingIds)
         {
@@ -96,7 +104,7 @@ public static partial class RecordingVerdict
                 return FingerprintVerdict.Unverifiable;
 
             sawDifferentTitle = true;
-            differentTitleHeard |= tracks.Any(t => t.DurationMs <= 0 || Math.Abs(t.DurationMs - fileDuration.TotalMilliseconds) <= SameAudioMs);
+            differentTitleHeard |= tracks.Any(t => t.DurationMs <= 0 || Math.Abs(t.DurationMs - fileDuration.TotalMilliseconds) <= HeardWithinMs(t));
         }
 
         // Only a mis-tagged submission links audio to a recording this far off its length: AcoustID files remixes under the original.
@@ -138,15 +146,21 @@ public static partial class RecordingVerdict
     }
 
     // "(Moonward)" names the remix "(Moonward Remix)" does; "(Remix)", "(Extended Remix)" and "(Remix Edit)" still name a cut.
-    private static string WithoutRemixWord(string title)
+    private static string WithoutRemixWord(string title) => EachQualifier(title, q => WithoutTrailing(TrailingRemixWordRegex(), q));
+
+    // A remixer's "(Moonward Edit)" read as their "(Moonward Remix)"; only at the remix's length.
+    private static string WithoutRemixersEdit(string? title) =>
+        EachQualifier(ComparableText.MapPunctuation(title ?? string.Empty), q => WithoutTrailing(TrailingEditWordRegex(), q));
+
+    private static string EachQualifier(string title, Func<string, string> qualifier)
     {
-        string bracketed = QualifierBracketRegex().Replace(title, m => m.Value[0] + DropRemixWord(m.Value[1..^1]) + m.Value[^1]);
+        string bracketed = QualifierBracketRegex().Replace(title, m => m.Value[0] + qualifier(m.Value[1..^1]) + m.Value[^1]);
         int dash = bracketed.LastIndexOf(" - ", StringComparison.Ordinal);
-        return dash < 0 ? bracketed : bracketed[..(dash + 3)] + DropRemixWord(bracketed[(dash + 3)..]);
+        return dash < 0 ? bracketed : bracketed[..(dash + 3)] + qualifier(bracketed[(dash + 3)..]);
     }
 
-    private static string DropRemixWord(string qualifier) =>
-        TrailingRemixWordRegex().Match(qualifier) is { Success: true } match && IsRemixerName(match.Groups["name"].Value)
+    private static string WithoutTrailing(Regex word, string qualifier) =>
+        word.Match(qualifier) is { Success: true } match && IsRemixerName(match.Groups["name"].Value)
             ? match.Groups["name"].Value
             : qualifier;
 
@@ -174,6 +188,9 @@ public static partial class RecordingVerdict
 
     [GeneratedRegex(@"^\s*(?<name>.*\S)\s+(?:re)?mix\s*$", RegexOptions.IgnoreCase)]
     private static partial Regex TrailingRemixWordRegex();
+
+    [GeneratedRegex(@"^\s*(?<name>.*\S)\s+edit\s*$", RegexOptions.IgnoreCase)]
+    private static partial Regex TrailingEditWordRegex();
 
     // Words that describe a mix where VariantQualifiers sees no variant: "(Radio Mix)" is no remixer's.
     [GeneratedRegex(@"\b(?:radio|club|original|vocal|version|album|single|main|short|long|full|dance|video|alternate|alternative|bonus|the)\b", RegexOptions.IgnoreCase)]
