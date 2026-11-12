@@ -13,10 +13,11 @@ using XabeFFmpeg = Xabe.FFmpeg.FFmpeg;
 
 namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
 {
-    public class FFmpegConverter(Logger logger, Lazy<ITagService> tagService) : MetadataBase<FFmpegSettings>
+    public class FFmpegConverter(Logger logger, Lazy<ITagService> tagService, Lazy<IMediaFileService> mediaFileService) : MetadataBase<FFmpegSettings>
     {
         private readonly Logger _logger = logger;
         private readonly Lazy<ITagService> _tagService = tagService;
+        private readonly Lazy<IMediaFileService> _mediaFileService = mediaFileService;
 
         // Process-wide cap on concurrent ffmpeg conversions. Lidarr's MetadataService
         // is mostly serial today, but on a bulk import (50+ tracks) or a refresh
@@ -67,8 +68,9 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
             if (trackFile == null)
                 return null!;
 
-            // Lidarr also calls this for every file at each artist scan; only an import, not yet saved, is converted.
-            if (trackFile.Id != 0)
+            // Lidarr also calls this for every file at each artist scan; only an import is converted.
+            // An import's file is unsaved, or on a build that saves before this pass, the object just saved.
+            if (!SavedImports.IsImport(trackFile, trackFile.Id))
                 return null!;
 
             string path = trackFile.Path ?? string.Empty;
@@ -133,6 +135,11 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
             AudioMetadataHandler audioHandler = new(trackFile.Path);
             bool success = await audioHandler.TryConvertToFormatAsync(result.TargetFormat, result.TargetBitrate, result.TargetBitDepth, result.UseCBR);
             trackFile.Path = audioHandler.TrackPath;
+
+            // Lidarr saves an unsaved file after this pass. One it saved before needs its new path written here,
+            // or the next scan finds the old path gone and drops the file.
+            if (trackFile.Id != 0 && !string.Equals(trackFile.Path, sourcePath, StringComparison.Ordinal))
+                _mediaFileService.Value.Update(trackFile);
 
             if (success)
                 _logger.Info("FFmpeg convert ok in {ElapsedMs}ms: {Source} → {Output}", sw.ElapsedMilliseconds, sourcePath, trackFile.Path);
