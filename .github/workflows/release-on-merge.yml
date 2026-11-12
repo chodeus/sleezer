@@ -7,8 +7,10 @@ name: Release on merge
 # No label on a merged PR = no release (the job is skipped). Run Release manually
 # from the Actions tab any time as well.
 
+# pull_request_target: a fork's pull_request run gets a read-only token and can't dispatch. Safe here as
+# nothing checks out the PR's code; the job reads its labels and dispatches release.yml on main.
 on:
-  pull_request:
+  pull_request_target:
     types: [closed]
     branches: [main]
 
