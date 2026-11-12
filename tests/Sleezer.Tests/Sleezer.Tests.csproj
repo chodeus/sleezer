@@ -398,6 +398,8 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Metadata\FFmpeg\ConversionGuard.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Metadata\FFmpeg\SavedImports.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Metadata\Proxy\MetadataProvider\Mixed\AdaptiveThresholdManager.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Metadata\Proxy\MetadataProvider\Mixed\AdaptiveThresholdConfig.cs"
