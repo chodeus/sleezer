@@ -139,7 +139,17 @@ namespace NzbDrone.Plugin.Sleezer.Metadata.FFmpeg
             // Lidarr saves an unsaved file after this pass. One it saved before needs its new path written here,
             // or the next scan finds the old path gone and drops the file.
             if (trackFile.Id != 0 && !string.Equals(trackFile.Path, sourcePath, StringComparison.Ordinal))
-                _mediaFileService.Value.Update(trackFile);
+            {
+                try
+                {
+                    _mediaFileService.Value.Update(trackFile);
+                }
+                catch (Exception ex)
+                {
+                    // The file is converted on disk; the next scan finds the old path gone and drops the track file
+                    _logger.Warn(ex, "FFmpeg: converted {Source} to {Output} but could not save the new path", sourcePath, trackFile.Path);
+                }
+            }
 
             if (success)
                 _logger.Info("FFmpeg convert ok in {ElapsedMs}ms: {Source} → {Output}", sw.ElapsedMilliseconds, sourcePath, trackFile.Path);
