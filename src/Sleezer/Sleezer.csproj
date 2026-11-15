@@ -43,7 +43,7 @@
 		<PackageReference Include="DeezNET" Version="1.2.2" />
 		<!-- Blowfish for DeezerStreamDecoder; 2.6.1 is the floor MailKit forces via Lidarr.Core. -->
 		<PackageReference Include="BouncyCastle.Cryptography" Version="2.7.0" />
-		<PackageReference Include="SkiaSharp" Version="4.156.0" />
+		<PackageReference Include="SkiaSharp" Version="4.156.1" />
 	</ItemGroup>
 
 	<ItemGroup>
