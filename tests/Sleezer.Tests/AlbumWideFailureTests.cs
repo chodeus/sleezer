@@ -1,13 +1,12 @@
-using NzbDrone.Common.Messaging;
 using NzbDrone.Core.Datastore;
 using NzbDrone.Core.Download;
 using NzbDrone.Core.Download.TrackedDownloads;
 using NzbDrone.Core.History;
 using NzbDrone.Core.MediaFiles.Events;
-using NzbDrone.Core.Messaging.Events;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Plugin.Sleezer.Blocklisting;
 using NzbDrone.Plugin.Sleezer.Core.Qobuz;
+using Sleezer.Tests.Fakes;
 using Xunit;
 
 namespace Sleezer.Tests;
@@ -66,17 +65,6 @@ public class AlbumWideFailureTests
     [InlineData(2, false, false)]
     public void Unstreamable_tracks_rule_out_the_album_only_when_it_must_be_complete(int unstreamable, bool requireCompleteAlbum, bool albumWide) =>
         Assert.Equal(albumWide, AlbumWideFailure.Covers(QobuzAlbumFailure.Reason(unstreamable, requireCompleteAlbum)));
-
-    private sealed class CapturingEvents : IEventAggregator
-    {
-        public List<DownloadFailedEvent> Failed { get; } = [];
-
-        public void PublishEvent<TEvent>(TEvent @event) where TEvent : class, IEvent
-        {
-            if (@event is DownloadFailedEvent failed)
-                Failed.Add(failed);
-        }
-    }
 
     private sealed class GrabHistory(EntityHistory grab) : IHistoryService
     {

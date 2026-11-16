@@ -46,6 +46,12 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\PostProcessing\FfmpegErrorFormatter.cs"
              LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Core\PostProcessing\CorruptionReport.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Core\PostProcessing\CorruptionFailureHandler.cs"
+             LinkBase="SourceUnderTest" />
+    <Compile Include="..\..\src\Sleezer\Download\Clients\Soulseek\SlskdCorruptionHandler.cs"
+             LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\PostProcessing\TrackTitleMatcher.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\Core\PostProcessing\RecordingVerdict.cs"

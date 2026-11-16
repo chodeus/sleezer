@@ -168,8 +168,9 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
                 if (!result.IsCorrupt)
                     continue;
 
-                logger.Warn("[post-process] {Client} corrupt file: {File} — {Reason}", clientName, Path.GetFileName(path), result.Reason);
-                strikes.Add(new CorruptionStrike(Path.GetFileName(path), result.Reason));
+                string file = CorruptionReport.FileLabel(folder, path);
+                logger.Warn("[post-process] {Client} corrupt file: {File} — {Reason}", clientName, file, result.Reason);
+                strikes.Add(new CorruptionStrike(file, result.Reason));
             }
 
             return strikes;

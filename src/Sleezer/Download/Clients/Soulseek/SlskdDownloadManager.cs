@@ -1735,7 +1735,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             if (fileState == null)
                 _logger.Warn("[post-process] Corrupt file {Filename} not mapped to any tracked slskd transfer; counting as corruption but skipping retry short-circuit.", filename);
 
-            strikes.Add(new SlskdCorruptionStrike(fileState, result.Reason));
+            strikes.Add(new SlskdCorruptionStrike(fileState, CorruptionReport.FileLabel(folderPath, path), result.Reason));
         }
 
         watch.Stop();

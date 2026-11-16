@@ -22,7 +22,7 @@ public interface ISlskdCorruptionHandler
 // Slskd-internal strike shape: carries the SlskdFileState so the handler can
 // zero its retry budget. Projected to the shared CorruptionStrike before
 // delegating folder deletion / event publishing to ICorruptionFailureHandler.
-public record SlskdCorruptionStrike(SlskdFileState? FileState, string? Reason);
+public record SlskdCorruptionStrike(SlskdFileState? FileState, string File, string? Reason);
 
 public class SlskdCorruptionHandler : ISlskdCorruptionHandler
 {
@@ -59,8 +59,7 @@ public class SlskdCorruptionHandler : ISlskdCorruptionHandler
         foreach (SlskdCorruptionStrike strike in strikes)
         {
             strike.FileState?.UpdateMaxRetryCount(0);
-            string fn = strike.FileState != null ? SlskdTextProcessor.GetFileNameFromFilename(strike.FileState.File.Filename) : "(unmapped)";
-            _logger.Info("Corruption strike: {File} | reason: {Reason}", fn, strike.Reason ?? "(unknown)");
+            _logger.Warn("[post-process] Slskd corrupt file: {File} — {Reason}", strike.File, strike.Reason ?? "(unknown)");
         }
 
         // 2. Record per-user strikes so repeat offenders can be auto-banned.
@@ -71,11 +70,7 @@ public class SlskdCorruptionHandler : ISlskdCorruptionHandler
 
         // 3. Delegate the universal steps (wipe folder, publish DownloadFailedEvent
         //    so Lidarr blocklists and re-searches) to the shared handler.
-        CorruptionStrike[] shared = strikes
-            .Select(s => new CorruptionStrike(
-                File: s.FileState != null ? SlskdTextProcessor.GetFileNameFromFilename(s.FileState.File.Filename) : "(unmapped)",
-                Reason: s.Reason))
-            .ToArray();
+        CorruptionStrike[] shared = strikes.Select(s => new CorruptionStrike(s.File, s.Reason)).ToArray();
 
         await _failureHandler.HandleAsync(
             downloadId: item.ID,

@@ -2,6 +2,7 @@ using NzbDrone.Common.Messaging;
 using NzbDrone.Core.Blocklisting;
 using NzbDrone.Core.CustomFormats;
 using NzbDrone.Core.Datastore;
+using NzbDrone.Core.Download;
 using NzbDrone.Core.Download.History;
 using NzbDrone.Core.History;
 using NzbDrone.Core.MediaFiles;
@@ -122,4 +123,15 @@ internal sealed class FakeFormatCalculator : ICustomFormatCalculationService
     public List<CustomFormat> ParseCustomFormat(Blocklist blocklist, Artist artist) => throw new NotSupportedException();
     public List<CustomFormat> ParseCustomFormat(EntityHistory history, Artist artist) => throw new NotSupportedException();
     public List<CustomFormat> ParseCustomFormat(LocalTrack localTrack) => throw new NotSupportedException();
+}
+
+internal sealed class CapturingEvents : IEventAggregator
+{
+    public List<DownloadFailedEvent> Failed { get; } = [];
+
+    public void PublishEvent<TEvent>(TEvent @event) where TEvent : class, IEvent
+    {
+        if (@event is DownloadFailedEvent failed)
+            Failed.Add(failed);
+    }
 }

@@ -8,8 +8,6 @@ using NzbDrone.Core.Parser.Model;
 
 namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing;
 
-public record CorruptionStrike(string File, string? Reason);
-
 public interface ICorruptionFailureHandler
 {
     // Universal post-corruption workflow shared across every Sleezer download
@@ -131,7 +129,7 @@ public class CorruptionFailureHandler : ICorruptionFailureHandler
                 SourceTitle = historyItem.SourceTitle,
                 DownloadClient = downloadClientType,
                 DownloadId = historyItem.DownloadId,
-                Message = BuildFailureMessage(strikes),
+                Message = CorruptionReport.FailureMessage(strikes),
                 Data = historyItem.Data,
                 TrackedDownload = tracked,
                 SkipRedownload = false,
@@ -148,13 +146,5 @@ public class CorruptionFailureHandler : ICorruptionFailureHandler
         }
 
         return Task.CompletedTask;
-    }
-
-    private static string BuildFailureMessage(IReadOnlyList<CorruptionStrike> strikes)
-    {
-        string firstReason = strikes[0].Reason ?? "(unknown)";
-        return strikes.Count == 1
-            ? $"NzbDrone.Plugin.Sleezer: corrupt file detected — {firstReason}"
-            : $"NzbDrone.Plugin.Sleezer: {strikes.Count} corrupt files detected; first: {firstReason}";
     }
 }
