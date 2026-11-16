@@ -37,8 +37,8 @@ it is the source of truth, not the prose.
     "name": "Lidarr.Plugin.Qobuz",
     "path": "src/Sleezer/Indexers/Qobuz/, src/Sleezer/Download/Clients/Qobuz/, src/Sleezer/ImportLists/Qobuz/",
     "upstream": "https://github.com/DaveBinM/Lidarr.Plugin.Qobuz",
-    "commit": "ca816bac7d387ce6a36d62b7f44e8b981565340a",
-    "vendored": "2026-11-17",
+    "commit": "8ccfca3e661692e1c32c02b92aba8c834ec8cb45",
+    "vendored": "2026-09-22",
     "track": true
   },
   {
@@ -150,10 +150,6 @@ internals diverged enough that a patch will rarely apply:
   the two-library-artists guard (`AmbiguousArtistGuard`, in the shared indexer base), and the
   locked, revalidated session (`QobuzAPI.EnsureSignedIn`). Its release-type throttling was
   not taken — this parser already reads `release_type` from the search payload.
-- Upstream `ea81c5ad0` (2026-10-30) sends the album with import list items, which these lists
-  already did. Only its Various Artists rule was taken (`QobuzPlaylistTrack`): a compilation
-  track sends nothing, where upstream sends the performer alone, because Lidarr monitors an
-  artist-only item's whole discography. `ca816bac7` only moves upstream's Lidarr submodule.
 
 ### lidarr-plugin-bandcamp — adopted, no longer tracked
 

@@ -197,12 +197,11 @@
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\HealthChecks\StoreAccountResult.cs"
              LinkBase="SourceUnderTest" />
-    <Compile Include="..\..\src\Sleezer\QobuzApiSharp\Models\**\*.cs"
+    <Compile Include="..\..\src\Sleezer\QobuzApiSharp\Models\User\*.cs"
              LinkBase="SourceUnderTest" />
-    <Compile Include="..\..\src\Sleezer\QobuzApiSharp\Converters\*.cs"
+    <Compile Include="..\..\src\Sleezer\QobuzApiSharp\Models\Content\Track\FileUrl.cs"
              LinkBase="SourceUnderTest" />
-    <!-- Qobuz playlist track → import list item; Lidarr.Core's ImportListItemInfo + the models above. -->
-    <Compile Include="..\..\src\Sleezer\ImportLists\Qobuz\QobuzPlaylistTrack.cs"
+    <Compile Include="..\..\src\Sleezer\QobuzApiSharp\Models\QobuzApiStatusResponse.cs"
              LinkBase="SourceUnderTest" />
     <Compile Include="..\..\src\Sleezer\QobuzApiSharp\Exceptions\ApiErrorResponseException.cs"
              LinkBase="SourceUnderTest" />
