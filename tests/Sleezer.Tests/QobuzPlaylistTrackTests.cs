@@ -16,7 +16,7 @@ public class QobuzPlaylistTrackTests
           "tracks": {
             "offset": 0,
             "limit": 50,
-            "total": 5,
+            "total": 6,
             "items": [
               { "id": 1, "title": "Own Song", "performer": { "id": 11, "name": "Ada Example" },
                 "album": { "id": "al1", "title": "First Light", "version": "Deluxe", "artist": { "id": 11, "name": "Ada Example" } } },
@@ -26,7 +26,9 @@ public class QobuzPlaylistTrackTests
                 "album": { "id": "al3", "title": "Night Drive", "version": null } },
               { "id": 4, "title": "Short Credit", "performer": { "id": 14, "name": "VA" },
                 "album": { "id": "al4", "title": "Hits", "version": null } },
-              { "id": 5, "title": "No Album", "performer": { "id": 15, "name": "Dan Placeholder" } }
+              { "id": 5, "title": "No Album", "performer": { "id": 15, "name": "Dan Placeholder" } },
+              { "id": 6, "title": "Chanson", "performer": { "id": 16, "name": "Eve Exemple" },
+                "album": { "id": "al6", "title": "Été Mix", "version": null, "artist": { "id": 901, "name": "Multi-interprètes" } } }
             ]
           }
         }
@@ -45,6 +47,10 @@ public class QobuzPlaylistTrackTests
     [Fact]
     public void A_track_from_a_Various_Artists_compilation_sends_nothing()
         => Assert.Null(ItemFor(2));
+
+    [Fact]
+    public void A_track_from_a_Multi_interpretes_compilation_sends_nothing()
+        => Assert.Null(ItemFor(6));
 
     [Fact]
     public void A_track_whose_album_names_no_artist_sends_its_performer()

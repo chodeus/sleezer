@@ -36,6 +36,7 @@ namespace NzbDrone.Core.ImportLists.Qobuz
 
             foreach (string playlistId in Settings.PlaylistIds)
             {
+                int skipped = 0;
                 try
                 {
                     PageThrough($"tracks from playlist {playlistId}", offset =>
@@ -50,10 +51,15 @@ namespace NzbDrone.Core.ImportLists.Qobuz
                         {
                             if (QobuzPlaylistTrack.ToListItem(track) is { } item)
                                 items.Add(item);
+                            else
+                                skipped++;
                         }
 
                         return (page.Count, playlist?.Tracks?.Total ?? 0);
                     });
+
+                    if (skipped > 0)
+                        _logger.Debug("Qobuz playlist {PlaylistId}: skipped {Skipped} track(s) with no artist or album, or from a Various Artists compilation", playlistId, skipped);
                 }
                 catch (ApiErrorResponseException ex) when (IsPlaylistGone(ex))
                 {
