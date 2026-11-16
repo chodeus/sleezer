@@ -234,6 +234,8 @@ public class ComparableTextTests
     [InlineData("VARIOUS ARTISTS")]
     [InlineData("Various-Artists")]
     [InlineData(" Various Artists ")]
+    [InlineData("Multi-interprètes")]
+    [InlineData("Multi Interprètes")]
     public void various_artists_is_known_however_it_is_written(string artist)
     {
         Assert.True(StoreReleaseVerifier.IsVariousArtists(artist));
@@ -263,7 +265,7 @@ public class ComparableTextTests
         Assert.Equal(matches, StoreReleaseVerifier.TitleMatches(candidate, target));
     }
 
-    // One check for the store verifier, the Qobuz result filter and the pre-import tagger's artist-tag guard.
+    // One check for the store verifier, the Qobuz result filter and playlist list, and the pre-import tagger's artist-tag guard.
     [Theory]
     [InlineData("Various")]
     [InlineData("Vanessa")]

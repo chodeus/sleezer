@@ -199,9 +199,9 @@ namespace NzbDrone.Plugin.Sleezer.Core.Utilities
 
         public static bool IsVariousArtists(string? artist)
         {
-            // Spaces dropped: "V/A" normalizes to "v a".
+            // Spaces dropped: "V/A" normalizes to "v a". Qobuz credits many compilations to "Multi-interprètes".
             var joined = Normalize(artist).Replace(" ", string.Empty);
-            return joined is "variousartists" or "va";
+            return joined is "variousartists" or "va" or "multiinterpretes";
         }
 
         internal static string Normalize(string? value)

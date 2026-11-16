@@ -36,6 +36,7 @@ namespace NzbDrone.Core.ImportLists.Qobuz
 
             foreach (string playlistId in Settings.PlaylistIds)
             {
+                int skipped = 0;
                 try
                 {
                     PageThrough($"tracks from playlist {playlistId}", offset =>
@@ -44,24 +45,21 @@ namespace NzbDrone.Core.ImportLists.Qobuz
                         var page = playlist?.Tracks?.Items
                             ?? throw new InvalidOperationException($"Qobuz returned no track page for playlist {playlistId} at offset {offset}.");
 
+                        // Playlists are track-level, so the album a track belongs to is
+                        // the most specific thing worth monitoring.
                         foreach (var track in page)
                         {
-                            string? artistName = track.Album?.Artist?.Name ?? track.Performer?.Name;
-                            string? albumTitle = track.Album?.CompleteTitle;
-                            if (string.IsNullOrWhiteSpace(artistName) || string.IsNullOrWhiteSpace(albumTitle))
-                                continue;
-
-                            // Playlists are track-level, so the album a track belongs to is
-                            // the most specific thing worth monitoring.
-                            items.Add(new ImportListItemInfo
-                            {
-                                Artist = artistName,
-                                Album = albumTitle,
-                            });
+                            if (QobuzPlaylistTrack.ToListItem(track) is { } item)
+                                items.Add(item);
+                            else
+                                skipped++;
                         }
 
                         return (page.Count, playlist?.Tracks?.Total ?? 0);
                     });
+
+                    if (skipped > 0)
+                        _logger.Debug("Qobuz playlist {PlaylistId}: skipped {Skipped} track(s) with no artist or album, or from a Various Artists compilation", playlistId, skipped);
                 }
                 catch (ApiErrorResponseException ex) when (IsPlaylistGone(ex))
                 {
