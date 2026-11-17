@@ -81,9 +81,9 @@ public class CorruptionReportTests
 
         string message = CorruptionReport.FailureMessage([new("01.flac", reason), new("02.flac", "Audio won't decode (invalid residual)")]);
 
-        // Integer checks first: a failure text holding a lone surrogate drops the result from the run.
+        // Text-free checks first: a failure text holding a lone surrogate drops the result from the run.
+        Assert.Equal(-1, Array.FindIndex(message.ToCharArray(), char.IsSurrogate));
         Assert.Equal(999, message.Length);
-        Assert.False(char.IsHighSurrogate(message[967]));
         Assert.EndsWith("xxx…; +1 more (see the Lidarr log)", message);
     }
 
