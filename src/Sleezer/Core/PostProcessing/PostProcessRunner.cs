@@ -93,7 +93,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
             await EnsureFFmpegResolvedAsync(ct);
 
             var sw = Stopwatch.StartNew();
-            List<CorruptionStrike> strikes = await ScanForCorruptAsync(request.Folder, request.Client.ToString(), ct);
+            List<CorruptionStrike> strikes = await ScanForCorruptAsync(request.Folder, ct);
             logger.Info("[post-process] {Client} item {ID}: scan completed in {ElapsedMs}ms — {StrikeCount} strike(s)",
                 request.Client, request.DownloadId, sw.ElapsedMilliseconds, strikes.Count);
 
@@ -153,7 +153,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
             logger.Info("[post-process] {Client} item {ID}: tagging completed in {ElapsedMs}ms", request.Client, request.DownloadId, tagSw.ElapsedMilliseconds);
         }
 
-        private async Task<List<CorruptionStrike>> ScanForCorruptAsync(string folder, string clientName, CancellationToken ct)
+        private async Task<List<CorruptionStrike>> ScanForCorruptAsync(string folder, CancellationToken ct)
         {
             List<CorruptionStrike> strikes = [];
 
@@ -168,8 +168,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing
                 if (!result.IsCorrupt)
                     continue;
 
-                logger.Warn("[post-process] {Client} corrupt file: {File} — {Reason}", clientName, Path.GetFileName(path), result.Reason);
-                strikes.Add(new CorruptionStrike(Path.GetFileName(path), result.Reason));
+                strikes.Add(new CorruptionStrike(CorruptionReport.FileLabel(folder, path), result.Reason));
             }
 
             return strikes;

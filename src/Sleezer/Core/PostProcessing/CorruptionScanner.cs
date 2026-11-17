@@ -102,9 +102,8 @@ public class CorruptionScanner : ICorruptionScanner
                 if (FfmpegErrorFormatter.IsAttachedPictureFailure(stderr))
                     return await ReverifyPastAttachedPictureAsync(path, timeoutSeconds, sw, ct);
 
-                string reason = FfmpegErrorFormatter.CleanFfmpegErrors(stderr);
-                _logger.Debug("Corruption scan {Path}: ffmpeg verdict corrupt (exit={ExitCode}) \u2014 {Reason}", path, exitCode, reason);
-                return new Result(true, reason);
+                _logger.Debug("Corruption scan {Path}: ffmpeg verdict corrupt (exit={ExitCode}) \u2014 {Stderr}", path, exitCode, FfmpegErrorFormatter.LogExcerpt(stderr));
+                return DecodeFailure(stderr, exitCode);
             }
 
             // Defence in depth: ffmpeg sometimes exits 0 even with `-xerror -err_detect explode`
@@ -120,9 +119,8 @@ public class CorruptionScanner : ICorruptionScanner
             string significant = FfmpegErrorFormatter.StripBenignMetadataNoise(stderr);
             if (!string.IsNullOrWhiteSpace(significant))
             {
-                string reason = FfmpegErrorFormatter.CleanFfmpegErrors(significant);
-                _logger.Debug("Corruption scan {Path}: ffmpeg exited 0 but emitted error-level output \u2014 {Reason}", path, reason);
-                return new Result(true, reason);
+                _logger.Debug("Corruption scan {Path}: ffmpeg exited 0 but emitted error-level output \u2014 {Stderr}", path, FfmpegErrorFormatter.LogExcerpt(significant));
+                return DecodeFailure(stderr, exitCode);
             }
 
             if (!string.IsNullOrWhiteSpace(stderr))
@@ -166,14 +164,16 @@ public class CorruptionScanner : ICorruptionScanner
         string significant = FfmpegErrorFormatter.StripBenignMetadataNoise(stderr);
         if (exitCode != 0 || !string.IsNullOrWhiteSpace(significant))
         {
-            string reason = FfmpegErrorFormatter.CleanFfmpegErrors(string.IsNullOrWhiteSpace(significant) ? stderr : significant);
-            _logger.Debug("Corruption scan {Path}: corrupt beyond the attached picture (exit={ExitCode}) — {Reason}", path, exitCode, reason);
-            return new Result(true, reason);
+            _logger.Debug("Corruption scan {Path}: corrupt beyond the attached picture (exit={ExitCode}) — {Stderr}", path, exitCode, FfmpegErrorFormatter.LogExcerpt(stderr));
+            return DecodeFailure(stderr, exitCode);
         }
 
         _logger.Info("Corruption scan {Path}: embedded cover art is malformed but the audio decoded clean in {ElapsedMs}ms — keeping the file", path, sw.ElapsedMilliseconds);
         return new Result(false, null);
     }
+
+    private static Result DecodeFailure(string stderr, int exitCode) =>
+        new(true, FfmpegErrorFormatter.DecodeFailureReason(stderr, exitCode));
 
     /// <summary>
     /// Resolve the ffmpeg binary the scanner will invoke. Public so the post-import

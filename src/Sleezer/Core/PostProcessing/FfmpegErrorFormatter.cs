@@ -4,34 +4,102 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing;
 
 /// <summary>
 /// Pure formatter for ffmpeg stderr output emitted during corruption scans.
-/// Strips codec/address prefixes, deduplicates errors, and joins them with pipes
+/// Strips codec/address prefixes and ffmpeg's follow-on lines, deduplicates errors, and joins them with pipes
 /// so the corrupt-file quarantine log stays readable instead of a 200-line dump.
 /// Kept separate from CorruptionScanner so it can be unit-tested without dragging
 /// in NLog, TagLib, and Xabe.FFmpeg.
 /// </summary>
 public static class FfmpegErrorFormatter
 {
-    private static readonly Regex CodecPrefixPattern = new(@"\[[\w:#/]+ @ 0x[0-9a-fA-F]+\]\s*", RegexOptions.Compiled);
-    private static readonly Regex PipeSeparatorPattern = new(@"\s*\|\s*", RegexOptions.Compiled);
+    private static readonly Regex CodecPrefixPattern = new(@"\[[^\]\s]+ @ 0x[0-9a-fA-F]+\]\s*", RegexOptions.Compiled);
     private static readonly Regex WhitespacePattern = new(@"\s+", RegexOptions.Compiled);
 
+    private const int LogExcerptLines = 20;
+
+    // The muxer's complaint about packets a bad frame left behind; it follows the decoder's error.
+    private const string MuxerDtsMarker = "non monotonically increasing dts";
+
+    // Lines ffmpeg prints after the decoder's own error (n9.0.2; "Error while decoding stream" is 4.x-6.x).
+    private static readonly string[] FollowOnMarkers =
+    {
+        "decode_frame() failed",
+        "Decoding error:",
+        "Error submitting packet to decoder:",
+        "Error processing packet in decoder:",
+        "Task finished with error code:",
+        "Terminating thread with return code",
+        "Error while decoding stream",
+        MuxerDtsMarker,
+    };
+
+    // Image decoders: under -map 0:a they only ever read the embedded cover art.
+    private static readonly string[] CoverArtDecoderMarkers =
+    {
+        "mjpeg @ 0x", "png @ 0x", "bmp @ 0x", "gif @ 0x", "webp @ 0x", "tiff @ 0x",
+    };
+
+    /// <summary>The decoder's own errors from ffmpeg stderr, deduplicated and joined with " | "; one follow-on line if that is all there is.</summary>
     public static string CleanFfmpegErrors(string stderr)
     {
-        if (string.IsNullOrWhiteSpace(stderr))
+        List<string> errors = DistinctErrors(stderr);
+        if (errors.Count == 0)
             return "Non-zero exit code";
 
-        string cleaned = CodecPrefixPattern.Replace(stderr, string.Empty);
-        cleaned = PipeSeparatorPattern.Replace(cleaned, " | ");
-        cleaned = WhitespacePattern.Replace(cleaned, " ").Trim();
+        List<string> specific = errors.FindAll(e => !IsFollowOn(e));
+        if (specific.Count > 0)
+            return string.Join(" | ", specific);
 
-        string[] parts = cleaned.Split(" | ", System.StringSplitOptions.RemoveEmptyEntries | System.StringSplitOptions.TrimEntries);
+        return errors.Find(e => !e.Contains(MuxerDtsMarker, System.StringComparison.Ordinal)) ?? errors[0];
+    }
+
+    /// <summary>The corruption reason for a file that failed ffmpeg's decode check.</summary>
+    public static string DecodeFailureReason(string stderr, int exitCode)
+    {
+        List<string> lines = [.. (stderr ?? string.Empty).Split('\n').Where(l => !string.IsNullOrWhiteSpace(l))];
+        List<string> audio = lines.FindAll(l => !IsBenignMetadataNoise(l) && !ContainsAny(l, CoverArtDecoderMarkers));
+        if (audio.Count > 0)
+            return $"{(exitCode == 0 ? "Audio has decode errors" : "Audio won't decode")} ({CleanFfmpegErrors(string.Join('\n', audio))})";
+
+        return lines.Count > 0
+            ? $"Damaged tag or cover art ({CleanFfmpegErrors(string.Join('\n', lines))})"
+            : $"ffmpeg failed with exit code {exitCode}";
+    }
+
+    /// <summary>The first lines of ffmpeg stderr for the Debug log, with a count of the rest.</summary>
+    public static string LogExcerpt(string stderr)
+    {
+        string[] lines = stderr.Trim().Split('\n');
+        if (lines.Length <= LogExcerptLines)
+            return string.Join('\n', lines);
+
+        return string.Join('\n', lines.Take(LogExcerptLines)) + $"\n({lines.Length - LogExcerptLines} more lines)";
+    }
+
+    private static List<string> DistinctErrors(string stderr)
+    {
+        List<string> unique = new();
+        if (string.IsNullOrWhiteSpace(stderr))
+            return unique;
+
         HashSet<string> seen = new(System.StringComparer.Ordinal);
-        List<string> unique = new(parts.Length);
-        foreach (string p in parts)
-            if (seen.Add(p))
-                unique.Add(p);
+        foreach (string line in CodecPrefixPattern.Replace(stderr, string.Empty).Split('\n'))
+        {
+            string error = WhitespacePattern.Replace(line, " ").Trim();
+            if (error.Length > 0 && seen.Add(error))
+                unique.Add(error);
+        }
 
-        return unique.Count > 0 ? string.Join(" | ", unique) : "Non-zero exit code";
+        return unique;
+    }
+
+    private static bool IsFollowOn(string error) => ContainsAny(error, FollowOnMarkers);
+
+    private static bool ContainsAny(string line, string[] markers)
+    {
+        foreach (string marker in markers)
+            if (line.Contains(marker, System.StringComparison.Ordinal))
+                return true;
+        return false;
     }
 
     /// <summary>
@@ -69,13 +137,7 @@ public static class FfmpegErrorFormatter
     /// True if an ffmpeg stderr line is an ID3 tag-parse error the demuxer recovered
     /// from by skipping the tag - a metadata defect, not audio corruption.
     /// </summary>
-    public static bool IsBenignMetadataNoise(string line)
-    {
-        foreach (string marker in BenignMetadataMarkers)
-            if (line.Contains(marker, System.StringComparison.Ordinal))
-                return true;
-        return false;
-    }
+    public static bool IsBenignMetadataNoise(string line) => ContainsAny(line, BenignMetadataMarkers);
 
     /// <summary>
     /// Return <paramref name="stderr"/> with benign ID3 tag-parse lines removed. If

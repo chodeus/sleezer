@@ -2,7 +2,6 @@ using System.IO.Abstractions;
 using System.Net;
 using FluentValidation.Results;
 using NLog;
-using NLog.Config;
 using NLog.Targets;
 using NzbDrone.Common.Disk;
 using NzbDrone.Common.Http;
@@ -10,6 +9,7 @@ using NzbDrone.Core.Parser.Model;
 using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek;
 using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek.Models;
 using NzbDrone.Plugin.Sleezer.Indexers.Soulseek;
+using Sleezer.Tests.Fakes;
 using Xunit;
 
 namespace Sleezer.Tests;
@@ -220,14 +220,6 @@ public class SlskdRemovedGrabTests
         Assert.Equal(["own"], leftovers.Select(f => f.Id));
     }
 
-    private static (Logger Logger, MemoryTarget Logs) CapturingLogger()
-    {
-        MemoryTarget logs = new() { Layout = "${level}|${message}" };
-        LoggingConfiguration config = new();
-        config.AddRuleForAllLevels(logs);
-        return (new LogFactory { Configuration = config }.GetLogger("canceller"), logs);
-    }
-
     [Fact]
     public async Task a_transfer_slskd_already_dropped_is_skipped_quietly()
     {
@@ -235,7 +227,7 @@ public class SlskdRemovedGrabTests
         api.Transfers.Add(Transfer("gone", "Completed, Succeeded", "grab-batch"));
         api.Transfers.Add(Transfer("next", "Completed, Succeeded", "grab-batch"));
         api.GoneDeletes.Add("gone");
-        (Logger logger, MemoryTarget logs) = CapturingLogger();
+        (Logger logger, MemoryTarget logs) = TestLogs.Capturing("canceller");
 
         int count = await SlskdBatchCanceller.CancelAsync(api, new SlskdProviderSettings(), "peer", new HashSet<string> { "grab-batch" }, null, logger);
 
@@ -251,7 +243,7 @@ public class SlskdRemovedGrabTests
         api.Transfers.Add(Transfer("refused", "Completed, Succeeded", "grab-batch"));
         api.Transfers.Add(Transfer("next", "Completed, Succeeded", "grab-batch"));
         api.FailingDeletes.Add("refused");
-        (Logger logger, MemoryTarget logs) = CapturingLogger();
+        (Logger logger, MemoryTarget logs) = TestLogs.Capturing("canceller");
 
         int count = await SlskdBatchCanceller.CancelAsync(api, new SlskdProviderSettings(), "peer", new HashSet<string> { "grab-batch" }, null, logger);
 

@@ -1,4 +1,3 @@
-using NLog;
 using NzbDrone.Core.Indexers;
 using NzbDrone.Plugin.Sleezer.Core.PostProcessing;
 using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek.Models;
@@ -22,22 +21,19 @@ public interface ISlskdCorruptionHandler
 // Slskd-internal strike shape: carries the SlskdFileState so the handler can
 // zero its retry budget. Projected to the shared CorruptionStrike before
 // delegating folder deletion / event publishing to ICorruptionFailureHandler.
-public record SlskdCorruptionStrike(SlskdFileState? FileState, string? Reason);
+public record SlskdCorruptionStrike(SlskdFileState? FileState, string File, string? Reason);
 
 public class SlskdCorruptionHandler : ISlskdCorruptionHandler
 {
     private readonly ICorruptionFailureHandler _failureHandler;
     private readonly ISlskdCorruptUserTracker _userTracker;
-    private readonly Logger _logger;
 
     public SlskdCorruptionHandler(
         ICorruptionFailureHandler failureHandler,
-        ISlskdCorruptUserTracker userTracker,
-        Logger logger)
+        ISlskdCorruptUserTracker userTracker)
     {
         _failureHandler = failureHandler;
         _userTracker = userTracker;
-        _logger = logger;
     }
 
     public void UseSettings(int definitionId, SlskdProviderSettings settings) => _userTracker.UseThreshold(definitionId, settings.BanUserAfterCorruptCount);
@@ -57,11 +53,7 @@ public class SlskdCorruptionHandler : ISlskdCorruptionHandler
         //    so zeroing the budget prevents the re-enqueue path from firing even if a
         //    later state transition comes through.
         foreach (SlskdCorruptionStrike strike in strikes)
-        {
             strike.FileState?.UpdateMaxRetryCount(0);
-            string fn = strike.FileState != null ? SlskdTextProcessor.GetFileNameFromFilename(strike.FileState.File.Filename) : "(unmapped)";
-            _logger.Info("Corruption strike: {File} | reason: {Reason}", fn, strike.Reason ?? "(unknown)");
-        }
 
         // 2. Record per-user strikes so repeat offenders can be auto-banned.
         if (!string.IsNullOrEmpty(item.Username) && settings.BanUserAfterCorruptCount > 0)
@@ -71,11 +63,7 @@ public class SlskdCorruptionHandler : ISlskdCorruptionHandler
 
         // 3. Delegate the universal steps (wipe folder, publish DownloadFailedEvent
         //    so Lidarr blocklists and re-searches) to the shared handler.
-        CorruptionStrike[] shared = strikes
-            .Select(s => new CorruptionStrike(
-                File: s.FileState != null ? SlskdTextProcessor.GetFileNameFromFilename(s.FileState.File.Filename) : "(unmapped)",
-                Reason: s.Reason))
-            .ToArray();
+        CorruptionStrike[] shared = strikes.Select(s => new CorruptionStrike(s.File, s.Reason)).ToArray();
 
         await _failureHandler.HandleAsync(
             downloadId: item.ID,

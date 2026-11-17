@@ -8,12 +8,10 @@ using NzbDrone.Core.Parser.Model;
 
 namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing;
 
-public record CorruptionStrike(string File, string? Reason);
-
 public interface ICorruptionFailureHandler
 {
     // Universal post-corruption workflow shared across every Sleezer download
-    // client: wipe the download folder, locate the grab history for this
+    // client: log each failed file, wipe the download folder, locate the grab history for this
     // download, and publish DownloadFailedEvent so Lidarr blocklists the
     // release and searches for a different one. Client-specific pre-steps
     // (e.g. slskd retry-budget zeroing, peer strike tracking) live in the
@@ -56,6 +54,10 @@ public class CorruptionFailureHandler : ICorruptionFailureHandler
     {
         if (strikes.Count == 0)
             return Task.CompletedTask;
+
+        // Every file, including those the message only counts: it points here.
+        foreach (CorruptionStrike strike in strikes)
+            _logger.Warn("[post-process] Corrupt file in download {DownloadId}: {Strike}", downloadId, CorruptionReport.Describe(strike));
 
         try
         {
@@ -131,7 +133,7 @@ public class CorruptionFailureHandler : ICorruptionFailureHandler
                 SourceTitle = historyItem.SourceTitle,
                 DownloadClient = downloadClientType,
                 DownloadId = historyItem.DownloadId,
-                Message = BuildFailureMessage(strikes),
+                Message = CorruptionReport.FailureMessage(strikes),
                 Data = historyItem.Data,
                 TrackedDownload = tracked,
                 SkipRedownload = false,
@@ -148,13 +150,5 @@ public class CorruptionFailureHandler : ICorruptionFailureHandler
         }
 
         return Task.CompletedTask;
-    }
-
-    private static string BuildFailureMessage(IReadOnlyList<CorruptionStrike> strikes)
-    {
-        string firstReason = strikes[0].Reason ?? "(unknown)";
-        return strikes.Count == 1
-            ? $"NzbDrone.Plugin.Sleezer: corrupt file detected — {firstReason}"
-            : $"NzbDrone.Plugin.Sleezer: {strikes.Count} corrupt files detected; first: {firstReason}";
     }
 }
