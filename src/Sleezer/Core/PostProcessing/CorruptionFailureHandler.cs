@@ -11,7 +11,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing;
 public interface ICorruptionFailureHandler
 {
     // Universal post-corruption workflow shared across every Sleezer download
-    // client: wipe the download folder, locate the grab history for this
+    // client: log each failed file, wipe the download folder, locate the grab history for this
     // download, and publish DownloadFailedEvent so Lidarr blocklists the
     // release and searches for a different one. Client-specific pre-steps
     // (e.g. slskd retry-budget zeroing, peer strike tracking) live in the
@@ -54,6 +54,10 @@ public class CorruptionFailureHandler : ICorruptionFailureHandler
     {
         if (strikes.Count == 0)
             return Task.CompletedTask;
+
+        // Every file, including those the message only counts: it points here.
+        foreach (CorruptionStrike strike in strikes)
+            _logger.Warn("[post-process] Corrupt file in download {DownloadId}: {Strike}", downloadId, CorruptionReport.Describe(strike));
 
         try
         {

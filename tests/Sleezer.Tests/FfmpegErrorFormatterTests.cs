@@ -30,6 +30,14 @@ public class FfmpegErrorFormatterTests
         Assert.Equal("Same error", FfmpegErrorFormatter.CleanFfmpegErrors(stderr));
     }
 
+    [Theory]
+    [InlineData("[mov,mp4,m4a,3gp,3g2,mj2 @ 0x5581f2a3c840] stream 0, offset 0x2c4f1: partial file\n", "stream 0, offset 0x2c4f1: partial file")]
+    [InlineData("[in#0/mov,mp4,m4a,3gp,3g2,mj2 @ 0x5581f2a3c840] Error during demuxing: Invalid data found when processing input\n", "Error during demuxing: Invalid data found when processing input")]
+    public void CleanFfmpegErrors_strips_the_m4a_demuxers_comma_separated_prefix(string stderr, string expected)
+    {
+        Assert.Equal(expected, FfmpegErrorFormatter.CleanFfmpegErrors(stderr));
+    }
+
     [Fact]
     public void CleanFfmpegErrors_keeps_a_pipe_inside_an_error_line()
     {
@@ -150,12 +158,42 @@ public class FfmpegErrorFormatterTests
     }
 
     [Fact]
-    public void DecodeFailureReason_names_a_tag_or_cover_art_stop_when_that_is_all_ffmpeg_printed()
+    public void DecodeFailureReason_says_the_audio_has_errors_when_ffmpeg_decoded_to_the_end()
+    {
+        Assert.Equal(
+            "Audio has decode errors (overread, skip -5 enddists for 3)",
+            FfmpegErrorFormatter.DecodeFailureReason("[mp3float @ 0x1] overread, skip -5 enddists for 3\n", 0));
+    }
+
+    [Fact]
+    public void DecodeFailureReason_names_a_damaged_tag_or_cover_art_when_that_is_all_ffmpeg_printed()
     {
         string stderr = "[flac @ 0x1] Could not read mimetype from an attached picture\n";
 
         Assert.Equal(
-            "ffmpeg stopped at a damaged tag or cover art (Could not read mimetype from an attached picture)",
+            "Damaged tag or cover art (Could not read mimetype from an attached picture)",
+            FfmpegErrorFormatter.DecodeFailureReason(stderr, 1));
+    }
+
+    [Fact]
+    public void DecodeFailureReason_names_a_cover_art_jpeg_error_as_cover_art()
+    {
+        string stderr = "[mjpeg @ 0x2] unable to decode APP fields: Invalid data found when processing input\n";
+
+        Assert.Equal(
+            "Damaged tag or cover art (unable to decode APP fields: Invalid data found when processing input)",
+            FfmpegErrorFormatter.DecodeFailureReason(stderr, 1));
+    }
+
+    [Fact]
+    public void DecodeFailureReason_keeps_the_audio_decoders_line_beside_a_cover_art_error()
+    {
+        string stderr =
+            "[mjpeg @ 0x2] unable to decode APP fields: Invalid data found when processing input\n" +
+            "[aist#0:0/mp3 @ 0x1] [dec:mp3float @ 0x3] Error submitting packet to decoder: Invalid data found when processing input\n";
+
+        Assert.Equal(
+            "Audio won't decode (Error submitting packet to decoder: Invalid data found when processing input)",
             FfmpegErrorFormatter.DecodeFailureReason(stderr, 1));
     }
 

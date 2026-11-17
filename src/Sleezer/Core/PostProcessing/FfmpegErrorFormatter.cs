@@ -11,12 +11,12 @@ namespace NzbDrone.Plugin.Sleezer.Core.PostProcessing;
 /// </summary>
 public static class FfmpegErrorFormatter
 {
-    private static readonly Regex CodecPrefixPattern = new(@"\[[\w:#/]+ @ 0x[0-9a-fA-F]+\]\s*", RegexOptions.Compiled);
+    private static readonly Regex CodecPrefixPattern = new(@"\[[^\]\s]+ @ 0x[0-9a-fA-F]+\]\s*", RegexOptions.Compiled);
     private static readonly Regex WhitespacePattern = new(@"\s+", RegexOptions.Compiled);
 
     private const int LogExcerptLines = 20;
 
-    // The muxer's complaint about packets a bad frame left behind; never the cause.
+    // The muxer's complaint about packets a bad frame left behind; it follows the decoder's error.
     private const string MuxerDtsMarker = "non monotonically increasing dts";
 
     // Lines ffmpeg prints after the decoder's own error (n9.0.2; "Error while decoding stream" is 4.x-6.x).
@@ -30,6 +30,12 @@ public static class FfmpegErrorFormatter
         "Terminating thread with return code",
         "Error while decoding stream",
         MuxerDtsMarker,
+    };
+
+    // Image decoders: under -map 0:a they only ever read the embedded cover art.
+    private static readonly string[] CoverArtDecoderMarkers =
+    {
+        "mjpeg @ 0x", "png @ 0x", "bmp @ 0x", "gif @ 0x", "webp @ 0x", "tiff @ 0x",
     };
 
     /// <summary>The decoder's own errors from ffmpeg stderr, deduplicated and joined with " | "; one follow-on line if that is all there is.</summary>
@@ -49,13 +55,14 @@ public static class FfmpegErrorFormatter
     /// <summary>The corruption reason for a file that failed ffmpeg's decode check.</summary>
     public static string DecodeFailureReason(string stderr, int exitCode)
     {
-        string significant = StripBenignMetadataNoise(stderr);
-        if (significant.Length > 0)
-            return $"Audio won't decode ({CleanFfmpegErrors(significant)})";
+        List<string> lines = [.. (stderr ?? string.Empty).Split('\n').Where(l => !string.IsNullOrWhiteSpace(l))];
+        List<string> audio = lines.FindAll(l => !IsBenignMetadataNoise(l) && !ContainsAny(l, CoverArtDecoderMarkers));
+        if (audio.Count > 0)
+            return $"{(exitCode == 0 ? "Audio has decode errors" : "Audio won't decode")} ({CleanFfmpegErrors(string.Join('\n', audio))})";
 
-        return string.IsNullOrWhiteSpace(stderr)
-            ? $"ffmpeg failed with exit code {exitCode}"
-            : $"ffmpeg stopped at a damaged tag or cover art ({CleanFfmpegErrors(stderr)})";
+        return lines.Count > 0
+            ? $"Damaged tag or cover art ({CleanFfmpegErrors(string.Join('\n', lines))})"
+            : $"ffmpeg failed with exit code {exitCode}";
     }
 
     /// <summary>The first lines of ffmpeg stderr for the Debug log, with a count of the rest.</summary>

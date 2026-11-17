@@ -24,7 +24,7 @@ public class SlskdCorruptionMessageTests
             m.Name == nameof(IDiskProvider.FolderExists) ? false : throw new NotSupportedException(m.Name));
         CapturingEvents events = new();
         Logger logger = LogManager.CreateNullLogger();
-        SlskdCorruptionHandler handler = new(new CorruptionFailureHandler(history, events, disk, logger), new SlskdCorruptUserTracker(logger), logger);
+        SlskdCorruptionHandler handler = new(new CorruptionFailureHandler(history, events, disk, logger), new SlskdCorruptUserTracker(logger));
 
         SlskdFileState mapped = new(Transfer(@"@@peer\Music\Album\07 remote name.flac"));
         string source = """[{"Filename":"@@peer\\Music\\Album\\07 remote name.flac","Size":1000}]""";

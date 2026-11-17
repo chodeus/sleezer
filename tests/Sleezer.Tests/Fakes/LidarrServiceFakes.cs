@@ -1,3 +1,6 @@
+using NLog;
+using NLog.Config;
+using NLog.Targets;
 using NzbDrone.Common.Messaging;
 using NzbDrone.Core.Blocklisting;
 using NzbDrone.Core.CustomFormats;
@@ -133,5 +136,17 @@ internal sealed class CapturingEvents : IEventAggregator
     {
         if (@event is DownloadFailedEvent failed)
             Failed.Add(failed);
+    }
+}
+
+internal static class TestLogs
+{
+    /// <summary>A real NLog logger whose lines land in the returned target as "Level|message".</summary>
+    public static (Logger Logger, MemoryTarget Logs) Capturing(string name)
+    {
+        MemoryTarget logs = new() { Layout = "${level}|${message}" };
+        LoggingConfiguration config = new();
+        config.AddRuleForAllLevels(logs);
+        return (new LogFactory { Configuration = config }.GetLogger(name), logs);
     }
 }

@@ -14,13 +14,13 @@ public class CorruptionReportTests
     }
 
     [Fact]
-    public void FailureMessage_lists_every_failed_file_in_scan_order()
+    public void FailureMessage_lists_every_failed_file_sorted_by_name()
     {
         string message = CorruptionReport.FailureMessage(
         [
+            new("11 - Track Eleven.flac", "Decode timed out (>120s)"),
             new("03 - Track Three.flac", "Audio won't decode (invalid residual)"),
             new("07 - Track Seven.flac", "Audio won't decode (invalid sync code | invalid frame header)"),
-            new("11 - Track Eleven.flac", "Decode timed out (>120s)"),
         ]);
 
         Assert.Equal(
@@ -40,7 +40,7 @@ public class CorruptionReportTests
     }
 
     [Fact]
-    public void FailureMessage_carries_the_scanners_reason_for_real_ffmpeg_output()
+    public void FailureMessage_carries_the_decode_reason_for_real_ffmpeg_output()
     {
         string message = CorruptionReport.FailureMessage([new("03 - Track Three.flac", FfmpegErrorFormatter.DecodeFailureReason(FfmpegErrorFormatterTests.DamagedFlacStderr, 1))]);
 
@@ -71,6 +71,20 @@ public class CorruptionReportTests
         Assert.StartsWith("Sleezer: 2 files failed the corruption check — 01 - Track One.flac: Audio won't decode (xxx", message);
         Assert.EndsWith("xxx…; +1 more (see the Lidarr log)", message);
         Assert.Equal(1000, message.Length);
+    }
+
+    [Fact]
+    public void FailureMessage_never_cuts_between_the_halves_of_a_surrogate_pair()
+    {
+        // The first entry is cut to 922 characters ("01.flac: " is 9), so 912 x's put the emoji's high surrogate last.
+        string reason = new string('x', 912) + "\U0001F3B5" + new string('x', 1200);
+
+        string message = CorruptionReport.FailureMessage([new("01.flac", reason), new("02.flac", "Audio won't decode (invalid residual)")]);
+
+        // Integer checks first: a failure text holding a lone surrogate drops the result from the run.
+        Assert.Equal(999, message.Length);
+        Assert.False(char.IsHighSurrogate(message[967]));
+        Assert.EndsWith("xxx…; +1 more (see the Lidarr log)", message);
     }
 
     [Fact]

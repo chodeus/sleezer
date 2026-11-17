@@ -1,4 +1,3 @@
-using NLog;
 using NzbDrone.Core.Indexers;
 using NzbDrone.Plugin.Sleezer.Core.PostProcessing;
 using NzbDrone.Plugin.Sleezer.Download.Clients.Soulseek.Models;
@@ -28,16 +27,13 @@ public class SlskdCorruptionHandler : ISlskdCorruptionHandler
 {
     private readonly ICorruptionFailureHandler _failureHandler;
     private readonly ISlskdCorruptUserTracker _userTracker;
-    private readonly Logger _logger;
 
     public SlskdCorruptionHandler(
         ICorruptionFailureHandler failureHandler,
-        ISlskdCorruptUserTracker userTracker,
-        Logger logger)
+        ISlskdCorruptUserTracker userTracker)
     {
         _failureHandler = failureHandler;
         _userTracker = userTracker;
-        _logger = logger;
     }
 
     public void UseSettings(int definitionId, SlskdProviderSettings settings) => _userTracker.UseThreshold(definitionId, settings.BanUserAfterCorruptCount);
@@ -57,10 +53,7 @@ public class SlskdCorruptionHandler : ISlskdCorruptionHandler
         //    so zeroing the budget prevents the re-enqueue path from firing even if a
         //    later state transition comes through.
         foreach (SlskdCorruptionStrike strike in strikes)
-        {
             strike.FileState?.UpdateMaxRetryCount(0);
-            _logger.Warn("[post-process] Slskd corrupt file: {File} — {Reason}", strike.File, strike.Reason ?? "(unknown)");
-        }
 
         // 2. Record per-user strikes so repeat offenders can be auto-banned.
         if (!string.IsNullOrEmpty(item.Username) && settings.BanUserAfterCorruptCount > 0)
