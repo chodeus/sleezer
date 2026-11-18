@@ -83,6 +83,9 @@ jobs:
           dotnet test tests/${PLUGIN_NAME}.Tests/${PLUGIN_NAME}.Tests.csproj \
             -c Release -p:NuGetAudit=false
 
+      - name: Check against Lidarr nightly
+        run: bash tools/PluginCheck/check-nightly.sh "_plugins/net8.0/${PLUGIN_NAME}/Lidarr.Plugin.${PLUGIN_NAME}.dll"
+
   dependency-audit:
     runs-on: ubuntu-latest
     steps:
