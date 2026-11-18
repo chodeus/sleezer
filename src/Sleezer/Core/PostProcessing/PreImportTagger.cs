@@ -589,7 +589,8 @@ public class PreImportTagger : IPreImportTagger
         }
     }
 
-    // Lidarr writes the recording id as the MusicBrainz track id (AudioTagService.GetTrackMetadata).
+    // Reads the plugin's merged TagLib 2.2, whose MusicBrainzTrackId is the recording frame Lidarr writes;
+    // TagLib 2.5 (Lidarr 4.0) names that frame MusicBrainzRecordingId, so keep this off the host's TagLib.
     private static (string? Album, string? ReleaseId, string? RecordingId) WrittenIdentity(string path)
     {
         using TagLib.File file = TagLib.File.Create(path);
