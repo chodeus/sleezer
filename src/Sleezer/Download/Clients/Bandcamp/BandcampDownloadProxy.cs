@@ -9,6 +9,7 @@ using NLog;
 using NzbDrone.Common.Http;
 using NzbDrone.Core.Http.Bandcamp;
 using NzbDrone.Core.MediaFiles;
+using NzbDrone.Plugin.Sleezer.Core.Utilities;
 
 namespace NzbDrone.Core.Download.Clients.Bandcamp
 {
@@ -360,6 +361,8 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
                 return;
             }
 
+            Exception? firstFailure = null;
+            var failed = 0;
             for (var i = 0; i < audioFiles.Count; i++)
             {
                 try
@@ -368,8 +371,15 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
                 }
                 catch (Exception ex)
                 {
+                    firstFailure ??= ex;
+                    failed++;
                     _logger.Debug(ex, "Bandcamp download proxy [{0}]: Failed to normalize tags for {1}", item.DownloadId, audioFiles[i].Path);
                 }
+            }
+
+            if (firstFailure != null)
+            {
+                _logger.Warn(firstFailure, "Bandcamp download proxy [{0}]: Failed to normalize tags for {1} of {2} file(s); they keep the store's own tags", item.DownloadId, failed, audioFiles.Count);
             }
         }
 
@@ -404,8 +414,7 @@ namespace NzbDrone.Core.Download.Clients.Bandcamp
             tag.MusicBrainzArtistId = context.ArtistMusicBrainzId ?? tag.MusicBrainzArtistId;
             tag.MusicBrainzReleaseArtistId = context.PreferredRelease?.ReleaseArtistMusicBrainzId ?? context.ArtistMusicBrainzId ?? tag.MusicBrainzReleaseArtistId;
             tag.MusicBrainzReleaseGroupId = context.AlbumMusicBrainzId ?? tag.MusicBrainzReleaseGroupId;
-            tag.MusicBrainzTrackId = trackContext?.RecordingMusicBrainzId ?? tag.MusicBrainzTrackId;
-            tag.MusicBrainzReleaseTrackId = trackContext?.ReleaseTrackMusicBrainzId ?? tag.MusicBrainzReleaseTrackId;
+            MusicBrainzTrackIds.Set(tag, recordingId: trackContext?.RecordingMusicBrainzId, releaseTrackId: trackContext?.ReleaseTrackMusicBrainzId);
             tag.MusicBrainzAlbumComment = context.AlbumDisambiguation ?? tag.MusicBrainzAlbumComment;
             tag.Write(path);
         }

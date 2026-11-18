@@ -69,12 +69,13 @@ public class PreImportTaggerWholeDownloadTests : IDisposable
     }
 
     // As Lidarr's writer: the album title and the release id are the keys it groups a download by.
+    // The recording goes in by frame name, as every Lidarr writes it; TagLib 2.5 renamed the property that reads it.
     private static void TagAsWanted(TrackFile trackFile)
     {
         using TagLib.File file = TagLib.File.Create(trackFile.Path);
         file.Tag.Album = "Wanted Album";
         file.Tag.MusicBrainzReleaseId = WantedReleaseId;
-        file.Tag.MusicBrainzTrackId = trackFile.Tracks.Value[0].ForeignRecordingId;
+        ((TagLib.Ogg.XiphComment)file.GetTag(TagLib.TagTypes.Xiph, true)).SetField("MUSICBRAINZ_TRACKID", trackFile.Tracks.Value[0].ForeignRecordingId);
         file.Save();
     }
 
