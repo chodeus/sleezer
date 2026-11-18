@@ -34,6 +34,8 @@ env:
   # renovate: datasource=dotnet-version depName=dotnet-sdk
   DOTNET_VERSION: '8.0.428'
   PLUGIN_NAME: 'Sleezer'
+  # Lidarr installs only a zip named for its own runtime; the build ships a copy under this name once it passes against Lidarr's nightly.
+  LIDARR_NIGHTLY_FRAMEWORK: 'net10.0'
 
 jobs:
   build:
@@ -50,7 +52,8 @@ jobs:
       branch_repo_url: ${{ steps.git_info.outputs.branch_repo_url }}
       plugin_input_format: ${{ steps.git_info.outputs.plugin_input_format }}
       commit_messages: ${{ steps.git_info.outputs.commit_messages }}
-      package_name: ${{ steps.package.outputs.package_name }}
+      package_names: ${{ steps.nightly.outputs.package_names }}
+      nightly_framework: ${{ steps.nightly.outputs.nightly_framework }}
     steps:
       - name: Checkout with submodules
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -404,11 +407,42 @@ jobs:
           dotnet run --project tools/SmokeLoad/SmokeLoad.csproj \
             -c Release --no-build -- "$PLUGIN_DLL" "$HOST_DIR"
 
+      - name: Check against Lidarr nightly and package for its runtime
+        # Compiling against ext/Lidarr cannot catch a member Lidarr 4.0 removed (v1.39.11); PluginCheck lists such refs.
+        # A failed check still ships the $FRAMEWORK zip, so a servarr outage or a nightly break never blocks the plugins branch.
+        id: nightly
+        env:
+          PACKAGE_NAME: ${{ steps.package.outputs.package_name }}
+          VERSION: ${{ steps.meta.outputs.package_version }}
+          FRAMEWORK: ${{ steps.meta.outputs.framework }}
+        run: |
+          set -euo pipefail
+          if [ "$LIDARR_NIGHTLY_FRAMEWORK" = "$FRAMEWORK" ]; then
+            echo "::error::The plugin now builds for $FRAMEWORK itself; drop the nightly copy from this workflow"
+            exit 1
+          fi
+
+          STAGE=$(mktemp -d)
+          unzip -q "$GITHUB_WORKSPACE/$PACKAGE_NAME" -d "$STAGE"
+          NAMES=("$PACKAGE_NAME")
+          SHIPPED=""
+          if bash tools/PluginCheck/check-nightly.sh "$STAGE/Lidarr.Plugin.$PLUGIN_NAME.dll" "$LIDARR_NIGHTLY_FRAMEWORK"; then
+            NIGHTLY_NAME="${PLUGIN_NAME}-v${VERSION}.${LIDARR_NIGHTLY_FRAMEWORK}.zip"
+            cp "$GITHUB_WORKSPACE/$PACKAGE_NAME" "$GITHUB_WORKSPACE/$NIGHTLY_NAME"
+            NAMES+=("$NIGHTLY_NAME")
+            SHIPPED=$LIDARR_NIGHTLY_FRAMEWORK
+          else
+            echo "::warning::The Lidarr nightly check failed (see above), so this release ships only the $FRAMEWORK zip: Lidarr on $LIDARR_NIGHTLY_FRAMEWORK cannot install or update to it"
+          fi
+          echo "nightly_framework=$SHIPPED" >> "$GITHUB_OUTPUT"
+          { echo "package_names<<NAMES_EOF"; printf '%s\n' "${NAMES[@]}"; echo "NAMES_EOF"; } >> "$GITHUB_OUTPUT"
+
       - name: Upload plugin package
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: plugin-package
-          path: ${{ steps.package.outputs.package_name }}
+          path: ${{ steps.nightly.outputs.package_names }}
+          if-no-files-found: error
           retention-days: 7
 
       - name: Upload build logs
@@ -438,16 +472,26 @@ jobs:
       - name: Verify artifact
         id: verify
         env:
-          PACKAGE_NAME: ${{ needs.build.outputs.package_name }}
+          PACKAGE_NAMES: ${{ needs.build.outputs.package_names }}
         run: |
-          ARTIFACT_PATH="./artifacts/$PACKAGE_NAME"
-          if [ ! -s "$ARTIFACT_PATH" ]; then
-            echo "::error::Artifact missing or empty at $ARTIFACT_PATH"
-            ls -la ./artifacts/
+          set -euo pipefail
+          PATHS=()
+          while IFS= read -r NAME; do
+            [ -n "$NAME" ] || continue
+            ARTIFACT_PATH="./artifacts/$NAME"
+            if [ ! -s "$ARTIFACT_PATH" ]; then
+              echo "::error::Artifact missing or empty at $ARTIFACT_PATH"
+              ls -la ./artifacts/
+              exit 1
+            fi
+            echo "$NAME: $(stat -c%s "$ARTIFACT_PATH") bytes"
+            PATHS+=("$ARTIFACT_PATH")
+          done <<< "$PACKAGE_NAMES"
+          if [ "${#PATHS[@]}" -eq 0 ]; then
+            echo "::error::The build job named no packages"
             exit 1
           fi
-          echo "Size: $(stat -c%s "$ARTIFACT_PATH") bytes"
-          echo "artifact_path=$ARTIFACT_PATH" >> "$GITHUB_OUTPUT"
+          { echo "artifact_paths<<PATHS_EOF"; printf '%s\n' "${PATHS[@]}"; echo "PATHS_EOF"; } >> "$GITHUB_OUTPUT"
 
       - name: Generate release notes markdown
         id: notes
@@ -458,7 +502,13 @@ jobs:
           COMMIT: ${{ needs.build.outputs.git_commit }}
           PLUGIN_INPUT: ${{ needs.build.outputs.plugin_input_format }}
           COMMITS: ${{ needs.build.outputs.commit_messages }}
+          NIGHTLY: ${{ needs.build.outputs.nightly_framework }}
         run: |
+          DOTNET_LINE=$FRAMEWORK
+          if [ -n "$NIGHTLY" ]; then
+            DOTNET_LINE="$FRAMEWORK, also as $NIGHTLY (checked against Lidarr's nightly)"
+          fi
+
           cat > release_notes.md << EOL
 
           ## 📝 What's New:
@@ -474,7 +524,7 @@ jobs:
 
           ## 📦 Package Information
           **Version:** $VERSION
-          **.NET Version:** $FRAMEWORK
+          **.NET Version:** $DOTNET_LINE
           **Minimum Lidarr Version:** $MIN_LIDARR
           **Commit:** $COMMIT
           EOL
@@ -489,7 +539,7 @@ jobs:
           prerelease: ${{ needs.build.outputs.is_prerelease == 'true' }}
           make_latest: ${{ needs.build.outputs.is_latestrelease == 'true' }}
           target_commitish: ${{ needs.build.outputs.git_branch }}
-          files: ${{ steps.verify.outputs.artifact_path }}
+          files: ${{ steps.verify.outputs.artifact_paths }}
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ github.token }}

@@ -83,6 +83,10 @@ jobs:
           dotnet test tests/${PLUGIN_NAME}.Tests/${PLUGIN_NAME}.Tests.csproj \
             -c Release -p:NuGetAudit=false
 
+      # Built without -f, so the plugin lands in _plugins/<name>/, not _plugins/<tfm>/<name>/ as in build.yml
+      - name: Check against Lidarr nightly
+        run: bash tools/PluginCheck/check-nightly.sh "_plugins/${PLUGIN_NAME}/Lidarr.Plugin.${PLUGIN_NAME}.dll"
+
   dependency-audit:
     runs-on: ubuntu-latest
     steps:
