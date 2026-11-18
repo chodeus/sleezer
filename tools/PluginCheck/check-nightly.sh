@@ -4,6 +4,10 @@ set -euo pipefail
 
 plugin=$1
 framework=${2:-}
+if [ ! -f "$plugin" ]; then
+  echo "::error::No plugin at $plugin to check"
+  exit 1
+fi
 host=$(mktemp -d)
 trap 'rm -rf "$host"' EXIT
 
@@ -12,8 +16,18 @@ if ! curl -fsSL --retry 3 -o "$host/lidarr.tar.gz" \
   echo "::error::Could not download Lidarr's nightly build"
   exit 1
 fi
-tar -xzf "$host/lidarr.tar.gz" -C "$host"
-nightly=$(jq -r .runtimeOptions.tfm "$host/Lidarr/Lidarr.runtimeconfig.json")
+if ! tar -xzf "$host/lidarr.tar.gz" -C "$host"; then
+  echo "::error::Lidarr's nightly download is not a readable tarball"
+  exit 1
+fi
+if [ ! -f "$host/Lidarr/Lidarr.runtimeconfig.json" ]; then
+  echo "::error::Lidarr's nightly download has no Lidarr/Lidarr.runtimeconfig.json"
+  exit 1
+fi
+if ! nightly=$(jq -er .runtimeOptions.tfm "$host/Lidarr/Lidarr.runtimeconfig.json"); then
+  echo "::error::Lidarr's nightly names no runtime in Lidarr/Lidarr.runtimeconfig.json"
+  exit 1
+fi
 if [ -n "$framework" ] && [ "$nightly" != "$framework" ]; then
   echo "::error::Lidarr's nightly runs $nightly, not $framework, so the $framework zip cannot be checked"
   exit 1
