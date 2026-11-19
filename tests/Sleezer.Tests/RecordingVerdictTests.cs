@@ -429,7 +429,7 @@ public class RecordingVerdictTests
             Resolve(new[] { OtherId }, Wanted(wantedTitle, seconds: wantedSeconds), Timed((OtherId, knownTitle, knownSeconds)), fileSeconds));
     }
 
-    // Live 2026-11-19: another release titled the 467 s extended remix "(Remixer remix)" at 468 s, and the right file was held.
+    // Another release may title the same extended remix "(Remixer remix)": only the lengths tell it from another cut.
     [Theory]
     [InlineData("Lantern Song (Moonward extended remix)", 467, "Lantern Song (Moonward remix)", 468, 467, FingerprintVerdict.Unverifiable)]
     [InlineData("Lantern Song (Moonward remix)", 210, "Lantern Song (Moonward extended remix)", 211, 210, FingerprintVerdict.Unverifiable)]
