@@ -59,7 +59,8 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
         /// <summary>
         /// Converts AlbumData into a ReleaseInfo object.
         /// </summary>
-        public ReleaseInfo ToReleaseInfo() => FillReleaseInfo(new StoreReleaseInfo());
+        // SubSonic's indexer path: a personal server is not a store, so no Internal flag.
+        public ReleaseInfo ToReleaseInfo() => FillReleaseInfo(new StoreReleaseInfo { IndexerFlags = default });
 
         /// <summary>
         /// Slskd variant of <see cref="ToReleaseInfo"/>. ShareInfo derives from
