@@ -7,6 +7,9 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
     /// <summary>A store search hit carrying the album facts StoreReleaseVerifier checks against MusicBrainz.</summary>
     public class StoreReleaseInfo : ReleaseInfo, IVerifiableRelease
     {
+        // Lidarr copies the flag to the grab history and the imported file, so a custom format on it can rank store grabs.
+        public StoreReleaseInfo() => IndexerFlags = IndexerFlags.Internal;
+
         public string? ArtistId { get; set; }
 
         // Title plus the store's version qualifier — Deezer keeps "(Extended Mix)" in a separate field.
