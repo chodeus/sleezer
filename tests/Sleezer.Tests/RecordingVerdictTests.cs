@@ -429,6 +429,23 @@ public class RecordingVerdictTests
             Resolve(new[] { OtherId }, Wanted(wantedTitle, seconds: wantedSeconds), Timed((OtherId, knownTitle, knownSeconds)), fileSeconds));
     }
 
+    // Another release may title the same extended remix "(Remixer remix)": only the lengths tell it from another cut.
+    [Theory]
+    [InlineData("Lantern Song (Moonward extended remix)", 467, "Lantern Song (Moonward remix)", 468, 467, FingerprintVerdict.Unverifiable)]
+    [InlineData("Lantern Song (Moonward remix)", 210, "Lantern Song (Moonward extended remix)", 211, 210, FingerprintVerdict.Unverifiable)]
+    [InlineData("Lantern Song", 200, "Lantern Song (Extended)", 201, 200, FingerprintVerdict.Unverifiable)]
+    [InlineData("Lantern Song (Extended Mix)", 400, "Lantern Song (Original Mix)", 402, 400, FingerprintVerdict.Unverifiable)]
+    [InlineData("Lantern Song - Moonward Remix Extended", 254, "Lantern Song (Moonward remix)", 255, 255, FingerprintVerdict.Unverifiable)]
+    [InlineData("Lantern Song (Moonward extended remix)", 467, "Lantern Song (Moonward remix)", 461, 467, FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song (Moonward extended remix)", 467, "Lantern Song (Moonward remix)", 472, 472, FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song (Moonward extended remix)", 467, "Lantern Song (Fern remix)", 467, 467, FingerprintVerdict.Mismatch)]
+    [InlineData("Lantern Song (Moonward extended remix)", 467, "Lantern Song (Moonward club remix)", 467, 467, FingerprintVerdict.Mismatch)]
+    public void An_extended_label_is_read_as_one_take_only_at_the_same_length(string wantedTitle, int wantedSeconds, string knownTitle, int knownSeconds, int fileSeconds, FingerprintVerdict expected)
+    {
+        Assert.Equal(expected,
+            Resolve(new[] { OtherId }, Wanted(wantedTitle, seconds: wantedSeconds), Timed((OtherId, knownTitle, knownSeconds)), fileSeconds));
+    }
+
     // A reissue's title on a file of the wanted length is the wanted take.
     [Theory]
     [InlineData("Lantern Song", "Lantern Song - 2011 Remaster")]
