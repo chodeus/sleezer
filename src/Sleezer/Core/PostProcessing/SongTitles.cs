@@ -14,9 +14,10 @@ public static partial class SongTitles
     private static readonly HashSet<string> RemixWords = new(StringComparer.Ordinal) { "remix", "mix", "edit", "rework", "vip", "bootleg", "dub", "flip" };
 
     // A reissue's words: "(Remastered 2011)", "(Album Version)", "(Original Mix)", "(Mono)" name the same take.
+    // "extended" too: one release labels a cut extended, another drops the word; only a length check may read it this way.
     private static readonly HashSet<string> ReissueWords = new(StringComparer.Ordinal)
     {
-        "remaster", "remastered", "album", "single", "original", "version", "mix", "mono", "stereo", "digital",
+        "remaster", "remastered", "album", "single", "original", "version", "mix", "mono", "stereo", "digital", "extended",
     };
 
     // The original's own cuts: "(Extended)", "(Radio Edit)", "(Album Version)".
@@ -46,7 +47,7 @@ public static partial class SongTitles
         return Compatible(wordsA, wordsB);
     }
 
-    /// <summary>One take under a reissue's title: the qualifiers differ only by remaster, year, album/single/original version or mono/stereo.</summary>
+    /// <summary>One take under a reissue's title: the qualifiers differ only by remaster, year, album/single/original version, mono/stereo or an extended label.</summary>
     public static bool Reissue(string? heard, string? wanted, Func<string?, string> comparable)
     {
         (string a, string b) = WithoutOnePrefix(heard, wanted);
