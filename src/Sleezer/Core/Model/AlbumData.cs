@@ -59,7 +59,7 @@ namespace NzbDrone.Plugin.Sleezer.Core.Model
         /// <summary>
         /// Converts AlbumData into a ReleaseInfo object.
         /// </summary>
-        // Only SubSonic builds releases here: a personal server is not a store, so no Internal flag.
+        // SubSonic's indexer path: a personal server is not a store, so no Internal flag.
         public ReleaseInfo ToReleaseInfo() => FillReleaseInfo(new StoreReleaseInfo { IndexerFlags = default });
 
         /// <summary>

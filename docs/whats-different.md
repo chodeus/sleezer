@@ -36,7 +36,7 @@ Store search covers Deezer, Qobuz, Tidal and Bandcamp.
 | `Album (Remixes)` read by Lidarr as the wrong album | Titles built so Lidarr maps them to the searched album |
 | Rejections hidden | The reason shows in interactive search, and you can still grab it |
 | Upgrades grabbed different recordings (radio edits, piano versions) | Rejected before download |
-| No way to prefer a store grab over Soulseek | Store releases carry Lidarr's Internal indexer flag: score it with an Indexer Flag custom format |
+| No way to prefer a store grab over Soulseek | Store releases carry Lidarr's Internal indexer flag: score it with an Indexer Flag custom format. Files already on disk don't have it, so keep "Upgrade until" at or below their score, or Lidarr grabs them again |
 
 ## Downloads and imports
 
